@@ -1,3 +1,4 @@
+pub mod printing;
 pub mod rx;
 pub mod rxvm;
 
@@ -105,5 +106,23 @@ macro_rules! include_bytes_aligned {
         };
 
         &ALIGNED.bytes
+    }};
+}
+
+#[macro_export]
+macro_rules! println {
+    () => {
+        $crate::printing::_print("\n")
+    };
+    ($($arg:tt)*) => {{
+        $crate::printing::_print(&format!($($arg)*));
+        $crate::printing::_print("\n");
+    }};
+}
+
+#[macro_export]
+macro_rules! print {
+    ($($arg:tt)*) => {{
+        $crate::printing::_print(&format!($($arg)*));
     }};
 }

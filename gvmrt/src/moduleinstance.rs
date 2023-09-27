@@ -114,6 +114,29 @@ impl ModuleInstance {
         })
     }
 
+    fn run_init(&mut self) -> Result<()> {
+        let wasm = &mut self.wasm;
+
+        let init_fn = wasm
+            .instance
+            .get_typed_func::<(), ()>(&mut wasm.store, "gvm_init")?;
+        init_fn.call(&mut wasm.store, ())?;
+
+        Ok(())
+    }
+
+    pub fn run_main(&mut self) -> Result<()> {
+        self.run_init()?;
+
+        let wasm = &mut self.wasm;
+        let main_fn = wasm
+            .instance
+            .get_typed_func::<(i32, i32), i32>(&mut wasm.store, "main")?;
+        main_fn.call(&mut wasm.store, (0, 0))?;
+
+        Ok(())
+    }
+
     pub fn add_op(&mut self, dst_slice: &'static mut [u8], op: GvmOp) -> bool {
         self.ops.push(IdxOp { dst_slice, op });
         self.ops.len() == 1
@@ -152,6 +175,8 @@ impl ModuleInstance {
                     ..
                 } => {
                     ensure!(module_arg == "", "module_arg not supported yet");
+
+                    self.run_init()?;
 
                     let gvm_create =
                         inst.get_typed_func::<(), WasmGvm>(&mut self.wasm.store, "gvm_create")?;

@@ -14,10 +14,11 @@ use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 use std::collections::HashMap;
+use std::fs;
+use std::io::Write;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex, RwLock};
 use std::time::Instant;
-use std::{fs, thread};
 use wasmtime;
 
 use crate::moduleinstance::*;
@@ -36,7 +37,11 @@ struct Cli {
     #[arg(short = 'j', long)]
     module_meta: Option<String>,
 
-    /// Path to .wasm module to install
+    /// Run main() from the module just added
+    #[arg(short, long)]
+    run: bool,
+
+    /// Run with POSIX shared memory interface
     #[arg(short, long)]
     server: bool,
 
@@ -111,9 +116,22 @@ impl Executor {
         let engine = wasmtime::Engine::default();
 
         let mut linker = wasmtime::Linker::new(&engine);
-        linker.func_wrap("global", "hello", || {
-            println!("> Hello from {:?}", thread::current().id());
-        })?;
+
+        linker.func_wrap(
+            "env",
+            "gvm_host_print",
+            |mut caller: wasmtime::Caller<'_, ()>, ptr: i32, len: i32| {
+                if let Some(wasmtime::Extern::Memory(mem)) = caller.get_export("memory") {
+                    let ptr = ptr as usize;
+                    let len = len as usize;
+                    let m = &mem.data(&caller)[ptr..(ptr + len)];
+                    let mut stdout = std::io::stdout().lock();
+                    stdout.write_all(m).unwrap();
+                } else {
+                    panic!("no memory")
+                }
+            },
+        )?;
         let linker = Arc::new(linker); // "finalize" the linker
 
         let globals = GlobalInfo { vocab_size: 0 };
@@ -168,6 +186,24 @@ impl Executor {
         self.create_module(wasm_bytes, meta_bytes)
     }
 
+    pub fn new_instance(&mut self, module_id: &str) -> Result<ModuleInstance> {
+        ensure!(is_hex_string(module_id), "invalid module_id");
+
+        let module = match self.modules.get(module_id) {
+            None => {
+                let filepath = self.cache_path.join(format!("{}.bin", module_id));
+                ensure!(filepath.exists(), "{} not found", module_id);
+                let module = unsafe { wasmtime::Module::deserialize_file(&self.engine, filepath)? };
+                self.modules.insert(String::from(module_id), module.clone());
+                module
+            }
+            Some(v) => v.clone(),
+        };
+
+        let modi = ModuleInstance::new(module, self.linker.clone(), self.globals.clone())?;
+        Ok(modi)
+    }
+
     fn mk_instance(&mut self, op: &GvmOp) -> Result<()> {
         match op {
             GvmOp::Gen { id, clone_id, .. } => {
@@ -182,21 +218,7 @@ impl Executor {
             }
             GvmOp::Prompt { id, module_id, .. } => {
                 ensure!(!self.instances.contains_key(id));
-                ensure!(is_hex_string(module_id), "invalid module_id");
-
-                let module = match self.modules.get(module_id) {
-                    None => {
-                        let filepath = self.cache_path.join(format!("{}.bin", module_id));
-                        ensure!(filepath.exists(), "{} not found", module_id);
-                        let module =
-                            unsafe { wasmtime::Module::deserialize_file(&self.engine, filepath)? };
-                        self.modules.insert(String::from(module_id), module.clone());
-                        module
-                    }
-                    Some(v) => v.clone(),
-                };
-
-                let modi = ModuleInstance::new(module, self.linker.clone(), self.globals.clone())?;
+                let modi = self.new_instance(module_id)?;
                 debug!("new module {} ({})", id, module_id);
                 self.instances.insert(*id, Arc::new(Mutex::new(modi)));
             }
@@ -359,7 +381,7 @@ fn main() -> () {
 
     // You can check the value provided by positional arguments, or option arguments
     if let Some(name) = cli.module.as_deref() {
-        let exec = Executor::new(None).unwrap();
+        let mut exec = Executor::new(None).unwrap();
         let wasm_bytes = fs::read(name).unwrap();
         let meta_bytes = match cli.module_meta.as_deref() {
             Some(name) => fs::read(name).unwrap(),
@@ -367,8 +389,16 @@ fn main() -> () {
         };
 
         let json = exec.create_module(wasm_bytes, meta_bytes).unwrap();
-        
-        println!("{}", json["module_id"].as_str().unwrap());
+
+        let module_id = json["module_id"].as_str().unwrap();
+
+        println!("{}", module_id);
+
+        if cli.run {
+            let mut modi = exec.new_instance(module_id).unwrap();
+            modi.run_main().unwrap();
+        }
+
         return ();
     }
 
