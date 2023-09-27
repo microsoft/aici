@@ -6,6 +6,8 @@
     "rust-analyzer.linkedProjects": [
         "regex_llm/Cargo.toml",
         "gvmrt/Cargo.toml",
-        "gvmprog/Cargo.toml"
+        "gvmprog/Cargo.toml",
+        "gvm_abi/Cargo.toml",
+        "gvm_use_rx/Cargo.toml"
     ]
 }

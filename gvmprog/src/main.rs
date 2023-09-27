@@ -1,16 +1,16 @@
-use gvm_abi::{GuidanceVm, GuidanceVmHelper, expose, gvm_expose_all};
+use gvm_abi::{GuidanceVm, GuidanceVmHelper, gvm_expose_all};
 
 pub struct MyGvm {
     helper: GuidanceVmHelper,
 }
 
-impl GuidanceVm for MyGvm {
-    fn gvm_create() -> Self {
-        MyGvm {
-            helper: GuidanceVmHelper::new(),
-        }
+fn create() -> MyGvm {
+    MyGvm {
+        helper: GuidanceVmHelper::new(),
     }
+}
 
+impl GuidanceVm for MyGvm {
     fn gvm_process_prompt(&mut self) {}
 
     fn gvm_append_token(&mut self, token: u32) {
@@ -31,6 +31,6 @@ impl GuidanceVm for MyGvm {
     }
 }
 
-gvm_expose_all!(MyGvm);
+gvm_expose_all!(MyGvm, create());
 
 fn main() {}

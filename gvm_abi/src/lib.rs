@@ -1,3 +1,6 @@
+pub mod rx;
+pub mod rxvm;
+
 /// Expose method as extern "C", usage:
 ///     expose!(Foo::set_count(n: i32) -> i32);
 /// Generates "C" function:
@@ -50,8 +53,6 @@ impl GuidanceVmHelper {
 }
 
 pub trait GuidanceVm {
-    /// Create a new instance of VM
-    fn gvm_create() -> Self;
     /// Create a new instance of VM, based on existing instance, for example when doing beam-search.
     fn gvm_clone(&mut self) -> Self;
     /// The prompt is in self.helper.tokens.
@@ -63,15 +64,15 @@ pub trait GuidanceVm {
 
 #[macro_export]
 macro_rules! gvm_expose_all {
-    ($struct_name:ident ) => {
-        expose!($struct_name::gvm_process_prompt() -> ());
-        expose!($struct_name::gvm_append_token(token: u32) -> ());
-        expose!($struct_name::helper::gvm_get_logit_bias_buffer(size: u32) -> *mut f32);
-        expose!($struct_name::helper::gvm_get_prompt_buffer(size: u32) -> *mut u32);
+    ($struct_name:ident, $new:expr) => {
+        $crate::expose!($struct_name::gvm_process_prompt() -> ());
+        $crate::expose!($struct_name::gvm_append_token(token: u32) -> ());
+        $crate::expose!($struct_name::helper::gvm_get_logit_bias_buffer(size: u32) -> *mut f32);
+        $crate::expose!($struct_name::helper::gvm_get_prompt_buffer(size: u32) -> *mut u32);
 
         #[no_mangle]
         pub extern "C" fn gvm_create() -> *mut $struct_name {
-            let b = Box::new($struct_name::gvm_create());
+            let b = Box::new($new);
             Box::into_raw(b)
         }
 
@@ -86,4 +87,35 @@ macro_rules! gvm_expose_all {
             let _drop = unsafe { Box::from_raw(self_) };
         }
     }
+}
+
+#[macro_export]
+macro_rules! include_bytes_as {
+    ($align_ty:ty, $path:literal) => {{
+        #[repr(C)] // guarantee 'bytes' comes after '_align'
+        pub struct AlignedAs<Align, Bytes: ?Sized> {
+            pub _align: [Align; 0],
+            pub bytes: Bytes,
+        }
+
+        // this assignment is made possible by CoerceUnsized
+        static ALIGNED: &AlignedAs<$align_ty, [u8]> = &AlignedAs {
+            _align: [],
+            bytes: *include_bytes!($path),
+        };
+
+        let slice = &ALIGNED.bytes;
+        let ptr = slice.as_ptr() as *const $align_ty;
+        unsafe { std::slice::from_raw_parts(ptr, slice.len() / std::mem::size_of::<$align_ty>()) }
+    }};
+}
+
+#[macro_export]
+macro_rules! TokenCompiled_from_bin {
+    () => {
+        $crate::rx::TokenCompiled {
+            token_data: $crate::include_bytes_as!(u16, "token_data.bin"),
+            state_data: $crate::include_bytes_as!(u32, "state_data.bin"),
+        }
+    };
 }
