@@ -1,0 +1,29 @@
+ninja  # For faster builds.
+psutil
+ray >= 2.5.1
+pandas  # Required for Ray data.
+sentencepiece  # Required for LLaMA tokenizer.
+numpy
+torch >= 2.0.0
+transformers >= 4.33.1  # Required for Code Llama.
+xformers >= 0.0.21
+fastapi
+uvicorn
+pydantic < 2  # Required for OpenAI server.
+
+# formatting
+yapf==0.32.0
+pylint==2.8.2
+
+# type checking
+mypy==0.991
+types-PyYAML
+types-requests
+types-setuptools
+
+# testing
+pytest
+pytest-forked
+
+ujson
+posix_ipc

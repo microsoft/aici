@@ -6,3 +6,4 @@ built
 tmp
 cache
 target
+tokenizer.json
