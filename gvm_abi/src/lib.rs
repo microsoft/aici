@@ -1,9 +1,8 @@
-fn main() {}
-
 /// Expose method as extern "C", usage:
 ///     expose!(Foo::set_count(n: i32) -> i32);
 /// Generates "C" function:
 ///     set_count(Foo *, i32) -> i32
+#[macro_export]
 macro_rules! expose {
     ($struct_name:ident :: $method_name:ident ( $($arg:ident : $typ:ty),* ) -> $ret:ty) => {
         #[no_mangle]
@@ -62,7 +61,7 @@ pub trait GuidanceVm {
     fn gvm_append_token(&mut self, token: u32);
 }
 
-pub struct MyGvm {
+struct MyGvm {
     helper: GuidanceVmHelper,
 }
 
@@ -93,24 +92,29 @@ impl GuidanceVm for MyGvm {
     }
 }
 
-expose!(MyGvm::gvm_process_prompt() -> ());
-expose!(MyGvm::gvm_append_token(token: u32) -> ());
-expose!(MyGvm::helper::gvm_get_logit_bias_buffer(size: u32) -> *mut f32);
-expose!(MyGvm::helper::gvm_get_prompt_buffer(size: u32) -> *mut u32);
+#[macro_export]
+macro_rules! gvm_expose_all {
+    ($struct_name:ident ) => {
+        expose!($struct_name::gvm_process_prompt() -> ());
+        expose!($struct_name::gvm_append_token(token: u32) -> ());
+        expose!($struct_name::helper::gvm_get_logit_bias_buffer(size: u32) -> *mut f32);
+        expose!($struct_name::helper::gvm_get_prompt_buffer(size: u32) -> *mut u32);
 
-#[no_mangle]
-pub extern "C" fn gvm_create() -> *mut MyGvm {
-    let b = Box::new(MyGvm::gvm_create());
-    Box::into_raw(b)
-}
+        #[no_mangle]
+        pub extern "C" fn gvm_create() -> *mut $struct_name {
+            let b = Box::new($struct_name::gvm_create());
+            Box::into_raw(b)
+        }
 
-#[no_mangle]
-pub extern "C" fn gvm_clone(self_: *mut MyGvm) -> *mut MyGvm {
-    let b = unsafe { (&mut *self_).gvm_clone() };
-    Box::into_raw(Box::new(b))
-}
+        #[no_mangle]
+        pub extern "C" fn gvm_clone(self_: *mut $struct_name) -> *mut $struct_name {
+            let b = unsafe { (&mut *self_).gvm_clone() };
+            Box::into_raw(Box::new(b))
+        }
 
-#[no_mangle]
-pub extern "C" fn gvm_free(self_: *mut MyGvm) {
-    let _drop = unsafe { Box::from_raw(self_) };
+        #[no_mangle]
+        pub extern "C" fn gvm_free(self_: *mut $struct_name) {
+            let _drop = unsafe { Box::from_raw(self_) };
+        }
+    }
 }
