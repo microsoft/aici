@@ -24,9 +24,9 @@ macro_rules! expose {
 
 #[derive(Clone)]
 pub struct GuidanceVmHelper {
-    tokens: Vec<u32>,
-    prompt_length: usize,
-    logit_biases: Vec<f32>,
+    pub tokens: Vec<u32>,
+    pub prompt_length: usize,
+    pub logit_biases: Vec<f32>,
 }
 
 // gvm_* are exposed to C in both GuidanceVm and GuidanceVmHelper
@@ -59,37 +59,6 @@ pub trait GuidanceVm {
     fn gvm_process_prompt(&mut self);
     /// On return, self.helper.logit_biases are supposed to be updated.
     fn gvm_append_token(&mut self, token: u32);
-}
-
-struct MyGvm {
-    helper: GuidanceVmHelper,
-}
-
-impl GuidanceVm for MyGvm {
-    fn gvm_create() -> Self {
-        MyGvm {
-            helper: GuidanceVmHelper::new(),
-        }
-    }
-
-    fn gvm_process_prompt(&mut self) {}
-
-    fn gvm_append_token(&mut self, token: u32) {
-        let toks = &mut self.helper.tokens;
-        toks.push(token);
-        // finish generation at 10 tokens
-        if toks.len() - self.helper.prompt_length >= 3 {
-            self.helper.logit_biases[50256] = 100.0
-        } else {
-            self.helper.logit_biases[50256] = -100.0
-        }
-    }
-
-    fn gvm_clone(&mut self) -> Self {
-        MyGvm {
-            helper: self.helper.clone(),
-        }
-    }
 }
 
 #[macro_export]
