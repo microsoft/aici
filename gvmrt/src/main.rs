@@ -1,0 +1,389 @@
+mod moduleinstance;
+mod msgchannel;
+mod semaphore;
+mod shm;
+
+use anyhow::{anyhow, ensure, Result};
+use base64;
+use base64::{engine::general_purpose, Engine as _};
+use clap::Parser;
+use hex;
+use log::{debug, info};
+use rayon::prelude::*;
+use serde::{Deserialize, Serialize};
+use serde_json::{json, Value};
+use sha2::{Digest, Sha256};
+use std::collections::HashMap;
+use std::path::PathBuf;
+use std::sync::{Arc, Mutex, RwLock};
+use std::time::Instant;
+use std::{fs, thread};
+use wasmtime;
+
+use crate::moduleinstance::*;
+use crate::msgchannel::MessageChannel;
+use crate::shm::Shm;
+
+const N_THREADS: usize = 10;
+
+#[derive(Parser)]
+struct Cli {
+    /// Path to .wasm module to install
+    #[arg(short, long)]
+    module: Option<String>,
+
+    /// Path to .json metadata for module to install
+    #[arg(short = 'j', long)]
+    module_meta: Option<String>,
+
+    /// Path to .wasm module to install
+    #[arg(short, long)]
+    server: bool,
+
+    /// Size of JSON comm buffer in megabytes
+    #[arg(long, default_value = "8")]
+    json_size: usize,
+
+    /// Size of binary comm buffer in megabytes
+    #[arg(long, default_value = "16")]
+    bin_size: usize,
+
+    /// Shm/semaphore name prefix
+    #[arg(long, short, default_value = "/gvm0-")]
+    name: String,
+}
+
+impl Cli {
+    pub fn with_prefix(&self, name: &str) -> String {
+        format!("{}{}", self.name, name)
+    }
+}
+
+struct Executor {
+    cache_path: PathBuf,
+    engine: wasmtime::Engine,
+    linker: Arc<wasmtime::Linker<()>>,
+    modules: HashMap<String, wasmtime::Module>,
+    instances: HashMap<Id, Arc<Mutex<ModuleInstance>>>,
+    globals: Arc<RwLock<GlobalInfo>>,
+    bin_shm: Option<Shm>,
+}
+
+fn is_hex_string(s: &str) -> bool {
+    s.chars().all(|c| c.is_digit(16))
+}
+
+#[derive(Serialize, Deserialize)]
+struct GvmStepReq {
+    freed: Vec<Id>,
+    ops: Vec<GvmOp>,
+}
+
+#[derive(Serialize, Deserialize)]
+struct MkModuleReq {
+    binary: String,
+    #[serde(default = "mk_null")]
+    meta: Value,
+}
+
+fn mk_null() -> Value {
+    Value::Null
+}
+
+#[derive(Serialize, Deserialize)]
+struct SpecialTokenIds {
+    pub bos: Option<Token>,
+    pub eos: Option<Token>,
+    pub unk: Option<Token>,
+    pub sep: Option<Token>,
+    pub pad: Option<Token>,
+    pub cls: Option<Token>,
+}
+
+#[derive(Serialize, Deserialize)]
+struct TokensReq {
+    tokens: Vec<String>,
+    special: SpecialTokenIds,
+}
+
+impl Executor {
+    pub fn new(bin_shm: Option<Shm>) -> Result<Self> {
+        let engine = wasmtime::Engine::default();
+
+        let mut linker = wasmtime::Linker::new(&engine);
+        linker.func_wrap("global", "hello", || {
+            println!("> Hello from {:?}", thread::current().id());
+        })?;
+        let linker = Arc::new(linker); // "finalize" the linker
+
+        let globals = GlobalInfo { vocab_size: 0 };
+
+        Ok(Self {
+            cache_path: PathBuf::from("./cache"),
+            engine,
+            linker,
+            modules: HashMap::new(),
+            instances: HashMap::new(),
+            globals: Arc::new(RwLock::new(globals)),
+            bin_shm,
+        })
+    }
+
+    fn create_module(&self, wasm_bytes: Vec<u8>, meta_bytes: Vec<u8>) -> Result<Value> {
+        // make sure meta_bytes is valid JSON
+        let _: Value = serde_json::from_slice(&meta_bytes)?;
+
+        let mut hasher = Sha256::new();
+        hasher.update(&meta_bytes);
+        hasher.update(&wasm_bytes);
+
+        let id = hex::encode(hasher.finalize());
+
+        let filepath = self.cache_path.join(format!("{}.bin", id));
+        let mut time = 0;
+        if !filepath.exists() {
+            let timer = Instant::now();
+
+            fs::create_dir_all(&self.cache_path)?;
+            let compiled = self.engine.precompile_module(&wasm_bytes)?;
+            fs::write(filepath, compiled)?;
+
+            let jsonpath = self.cache_path.join(format!("{}.json", id));
+            fs::write(jsonpath, &meta_bytes)?;
+
+            time = timer.elapsed().as_millis();
+        }
+
+        Ok(json!({
+            "module_id": id,
+            "wasm_size": wasm_bytes.len(),
+            "meta_size": meta_bytes.len(),
+            "time": time
+        }))
+    }
+
+    fn mk_module(&self, req: MkModuleReq) -> Result<Value> {
+        let wasm_bytes = general_purpose::STANDARD.decode(req.binary)?;
+        let meta_bytes = serde_json::to_vec(&req.meta)?;
+        self.create_module(wasm_bytes, meta_bytes)
+    }
+
+    fn mk_instance(&mut self, op: &GvmOp) -> Result<()> {
+        match op {
+            GvmOp::Gen { id, clone_id, .. } => {
+                if let Some(cid) = clone_id {
+                    ensure!(!self.instances.contains_key(id));
+                    let parent = self
+                        .instances
+                        .get(cid)
+                        .ok_or(anyhow!("invalid clone_id {}", cid))?;
+                    self.instances.insert(*id, parent.clone());
+                }
+            }
+            GvmOp::Prompt { id, module_id, .. } => {
+                ensure!(!self.instances.contains_key(id));
+                ensure!(is_hex_string(module_id), "invalid module_id");
+
+                let module = match self.modules.get(module_id) {
+                    None => {
+                        let filepath = self.cache_path.join(format!("{}.bin", module_id));
+                        ensure!(filepath.exists(), "{} not found", module_id);
+                        let module =
+                            unsafe { wasmtime::Module::deserialize_file(&self.engine, filepath)? };
+                        self.modules.insert(String::from(module_id), module.clone());
+                        module
+                    }
+                    Some(v) => v.clone(),
+                };
+
+                let modi = ModuleInstance::new(module, self.linker.clone(), self.globals.clone())?;
+                debug!("new module {} ({})", id, module_id);
+                self.instances.insert(*id, Arc::new(Mutex::new(modi)));
+            }
+        };
+
+        Ok(())
+    }
+
+    fn tokens(&mut self, req: TokensReq) -> Result<Value> {
+        let ntok = req.tokens.len();
+        info!("tokens: {} eos={:#?}", ntok, req.special.eos);
+        let mut g = self.globals.write().unwrap();
+        g.vocab_size = ntok.try_into()?;
+        Ok(json!({}))
+    }
+
+    fn gvm_step(&mut self, req: GvmStepReq) -> Result<Value> {
+        for id in req.freed {
+            debug!("free module {}", id);
+            let _ = self.instances.remove(&id);
+        }
+
+        // first, start instances and link clones
+        for op in req.ops.iter() {
+            self.mk_instance(&op)?
+        }
+
+        let vocab_block_len = { self.globals.read().unwrap().vocab_size * 4 } as usize;
+
+        let binresp_ch = self.bin_shm.as_ref().unwrap();
+        let mut slices = binresp_ch.split(vocab_block_len)?;
+        slices.reverse();
+
+        let numops = req.ops.len();
+
+        let reqs = req
+            .ops
+            .into_iter()
+            .enumerate()
+            .map(|(idx, op)| {
+                let instid = match op {
+                    GvmOp::Gen { id, .. } => id,
+                    GvmOp::Prompt { id, .. } => id,
+                };
+                let modi_rc = self
+                    .instances
+                    .get(&instid)
+                    .ok_or(anyhow!("no such instance: {}", instid))?;
+                let slice = slices.pop().ok_or(anyhow!(
+                    "shm size too small at {}/{}, block={}b",
+                    idx,
+                    numops,
+                    vocab_block_len
+                ))?;
+                let is_first = {
+                    let mut lck = modi_rc.lock();
+                    lck.as_deref_mut().unwrap().add_op(slice, op)
+                };
+                if is_first {
+                    Ok::<_, anyhow::Error>(Some(modi_rc))
+                } else {
+                    Ok(None)
+                }
+            })
+            .collect::<Result<Vec<_>, _>>()?
+            .iter()
+            .filter_map(|x| x.clone())
+            .collect::<Vec<_>>();
+
+        let par_iter = reqs
+            .into_par_iter()
+            .map(|req| req.lock().as_deref_mut().unwrap().exec());
+
+        // first wait for everyone to finish
+        let results = par_iter.collect::<Vec<_>>();
+        // select first error if any
+        results.into_iter().collect::<Result<Vec<_>>>()?;
+
+        Ok(json!({}))
+    }
+}
+struct Dispatcher {
+    cmd_ch: MessageChannel,
+    resp_ch: MessageChannel,
+    executor: Executor,
+}
+
+impl Dispatcher {
+    pub fn new(cli: &Cli) -> Result<Self> {
+        const M: usize = 1024 * 1024;
+
+        let cmd_ch = MessageChannel::new(&cli.with_prefix("cmd"), cli.json_size * M)?;
+        let resp_ch = MessageChannel::new(&cli.with_prefix("resp"), cli.json_size * M)?;
+        let bin_shm = Shm::new(
+            &MessageChannel::shm_name(&cli.with_prefix("bin")),
+            cli.bin_size * M,
+        )?;
+
+        Ok(Self {
+            cmd_ch,
+            resp_ch,
+            executor: Executor::new(Some(bin_shm))?,
+        })
+    }
+
+    fn respond(&self, json: Value) -> Result<()> {
+        self.resp_ch.send(serde_json::to_vec(&json)?.as_slice())?;
+        Ok(())
+    }
+
+    fn dispatch_one(&mut self, json: Value) -> Result<Value> {
+        match json["op"].as_str() {
+            Some("ping") => Ok(json!({ "pong": 1 })),
+            Some("mk_module") => self.executor.mk_module(serde_json::from_value(json)?),
+            Some("tokens") => self.executor.tokens(serde_json::from_value(json)?),
+            Some("step") => self.executor.gvm_step(serde_json::from_value(json)?),
+            Some("stop") => std::process::exit(0),
+            _ => return Err(anyhow!("bad op")),
+        }
+    }
+
+    pub fn dispatch_loop(&mut self) -> ! {
+        loop {
+            let msg = self.cmd_ch.recv().unwrap();
+            match serde_json::from_slice(msg.as_slice()) {
+                Ok(json) => match self.dispatch_one(json) {
+                    Ok(v) => self
+                        .respond(json!({
+                            "type": "ok",
+                            "data": v
+                        }))
+                        .unwrap(),
+                    Err(err) => self
+                        .respond(json!({
+                            "type": "error",
+                            "error": err.to_string()
+                        }))
+                        .unwrap(),
+                },
+                Err(err) => self
+                    .respond(json!({
+                        "type": "json-error",
+                        "error": err.to_string(),
+                    }))
+                    .unwrap(),
+            }
+        }
+    }
+}
+
+fn main() -> () {
+    env_logger::init();
+
+    let cli = Cli::parse();
+
+    if !cli.name.starts_with("/") {
+        eprintln!("--name must start with /");
+        std::process::exit(1);
+    }
+
+    // You can check the value provided by positional arguments, or option arguments
+    if let Some(name) = cli.module.as_deref() {
+        let exec = Executor::new(None).unwrap();
+        let wasm_bytes = fs::read(name).unwrap();
+        let meta_bytes = match cli.module_meta.as_deref() {
+            Some(name) => fs::read(name).unwrap(),
+            None => serde_json::to_vec(&Value::Null).unwrap(),
+        };
+
+        let json = exec.create_module(wasm_bytes, meta_bytes).unwrap();
+        
+        println!("{}", json["module_id"].as_str().unwrap());
+        return ();
+    }
+
+    if !cli.server {
+        println!("missing --server");
+        std::process::exit(1);
+    }
+
+    info!("rayon with {} workers", N_THREADS);
+
+    rayon::ThreadPoolBuilder::new()
+        .num_threads(N_THREADS)
+        .build_global()
+        .unwrap();
+
+    let mut dispatcher = Dispatcher::new(&cli).unwrap();
+    dispatcher.dispatch_loop();
+}
