@@ -1,18 +1,18 @@
-use crate::rx::{StateId, TokenCompiled};
+use crate::rx::{StateOffset, TokRx};
 use crate::{GuidanceVm, GuidanceVmHelper};
 
 pub struct RxGvm {
     pub helper: GuidanceVmHelper,
-    pub compiled: TokenCompiled,
-    pub state: StateId,
+    pub compiled: TokRx,
+    pub state: StateOffset,
 }
 
 impl RxGvm {
-    pub fn from_token_compiled(compiled: TokenCompiled) -> Self {
+    pub fn from_token_compiled(compiled: TokRx) -> Self {
         RxGvm {
             helper: GuidanceVmHelper::new(),
             compiled,
-            state: StateId::START,
+            state: StateOffset::START,
         }
     }
 }
@@ -42,14 +42,4 @@ impl GuidanceVm for RxGvm {
             state: self.state.clone(),
         }
     }
-}
-
-#[macro_export]
-macro_rules! RxGvm_from_bin {
-    () => {
-        $crate::gvm_expose_all!(
-            RxGvm,
-            RxGvm::from_token_compiled($crate::TokenCompiled_from_bin!())
-        );
-    };
 }

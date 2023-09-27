@@ -304,6 +304,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "gvm_abi"
+version = "0.1.0"
+
+[[package]]
 name = "heck"
 version = "0.4.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -602,6 +606,7 @@ name = "regex_llm"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "gvm_abi",
  "regex-automata",
  "serde",
  "serde_json",

@@ -90,7 +90,7 @@ macro_rules! gvm_expose_all {
 }
 
 #[macro_export]
-macro_rules! include_bytes_as {
+macro_rules! include_bytes_aligned {
     ($align_ty:ty, $path:literal) => {{
         #[repr(C)] // guarantee 'bytes' comes after '_align'
         pub struct AlignedAs<Align, Bytes: ?Sized> {
@@ -104,18 +104,6 @@ macro_rules! include_bytes_as {
             bytes: *include_bytes!($path),
         };
 
-        let slice = &ALIGNED.bytes;
-        let ptr = slice.as_ptr() as *const $align_ty;
-        unsafe { std::slice::from_raw_parts(ptr, slice.len() / std::mem::size_of::<$align_ty>()) }
+        &ALIGNED.bytes
     }};
-}
-
-#[macro_export]
-macro_rules! TokenCompiled_from_bin {
-    () => {
-        $crate::rx::TokenCompiled {
-            token_data: $crate::include_bytes_as!(u16, "token_data.bin"),
-            state_data: $crate::include_bytes_as!(u32, "state_data.bin"),
-        }
-    };
 }

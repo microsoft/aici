@@ -1,88 +1,25 @@
-use std::collections::{HashMap, HashSet};
-use std::fmt;
-use std::hash::Hash;
-use std::time::{Duration, Instant};
+mod jsonrx;
+mod timelog;
 
 use anyhow::Result;
+use gvm_abi::rx::{StateOffset, TokRx, TokRxInfo};
 use regex_automata::dfa::dense::DFA;
 use regex_automata::dfa::{dense, Automaton};
 use regex_automata::util::primitives::StateID;
 use regex_automata::util::syntax;
 use regex_automata::Input;
-use serde::Serialize;
-use serde_json::{json, Value};
+use serde_json::json;
+use std::collections::{HashMap, HashSet};
+use std::hash::Hash;
 use tokenizers::Tokenizer;
 
 const NO_TOKEN: TokenId = 0;
-const NO_STATE: u32 = 0;
-const DEAD_STATE: u32 = 1;
-const START_STATE: u32 = 4;
-
-fn json_to_regex_inner(json: &Value) -> String {
-    let strrx = r#""(\\(["\\\/bfnrt]|u[a-fA-F0-9]{4})|[^"\\\x00-\x1F\x7F]+)*""#;
-    match json {
-        Value::Bool(_) => r#"(true|false)"#.into(),
-        Value::Number(_) => r#"\d+"#.into(),
-        Value::String(s) => {
-            if s == "" {
-                strrx.into()
-            } else {
-                format!("\"({})\"", s)
-            }
-        }
-        Value::Array(_) => r#"\[.*\]"#.into(),
-        Value::Object(obj) => {
-            String::from(r#"\{\s*"#)
-                + &obj
-                    .iter()
-                    .map(|(k, v)| format!("\"{0}\"\\s*:\\s*{1}", k, json_to_regex_inner(v)))
-                    .collect::<Vec<_>>()
-                    .join("\\s*,\\s*")
-                + r#"\s*\}"#
-        }
-        Value::Null => r#"null"#.into(),
-    }
-}
-
-fn json_to_regex(json: &Value) -> String {
-    format!("\\s*{}\\s*", json_to_regex_inner(json))
-}
-
-struct TimeLog {
-    start: Instant,
-    prev: Instant,
-    times: Vec<(String, Duration)>,
-}
-
-impl TimeLog {
-    pub fn new() -> Self {
-        let now = Instant::now();
-        TimeLog {
-            start: now,
-            prev: now,
-            times: Vec::new(),
-        }
-    }
-    pub fn save(&mut self, id: &str) {
-        self.times.push((String::from(id), self.prev.elapsed()));
-        self.prev = Instant::now();
-    }
-}
-
-impl fmt::Display for TimeLog {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let mut copy = self.times.clone();
-        copy.push((String::from("final"), self.prev.elapsed()));
-        copy.push((String::from("TOTAL"), self.start.elapsed()));
-        for (l, d) in &copy {
-            write!(f, "{:8.1}ms {}\n", d.as_micros() as f64 / 100.0, l)?
-        }
-        Ok(())
-    }
-}
+const NO_STATE: u32 = StateOffset::NONE.off;
+const DEAD_STATE: u32 = StateOffset::DEAD.off;
+const START_STATE: u32 = StateOffset::START.off;
 
 fn main() -> Result<()> {
-    let mut times = TimeLog::new();
+    let mut times = timelog::TimeLog::new();
 
     let tok = Tokenizer::from_file("tokenizer.json").unwrap();
     times.save("tokenizer");
@@ -111,7 +48,7 @@ fn main() -> Result<()> {
 
     // println!("toks: {:?} {}", &tokens, c as u32);
 
-    let rx = json_to_regex(&json!({
+    let rx = jsonrx::json_to_regex(&json!({
         "name": "",
         "valid": true,
         "type": "foo|bar|baz|something|else",
@@ -236,20 +173,14 @@ fn main() -> Result<()> {
         s.write(&ctx, &mut state_data);
     }
 
-    times.save("serialize");
-
-    let compiled = TokenCompiled {
-        token_data,
-        state_data,
+    let info = TokRxInfo {
+        tok_eos: tok.token_to_id("</s>").unwrap() as u16, // TODO
     };
+    let bytes = TokRx::serialize(&info, &token_data, &state_data);
+    println!("size: {} bytes", bytes.len());
+    std::fs::write("rx.bin", bytes)?;
 
-    let mut logits = ctx.tokens.iter().map(|_| 0.0).collect::<Vec<_>>();
-    compiled.compute_logit_bias(START_STATE, &mut logits);
-    let new_state = compiled.advance(START_STATE, 123);
-    compiled.compute_logit_bias(new_state, &mut logits);
-
-    let s = serde_json::to_string_pretty(&ctx.states.values().collect::<Vec<_>>())?;
-    std::fs::write("automaton.json", s)?;
+    times.save("serialize");
 
     println!("\ntimes:\n{}", times);
 
@@ -262,112 +193,14 @@ fn main() -> Result<()> {
     Ok(())
 }
 
-struct TokenCompiled {
-    token_data: Vec<u16>,
-    state_data: Vec<u32>,
-}
-
-impl TokenCompiled {
-    fn token_in_token_set(self: &TokenCompiled, token: TokenId, set: u32) -> bool {
-        assert!(token != NO_TOKEN);
-        let mut idx = set as usize;
-        loop {
-            let v = self.token_data[idx];
-            if v == token {
-                return true;
-            }
-            if v == NO_TOKEN {
-                return false;
-            }
-            idx = idx + 1;
-        }
-    }
-
-    fn state_bias(state: u32) -> f32 {
-        if state == DEAD_STATE {
-            -100.0
-        } else {
-            0.0
-        }
-    }
-
-    fn compute_logit_bias(self: &TokenCompiled, state_offset: u32, bias: &mut [f32]) {
-        let mut p = state_offset as usize;
-        let default_state = self.state_data[p];
-        p += 1;
-
-        let init_val = Self::state_bias(default_state);
-        for idx in 0..bias.len() {
-            bias[idx] = init_val;
-        }
-
-        loop {
-            let state = self.state_data[p];
-            if state == NO_STATE {
-                break;
-            }
-            p += 1;
-            let toks = self.state_data[p];
-            p += 1;
-            let val = Self::state_bias(state);
-
-            let mut idx = toks as usize;
-            loop {
-                let tok = self.token_data[idx];
-                if tok == NO_TOKEN {
-                    break;
-                }
-                bias[tok as usize] = val;
-                idx = idx + 1;
-            }
-        }
-    }
-
-    fn advance(self: &TokenCompiled, state_offset: u32, token: TokenId) -> u32 {
-        let mut p = state_offset as usize;
-        let default_state = self.state_data[p];
-        p += 1;
-        loop {
-            let state = self.state_data[p];
-            if state == NO_STATE {
-                return default_state;
-            }
-            p += 1;
-            let toks = self.state_data[p];
-            p += 1;
-            if self.token_in_token_set(token, toks) {
-                return state;
-            }
-        }
-    }
-}
-
 #[derive(Debug, Hash, Clone, Copy, PartialEq, Eq)]
 struct TokenSet {
     id: u32,
 }
 
-impl Serialize for TokenSet {
-    fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
-    where
-        S: serde::Serializer,
-    {
-        serializer.serialize_u32(self.id)
-    }
-}
-
 #[derive(Debug, Hash, Clone, Copy, PartialEq, Eq)]
 struct MyState {
     id: usize,
-}
-
-impl Serialize for MyState {
-    fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
-    where
-        S: serde::Serializer,
-    {
-        serializer.serialize_u64(self.id as u64)
-    }
 }
 
 impl MyState {
@@ -387,13 +220,13 @@ struct Ctx {
 
 type TokenId = u16;
 
-#[derive(Debug, Serialize)]
+#[derive(Debug)]
 struct TokenTransition {
     target: MyState,
     tokens: TokenSet,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug)]
 struct TokenState {
     this_state: MyState,
     default_transition: MyState,
