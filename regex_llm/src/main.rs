@@ -2,19 +2,17 @@ mod jsonrx;
 mod timelog;
 
 use anyhow::Result;
-use gvm_abi::rx::{StateOffset, TokRx, TokRxInfo};
-use regex_automata::dfa::dense::DFA;
-use regex_automata::dfa::{dense, Automaton};
-use regex_automata::util::primitives::StateID;
-use regex_automata::util::syntax;
+use regex_automata::dfa::{dense, dense::DFA, Automaton};
+use regex_automata::util::{primitives::StateID, syntax};
 use regex_automata::Input;
 use serde_json::json;
 use std::collections::{HashMap, HashSet};
 use std::hash::Hash;
+
+use gvm_abi::rx::{StateOffset, TokRx, TokRxInfo};
+
 use tokenizers::Tokenizer;
 
-const NO_TOKEN: TokenId = 0;
-const NO_STATE: u32 = StateOffset::NONE.off;
 const DEAD_STATE: u32 = StateOffset::DEAD.off;
 const START_STATE: u32 = StateOffset::START.off;
 
@@ -117,25 +115,28 @@ fn main() -> Result<()> {
 
     times.save("compile");
 
-    let ntransitions: usize = ctx.states.values().map(|v| v.transitions.len()).sum();
-    let ntokens: usize = ctx.token_sets.keys().map(|t| t.len()).sum();
+    {
+        let ntransitions: usize = ctx.states.values().map(|v| v.transitions.len()).sum();
+        let ntokens: usize = ctx.token_sets.keys().map(|t| t.len()).sum();
 
-    println!(
-        "size: {} transitions with {} tokens (over {} sets)",
-        ntransitions,
-        ntokens,
-        ctx.token_sets.len()
-    );
+        println!(
+            "size: {} transitions from {} states with {} tokens (over {} sets)",
+            ntransitions,
+            ctx.states.len(),
+            ntokens,
+            ctx.token_sets.len()
+        );
+    }
 
     let mut token_data = Vec::new();
     token_data.push(0);
 
     for (ts, id) in &ctx.token_sets {
         ctx.token_set_offsets.insert(*id, token_data.len() as u32);
+        token_data.push(ts.len() as u16);
         for t in ts {
             token_data.push(*t);
         }
-        token_data.push(0);
     }
 
     let state0 = MyState::from(state0);
@@ -244,19 +245,18 @@ impl Ctx {
 
 impl TokenState {
     fn size(&self) -> usize {
-        1 + 2 * (self.transitions.len() + 1)
+        2 + 2 * self.transitions.len()
     }
 
     fn write(&self, ctx: &Ctx, target: &mut Vec<u32>) {
         let off = ctx.state_offset(self.this_state) as usize;
         assert!(off == target.len());
         target.push(ctx.state_offset(self.default_transition));
+        target.push(self.transitions.len() as u32);
         for t in &self.transitions {
             target.push(ctx.state_offset(t.target));
             target.push(ctx.token_offset(t.tokens));
         }
-        target.push(0);
-        target.push(0);
         assert!(target.len() - off == self.size());
     }
 }

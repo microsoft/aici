@@ -1,8 +1,17 @@
 use std::{mem::size_of, slice::from_raw_parts};
 
-const NO_TOKEN: TokenId = 0;
-
 pub type TokenId = u16;
+pub type Transition = (StateOffset, TokenSetOffset);
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub struct TokenSetOffset {
+    pub off: u32,
+}
+
+pub struct StateDesc {
+    default_transition: StateOffset,
+    transitions: &'static [Transition],
+}
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub struct StateOffset {
@@ -10,9 +19,8 @@ pub struct StateOffset {
 }
 
 impl StateOffset {
-    pub const NONE: StateOffset = StateOffset { off: 0 };
     pub const DEAD: StateOffset = StateOffset { off: 1 };
-    pub const START: StateOffset = StateOffset { off: 4 };
+    pub const START: StateOffset = StateOffset { off: 3 };
 }
 
 #[repr(C)]
@@ -104,18 +112,26 @@ impl TokRx {
         bytes
     }
 
-    fn token_in_token_set(&self, token: TokenId, set: u32) -> bool {
-        assert!(token != NO_TOKEN);
-        let mut idx = set as usize;
-        loop {
-            let v = self.token_data[idx];
-            if v == token {
-                return true;
-            }
-            if v == NO_TOKEN {
-                return false;
-            }
-            idx = idx + 1;
+    fn token_set(&self, set: TokenSetOffset) -> &'static [TokenId] {
+        let idx = set.off as usize;
+        let sz = self.token_data[idx] as usize;
+        unsafe { from_raw_parts(self.token_data.as_ptr().add(idx + 1), sz) }
+    }
+
+    fn state_desc(&self, state: StateOffset) -> StateDesc {
+        let idx = state.off as usize;
+        let default_transition = StateOffset {
+            off: self.state_data[idx],
+        };
+        let sz = self.state_data[idx + 1] as usize;
+        StateDesc {
+            default_transition,
+            transitions: unsafe {
+                from_raw_parts(
+                    self.state_data.as_ptr().add(idx + 2) as *const Transition,
+                    sz,
+                )
+            },
         }
     }
 
@@ -128,60 +144,31 @@ impl TokRx {
     }
 
     pub fn compute_logit_bias(&self, state_offset: StateOffset, bias: &mut [f32]) {
-        let mut p = state_offset.off as usize;
-        let default_state = StateOffset {
-            off: self.state_data[p],
-        };
-        p += 1;
+        let state = self.state_desc(state_offset);
 
-        let init_val = Self::state_bias(default_state);
+        let init_val = Self::state_bias(state.default_transition);
         for idx in 0..bias.len() {
             bias[idx] = init_val;
         }
 
-        loop {
-            let state = StateOffset {
-                off: self.state_data[p],
-            };
-            if state == StateOffset::NONE {
-                break;
-            }
-            p += 1;
-            let toks = self.state_data[p];
-            p += 1;
-            let val = Self::state_bias(state);
-
-            let mut idx = toks as usize;
-            loop {
-                let tok = self.token_data[idx];
-                if tok == NO_TOKEN {
-                    break;
-                }
-                bias[tok as usize] = val;
-                idx = idx + 1;
+        for (st, ts) in state.transitions {
+            let val = Self::state_bias(*st);
+            let toks = self.token_set(*ts);
+            for tok in toks {
+                bias[*tok as usize] = val;
             }
         }
     }
 
     pub fn advance(&self, state_offset: StateOffset, token: TokenId) -> StateOffset {
-        let mut p = state_offset.off as usize;
-        let default_state = StateOffset {
-            off: self.state_data[p],
-        };
-        p += 1;
-        loop {
-            let state = StateOffset {
-                off: self.state_data[p],
-            };
-            if state == StateOffset::NONE {
-                return default_state;
-            }
-            p += 1;
-            let toks = self.state_data[p];
-            p += 1;
-            if self.token_in_token_set(token, toks) {
-                return state;
+        let state = self.state_desc(state_offset);
+
+        for (st, ts) in state.transitions {
+            if self.token_set(*ts).contains(&token) {
+                return *st;
             }
         }
+
+        state.default_transition
     }
 }
