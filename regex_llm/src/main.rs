@@ -2,11 +2,11 @@ mod jsonrx;
 mod timelog;
 
 use anyhow::Result;
+use indexmap::{IndexMap, IndexSet};
 use regex_automata::dfa::{dense, dense::DFA, Automaton};
 use regex_automata::util::{primitives::StateID, syntax};
 use regex_automata::Input;
 use serde_json::json;
-use std::collections::{HashMap, HashSet};
 use std::hash::Hash;
 
 use gvm_abi::rx::{StateOffset, TokRx, TokRxInfo};
@@ -106,10 +106,10 @@ fn main() -> Result<()> {
     let mut ctx = Ctx {
         tokens,
         dfa,
-        token_sets: HashMap::new(),
-        states: HashMap::new(),
-        token_set_offsets: HashMap::new(),
-        state_offsets: HashMap::new(),
+        token_sets:  IndexMap::new(),
+        states: IndexMap::new(),
+        token_set_offsets: IndexMap::new(),
+        state_offsets: IndexMap::new(),
     };
     compute_next_rec(&mut ctx, state0);
 
@@ -159,7 +159,7 @@ fn main() -> Result<()> {
 
     let mut off = 1;
     for k in &keys {
-        let s = ctx.states.get(&k).unwrap();
+        let s = ctx.states.get(k).unwrap();
         ctx.state_offsets.insert(*k, off);
         off += s.size() as u32;
     }
@@ -170,7 +170,7 @@ fn main() -> Result<()> {
     let mut state_data = Vec::with_capacity(off as usize);
     state_data.push(0);
     for k in &keys {
-        let s = ctx.states.get(&k).unwrap();
+        let s = ctx.states.get(k).unwrap();
         s.write(&ctx, &mut state_data);
     }
 
@@ -213,10 +213,10 @@ impl MyState {
 struct Ctx {
     tokens: Vec<Vec<u8>>,
     dfa: DFA<Vec<u32>>,
-    token_sets: HashMap<Vec<TokenId>, TokenSet>,
-    states: HashMap<MyState, TokenState>,
-    state_offsets: HashMap<MyState, u32>,
-    token_set_offsets: HashMap<TokenSet, u32>,
+    token_sets: IndexMap<Vec<TokenId>, TokenSet>,
+    states: IndexMap<MyState, TokenState>,
+    state_offsets: IndexMap<MyState, u32>,
+    token_set_offsets: IndexMap<TokenSet, u32>,
 }
 
 type TokenId = u16;
@@ -263,7 +263,7 @@ impl TokenState {
 
 fn compute_next_rec(ctx: &mut Ctx, state0: StateID) {
     let state0 = MyState::from(state0);
-    let mut visited = HashSet::new();
+    let mut visited = IndexSet::new();
     let mut pending = Vec::new();
     pending.push(state0);
     while pending.len() > 0 {
@@ -280,7 +280,7 @@ fn compute_next_rec(ctx: &mut Ctx, state0: StateID) {
 }
 
 fn compute_next(ctx: &mut Ctx, state0: StateID) -> TokenState {
-    let mut tbystate = HashMap::<StateID, Vec<TokenId>>::new();
+    let mut tbystate = IndexMap::<StateID, Vec<TokenId>>::new();
     for (idx, bytes) in ctx.tokens.iter().enumerate() {
         let token = idx as TokenId;
         if bytes.len() == 0 {
