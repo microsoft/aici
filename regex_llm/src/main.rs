@@ -53,7 +53,7 @@ fn main() -> Result<()> {
 
     // println!("toks: {:?} {}", &tokens, c as u32);
 
-    let rx = jsonrx::json_to_regex(&json!({
+    let schema = json!({
         "name": "",
         "valid": true,
         "type": "foo|bar|baz|something|else",
@@ -63,7 +63,12 @@ fn main() -> Result<()> {
             "state": "[A-Z][A-Z]"
         },
         "age": 1
-    }));
+    });
+
+    println!("json 'schema': {}", serde_json::to_string_pretty(&schema)?);
+
+    let rx = jsonrx::json_to_regex(&schema);
+
     println!("rx: {}", rx);
 
     let dfa = dense::Builder::new()
