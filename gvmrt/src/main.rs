@@ -15,7 +15,6 @@ use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 use std::collections::HashMap;
 use std::fs;
-use std::io::Write;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex, RwLock};
 use std::time::Instant;
@@ -67,7 +66,7 @@ impl Cli {
 struct Executor {
     cache_path: PathBuf,
     engine: wasmtime::Engine,
-    linker: Arc<wasmtime::Linker<()>>,
+    linker: Arc<wasmtime::Linker<GvmContext>>,
     modules: HashMap<String, wasmtime::Module>,
     instances: HashMap<Id, Arc<Mutex<ModuleInstance>>>,
     globals: Arc<RwLock<GlobalInfo>>,
@@ -114,26 +113,7 @@ struct TokensReq {
 impl Executor {
     pub fn new(bin_shm: Option<Shm>) -> Result<Self> {
         let engine = wasmtime::Engine::default();
-
-        let mut linker = wasmtime::Linker::new(&engine);
-
-        linker.func_wrap(
-            "env",
-            "gvm_host_print",
-            |mut caller: wasmtime::Caller<'_, ()>, ptr: i32, len: i32| {
-                if let Some(wasmtime::Extern::Memory(mem)) = caller.get_export("memory") {
-                    let ptr = ptr as usize;
-                    let len = len as usize;
-                    let m = &mem.data(&caller)[ptr..(ptr + len)];
-                    let mut stdout = std::io::stdout().lock();
-                    stdout.write_all(m).unwrap();
-                } else {
-                    panic!("no memory")
-                }
-            },
-        )?;
-        let linker = Arc::new(linker); // "finalize" the linker
-
+        let linker = setup_linker(&engine)?;
         let globals = GlobalInfo { vocab_size: 0 };
 
         Ok(Self {
@@ -213,6 +193,7 @@ impl Executor {
                         .instances
                         .get(cid)
                         .ok_or(anyhow!("invalid clone_id {}", cid))?;
+                    debug!("clone {} -> ({})", cid, id);
                     self.instances.insert(*id, parent.clone());
                 }
             }
@@ -300,6 +281,7 @@ impl Executor {
         Ok(json!({}))
     }
 }
+
 struct Dispatcher {
     cmd_ch: MessageChannel,
     resp_ch: MessageChannel,

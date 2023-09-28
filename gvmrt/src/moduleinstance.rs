@@ -4,8 +4,44 @@ use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
 use wasmtime;
 
-pub struct WasmCtx {
-    store: wasmtime::Store<()>,
+#[derive(Clone)]
+pub struct GvmContext {
+    id: Id,
+    log: Vec<u8>,
+}
+
+impl GvmContext {
+    pub fn from(id: Id) -> Self {
+        GvmContext {
+            id,
+            log: Vec::new(),
+        }
+    }
+    pub fn fake() -> Self {
+        Self::from(1000000)
+    }
+
+    pub fn append_line(&mut self, s: &str) {
+        self.log.extend_from_slice(s.as_bytes());
+        self.log.push(10)
+    }
+
+    pub fn flush_logs(&mut self, name: &str) {
+        if self.log.len() == 0 {
+            return;
+        }
+
+        let logs = String::from_utf8_lossy(&self.log).to_string();
+        self.log.clear();
+
+        for line in logs.lines() {
+            println!("{}:{}> {}", self.id, name, line)
+        }
+    }
+}
+
+struct WasmCtx {
+    store: wasmtime::Store<GvmContext>,
     instance: wasmtime::Instance,
     memory: wasmtime::Memory,
 }
@@ -15,8 +51,15 @@ pub struct GlobalInfo {
 }
 
 pub struct GvmInfo {
+    id: Id,
     handle: WasmGvm,
     logit_ptr: WasmPtr,
+}
+
+impl GvmInfo {
+    pub fn context(&self) -> GvmContext {
+        GvmContext::from(self.id)
+    }
 }
 
 pub struct ModuleInstance {
@@ -54,6 +97,41 @@ type WasmPtr = u32;
 type WasmGvm = u32;
 
 impl WasmCtx {
+    fn call_func<Params, Results>(&mut self, name: &str, params: Params) -> Result<Results>
+    where
+        Params: wasmtime::WasmParams,
+        Results: wasmtime::WasmResults,
+    {
+        let f = self
+            .instance
+            .get_typed_func::<Params, Results>(&mut self.store, name)?;
+        let r = f.call(&mut self.store, params);
+        let ctx = self.store.data_mut();
+        match &r {
+            Err(e) => ctx.append_line(&format!("WASM Error: {}", e.to_string())),
+            _ => {}
+        }
+        ctx.flush_logs(name);
+        r
+    }
+
+    fn call_func_in<Params, Results>(
+        &mut self,
+        ginfo: &GvmContext,
+        name: &str,
+        params: Params,
+    ) -> Result<Results>
+    where
+        Params: wasmtime::WasmParams,
+        Results: wasmtime::WasmResults,
+    {
+        let mut ginfo = ginfo.clone();
+        ginfo = std::mem::replace(self.store.data_mut(), ginfo);
+        let r = self.call_func(name, params);
+        let _ = std::mem::replace(self.store.data_mut(), ginfo);
+        r
+    }
+
     fn write_mem<T>(&mut self, src: &[T], ptr: WasmPtr) -> Result<()> {
         let len = src.len();
         let numbytes = len * std::mem::size_of::<T>();
@@ -91,12 +169,12 @@ impl WasmCtx {
 impl ModuleInstance {
     pub fn new(
         module: wasmtime::Module,
-        linker: Arc<wasmtime::Linker<()>>,
+        linker: Arc<wasmtime::Linker<GvmContext>>,
         globals: Arc<RwLock<GlobalInfo>>,
     ) -> Result<Self> {
         let engine = module.engine();
 
-        let mut store = wasmtime::Store::new(engine, ());
+        let mut store = wasmtime::Store::new(engine, GvmContext::fake());
         let instance = linker.instantiate(&mut store, &module)?;
         let memory = instance
             .get_memory(&mut store, "memory")
@@ -115,25 +193,13 @@ impl ModuleInstance {
     }
 
     fn run_init(&mut self) -> Result<()> {
-        let wasm = &mut self.wasm;
-
-        let init_fn = wasm
-            .instance
-            .get_typed_func::<(), ()>(&mut wasm.store, "gvm_init")?;
-        init_fn.call(&mut wasm.store, ())?;
-
+        self.wasm.call_func::<(), ()>("gvm_init", ())?;
         Ok(())
     }
 
     pub fn run_main(&mut self) -> Result<()> {
         self.run_init()?;
-
-        let wasm = &mut self.wasm;
-        let main_fn = wasm
-            .instance
-            .get_typed_func::<(i32, i32), i32>(&mut wasm.store, "main")?;
-        main_fn.call(&mut wasm.store, (0, 0))?;
-
+        let _ = self.wasm.call_func::<(i32, i32), i32>("main", (0, 0))?;
         Ok(())
     }
 
@@ -143,30 +209,28 @@ impl ModuleInstance {
     }
 
     fn setup_logit_bias(&mut self, id: Id, handle: WasmGvm) -> Result<u32> {
-        let wasm = &mut self.wasm;
-        let inst = wasm.instance;
-
-        let gvm_get_logit_bias_buffer = inst.get_typed_func::<(WasmGvm, u32), WasmPtr>(
-            &mut wasm.store,
+        let vocab_size = { self.globals.read().unwrap().vocab_size };
+        let logit_ptr = self.wasm.call_func_in::<(WasmGvm, u32), WasmPtr>(
+            &GvmContext::from(id),
             "gvm_get_logit_bias_buffer",
+            (handle, vocab_size),
         )?;
 
-        let vocab_size = { self.globals.read().unwrap().vocab_size };
-
-        let logit_ptr = gvm_get_logit_bias_buffer.call(&mut wasm.store, (handle, vocab_size))?;
-
-        let ginfo = GvmInfo { handle, logit_ptr };
+        let ginfo = GvmInfo {
+            id,
+            handle,
+            logit_ptr,
+        };
         self.gvm_handles.insert(id, ginfo);
 
         Ok(logit_ptr)
     }
 
     pub fn exec(&mut self) -> Result<()> {
-        let inst = self.wasm.instance;
         let ops = std::mem::replace(&mut self.ops, Vec::new());
+        let mut todo = Vec::new();
 
         for opidx in ops {
-            let logit_ptr;
             match &opidx.op {
                 GvmOp::Prompt {
                     id,
@@ -178,62 +242,82 @@ impl ModuleInstance {
 
                     self.run_init()?;
 
-                    let gvm_create =
-                        inst.get_typed_func::<(), WasmGvm>(&mut self.wasm.store, "gvm_create")?;
-                    let handle = gvm_create.call(&mut self.wasm.store, ())?;
-                    logit_ptr = self.setup_logit_bias(*id, handle)?;
+                    let ctx = GvmContext::from(*id);
+                    let handle = self
+                        .wasm
+                        .call_func_in::<(), WasmGvm>(&ctx, "gvm_create", ())?;
+                    let logit_ptr = self.setup_logit_bias(*id, handle)?;
 
-                    let gvm_get_prompt_buffer = inst.get_typed_func::<(WasmGvm, u32), WasmPtr>(
-                        &mut self.wasm.store,
+                    let prompt_ptr = self.wasm.call_func_in::<(WasmGvm, u32), WasmPtr>(
+                        &ctx,
                         "gvm_get_prompt_buffer",
-                    )?;
-                    let prompt_ptr = gvm_get_prompt_buffer.call(
-                        &mut self.wasm.store,
                         (handle, prompt.len().try_into().unwrap()),
                     )?;
 
                     self.wasm.write_mem(&prompt, prompt_ptr)?;
-
-                    let gvm_process_prompt = inst.get_typed_func::<WasmGvm, ()>(
-                        &mut self.wasm.store,
-                        "gvm_process_prompt",
-                    )?;
-                    gvm_process_prompt.call(&mut self.wasm.store, handle)?;
+                    self.wasm
+                        .call_func_in::<WasmGvm, ()>(&ctx, "gvm_process_prompt", handle)?;
+                    self.wasm.read_mem(logit_ptr, opidx.dst_slice)?;
                 }
 
                 GvmOp::Gen { id, gen, clone_id } => {
                     match clone_id {
                         None => {}
                         Some(cid) => {
-                            let gvm_clone = inst.get_typed_func::<WasmGvm, WasmGvm>(
-                                &mut self.wasm.store,
-                                "gvm_clone",
-                            )?;
                             let handles = &mut self.gvm_handles;
                             let parent = handles
                                 .get(&cid)
                                 .ok_or(anyhow!("invalid clone_id {} (inner)", cid))?;
-                            let child = gvm_clone.call(&mut self.wasm.store, parent.handle)?;
+                            let child = self.wasm.call_func_in::<WasmGvm, WasmGvm>(
+                                &GvmContext::from(*id),
+                                "gvm_clone",
+                                parent.handle,
+                            )?;
                             self.setup_logit_bias(*id, child)?;
                         }
                     }
 
-                    let handles = &self.gvm_handles;
-                    let ginfo = handles.get(&id).ok_or(anyhow!("invalid Gen id {}", id))?;
-
-                    logit_ptr = ginfo.logit_ptr;
-
-                    let gvm_append_token = inst.get_typed_func::<(WasmGvm, Token), ()>(
-                        &mut self.wasm.store,
-                        "gvm_append_token",
-                    )?;
-                    gvm_append_token.call(&mut self.wasm.store, (ginfo.handle, *gen))?;
+                    todo.push((*id, *gen, opidx.dst_slice));
                 }
             };
+        }
 
-            self.wasm.read_mem(logit_ptr, opidx.dst_slice)?;
+        // only append tokens after everything has been cloned
+        for (id, gen, dst_slice) in todo {
+            let ginfo = self
+                .gvm_handles
+                .get(&id)
+                .ok_or(anyhow!("invalid Gen id {}", id))?;
+            self.wasm.call_func_in::<(WasmGvm, Token), ()>(
+                &ginfo.context(),
+                "gvm_append_token",
+                (ginfo.handle, gen),
+            )?;
+            self.wasm.read_mem(ginfo.logit_ptr, dst_slice)?;
         }
 
         Ok(())
     }
+}
+
+pub fn setup_linker(engine: &wasmtime::Engine) -> Result<Arc<wasmtime::Linker<GvmContext>>> {
+    let mut linker = wasmtime::Linker::<GvmContext>::new(engine);
+    linker.func_wrap(
+        "env",
+        "gvm_host_print",
+        |mut caller: wasmtime::Caller<'_, GvmContext>, ptr: i32, len: i32| {
+            let mut bytes = if let Some(wasmtime::Extern::Memory(mem)) = caller.get_export("memory")
+            {
+                let ptr = ptr as usize;
+                let len = len as usize;
+                let m = &mem.data(&caller)[ptr..(ptr + len)];
+                Vec::from(m)
+            } else {
+                panic!("no memory")
+            };
+            caller.data_mut().log.append(&mut bytes);
+        },
+    )?;
+    let linker = Arc::new(linker);
+    Ok(linker)
 }

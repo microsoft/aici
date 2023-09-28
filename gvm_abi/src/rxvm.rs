@@ -19,6 +19,7 @@ impl RxGvm {
 
 impl GuidanceVm for RxGvm {
     fn gvm_process_prompt(&mut self) {
+        println!("prompt, {} tokens", self.helper.prompt_length);
         // the regex doesn't care about the prompt
         self.state = StateOffset::START;
         self.compiled
@@ -26,7 +27,7 @@ impl GuidanceVm for RxGvm {
     }
 
     fn gvm_append_token(&mut self, token: u32) {
-        println!("xapp {} {}", token, self.state.off);
+        // println!("xapp {:?} {} {}", self as *const _, token, self.state.off);
         self.state = self.compiled.advance(self.state, token as u16);
 
         // save the token, just in case
@@ -40,10 +41,12 @@ impl GuidanceVm for RxGvm {
 
     // implement by hand for now - we may need some special processing here
     fn gvm_clone(&mut self) -> Self {
-        RxGvm {
+        let r = RxGvm {
             helper: self.helper.clone(),
             compiled: self.compiled.clone(),
             state: self.state.clone(),
-        }
+        };
+        println!("{} -> {}", self.state.off, r.state.off);
+        r
     }
 }
