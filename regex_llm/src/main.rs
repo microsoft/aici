@@ -21,6 +21,12 @@ fn main() -> Result<()> {
     let mut times = timelog::TimeLog::new();
 
     let tok = Tokenizer::from_file("tokenizer.json").unwrap();
+
+    let tok_eos = tok
+        .token_to_id("</s>")
+        .or_else(|| tok.token_to_id("<|endoftext|>"))
+        .unwrap() as u16; // TODO
+
     times.save("tokenizer");
 
     let nvocab = tok.get_vocab_size(true);
@@ -114,6 +120,23 @@ fn main() -> Result<()> {
     };
     compute_next_rec(&mut ctx, state0);
 
+    let dead_id = MyState { id: 0 };
+    let accept_id = MyState { id: 0xFFFF_FFFF };
+    let accept_tx = mk_transition(&mut ctx, &vec![tok_eos], accept_id);
+    let accepting = TokenState {
+        this_state: accept_id,
+        is_accepting: true,
+        default_transition: dead_id,
+        transitions: vec![accept_tx.clone()],
+    };
+
+    for (_, v) in &mut ctx.states {
+        if v.is_accepting {
+            v.transitions.push(accept_tx.clone())
+        }
+    }
+    ctx.states.insert(accept_id, accepting);
+
     times.save("compile");
 
     {
@@ -175,12 +198,7 @@ fn main() -> Result<()> {
         s.write(&ctx, &mut state_data);
     }
 
-    let info = TokRxInfo {
-        tok_eos: tok
-            .token_to_id("</s>")
-            .or_else(|| tok.token_to_id("<|endoftext|>"))
-            .unwrap() as u16, // TODO
-    };
+    let info = TokRxInfo { tok_eos };
     let bytes = TokRx::serialize(&info, &token_data, &state_data);
     println!("size: {} bytes", bytes.len());
     std::fs::write("rx.bin", bytes)?;
@@ -225,7 +243,7 @@ struct Ctx {
 
 type TokenId = u16;
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 struct TokenTransition {
     target: MyState,
     tokens: TokenSet,
@@ -234,6 +252,7 @@ struct TokenTransition {
 #[derive(Debug)]
 struct TokenState {
     this_state: MyState,
+    is_accepting: bool,
     default_transition: MyState,
     transitions: Vec<TokenTransition>,
 }
@@ -309,21 +328,24 @@ fn compute_next(ctx: &mut Ctx, state0: StateID) -> TokenState {
     };
     let transitions = tbystate
         .iter()
-        .map(|(k, v)| {
-            let num = ctx.token_sets.len() as u32;
-            let e = ctx
-                .token_sets
-                .entry(v.clone())
-                .or_insert(TokenSet { id: num });
-            TokenTransition {
-                target: MyState::from(*k),
-                tokens: e.clone(),
-            }
-        })
+        .map(|(k, v)| mk_transition(ctx, v, MyState::from(*k)))
         .collect::<Vec<_>>();
     TokenState {
         this_state: MyState::from(state0),
+        is_accepting: ctx.dfa.is_match_state(state0),
         default_transition,
         transitions,
+    }
+}
+
+fn mk_transition(ctx: &mut Ctx, toks: &Vec<u16>, target: MyState) -> TokenTransition {
+    let num = ctx.token_sets.len() as u32;
+    let e = ctx
+        .token_sets
+        .entry(toks.clone())
+        .or_insert(TokenSet { id: num });
+    TokenTransition {
+        target: target,
+        tokens: e.clone(),
     }
 }
