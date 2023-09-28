@@ -14,18 +14,18 @@ fn json_to_regex_inner(json: &Value) -> String {
         }
         Value::Array(_) => r#"\[.*\]"#.into(),
         Value::Object(obj) => {
-            String::from(r#"\{\s*"#)
+            String::from(r#"\{\n?"#)
                 + &obj
                     .iter()
-                    .map(|(k, v)| format!("\"{0}\"\\s*:\\s*{1}", k, json_to_regex_inner(v)))
+                    .map(|(k, v)| format!("\"{0}\": {1}", k, json_to_regex_inner(v)))
                     .collect::<Vec<_>>()
-                    .join("\\s*,\\s*")
-                + r#"\s*\}"#
+                    .join(",\\n")
+                + r#"\n?\}"#
         }
         Value::Null => r#"null"#.into(),
     }
 }
 
 pub fn json_to_regex(json: &Value) -> String {
-    format!("\\s*{}", json_to_regex_inner(json))
+    format!("{}", json_to_regex_inner(json))
 }

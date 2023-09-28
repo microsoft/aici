@@ -30,11 +30,11 @@ fn main() -> Result<()> {
     let repl = "\u{FFFD}";
 
     for idx in 0..nvocab {
-        let arr = vec![idx as u32];
         if 3 <= idx && idx <= 258 {
             tokens.push(Vec::from(vec![(idx - 3) as u8]));
         } else {
-            let str = tok.decode(&arr, false).unwrap();
+            let arr = vec![68, idx as u32];
+            let str = &tok.decode(&arr, false).unwrap()[1..];
             if str.contains(repl) {
                 println!("{} {}", idx, str); // TODO
             }
@@ -176,7 +176,10 @@ fn main() -> Result<()> {
     }
 
     let info = TokRxInfo {
-        tok_eos: tok.token_to_id("</s>").unwrap() as u16, // TODO
+        tok_eos: tok
+            .token_to_id("</s>")
+            .or_else(|| tok.token_to_id("<|endoftext|>"))
+            .unwrap() as u16, // TODO
     };
     let bytes = TokRx::serialize(&info, &token_data, &state_data);
     println!("size: {} bytes", bytes.len());

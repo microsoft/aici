@@ -8,7 +8,7 @@ use base64;
 use base64::{engine::general_purpose, Engine as _};
 use clap::Parser;
 use hex;
-use log::{debug, info};
+use log::{debug, info, warn};
 use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
@@ -229,7 +229,7 @@ impl Executor {
 
     fn tokens(&mut self, req: TokensReq) -> Result<Value> {
         let ntok = req.tokens.len();
-        info!("tokens: {} eos={:#?}", ntok, req.special.eos);
+        info!("tokens: {} eos={:?}", ntok, req.special.eos);
         let mut g = self.globals.write().unwrap();
         g.vocab_size = ntok.try_into()?;
         Ok(json!({}))
@@ -351,12 +351,14 @@ impl Dispatcher {
                             "data": v
                         }))
                         .unwrap(),
-                    Err(err) => self
-                        .respond(json!({
+                    Err(err) => {
+                        warn!("dispatch error: {}", err.to_string());
+                        self.respond(json!({
                             "type": "error",
                             "error": err.to_string()
                         }))
-                        .unwrap(),
+                        .unwrap()
+                    }
                 },
                 Err(err) => self
                     .respond(json!({
