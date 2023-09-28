@@ -30,10 +30,14 @@ float *gvm_get_logit_bias_buffer(Gvm *gvm, uint32_t size);
 // This called once, when the GVM should process the prompt in its buffer.
 // It should set the values in logit bias buffer.
 void gvm_process_prompt(Gvm *gvm);
+// The logical type (if WASM would allow such things) of this function is:
+// float[vocab_size] gvm_process_prompt(Gvm *gvm, token_t[] prompt);
 
 // This is called after a token is sampled.
 // It should set the values in logit bias buffer.
 void gvm_append_token(Gvm *gvm, token_t tok);
+// The logical type (if WASM would allow such things) of this function is:
+// float[vocab_size] gvm_append_token(Gvm *gvm, token_t tok);
 
 // This is called for GVMs that no longer needed (eg. because generation completed,
 // or beam-search branch was cut).
