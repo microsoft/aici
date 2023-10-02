@@ -9,3 +9,4 @@ target
 tokenizer.json
 regex_llm/rx.bin
 .hypothesis
+regex_llm/trie

@@ -9,5 +9,36 @@
         "gvmprog/Cargo.toml",
         "gvm_abi/Cargo.toml",
         "gvm_use_rx/Cargo.toml"
-    ]
+    ],
+    "files.associations": {
+        "*.rasi": "css",
+        "*.bbmodel": "json",
+        "*.sublime-snippet": "xml",
+        "*.hbs": "html",
+        "*.ejs": "html",
+        "lesskey": "lesskey",
+        "*.Xresources": "xdefaults",
+        "i3/config": "i3",
+        "i3/*.conf": "i3",
+        "polybar/config": "ini",
+        "polybar/*.conf": "ini",
+        "*.inc": "arm",
+        "Kconfig": "kconfig",
+        "__hash_table": "cpp",
+        "__split_buffer": "cpp",
+        "__tree": "cpp",
+        "array": "cpp",
+        "bitset": "cpp",
+        "deque": "cpp",
+        "initializer_list": "cpp",
+        "map": "cpp",
+        "queue": "cpp",
+        "span": "cpp",
+        "stack": "cpp",
+        "string": "cpp",
+        "string_view": "cpp",
+        "unordered_map": "cpp",
+        "vector": "cpp",
+        "format": "cpp"
+    }
 }

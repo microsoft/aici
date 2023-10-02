@@ -1,6 +1,6 @@
 use std::{mem::size_of, slice::from_raw_parts};
 
-pub type TokenId = u16;
+pub type TokenId = u32;
 pub type Transition = (StateOffset, TokenSetOffset);
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -61,7 +61,7 @@ impl TokRxHeader {
 #[derive(Clone)]
 pub struct TokRx {
     pub info: &'static TokRxInfo,
-    pub token_data: &'static [u16],
+    pub token_data: &'static [TokenId],
     pub state_data: &'static [u32],
 }
 
@@ -80,8 +80,8 @@ impl TokRx {
                 bytes
                     .as_ptr()
                     .add((TokRxHeader::SIZE + hd.state_bytes) as usize)
-                    as *const u16,
-                hd.token_bytes as usize / size_of::<u16>(),
+                    as *const TokenId,
+                hd.token_bytes as usize / size_of::<TokenId>(),
             );
             TokRx {
                 info: &hd.info,

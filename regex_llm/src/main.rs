@@ -10,7 +10,7 @@ use serde_json::json;
 use std::collections::{HashMap, HashSet};
 use std::hash::Hash;
 
-use gvm_abi::rx::{StateOffset, TokRx, TokRxInfo};
+use gvm_abi::rx::{StateOffset, TokRx, TokRxInfo, TokenId};
 
 use tokenizers::Tokenizer;
 
@@ -25,7 +25,7 @@ fn main() -> Result<()> {
     let tok_eos = tok
         .token_to_id("</s>")
         .or_else(|| tok.token_to_id("<|endoftext|>"))
-        .unwrap() as u16; // TODO
+        .unwrap() as TokenId; // TODO
 
     times.save("tokenizer");
 
@@ -162,7 +162,7 @@ fn main() -> Result<()> {
 
     for (ts, id) in &ctx.token_sets {
         ctx.token_set_offsets.insert(*id, token_data.len() as u32);
-        token_data.push(ts.len() as u16);
+        token_data.push(ts.len() as TokenId);
         for t in ts {
             token_data.push(*t);
         }
@@ -245,8 +245,6 @@ struct Ctx {
     state_offsets: HashMap<MyState, u32>,
     token_set_offsets: HashMap<TokenSet, u32>,
 }
-
-type TokenId = u16;
 
 #[derive(Debug, Clone)]
 struct TokenTransition {
@@ -343,7 +341,7 @@ fn compute_next(ctx: &mut Ctx, state0: StateID) -> TokenState {
     }
 }
 
-fn mk_transition(ctx: &mut Ctx, toks: &Vec<u16>, target: MyState) -> TokenTransition {
+fn mk_transition(ctx: &mut Ctx, toks: &Vec<TokenId>, target: MyState) -> TokenTransition {
     let num = ctx.token_sets.len() as u32;
     let e = ctx
         .token_sets

@@ -3,6 +3,7 @@
 //
 
 // Tokens are assumed to be at most 32 bit.
+// Typical models range 30k (LLAMA) to 100k (GPT4) tokens.
 typedef uint32_t token_t;
 
 // Called first, after instantiating WASM module.

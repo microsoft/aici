@@ -28,7 +28,7 @@ impl GuidanceVm for RxGvm {
 
     fn gvm_append_token(&mut self, token: u32) {
         // println!("xapp {:?} {} {}", self as *const _, token, self.state.off);
-        self.state = self.compiled.advance(self.state, token as u16);
+        self.state = self.compiled.advance(self.state, token);
 
         // save the token, just in case
         let toks = &mut self.helper.tokens;
