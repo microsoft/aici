@@ -66,6 +66,7 @@ fn main() -> Result<()> {
         times.save("build_trie");
         let ch = trie.child_at_bytes(root, &"the".as_bytes()).unwrap();
         println!("ch: {:?}", trie.token_id(ch));
+        println!("sz: {} bytes", 4 * trie.data.len());
         times.print();
         return Ok(());
     }

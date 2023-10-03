@@ -4,7 +4,7 @@
 use crate::rx::TokenId;
 
 pub struct TokTrie {
-    data: Vec<u32>,
+    pub data: Vec<u32>,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -68,6 +68,9 @@ impl TokTrie {
 
     pub fn child_at_byte(&self, n: TrieNode, byte: u8) -> Option<TrieNode> {
         let num_ch = self.num_children(n);
+        if num_ch == 0x100 {
+            return Some(self.child_at_idx(n, byte as usize));
+        }
         for idx in 0..num_ch {
             // let byte2 = self.child_byte(self.child_at_idx(n, idx));
             let byte2 = (self.at(n, 1 + idx) & 0xff) as u8;
@@ -145,15 +148,32 @@ impl TrieHash {
             assert!(self.token_id == NO_TOKEN);
             self.token_id = token_id;
         } else {
-            for idx in 0..self.children.len() {
-                if self.children[idx].byte == word[0] {
-                    self.children[idx].insert(&word[1..], token_id);
+            if self.children.len() == 0x100 {
+                // assert!(self.children[word[0] as usize].byte == word[0]);
+                self.children[word[0] as usize].insert(&word[1..], token_id);
+                return;
+            }
+
+            for ch in &mut self.children {
+                if ch.byte == word[0] {
+                    ch.insert(&word[1..], token_id);
                     return;
                 }
             }
+
             let mut ch = TrieHash::new(word[0]);
             ch.insert(&word[1..], token_id);
             self.children.push(ch);
+
+            // if it's getting dense, make it full
+            if self.children.len() > 50 {
+                let mut v2 = (0..=255).map(TrieHash::new).collect::<Vec<_>>();
+                for ch in self.children.drain(..) {
+                    let idx = ch.byte as usize;
+                    v2[idx] = ch;
+                }
+                self.children = v2;
+            }
         }
     }
     fn serialize_val(&self, len: usize) -> u32 {
