@@ -3,6 +3,7 @@ mod timelog;
 
 use anyhow::{Ok, Result};
 use clap::Parser;
+use gvm_abi::recognizer::{compute_bias, Uppercase, Recognizer};
 use gvm_abi::toktree::TokTrie;
 use gvm_tokenizers::tokenizers;
 use indexmap::IndexMap;
@@ -67,7 +68,20 @@ fn main() -> Result<()> {
         let ch = trie.child_at_bytes(root, &"the".as_bytes()).unwrap();
         println!("ch: {:?}", trie.token_id(ch));
         println!("sz: {} bytes", 4 * trie.data.len());
+        let mut logits = vec![0.0; tokens.len()];
+        let rec = Uppercase::new().append(b"NE");
+        for _ in 0..10 {
+            compute_bias(&trie, &rec, &mut logits);
+        }
+        times.save("compute_bias");
         times.print();
+        println!("res: {}", logits.iter().filter(|x| **x > -50.0).count());
+
+        // for (idx, l) in logits.iter().enumerate() {
+        //     if *l > -50.0 {
+        //         println!("{} {}", idx, String::from_utf8_lossy(&tokens[idx]));
+        //     }
+        // }
         return Ok(());
     }
 

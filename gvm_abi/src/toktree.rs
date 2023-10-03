@@ -166,7 +166,9 @@ impl TrieHash {
             self.children.push(ch);
 
             // if it's getting dense, make it full
-            if self.children.len() > 50 {
+            // for cl100k threshold 60->15 nodes, 50->22, 40->45 30->94
+            // for llama (32k) 50->5, 40->15
+            if self.children.len() > 40 {
                 let mut v2 = (0..=255).map(TrieHash::new).collect::<Vec<_>>();
                 for ch in self.children.drain(..) {
                     let idx = ch.byte as usize;
