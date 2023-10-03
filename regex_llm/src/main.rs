@@ -69,8 +69,8 @@ fn main() -> Result<()> {
         println!("ch: {:?}", trie.token_id(ch));
         println!("sz: {} bytes", 4 * trie.data.len());
         let mut logits = vec![0.0; tokens.len()];
-        let rec = Uppercase::new().append('N' as u8);
-        for _ in 0..10 {
+        let rec = Uppercase::new().append('N' as u8).append('E' as u8);
+        for _ in 0..100 {
             compute_bias(&trie, &rec, &mut logits);
         }
         times.save("compute_bias");

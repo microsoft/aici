@@ -2,7 +2,7 @@ use crate::toktree::{TokTrie, TrieNode};
 
 pub trait Recognizer {
     fn append(&self, byte: u8) -> Self;
-    fn allowed<'a>(&self, mask: &'a mut [u8]) -> AllowedResult<'a>;
+    fn allowed(&self, c: u8) -> bool;
 }
 
 fn append_bias(
@@ -12,17 +12,7 @@ fn append_bias(
     maskbuf: &mut [u8],
     n: TrieNode,
 ) {
-    let sel = trie.children(n);
-    let sel: Vec<TrieNode> = match rec.allowed(maskbuf) {
-        AllowedResult::All => sel.collect(),
-        AllowedResult::None => return,
-        AllowedResult::Mask(mask) => sel
-            .filter(|c| mask[trie.child_byte(*c) as usize] != 0)
-            .collect(),
-        AllowedResult::List(lst) => sel.filter(|c| lst.contains(&trie.child_byte(*c))).collect(),
-    };
-
-    for ch in sel {
+    for ch in trie.masked_children(n, rec) {
         if let Some(tok) = trie.token_id(ch) {
             logits[tok as usize] = 0.0;
         }
@@ -47,40 +37,19 @@ impl Uppercase {
     }
 }
 
-pub enum AllowedResult<'a> {
-    All,
-    None,
-    Mask(&'a [u8]),
-    List(&'a [u8]),
-}
-
 impl Recognizer for Uppercase {
     fn append(&self, _byte: u8) -> Self {
         Uppercase { len: self.len + 1 }
     }
 
-    fn allowed<'a>(&self, _mask: &'a mut [u8]) -> AllowedResult<'a> {
-        AllowedResult::All
-
+    fn allowed(&self, byte: u8) -> bool {
+        byte != 0xff
+        // let ch = _byte as char;
         // if self.len < 2 {
-        //     AllowedResult::List(b"ABCDEFGHIJKLMNOPQRSTUVWXYZ")
+        //     'A' <= ch && ch <= 'Z'
         // } else {
-        //     AllowedResult::List(b"abcdefghijklmnopqrstuvwxyz")
+        //     'a' <= ch && ch <= 'z'
         // }
-
-        // let mut idx = 0;
-        // if self.len < 2 {
-        //     for ch in 'A'..'Z' {
-        //         mask[idx] = ch as u8;
-        //         idx += 1;
-        //     }
-        // } else {
-        //     for ch in 'a'..'z' {
-        //         mask[idx] = ch as u8;
-        //         idx += 1;
-        //     }
-        // }
-        // AllowedResult::List(&mask[0..idx])
     }
 }
 

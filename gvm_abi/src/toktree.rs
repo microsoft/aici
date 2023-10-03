@@ -1,7 +1,7 @@
 // use 8:24 encoding - num_ch:tok_id (ch_byte:ch_off)* - 8 bytes per tree node
 // special case num_ch=0xff -> num_ch=0x100
 
-use crate::rx::TokenId;
+use crate::{recognizer::Recognizer, rx::TokenId};
 
 pub struct TokTrie {
     pub data: Vec<u32>,
@@ -98,6 +98,46 @@ impl TokTrie {
             idx: 0,
             max_idx: self.num_children(n),
         }
+    }
+
+    pub fn masked_children<'a, T: Recognizer>(
+        &'a self,
+        n: TrieNode,
+        rec: &'a T,
+    ) -> MaskedChildrenIterator<'a, T> {
+        let len = self.data.len();
+        let index = (n.bits >> 8) as usize + 1;
+        let max_index = index + self.num_children(n);
+        assert!(max_index <= len);
+        MaskedChildrenIterator {
+            recognizer: rec,
+            ptr: self.data.as_ptr(),
+            index,
+            max_index,
+        }
+    }
+}
+
+pub struct MaskedChildrenIterator<'a, T: Recognizer> {
+    recognizer: &'a T,
+    ptr: *const u32,
+    index: usize,
+    max_index: usize,
+}
+
+impl<'a, T: Recognizer> Iterator for MaskedChildrenIterator<'a, T> {
+    type Item = TrieNode;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        while self.index < self.max_index {
+            let bits = unsafe { *self.ptr.add(self.index) };
+            self.index += 1;
+            let byte = (bits & 0xff) as u8;
+            if self.recognizer.allowed(byte) {
+                return Some(TrieNode { bits });
+            }
+        }
+        None
     }
 }
 
