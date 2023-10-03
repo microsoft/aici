@@ -64,8 +64,8 @@ fn main() -> Result<()> {
         let trie = TokTrie::from(&tokens);
         let root = trie.root();
         times.save("build_trie");
-        let ch = trie.child_at_bytes(root, &"the".as_bytes());
-        println!("ch: {:?}", ch);
+        let ch = trie.child_at_bytes(root, &"the".as_bytes()).unwrap();
+        println!("ch: {:?}", trie.token_id(ch));
         times.print();
         return Ok(());
     }

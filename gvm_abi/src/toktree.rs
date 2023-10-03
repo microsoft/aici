@@ -128,16 +128,22 @@ pub struct TokenizerBin {
     tree_bytes: u32,
 }
 
+enum TrieChildren {
+    None,
+    One { k: u8, v: Box<TrieHash> },
+    Many { hash: HashMap<u8, TrieHash> },
+}
+
 struct TrieHash {
     token_id: u32,
-    children: HashMap<u8, TrieHash>,
+    children: TrieChildren,
 }
 
 impl TrieHash {
     fn new() -> TrieHash {
         TrieHash {
             token_id: NO_TOKEN,
-            children: HashMap::new(),
+            children: TrieChildren::None,
         }
     }
     fn insert(&mut self, word: &[u8], token_id: u32) {
@@ -146,29 +152,76 @@ impl TrieHash {
             self.token_id = token_id;
         } else {
             let ch = word[0];
-            let child = self.children.entry(ch).or_insert_with(Self::new);
-            child.insert(&word[1..], token_id);
+            let rest = &word[1..];
+            let children = std::mem::replace(&mut self.children, TrieChildren::None);
+            match children {
+                TrieChildren::Many { mut hash } => {
+                    let child = hash.entry(ch).or_insert_with(Self::new);
+                    child.insert(rest, token_id);
+                    self.children = TrieChildren::Many { hash };
+                }
+                TrieChildren::One { k, mut v } => {
+                    if k == ch {
+                        v.insert(rest, token_id);
+                        self.children = TrieChildren::One { k, v };
+                    } else {
+                        let mut child = Self::new();
+                        child.insert(rest, token_id);
+                        let mut hash = HashMap::new();
+                        hash.insert(k, *v);
+                        hash.insert(ch, child);
+                        self.children = TrieChildren::Many { hash };
+                    }
+                }
+                TrieChildren::None => {
+                    let mut child = Self::new();
+                    child.insert(rest, token_id);
+                    self.children = TrieChildren::One {
+                        k: ch,
+                        v: Box::new(child),
+                    };
+                }
+            }
         }
     }
+    fn serialize_val(&self, len: usize) -> u32 {
+        (self.token_id << 8) | len as u32
+    }
+
     fn serialize(&self, data: &mut Vec<u32>) {
-        let mut child_ids = self.children.keys().collect::<Vec<_>>();
-        child_ids.sort();
-        let mut len = child_ids.len();
-        if len == 0x100 {
-            len = 0xff;
-        } else {
-            assert!(len < 0xf0);
+        fn serialize_ch(off: usize, ch: u8) -> u32 {
+            let ptr = off as u32;
+            assert!(ptr as usize == off);
+            assert!((ptr << 8) >> 8 == ptr);
+            (ptr << 8) | (ch as u32)
         }
         let idx = data.len();
-        data.push((self.token_id << 8) | len as u32);
-        data.resize(idx + 1 + child_ids.len(), 0);
-        for ch_idx in 0..child_ids.len() {
-            let ptr = data.len() as u32;
-            let ch_byte = child_ids[ch_idx];
-            assert!((ptr << 8) >> 8 == ptr);
-            data[idx + 1 + ch_idx] = (ptr << 8) | (*ch_byte as u32);
-            self.children.get(ch_byte).unwrap().serialize(data);
-        }
+        match &self.children {
+            TrieChildren::None => {
+                data.push(self.serialize_val(0));
+            }
+            TrieChildren::One { k, v } => {
+                data.push(self.serialize_val(1));
+                data.push(serialize_ch(idx + 2, *k));
+                v.serialize(data);
+            }
+            TrieChildren::Many { hash } => {
+                let mut child_ids = hash.keys().map(|v| *v).collect::<Vec<_>>();
+                child_ids.sort();
+                let mut len = child_ids.len();
+                if len == 0x100 {
+                    len = 0xff;
+                } else {
+                    assert!(len < 0xf0);
+                }
+                data.push(self.serialize_val(len));
+                data.resize(idx + 1 + child_ids.len(), 0);
+                for (ch_idx, ch_byte) in child_ids.iter().enumerate() {
+                    data[idx + 1 + ch_idx] = serialize_ch(data.len(), *ch_byte);
+                    hash.get(ch_byte).unwrap().serialize(data);
+                }
+            }
+        };
     }
 }
 
