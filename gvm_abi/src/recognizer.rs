@@ -1,57 +1,35 @@
 use crate::toktree::{TokTrie, TrieNode};
 
 pub trait Recognizer {
-    fn append(&self, bytes: &[u8]) -> Self
-    where
-        Self: Sized,
-    {
-        let mut rec = self.append1(bytes[0]);
-        for b in &bytes[1..] {
-            rec = rec.append1(*b);
-        }
-        rec
-    }
-    fn append1(&self, byte: u8) -> Self;
-    fn allowed(&self) -> Vec<Vec<u8>>;
+    fn append(&self, byte: u8) -> Self;
+    fn allowed(&self, mask: &mut [u8]);
 }
 
 fn append_bias(
     trie: &TokTrie,
     rec: &impl Recognizer,
     logits: &mut [f32],
-    mut n: Option<TrieNode>,
-    v: &Vec<u8>,
+    mask: &mut [u8],
+    n: TrieNode,
 ) {
-    for b in v {
-        match n {
-            Some(n2) => {
-                n = trie.child_at_byte(n2, *b);
-                match n {
-                    Some(n3) => {
-                        if let Some(tok) = trie.token_id(n3) {
-                            logits[tok as usize] = 0.0;
-                        }
-                    }
-                    None => break,
+    rec.allowed(mask);
+    for idx in 0..=255 {
+        if mask[idx] != 0 {
+            if let Some(ch) = trie.child_at_byte(n, idx as u8) {
+                if let Some(tok) = trie.token_id(ch) {
+                    logits[tok as usize] = 0.0;
                 }
+                append_bias(trie, &rec.append(idx as u8), logits, mask, ch)
             }
-            None => break,
-        }
-    }
-
-    if n.is_some() {
-        let rec = rec.append(v);
-        for v in rec.allowed() {
-            append_bias(trie, &rec, logits, n, &v);
         }
     }
 }
 
 pub fn compute_bias(trie: &TokTrie, rec: &impl Recognizer, logits: &mut [f32]) {
     logits.iter_mut().for_each(|x| *x = -100.0);
-    for v in rec.allowed() {
-        append_bias(trie, rec, logits, Some(trie.root()), &v);
-    }
+    let mut mask = Vec::new();
+    mask.resize(256, 0);
+    append_bias(trie, rec, logits, &mut mask, trie.root());
 }
 
 pub struct Uppercase {
@@ -61,19 +39,26 @@ pub struct Uppercase {
 impl Uppercase {
     pub fn new() -> Self {
         Uppercase { len: 0 }
-    }   
+    }
 }
 
 impl Recognizer for Uppercase {
-    fn append1(&self, _byte: u8) -> Self {
+    fn append(&self, _byte: u8) -> Self {
         Uppercase { len: self.len + 1 }
     }
 
-    fn allowed(&self) -> Vec<Vec<u8>> {
-        if self.len > 1 {
-            ('a'..'z').map(|c| vec![c as u8]).collect()
+    fn allowed(&self, mask: &mut [u8]) {
+        for idx in 0..255 {
+            mask[idx] = 0;
+        }
+        if self.len < 2 {
+            for ch in 'A'..'Z' {
+                mask[ch as usize] = 1;
+            }
         } else {
-            ('A'..'Z').map(|c| vec![c as u8]).collect()
+            for ch in 'a'..'z' {
+                mask[ch as usize] = 1;
+            }
         }
     }
 }
