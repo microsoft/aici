@@ -1,7 +1,7 @@
 // use 8:24 encoding - num_ch:tok_id (ch_byte:ch_off)* - 8 bytes per tree node
 // special case num_ch=0xff -> num_ch=0x100
 
-use std::collections::HashMap;
+use std::collections::BTreeMap;
 
 use crate::rx::TokenId;
 
@@ -131,7 +131,7 @@ pub struct TokenizerBin {
 enum TrieChildren {
     None,
     One { k: u8, v: Box<TrieHash> },
-    Many { hash: HashMap<u8, TrieHash> },
+    Many { hash: BTreeMap<u8, TrieHash> },
 }
 
 struct TrieHash {
@@ -167,7 +167,7 @@ impl TrieHash {
                     } else {
                         let mut child = Self::new();
                         child.insert(rest, token_id);
-                        let mut hash = HashMap::new();
+                        let mut hash = BTreeMap::new();
                         hash.insert(k, *v);
                         hash.insert(ch, child);
                         self.children = TrieChildren::Many { hash };
@@ -206,8 +206,8 @@ impl TrieHash {
                 v.serialize(data);
             }
             TrieChildren::Many { hash } => {
-                let mut child_ids = hash.keys().map(|v| *v).collect::<Vec<_>>();
-                child_ids.sort();
+                let child_ids = hash.keys().map(|v| *v).collect::<Vec<_>>();
+                // child_ids.sort();
                 let mut len = child_ids.len();
                 if len == 0x100 {
                     len = 0xff;
