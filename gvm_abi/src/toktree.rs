@@ -1,8 +1,6 @@
 // use 8:24 encoding - num_ch:tok_id (ch_byte:ch_off)* - 8 bytes per tree node
 // special case num_ch=0xff -> num_ch=0x100
 
-use std::collections::BTreeMap;
-
 use crate::rx::TokenId;
 
 pub struct TokTrie {
@@ -19,7 +17,7 @@ const NO_TOKEN: u32 = 0xffffff;
 
 impl TokTrie {
     pub fn from(words: &Vec<Vec<u8>>) -> TokTrie {
-        let mut trie = TrieHash::new();
+        let mut trie = TrieHash::new(0xff);
         for (idx, word) in words.iter().enumerate() {
             if word.len() > 0 {
                 trie.insert(word, idx as u32)
@@ -128,22 +126,18 @@ pub struct TokenizerBin {
     tree_bytes: u32,
 }
 
-enum TrieChildren {
-    None,
-    One { k: u8, v: Box<TrieHash> },
-    Many { hash: BTreeMap<u8, TrieHash> },
-}
-
 struct TrieHash {
     token_id: u32,
-    children: TrieChildren,
+    byte: u8,
+    children: Vec<TrieHash>,
 }
 
 impl TrieHash {
-    fn new() -> TrieHash {
+    fn new(byte: u8) -> TrieHash {
         TrieHash {
             token_id: NO_TOKEN,
-            children: TrieChildren::None,
+            byte,
+            children: Vec::new(),
         }
     }
     fn insert(&mut self, word: &[u8], token_id: u32) {
@@ -151,44 +145,22 @@ impl TrieHash {
             assert!(self.token_id == NO_TOKEN);
             self.token_id = token_id;
         } else {
-            let ch = word[0];
-            let rest = &word[1..];
-            let children = std::mem::replace(&mut self.children, TrieChildren::None);
-            match children {
-                TrieChildren::Many { mut hash } => {
-                    let child = hash.entry(ch).or_insert_with(Self::new);
-                    child.insert(rest, token_id);
-                    self.children = TrieChildren::Many { hash };
-                }
-                TrieChildren::One { k, mut v } => {
-                    if k == ch {
-                        v.insert(rest, token_id);
-                        self.children = TrieChildren::One { k, v };
-                    } else {
-                        let mut child = Self::new();
-                        child.insert(rest, token_id);
-                        let mut hash = BTreeMap::new();
-                        hash.insert(k, *v);
-                        hash.insert(ch, child);
-                        self.children = TrieChildren::Many { hash };
-                    }
-                }
-                TrieChildren::None => {
-                    let mut child = Self::new();
-                    child.insert(rest, token_id);
-                    self.children = TrieChildren::One {
-                        k: ch,
-                        v: Box::new(child),
-                    };
+            for idx in 0..self.children.len() {
+                if self.children[idx].byte == word[0] {
+                    self.children[idx].insert(&word[1..], token_id);
+                    return;
                 }
             }
+            let mut ch = TrieHash::new(word[0]);
+            ch.insert(&word[1..], token_id);
+            self.children.push(ch);
         }
     }
     fn serialize_val(&self, len: usize) -> u32 {
         (self.token_id << 8) | len as u32
     }
 
-    fn serialize(&self, data: &mut Vec<u32>) {
+    fn serialize(&mut self, data: &mut Vec<u32>) {
         fn serialize_ch(off: usize, ch: u8) -> u32 {
             let ptr = off as u32;
             assert!(ptr as usize == off);
@@ -196,53 +168,20 @@ impl TrieHash {
             (ptr << 8) | (ch as u32)
         }
         let idx = data.len();
-        match &self.children {
-            TrieChildren::None => {
-                data.push(self.serialize_val(0));
-            }
-            TrieChildren::One { k, v } => {
-                data.push(self.serialize_val(1));
-                data.push(serialize_ch(idx + 2, *k));
-                v.serialize(data);
-            }
-            TrieChildren::Many { hash } => {
-                let child_ids = hash.keys().map(|v| *v).collect::<Vec<_>>();
-                // child_ids.sort();
-                let mut len = child_ids.len();
-                if len == 0x100 {
-                    len = 0xff;
-                } else {
-                    assert!(len < 0xf0);
-                }
-                data.push(self.serialize_val(len));
-                data.resize(idx + 1 + child_ids.len(), 0);
-                for (ch_idx, ch_byte) in child_ids.iter().enumerate() {
-                    data[idx + 1 + ch_idx] = serialize_ch(data.len(), *ch_byte);
-                    hash.get(ch_byte).unwrap().serialize(data);
-                }
-            }
-        };
-    }
-}
-
-pub fn test_trie() {
-    let mut words0 = vec!["a", "b", "abc"];
-    let words = words0
-        .iter()
-        .map(|s| s.as_bytes().to_vec())
-        .collect::<Vec<_>>();
-    let trie = TokTrie::from(&words);
-    let root = trie.root();
-    words0.push("ab");
-    words0.push("foo");
-    for w in words0 {
-        match trie.child_at_bytes(root, &w.as_bytes().to_vec()) {
-            Some(n) => {
-                println!("{} -> {:?}", w, trie.token_id(n));
-            }
-            None => {
-                println!("{} -> not found", w);
-            }
+        let mut len = self.children.len();
+        if len == 0x100 {
+            len = 0xff;
+        } else {
+            assert!(len < 0xf0);
+        }
+        data.push(self.serialize_val(len));
+        data.resize(idx + 1 + self.children.len(), 0);
+        self.children.sort_by_key(|e| e.byte);
+        let mut ch_idx = idx + 1;
+        for entry in &mut self.children {
+            data[ch_idx] = serialize_ch(data.len(), entry.byte);
+            ch_idx += 1;
+            entry.serialize(data);
         }
     }
 }
