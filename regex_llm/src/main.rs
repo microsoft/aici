@@ -1,7 +1,9 @@
 mod jsonrx;
 mod timelog;
+mod tokenizerlist;
 
 use anyhow::Result;
+use clap::Parser;
 use indexmap::IndexMap;
 use regex_automata::dfa::{dense, dense::DFA, Automaton};
 use regex_automata::util::{primitives::StateID, syntax};
@@ -9,63 +11,75 @@ use regex_automata::Input;
 use serde_json::json;
 use std::collections::{HashMap, HashSet};
 use std::hash::Hash;
+use std::path::PathBuf;
 
 use gvm_abi::rx::{StateOffset, TokRx, TokRxInfo, TokenId};
 
-use tokenizers::Tokenizer;
+use crate::tokenizerlist::tokenizers;
 
 const DEAD_STATE: u32 = StateOffset::DEAD.off;
 const START_STATE: u32 = StateOffset::START.off;
 
+#[derive(Parser)]
+struct Cli {
+    /// Tokenizer to use; try -t list to see options
+    #[arg(short, long, default_value = "llama")]
+    tokenizer: String,
+
+    /// Path to JSON 'schema' file
+    #[arg(short, long)]
+    schema: Option<PathBuf>,
+}
+
 fn main() -> Result<()> {
     let mut times = timelog::TimeLog::new();
 
-    let tok = Tokenizer::from_file("tokenizer.json").unwrap();
+    let cli = Cli::parse();
+    let mut toklist = tokenizers();
 
-    let tok_eos = tok
-        .token_to_id("</s>")
-        .or_else(|| tok.token_to_id("<|endoftext|>"))
-        .unwrap() as TokenId; // TODO
+    let tokenizer = toklist.iter_mut().find(|t| t.name == cli.tokenizer);
+    if tokenizer.is_none() {
+        println!("unknown tokenizer: {}", cli.tokenizer);
+        println!("available tokenizers:");
+        for t in toklist {
+            println!("  {:20} {}", t.name, t.description);
+        }
+        return Ok(());
+    }
+    let tokenizer = tokenizer.unwrap();
+
+    tokenizer.load();
+    let tok_eos = tokenizer.info.as_ref().unwrap().eos_token;
+
+    println!("loaded tokenizer: {}", tokenizer.name);
+
+    let tokens = tokenizer.token_bytes();
 
     times.save("tokenizer");
 
-    let nvocab = tok.get_vocab_size(true);
-
-    let mut tokens = Vec::new();
-
-    let repl = "\u{FFFD}";
-
-    for idx in 0..nvocab {
-        if 3 <= idx && idx <= 258 {
-            tokens.push(Vec::from(vec![(idx - 3) as u8]));
-        } else {
-            let arr = vec![68, idx as u32];
-            let str = &tok.decode(&arr, false).unwrap()[1..];
-            if str.contains(repl) {
-                println!("{} {}", idx, str); // TODO
-            }
-            // assert!(!str.contains(repl));
-            tokens.push(Vec::from(str.as_bytes()));
-        }
-    }
-
-    times.save("prep");
-
     // println!("toks: {:?} {}", &tokens, c as u32);
 
-    let schema = json!({
-        "name": "",
-        "valid": true,
-        "type": "foo|bar|baz|something|else",
-        "address": {
-            "street": "",
-            "city": "",
-            "state": "[A-Z][A-Z]"
-        },
-        "age": 1
-    });
-
-    println!("json 'schema': {}", serde_json::to_string_pretty(&schema)?);
+    let schema = if let Some(f) = cli.schema {
+        let s = std::fs::read_to_string(f)?;
+        serde_json::from_str(&s)?
+    } else {
+        let s = json!({
+            "name": "",
+            "valid": true,
+            "type": "foo|bar|baz|something|else",
+            "address": {
+                "street": "",
+                "city": "",
+                "state": "[A-Z][A-Z]"
+            },
+            "age": 1
+        });
+        println!(
+            "using default json 'schema', use -s filename.json to override\n{}",
+            serde_json::to_string_pretty(&s)?
+        );
+        s
+    };
 
     let rx = jsonrx::json_to_regex(&schema);
 
@@ -75,8 +89,6 @@ fn main() -> Result<()> {
         .configure(dense::Config::new().start_kind(regex_automata::dfa::StartKind::Anchored))
         .syntax(syntax::Config::new().unicode(false).utf8(false))
         .build(&rx)?;
-
-    times.save("rx");
 
     if false {
         let j1 = json!({
@@ -107,7 +119,7 @@ fn main() -> Result<()> {
         }
     }
 
-    times.save("rx-stats");
+    times.save("regex-compute");
 
     println!("dfa: {} bytes, ~{} states", dfa.memory_usage(), n - 20);
 
@@ -142,7 +154,7 @@ fn main() -> Result<()> {
     }
     ctx.states.insert(accept_id, accepting);
 
-    times.save("compile");
+    times.save("compile-wrt-tokens");
 
     {
         let ntransitions: usize = ctx.states.values().map(|v| v.transitions.len()).sum();
