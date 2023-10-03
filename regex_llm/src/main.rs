@@ -1,8 +1,9 @@
 mod jsonrx;
 mod timelog;
 
-use anyhow::Result;
+use anyhow::{Ok, Result};
 use clap::Parser;
+use gvm_abi::toktree::TokTrie;
 use gvm_tokenizers::tokenizers;
 use indexmap::IndexMap;
 use regex_automata::dfa::{dense, dense::DFA, Automaton};
@@ -27,6 +28,10 @@ struct Cli {
     /// Path to JSON 'schema' file
     #[arg(short, long)]
     schema: Option<PathBuf>,
+
+    /// Run tests
+    #[arg(long)]
+    test: bool,
 }
 
 fn main() -> Result<()> {
@@ -54,6 +59,16 @@ fn main() -> Result<()> {
     let tokens = tokenizer.token_bytes();
 
     times.save("tokenizer");
+
+    if cli.test {
+        let trie = TokTrie::from(&tokens);
+        let root = trie.root();
+        times.save("build_trie");
+        let ch = trie.child_at_bytes(root, &"the".as_bytes());
+        println!("ch: {:?}", ch);
+        times.print();
+        return Ok(());
+    }
 
     // println!("toks: {:?} {}", &tokens, c as u32);
 
@@ -220,7 +235,7 @@ fn main() -> Result<()> {
 
     times.save("serialize");
 
-    println!("\ntimes:\n{}", times);
+    times.print();
 
     // for s in ctx.states.values() {
     //     for t in &s.transitions {

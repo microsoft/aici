@@ -22,6 +22,9 @@ impl TimeLog {
         self.times.push((String::from(id), self.prev.elapsed()));
         self.prev = Instant::now();
     }
+    pub fn print(&self) {
+        println!("\ntimes:\n{}", self);
+    }
 }
 
 impl fmt::Display for TimeLog {
