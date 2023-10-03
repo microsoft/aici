@@ -3,17 +3,37 @@
 
 use crate::rx::TokenId;
 
-pub struct TokNode {
-    pub byte: u8,
-    off: usize,
-    data: &'static [u32],
+pub struct TokTrie {
+    data: Vec<u32>,
 }
 
-impl TokNode {
+pub struct TrieNode<'a> {
+    trie: &'a TokTrie,
+    pub byte: u8,
+    off: usize,
+    parent: Option<&'a TrieNode<'a>>
+}
+
+impl TokTrie {
+    pub fn new() -> TokTrie {
+        TokTrie { data: Vec::new() }
+    }
+
+    pub fn root<'a>(&'a self) -> TrieNode<'a> {
+        TrieNode {
+            trie: &self,
+            byte: 0,
+            off: 0,
+            parent: None,
+        }
+    }
+}
+
+impl<'a> TrieNode<'a> {
     const NO_TOKEN: u32 = 0xffffff;
 
     pub fn token_id(&self) -> Option<TokenId> {
-        let r = self.data[self.off] >> 8;
+        let r = self.trie.data[self.off] >> 8;
         if r == Self::NO_TOKEN {
             None
         } else {
@@ -22,7 +42,7 @@ impl TokNode {
     }
 
     pub fn num_children(&self) -> usize {
-        let num_ch = self.data[self.off] & 0xff;
+        let num_ch = self.trie.data[self.off] & 0xff;
         if num_ch == 0xff {
             0x100
         } else {
@@ -30,30 +50,31 @@ impl TokNode {
         }
     }
 
-    pub fn child_at_idx(&self, idx: usize) -> TokNode {
+    pub fn child_at_idx(&'a self, idx: usize) -> TrieNode<'a> {
         assert!(idx < self.num_children());
         let off = self.off + 1 + idx;
-        let ch_off = self.data[off] >> 8;
-        TokNode {
-            byte: (self.data[off] & 0xff) as u8,
+        let ch_off = self.trie.data[off] >> 8;
+        TrieNode {
+            trie: self.trie,
+            byte: (self.trie.data[off] & 0xff) as u8,
             off: ch_off as usize,
-            data: self.data,
+            parent: Some(self),
         }
     }
 
-    pub fn child_at_byte(&self, byte: u8) -> Option<TokNode> {
+    pub fn child_at_byte(&'a self, byte: u8) -> Option<TrieNode<'a>> {
         let num_ch = self.num_children();
         for idx in 0..num_ch {
             let off = self.off + 1 + idx;
-            if (self.data[off] & 0xff) as u8 == byte {
+            if (self.trie.data[off] & 0xff) as u8 == byte {
                 return Some(self.child_at_idx(idx));
             }
         }
         None
     }
 
-    pub fn children(&self) -> TokNodeChildrenIter {
-        TokNodeChildrenIter {
+    pub fn children(&self) -> TrieNodeChildrenIter {
+        TrieNodeChildrenIter {
             parent: self,
             idx: 0,
             max_idx: self.num_children(),
@@ -61,14 +82,14 @@ impl TokNode {
     }
 }
 
-pub struct TokNodeChildrenIter<'a> {
-    parent: &'a TokNode,
+pub struct TrieNodeChildrenIter<'a> {
+    parent: &'a TrieNode<'a>,
     idx: usize,
     max_idx: usize,
 }
 
-impl<'a> Iterator for TokNodeChildrenIter<'a> {
-    type Item = TokNode;
+impl<'a> Iterator for TrieNodeChildrenIter<'a> {
+    type Item = TrieNode<'a>;
 
     fn next(&mut self) -> Option<Self::Item> {
         if self.idx < self.max_idx {
@@ -86,4 +107,12 @@ pub struct TokenizerBin {
     magic: u32,
     tokens_bytes: u32,
     tree_bytes: u32,
+}
+
+pub fn iter(word: &[u8]) {
+    let trie = TokTrie::new();
+    let mut n = trie.root();
+    for &ch in word {
+        n = n.child_at_byte(ch).unwrap();
+    }
 }

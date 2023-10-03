@@ -126,6 +126,7 @@ name = "gvm_tokenizers"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "gvm_abi",
  "serde",
  "serde_json",
 ]

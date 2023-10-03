@@ -9,10 +9,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a4668cab20f66d8d020e1fbc0ebe47217433c1b6c8f2040faf858554e394ace6"
 
 [[package]]
+name = "gvm_abi"
+version = "0.1.0"
+
+[[package]]
 name = "gvm_tokenizers"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "gvm_abi",
  "serde",
  "serde_json",
 ]

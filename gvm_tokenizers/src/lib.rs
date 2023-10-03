@@ -1,4 +1,5 @@
 use anyhow::Result;
+use gvm_abi::rx::TokRxInfo;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
@@ -51,6 +52,12 @@ impl Tokenizer {
     pub fn load(&mut self) {
         if self.info.is_none() {
             self.info = Some(serde_json::from_slice::<TokenInfo>(self.info_bytes).unwrap());
+        }
+    }
+    pub fn tokrx_info(&self) -> TokRxInfo {
+        let info = self.info.as_ref().unwrap();
+        TokRxInfo {
+            tok_eos: info.eos_token,
         }
     }
     pub fn token_bytes(&self) -> Vec<Vec<u8>> {
