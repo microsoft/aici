@@ -10,10 +10,11 @@ anyhow = "1.0.75"
 regex-automata = "0.3.8"
 serde = { version = "1.0.188", features = ["derive"] }
 serde_json = { version = "1.0.107", features = ["preserve_order"] }
-# tokenizers = "0.14.0"
-gvm_abi = "0.1.0"
 indexmap = "2.0.1"
 clap = { version = "4.4.6", features = ["derive"] }
+gvm_abi = "0.1.0"
+gvm_tokenizers = "0.1.0"
 
 [patch.crates-io]
 gvm_abi = { path = "../gvm_abi" }
+gvm_tokenizers = { path = "../gvm_tokenizers" }

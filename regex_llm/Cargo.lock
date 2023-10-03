@@ -122,6 +122,15 @@ name = "gvm_abi"
 version = "0.1.0"
 
 [[package]]
+name = "gvm_tokenizers"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "hashbrown"
 version = "0.14.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -197,6 +206,7 @@ dependencies = [
  "anyhow",
  "clap",
  "gvm_abi",
+ "gvm_tokenizers",
  "indexmap",
  "regex-automata",
  "serde",

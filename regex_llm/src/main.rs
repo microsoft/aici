@@ -1,9 +1,9 @@
 mod jsonrx;
 mod timelog;
-mod tokenizerlist;
 
 use anyhow::Result;
 use clap::Parser;
+use gvm_tokenizers::tokenizers;
 use indexmap::IndexMap;
 use regex_automata::dfa::{dense, dense::DFA, Automaton};
 use regex_automata::util::{primitives::StateID, syntax};
@@ -14,8 +14,6 @@ use std::hash::Hash;
 use std::path::PathBuf;
 
 use gvm_abi::rx::{StateOffset, TokRx, TokRxInfo, TokenId};
-
-use crate::tokenizerlist::tokenizers;
 
 const DEAD_STATE: u32 = StateOffset::DEAD.off;
 const START_STATE: u32 = StateOffset::START.off;

@@ -1,6 +1,7 @@
 pub mod printing;
 pub mod rx;
 pub mod rxvm;
+pub mod toktree;
 
 /// Expose method as extern "C", usage:
 ///     expose!(Foo::set_count(n: i32) -> i32);
