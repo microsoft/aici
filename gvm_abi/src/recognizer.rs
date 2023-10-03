@@ -13,15 +13,17 @@ fn append_bias(
     n: TrieNode,
 ) {
     rec.allowed(mask);
-    for idx in 0..=255 {
-        if mask[idx] != 0 {
-            if let Some(ch) = trie.child_at_byte(n, idx as u8) {
-                if let Some(tok) = trie.token_id(ch) {
-                    logits[tok as usize] = 0.0;
-                }
-                append_bias(trie, &rec.append(idx as u8), logits, mask, ch)
-            }
+
+    let sel = trie
+        .children(n)
+        .filter(|c| mask[trie.child_byte(*c) as usize] != 0)
+        .collect::<Vec<_>>();
+
+    for ch in sel {
+        if let Some(tok) = trie.token_id(ch) {
+            logits[tok as usize] = 0.0;
         }
+        append_bias(trie, &rec.append(trie.child_byte(n)), logits, mask, ch)
     }
 }
 
