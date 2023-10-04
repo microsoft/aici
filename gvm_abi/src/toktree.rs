@@ -108,6 +108,10 @@ impl TokTrie {
         &self.info
     }
 
+    pub fn vocab_size(&self) -> usize {
+        self.info.vocab_size as usize
+    }
+
     pub fn token(&self, idx: u32) -> &[u8] {
         let off = self.token_offsets[idx as usize];
         let len = off & 0xff;

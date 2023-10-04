@@ -1,4 +1,7 @@
-use gvm_abi::toktree::{walk, TokTrie};
+use gvm_abi::{
+    recognizer::{compute_bias, Recognizer, Uppercase},
+    toktree::TokTrie,
+};
 
 fn main() {
     let trie = TokTrie::from_bytes(include_bytes!("tokenizers/gpt4.bin"));
@@ -7,12 +10,11 @@ fn main() {
         println!("{}: {:?}", idx, String::from_utf8_lossy(bytes));
     }
 
-    let max_len = (0..trie.info().vocab_size).map(|idx| trie.token(idx).len()).max();
-    println!("max_len: {}", max_len.unwrap());
-
-    let mut sum = 0;
+    let mut logits = vec![0.0; trie.vocab_size()];
+    let rec = Uppercase::new().append('N' as u8).append('E' as u8);
     for _ in 0..1000 {
-        sum += walk(&trie);
+        compute_bias(&trie, &rec, &mut logits);
     }
-    println!("sum: {}", sum);
+
+    println!("res: {}", logits.iter().filter(|x| **x > -50.0).count());
 }
