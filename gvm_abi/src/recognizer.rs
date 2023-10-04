@@ -22,12 +22,12 @@ impl Uppercase {
 }
 
 impl Recognizer for Uppercase {
-    #[inline(always)]
+    //#[inline(always)]
     fn append(&self, _byte: u8) -> Self {
         Uppercase { len: self.len + 1 }
     }
 
-    #[inline(always)]
+    //#[inline(always)]
     fn allowed(&self, byte: u8) -> bool {
         byte != 0xff
         // let ch = _byte as char;

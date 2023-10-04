@@ -4,7 +4,7 @@ mod timelog;
 use anyhow::{Ok, Result};
 use clap::Parser;
 use gvm_abi::recognizer::{compute_bias, Recognizer, Uppercase};
-use gvm_abi::toktree::TokTrie;
+use gvm_abi::toktree::{walk, TokTrie};
 use gvm_tokenizers::tokenizers;
 use indexmap::IndexMap;
 use regex_automata::dfa::{dense, dense::DFA, Automaton};
@@ -75,8 +75,15 @@ fn main() -> Result<()> {
         }
         times.save("compute_bias");
 
+        let mut sum = 0;
+        for _ in 0..100 {
+            sum += walk(&trie);
+        }
+        times.save("walk");
+
         times.print();
         println!("res: {}", logits.iter().filter(|x| **x > -50.0).count());
+        println!("sum: {}", sum);
 
         // for (idx, l) in logits.iter().enumerate() {
         //     if *l > -50.0 {

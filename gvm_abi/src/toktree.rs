@@ -121,6 +121,36 @@ fn append_bias_core(rec: &impl Recognizer, logits: &mut [f32], n: &TrieNode) {
     }
 }
 
+fn walk_core(n: &TrieNode) -> u32 {
+    let mut sum = 0;
+    let mut stack = Vec::with_capacity(20);
+    unsafe {
+        stack.push((n.child0(), n.next()));
+        loop {
+            let (mut p, mut endp) = stack.pop().unwrap();
+            while p < endp {
+                let n = &*p;
+                p = n.next();
+                sum += n.subtree_size;
+                if n.subtree_size > 1 {
+                    stack.push((p, endp));
+                    endp = p;
+                    p = n.child0();
+                }
+            }
+            if stack.is_empty() {
+                break;
+            }
+        }
+    }
+    sum
+}
+
+pub fn walk(trie: &TokTrie) -> u32 {
+    let n = trie.root();
+    walk_core(n)
+}
+
 #[repr(C)]
 pub struct TokenizerBin {
     magic: u32,
