@@ -6,6 +6,7 @@
 		"dockerfile": "Dockerfile"
 	},
 	"runArgs": [
+		"--privileged",
 		"--gpus",
 		"all",
 		"--shm-size=8g"

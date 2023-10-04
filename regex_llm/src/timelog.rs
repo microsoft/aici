@@ -33,7 +33,7 @@ impl fmt::Display for TimeLog {
         copy.push((String::from("final"), self.prev.elapsed()));
         copy.push((String::from("TOTAL"), self.start.elapsed()));
         for (l, d) in &copy {
-            write!(f, "{:8.1}ms {}\n", d.as_micros() as f64 / 100.0, l)?
+            write!(f, "{:8.1}ms {}\n", d.as_micros() as f64 / 1000.0, l)?
         }
         Ok(())
     }
