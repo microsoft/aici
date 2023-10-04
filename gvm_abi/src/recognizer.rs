@@ -8,8 +8,7 @@ pub trait Recognizer {
 #[inline(never)]
 pub fn compute_bias(trie: &TokTrie, rec: &impl Recognizer, logits: &mut [f32]) {
     logits.iter_mut().for_each(|x| *x = -100.0);
-    let n = trie.root();
-    append_bias(rec, logits, n);
+    append_bias(trie, rec, logits);
 }
 
 pub struct Uppercase {

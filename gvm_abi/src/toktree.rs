@@ -96,10 +96,15 @@ impl TokTrie {
     }
 }
 
-pub fn append_bias(rec: &impl Recognizer, logits: &mut [f32], n: &TrieNode) {
+pub fn append_bias(trie: &TokTrie, rec: &impl Recognizer, logits: &mut [f32]) {
+    let n = trie.root();
+    append_bias_core(rec, logits, n);
+}
+
+fn append_bias_core(rec: &impl Recognizer, logits: &mut [f32], n: &TrieNode) {
     unsafe {
-        let mut p = n.child0();
         let endp = n.next();
+        let mut p = n.child0();
         while p < endp {
             let n = &*p;
             p = n.next();
@@ -108,7 +113,9 @@ pub fn append_bias(rec: &impl Recognizer, logits: &mut [f32], n: &TrieNode) {
                 if let Some(tok) = n.token_id() {
                     logits[tok as usize] = 0.0;
                 }
-                append_bias(&rec.append(b), logits, n);
+                if n.subtree_size > 1 {
+                    append_bias_core(&rec.append(b), logits, n);
+                }
             }
         }
     }
