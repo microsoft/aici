@@ -263,22 +263,26 @@ fn append_bias_core(rec: &impl Recognizer, logits: &mut [f32], n: &TrieNode) {
 
 fn walk_core(n: &TrieNode) -> u32 {
     let mut sum = 0;
-    let mut stack = Vec::with_capacity(20);
+    let mut stack_buf: [(*const TrieNode, *const TrieNode); 130] = [(0 as _, 0 as _); 130];
+    let mut stack_ptr = 0;
     unsafe {
-        stack.push((n.child0(), n.next()));
+        stack_buf[stack_ptr] = (n.child0(), n.next());
+        stack_ptr += 1;
         loop {
-            let (mut p, mut endp) = stack.pop().unwrap();
+            stack_ptr -= 1;
+            let (mut p, mut endp) = stack_buf[stack_ptr];
             while p < endp {
                 let n = &*p;
                 p = n.next();
                 sum += n.subtree_size;
                 if n.subtree_size > 1 {
-                    stack.push((p, endp));
+                    stack_buf[stack_ptr] = (p, endp);
+                    stack_ptr += 1;
                     endp = p;
                     p = n.child0();
                 }
             }
-            if stack.is_empty() {
+            if stack_ptr == 0 {
                 break;
             }
         }
