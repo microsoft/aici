@@ -1,12 +1,34 @@
 // use 8:24 encoding - num_ch:tok_id (ch_byte:ch_off)* - 8 bytes per tree node
 // special case num_ch=0xff -> num_ch=0x100
 
-use crate::recognizer::Recognizer;
+use crate::{
+    recognizer::Recognizer,
+    rx::{box_from_bytes, clone_as_bytes, clone_vec_as_bytes, vec_from_bytes, TokRxInfo, TokenId},
+};
 
 pub struct TokTrie {
-    pub data: Vec<TrieNode>,
+    info: TokRxInfo,
+    token_offsets: Vec<u32>,
+    token_data: Vec<u8>,
+    nodes: Vec<TrieNode>,
 }
 
+#[repr(C)]
+pub struct TokTrieHeader {
+    magic: u32,
+    hd_size: u32,
+    trie_bytes: u32,
+    token_offset_bytes: u32,
+    token_data_bytes: u32,
+    info: TokRxInfo,
+    align: [u32; 0],
+}
+
+impl TokTrieHeader {
+    const MAGIC: u32 = 0x558b6fd3;
+}
+
+#[repr(C)]
 pub struct TrieNode {
     // byte:token
     bits: u32,
@@ -55,23 +77,141 @@ impl TrieNode {
 }
 
 impl TokTrie {
-    pub fn from(words: &Vec<Vec<u8>>) -> TokTrie {
+    pub fn from(info: &TokRxInfo, words: &Vec<Vec<u8>>) -> Self {
         let mut trie = TrieHash::new(0xff);
+        let mut token_offsets = Vec::new();
+        let mut token_data = Vec::new();
+        println!("info: {:?} wl={}", info, words.len());
+        assert!(info.vocab_size == words.len() as u32);
         for (idx, word) in words.iter().enumerate() {
             if word.len() > 0 {
                 trie.insert(word, idx as u32)
             }
+            assert!(word.len() < 0xff);
+            let desc = (word.len() as u32) | ((token_data.len() as u32) << 8);
+            token_offsets.push(desc);
+            token_data.extend_from_slice(word);
         }
-        let mut data = Vec::new();
-        trie.serialize(&mut data);
-        TokTrie { data }
+        let mut nodes = Vec::new();
+        trie.serialize(&mut nodes);
+        let r = TokTrie {
+            info: info.clone(),
+            token_offsets,
+            token_data,
+            nodes,
+        };
+        r.validate();
+        r
+    }
+
+    pub fn info(&self) -> &TokRxInfo {
+        &self.info
+    }
+
+    pub fn token(&self, idx: u32) -> &[u8] {
+        let off = self.token_offsets[idx as usize];
+        let len = off & 0xff;
+        let off = (off >> 8) as usize;
+        &self.token_data[off..(off + len as usize)]
+    }
+
+    pub fn from_bytes(bytes: &[u8]) -> Self {
+        let pref = std::mem::size_of::<TokTrieHeader>();
+        let hd = *box_from_bytes::<TokTrieHeader>(&bytes[0..pref]);
+        assert!(hd.magic == TokTrieHeader::MAGIC);
+        assert!(hd.hd_size as usize == pref);
+
+        let trie_end = pref + hd.trie_bytes as usize;
+        let nodes = vec_from_bytes(&bytes[pref..trie_end]);
+        let offsets_end = trie_end + hd.token_offset_bytes as usize;
+        let token_offsets = vec_from_bytes(&bytes[trie_end..offsets_end]);
+        let token_data = vec_from_bytes(&bytes[offsets_end..]);
+
+        let r = TokTrie {
+            info: hd.info,
+            token_offsets,
+            token_data,
+            nodes,
+        };
+        r.validate();
+        r
+    }
+
+    fn validate_node(&self, n: &TrieNode, ep: *const TrieNode, used: &mut [bool]) {
+        if let Some(tok) = n.token_id() {
+            assert!(tok < self.info.vocab_size);
+            assert!(!used[tok as usize]);
+            used[tok as usize] = true;
+        }
+        unsafe {
+            let endp = n.next();
+            assert!(endp <= ep);
+            let mut p = n.child0();
+            while p < endp {
+                let n = &*p;
+                p = n.next();
+                self.validate_node(n, endp, used)
+            }
+        }
+    }
+
+    fn validate(&self) {
+        self.validate_node(
+            self.root(),
+            self.nodes.as_ptr_range().end,
+            &mut vec![false; self.info.vocab_size as usize],
+        );
+        for idx in 0..self.info.vocab_size {
+            let _ = self.token(idx);
+        }
+    }
+
+    pub fn serialize(&self) -> Vec<u8> {
+        let mut trie_data = clone_vec_as_bytes(&self.nodes);
+        let mut token_offsets = clone_vec_as_bytes(&self.token_offsets);
+        let mut token_data = clone_vec_as_bytes(&self.token_data);
+
+        let hd = TokTrieHeader {
+            magic: TokTrieHeader::MAGIC,
+            hd_size: std::mem::size_of::<TokTrieHeader>() as u32,
+            trie_bytes: trie_data.len() as u32,
+            token_offset_bytes: token_offsets.len() as u32,
+            token_data_bytes: trie_data.len() as u32,
+            info: self.info.clone(),
+            align: [],
+        };
+
+        let mut bytes = clone_as_bytes(&hd);
+        bytes.append(&mut trie_data);
+        bytes.append(&mut token_offsets);
+        bytes.append(&mut token_data);
+        bytes
     }
 
     pub fn root(&self) -> &TrieNode {
-        &self.data[0]
+        &self.nodes[0]
     }
 
-    pub fn child_at_byte(&self, n: &TrieNode, byte: u8) -> Option<&TrieNode> {
+    pub fn check_against(&self, tokens: &Vec<Vec<u8>>) {
+        let vocab_size = tokens.len();
+        for idx in 0..vocab_size {
+            let bytes = &tokens[idx];
+            let tid = idx as TokenId;
+            assert!(bytes == self.token(tid));
+            let root = self.root();
+            if bytes.len() > 0 {
+                assert!(
+                    self.child_at_bytes(root, &bytes)
+                        .unwrap()
+                        .token_id()
+                        .unwrap()
+                        == tid
+                );
+            }
+        }
+    }
+
+    pub fn child_at_byte<'a>(&'a self, n: &'a TrieNode, byte: u8) -> Option<&'a TrieNode> {
         unsafe {
             let mut p = n.child0();
             let endp = n.next();

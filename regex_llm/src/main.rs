@@ -15,7 +15,7 @@ use std::collections::{HashMap, HashSet};
 use std::hash::Hash;
 use std::path::PathBuf;
 
-use gvm_abi::rx::{StateOffset, TokRx, TokRxInfo, TokenId};
+use gvm_abi::rx::{StateOffset, TokRx, TokenId};
 
 const DEAD_STATE: u32 = StateOffset::DEAD.off;
 const START_STATE: u32 = StateOffset::START.off;
@@ -33,6 +33,10 @@ struct Cli {
     /// Run tests
     #[arg(long)]
     test: bool,
+
+    /// Save tokenizer trie and token list to file
+    #[arg(long)]
+    save: Option<PathBuf>,
 }
 
 fn main() -> Result<()> {
@@ -61,13 +65,29 @@ fn main() -> Result<()> {
 
     times.save("tokenizer");
 
+    if let Some(filename) = cli.save {
+        let trie = TokTrie::from(&tokenizer.tokrx_info(), &tokens);
+        trie.check_against(&tokens);
+
+        let bytes = trie.serialize();
+
+        // validate
+        let trie2 = TokTrie::from_bytes(&bytes);
+        assert!(trie.info() == trie2.info());
+        trie2.check_against(&tokens);
+
+        std::fs::write(filename.clone(), &bytes)?;
+        println!("wrote {}, {} bytes", filename.display(), bytes.len());
+        return Ok(());
+    }
+
     if cli.test {
-        let trie = TokTrie::from(&tokens);
+        let trie = TokTrie::from(&tokenizer.tokrx_info(), &tokens);
         let root = trie.root();
         times.save("build_trie");
         let ch = trie.child_at_bytes(root, &"the".as_bytes()).unwrap();
         println!("ch: {:?}", ch.token_id());
-        println!("sz: {} bytes", 8 * trie.data.len());
+        println!("sz: {} bytes", trie.serialize().len());
         let mut logits = vec![0.0; tokens.len()];
         let rec = Uppercase::new().append('N' as u8).append('E' as u8);
         for _ in 0..100 {
@@ -251,7 +271,7 @@ fn main() -> Result<()> {
         s.write(&ctx, &mut state_data);
     }
 
-    let info = TokRxInfo { tok_eos };
+    let info = tokenizer.tokrx_info();
     let bytes = TokRx::serialize(&info, &token_data, &state_data);
     println!("size: {} bytes", bytes.len());
     std::fs::write("rx.bin", bytes)?;

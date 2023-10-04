@@ -6,6 +6,7 @@ use std::collections::BTreeMap;
 #[derive(Serialize, Deserialize)]
 pub struct TokenInfo {
     pub eos_token: u32,
+    pub vocab_size: Option<u32>,
     pub special: BTreeMap<String, u32>,
     pub binary: BTreeMap<String, u32>,
     pub text: BTreeMap<String, u32>,
@@ -56,29 +57,35 @@ impl Tokenizer {
     }
     pub fn tokrx_info(&self) -> TokRxInfo {
         let info = self.info.as_ref().unwrap();
+        let max = vec![
+            info.binary.values().max(),
+            info.special.values().max(),
+            info.text.values().max(),
+        ]
+        .iter()
+        .filter_map(|x| *x)
+        .max()
+        .unwrap();
+        assert!(*max < 1_000_000);
         TokRxInfo {
+            vocab_size: max + 1,
             tok_eos: info.eos_token,
         }
     }
     pub fn token_bytes(&self) -> Vec<Vec<u8>> {
-        let mut r = Vec::new();
+        let tinfo = self.tokrx_info();
+        let mut r = Vec::with_capacity(tinfo.vocab_size as usize);
+        r.resize_with(tinfo.vocab_size as usize, Vec::new);
 
         let info = self.info.as_ref().unwrap();
 
         for (k, v) in &info.text {
             let idx = *v as usize;
-            if r.len() <= idx {
-                r.resize(idx + 1, Vec::new())
-            }
             r[idx] = k.as_bytes().to_vec();
         }
 
         for (k, v) in &info.binary {
             let idx = *v as usize;
-            if r.len() <= idx {
-                r.resize(idx + 1, Vec::new())
-            }
-
             r[idx] = from_hex(k).unwrap();
         }
 
