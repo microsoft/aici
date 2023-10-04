@@ -37,10 +37,12 @@ impl TokTrie {
         self.data[(n.bits >> 8) as usize + off]
     }
 
+    #[inline(always)]
     pub fn child_byte(&self, n: TrieNode) -> u8 {
         (n.bits & 0xff) as u8
     }
 
+    #[inline(always)]
     pub fn token_id(&self, n: TrieNode) -> Option<TokenId> {
         let r = self.at(n, 0) >> 8;
         if r == NO_TOKEN {
@@ -50,6 +52,7 @@ impl TokTrie {
         }
     }
 
+    #[inline(always)]
     pub fn num_children(&self, n: TrieNode) -> usize {
         let num_ch = self.at(n, 0) & 0xff;
         if num_ch == 0xff {
@@ -100,6 +103,7 @@ impl TokTrie {
         }
     }
 
+    #[inline(always)]
     pub fn masked_children<'a, T: Recognizer>(
         &'a self,
         n: TrieNode,

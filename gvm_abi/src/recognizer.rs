@@ -2,7 +2,7 @@ use crate::toktree::{TokTrie, TrieNode};
 
 pub trait Recognizer {
     fn append(&self, byte: u8) -> Self;
-    fn allowed(&self, c: u8) -> bool;
+    fn allowed(&self, byte: u8) -> bool;
 }
 
 fn append_bias(
@@ -20,6 +20,7 @@ fn append_bias(
     }
 }
 
+#[inline(never)]
 pub fn compute_bias(trie: &TokTrie, rec: &impl Recognizer, logits: &mut [f32]) {
     logits.iter_mut().for_each(|x| *x = -100.0);
     let mut mask = Vec::new();
