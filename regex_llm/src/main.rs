@@ -66,14 +66,15 @@ fn main() -> Result<()> {
         let root = trie.root();
         times.save("build_trie");
         let ch = trie.child_at_bytes(root, &"the".as_bytes()).unwrap();
-        println!("ch: {:?}", trie.token_id(ch));
-        println!("sz: {} bytes", 4 * trie.data.len());
+        println!("ch: {:?}", ch.token_id());
+        println!("sz: {} bytes", 8 * trie.data.len());
         let mut logits = vec![0.0; tokens.len()];
         let rec = Uppercase::new().append('N' as u8).append('E' as u8);
         for _ in 0..100 {
             compute_bias(&trie, &rec, &mut logits);
         }
         times.save("compute_bias");
+
         times.print();
         println!("res: {}", logits.iter().filter(|x| **x > -50.0).count());
 

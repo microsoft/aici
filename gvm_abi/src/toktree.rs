@@ -1,19 +1,58 @@
 // use 8:24 encoding - num_ch:tok_id (ch_byte:ch_off)* - 8 bytes per tree node
 // special case num_ch=0xff -> num_ch=0x100
 
-use crate::{recognizer::Recognizer, rx::TokenId};
+use crate::recognizer::Recognizer;
 
 pub struct TokTrie {
-    pub data: Vec<u32>,
+    pub data: Vec<TrieNode>,
 }
 
-#[derive(Clone, Copy, Debug)]
 pub struct TrieNode {
-    // ch_byte:ch_off
+    // byte:token
     bits: u32,
+    subtree_size: u32,
 }
 
 const NO_TOKEN: u32 = 0xffffff;
+
+impl TrieNode {
+    fn new(byte: u8, token_id: u32) -> TrieNode {
+        TrieNode {
+            bits: (token_id << 8) | byte as u32,
+            subtree_size: 0,
+        }
+    }
+
+    #[inline(always)]
+    unsafe fn next(&self) -> *const TrieNode {
+        self.ptr().add(self.subtree_size as usize)
+    }
+
+    #[inline(always)]
+    unsafe fn ptr(&self) -> *const TrieNode {
+        self as *const TrieNode
+    }
+
+    #[inline(always)]
+    unsafe fn child0(&self) -> *const TrieNode {
+        self.ptr().add(1)
+    }
+
+    #[inline(always)]
+    pub fn byte(&self) -> u8 {
+        (self.bits & 0xff) as u8
+    }
+
+    #[inline(always)]
+    pub fn token_id(&self) -> Option<u32> {
+        let r = self.bits >> 8;
+        if r == NO_TOKEN {
+            None
+        } else {
+            Some(r)
+        }
+    }
+}
 
 impl TokTrie {
     pub fn from(words: &Vec<Vec<u8>>) -> TokTrie {
@@ -28,63 +67,25 @@ impl TokTrie {
         TokTrie { data }
     }
 
-    pub fn root(&self) -> TrieNode {
-        TrieNode { bits: 0 }
+    pub fn root(&self) -> &TrieNode {
+        &self.data[0]
     }
 
-    #[inline(always)]
-    fn at(&self, n: TrieNode, off: usize) -> u32 {
-        self.data[(n.bits >> 8) as usize + off]
-    }
-
-    #[inline(always)]
-    pub fn child_byte(&self, n: TrieNode) -> u8 {
-        (n.bits & 0xff) as u8
-    }
-
-    #[inline(always)]
-    pub fn token_id(&self, n: TrieNode) -> Option<TokenId> {
-        let r = self.at(n, 0) >> 8;
-        if r == NO_TOKEN {
-            None
-        } else {
-            Some(r)
-        }
-    }
-
-    #[inline(always)]
-    pub fn num_children(&self, n: TrieNode) -> usize {
-        let num_ch = self.at(n, 0) & 0xff;
-        if num_ch == 0xff {
-            0x100
-        } else {
-            num_ch as usize
-        }
-    }
-
-    pub fn child_at_idx(&self, n: TrieNode, idx: usize) -> TrieNode {
-        assert!(idx < self.num_children(n));
-        TrieNode {
-            bits: self.at(n, 1 + idx),
-        }
-    }
-
-    pub fn child_at_byte(&self, n: TrieNode, byte: u8) -> Option<TrieNode> {
-        let num_ch = self.num_children(n);
-        if num_ch == 0x100 {
-            return Some(self.child_at_idx(n, byte as usize));
-        }
-        for idx in 0..num_ch {
-            // let byte2 = self.child_byte(self.child_at_idx(n, idx));
-            let byte2 = (self.at(n, 1 + idx) & 0xff) as u8;
-            if byte2 == byte {
-                return Some(self.child_at_idx(n, idx));
+    pub fn child_at_byte(&self, n: &TrieNode, byte: u8) -> Option<&TrieNode> {
+        unsafe {
+            let mut p = n.child0();
+            let endp = n.next();
+            while p < endp {
+                if (*p).byte() == byte {
+                    return Some(&*p);
+                }
+                p = (*p).next();
             }
         }
         None
     }
 
-    pub fn child_at_bytes(&self, mut n: TrieNode, bytes: &[u8]) -> Option<TrieNode> {
+    pub fn child_at_bytes<'a>(&'a self, mut n: &'a TrieNode, bytes: &[u8]) -> Option<&'a TrieNode> {
         for &byte in bytes {
             n = match self.child_at_byte(n, byte) {
                 Some(n) => n,
@@ -93,75 +94,22 @@ impl TokTrie {
         }
         Some(n)
     }
-
-    pub fn children(&self, n: TrieNode) -> TrieNodeChildrenIter {
-        TrieNodeChildrenIter {
-            parent: self,
-            node: n,
-            idx: 0,
-            max_idx: self.num_children(n),
-        }
-    }
-
-    #[inline(always)]
-    pub fn masked_children<'a, T: Recognizer>(
-        &'a self,
-        n: TrieNode,
-        rec: &'a T,
-    ) -> MaskedChildrenIterator<'a, T> {
-        let len = self.data.len();
-        let index = (n.bits >> 8) as usize + 1;
-        let max_index = index + self.num_children(n);
-        assert!(max_index <= len);
-        MaskedChildrenIterator {
-            recognizer: rec,
-            ptr: self.data.as_ptr(),
-            index,
-            max_index,
-        }
-    }
 }
 
-pub struct MaskedChildrenIterator<'a, T: Recognizer> {
-    recognizer: &'a T,
-    ptr: *const u32,
-    index: usize,
-    max_index: usize,
-}
-
-impl<'a, T: Recognizer> Iterator for MaskedChildrenIterator<'a, T> {
-    type Item = TrieNode;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        while self.index < self.max_index {
-            let bits = unsafe { *self.ptr.add(self.index) };
-            self.index += 1;
-            let byte = (bits & 0xff) as u8;
-            if self.recognizer.allowed(byte) {
-                return Some(TrieNode { bits });
+pub fn append_bias(rec: &impl Recognizer, logits: &mut [f32], n: &TrieNode) {
+    unsafe {
+        let mut p = n.child0();
+        let endp = n.next();
+        while p < endp {
+            let n = &*p;
+            p = n.next();
+            let b = n.byte();
+            if rec.allowed(b) {
+                if let Some(tok) = n.token_id() {
+                    logits[tok as usize] = 0.0;
+                }
+                append_bias(&rec.append(b), logits, n);
             }
-        }
-        None
-    }
-}
-
-pub struct TrieNodeChildrenIter<'a> {
-    parent: &'a TokTrie,
-    node: TrieNode,
-    idx: usize,
-    max_idx: usize,
-}
-
-impl<'a> Iterator for TrieNodeChildrenIter<'a> {
-    type Item = TrieNode;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        if self.idx < self.max_idx {
-            let child = self.parent.child_at_idx(self.node, self.idx);
-            self.idx += 1;
-            Some(child)
-        } else {
-            None
         }
     }
 }
@@ -212,7 +160,8 @@ impl TrieHash {
             // if it's getting dense, make it full
             // for cl100k threshold 60->15 nodes, 50->22, 40->45 30->94
             // for llama (32k) 50->5, 40->15
-            if self.children.len() > 40 {
+            // TODO remove this?
+            if self.children.len() > 250 {
                 let mut v2 = (0..=255).map(TrieHash::new).collect::<Vec<_>>();
                 for ch in self.children.drain(..) {
                     let idx = ch.byte as usize;
@@ -222,32 +171,13 @@ impl TrieHash {
             }
         }
     }
-    fn serialize_val(&self, len: usize) -> u32 {
-        (self.token_id << 8) | len as u32
-    }
-
-    fn serialize(&mut self, data: &mut Vec<u32>) {
-        fn serialize_ch(off: usize, ch: u8) -> u32 {
-            let ptr = off as u32;
-            assert!(ptr as usize == off);
-            assert!((ptr << 8) >> 8 == ptr);
-            (ptr << 8) | (ch as u32)
-        }
+    fn serialize(&mut self, data: &mut Vec<TrieNode>) {
         let idx = data.len();
-        let mut len = self.children.len();
-        if len == 0x100 {
-            len = 0xff;
-        } else {
-            assert!(len < 0xf0);
-        }
-        data.push(self.serialize_val(len));
-        data.resize(idx + 1 + self.children.len(), 0);
+        data.push(TrieNode::new(self.byte, self.token_id));
         self.children.sort_by_key(|e| e.byte);
-        let mut ch_idx = idx + 1;
         for entry in &mut self.children {
-            data[ch_idx] = serialize_ch(data.len(), entry.byte);
-            ch_idx += 1;
             entry.serialize(data);
         }
+        data[idx].subtree_size = (data.len() - idx) as u32;
     }
 }

@@ -1,31 +1,15 @@
-use crate::toktree::{TokTrie, TrieNode};
+use crate::toktree::{append_bias, TokTrie};
 
 pub trait Recognizer {
     fn append(&self, byte: u8) -> Self;
     fn allowed(&self, byte: u8) -> bool;
 }
 
-fn append_bias(
-    trie: &TokTrie,
-    rec: &impl Recognizer,
-    logits: &mut [f32],
-    maskbuf: &mut [u8],
-    n: TrieNode,
-) {
-    for ch in trie.masked_children(n, rec) {
-        if let Some(tok) = trie.token_id(ch) {
-            logits[tok as usize] = 0.0;
-        }
-        append_bias(trie, &rec.append(trie.child_byte(ch)), logits, maskbuf, ch)
-    }
-}
-
 #[inline(never)]
 pub fn compute_bias(trie: &TokTrie, rec: &impl Recognizer, logits: &mut [f32]) {
     logits.iter_mut().for_each(|x| *x = -100.0);
-    let mut mask = Vec::new();
-    mask.resize(256, 0);
-    append_bias(trie, rec, logits, &mut mask, trie.root());
+    let n = trie.root();
+    append_bias(rec, logits, n);
 }
 
 pub struct Uppercase {
@@ -39,10 +23,12 @@ impl Uppercase {
 }
 
 impl Recognizer for Uppercase {
+    #[inline(always)]
     fn append(&self, _byte: u8) -> Self {
         Uppercase { len: self.len + 1 }
     }
 
+    #[inline(always)]
     fn allowed(&self, byte: u8) -> bool {
         byte != 0xff
         // let ch = _byte as char;
