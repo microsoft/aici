@@ -1,0 +1,10 @@
+[package]
+name = "gvm_use_tok"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+gvm_abi = "0.1.0"
+
+[patch.crates-io]
+gvm_abi = { path = "../gvm_abi" }

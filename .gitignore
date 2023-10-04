@@ -11,3 +11,4 @@ regex_llm/rx.bin
 .hypothesis
 regex_llm/trie
 perf.data
+gvm_use_tok/src/tokenizers

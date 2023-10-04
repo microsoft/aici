@@ -9,6 +9,7 @@
         "gvmprog/Cargo.toml",
         "gvm_abi/Cargo.toml",
         "gvm_tokenizers/Cargo.toml",
+        "gvm_use_tok/Cargo.toml",
         "gvm_use_rx/Cargo.toml"
     ],
     "files.associations": {
