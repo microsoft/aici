@@ -18,3 +18,7 @@ gvm_tokenizers = "0.1.0"
 [patch.crates-io]
 gvm_abi = { path = "../gvm_abi" }
 gvm_tokenizers = { path = "../gvm_tokenizers" }
+
+[[bin]]
+name = "regex_llm"
+path = "src/regex_comp.rs"

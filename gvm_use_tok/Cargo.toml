@@ -8,3 +8,7 @@ gvm_abi = "0.1.0"
 
 [patch.crates-io]
 gvm_abi = { path = "../gvm_abi" }
+
+[[bin]]
+name = "gvm_use_tok"
+path = "src/use_tok.rs"
