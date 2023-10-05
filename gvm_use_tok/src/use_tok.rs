@@ -1,5 +1,5 @@
 use gvm_abi::{
-    recognizer::{compute_bias, Recognizer, Uppercase},
+    recognizer::{compute_bias, Uppercase},
     toktree::TokTrie, printing::init_panic, wprintln,
 };
 
@@ -13,7 +13,7 @@ fn main() {
     }
 
     let mut logits = vec![0.0; trie.vocab_size() + 1];
-    let rec = Uppercase::new().append('N' as u8).append('E' as u8);
+    let rec = Uppercase::new();
     for _ in 0..1000 {
         compute_bias(&trie, rec, &mut logits);
     }
