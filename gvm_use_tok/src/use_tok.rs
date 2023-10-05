@@ -12,10 +12,10 @@ fn main() {
         wprintln!("{}: {:?}", idx, String::from_utf8_lossy(bytes));
     }
 
-    let mut logits = vec![0.0; trie.vocab_size()];
+    let mut logits = vec![0.0; trie.vocab_size() + 1];
     let rec = Uppercase::new().append('N' as u8).append('E' as u8);
     for _ in 0..1000 {
-        compute_bias(&trie, &rec, &mut logits);
+        compute_bias(&trie, rec, &mut logits);
     }
 
     wprintln!("res: {}", logits.iter().filter(|x| **x > -50.0).count());

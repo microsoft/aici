@@ -103,7 +103,7 @@ impl TokTrie {
             token_data.extend_from_slice(word);
         }
         let mut nodes = Vec::new();
-        trie.serialize(&mut nodes, 0);
+        trie.serialize(&mut nodes, 1);
         let r = TokTrie {
             info: info.clone(),
             token_offsets,
@@ -250,28 +250,32 @@ impl TokTrie {
     }
 }
 
-pub fn append_bias(trie: &TokTrie, rec: &impl Recognizer, logits: &mut [f32]) {
+pub fn append_bias<T: Recognizer + Copy>(trie: &TokTrie, rec0: T, logits: &mut [f32]) {
     let n = trie.root();
-    append_bias_core(rec, logits, n);
-}
-
-fn append_bias_core(rec: &impl Recognizer, logits: &mut [f32], n: &TrieNode) {
+    let mut stack_buf = [rec0; 130];
+    let mut stack_ptr = 1;
+    let defl_tok = trie.vocab_size() as u32;
     unsafe {
-        let endp = n.next();
         let mut p = n.child0();
+        let endp = n.next();
         while p < endp {
             let n = &*p;
-            p = n.next();
             let b = n.byte();
+            let rec = &stack_buf[stack_ptr - 1];
             if rec.allowed(b) {
-                if let Some(tok) = n.token_id() {
-                    logits[tok as usize] = 0.0;
+                logits[n.token_id().unwrap_or(defl_tok) as usize] = 0.0;
+                stack_buf[stack_ptr] = rec.append(b);
+                stack_ptr += 1;
+                if n.subtree_size() == 1 {
+                    stack_ptr -= n.num_parents();
                 }
-                if n.subtree_size() > 1 {
-                    append_bias_core(&rec.append(b), logits, n);
-                }
+                p = n.child0();
+            } else {
+                p = n.next();
+                stack_ptr -= n.num_parents() - 1;
             }
         }
+        //panic!("st: {}", stack_ptr);
     }
 }
 
@@ -366,18 +370,14 @@ impl TrieHash {
             }
         }
     }
-    fn serialize(&mut self, data: &mut Vec<TrieNode>, num_parents: u32) {
+    fn serialize(&mut self, data: &mut Vec<TrieNode>, num_parents: u8) {
         let idx = data.len();
-        data.push(TrieNode::new(self.byte, self.token_id, num_parents as u8));
-        self.children.sort_by_key(|e| e.byte);
         let mut num_ch = self.children.len();
+        data.push(TrieNode::new(self.byte, self.token_id, num_parents));
+        self.children.sort_by_key(|e| e.byte);
         for entry in &mut self.children {
             num_ch -= 1;
-            if num_ch == 0 {
-                entry.serialize(data, num_parents + 1);
-            } else {
-                entry.serialize(data, 0);
-            }
+            entry.serialize(data, if num_ch == 0 { num_parents + 1 } else { 1 });
         }
         data[idx].bits2 |= ((data.len() - idx) as u32) << 8;
     }

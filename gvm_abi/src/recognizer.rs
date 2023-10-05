@@ -6,11 +6,12 @@ pub trait Recognizer {
 }
 
 #[inline(never)]
-pub fn compute_bias(trie: &TokTrie, rec: &impl Recognizer, logits: &mut [f32]) {
+pub fn compute_bias(trie: &TokTrie, rec: (impl Recognizer + Copy), logits: &mut [f32]) {
     logits.iter_mut().for_each(|x| *x = -100.0);
     append_bias(trie, rec, logits);
 }
 
+#[derive(Copy, Clone)]
 pub struct Uppercase {
     len: usize,
 }
@@ -22,12 +23,12 @@ impl Uppercase {
 }
 
 impl Recognizer for Uppercase {
-    //#[inline(always)]
+    #[inline(never)]
     fn append(&self, _byte: u8) -> Self {
         Uppercase { len: self.len + 1 }
     }
 
-    //#[inline(always)]
+    #[inline(never)]
     fn allowed(&self, byte: u8) -> bool {
         byte != (('z' as usize + self.len) & 0xff) as u8
         // let ch = _byte as char;

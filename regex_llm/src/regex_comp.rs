@@ -91,7 +91,7 @@ fn main() -> Result<()> {
         let mut logits = vec![0.0; tokens.len()];
         let rec = Uppercase::new().append('N' as u8).append('E' as u8);
         for _ in 0..100 {
-            compute_bias(&trie, &rec, &mut logits);
+            compute_bias(&trie, rec, &mut logits);
         }
         times.save("compute_bias");
 

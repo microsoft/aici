@@ -1,5 +1,5 @@
 use gvm_abi::{
-    gvm_expose_all, include_bytes_aligned, println,
+    gvm_expose_all, include_bytes_aligned,
     rx::{StateOffset, TokRx},
     rxvm::RxGvm,
     GuidanceVm,
