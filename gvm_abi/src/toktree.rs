@@ -32,22 +32,22 @@ impl TokTrieHeader {
 pub struct TrieNode {
     // byte:token
     bits: u32,
-    subtree_size: u32,
+    bits2: u32,
 }
 
 const NO_TOKEN: u32 = 0xffffff;
 
 impl TrieNode {
-    fn new(byte: u8, token_id: u32) -> TrieNode {
+    fn new(byte: u8, token_id: u32, num_parents: u8) -> TrieNode {
         TrieNode {
             bits: (token_id << 8) | byte as u32,
-            subtree_size: 0,
+            bits2: num_parents as u32,
         }
     }
 
     #[inline(always)]
     unsafe fn next(&self) -> *const TrieNode {
-        self.ptr().add(self.subtree_size as usize)
+        self.ptr().add(self.subtree_size())
     }
 
     #[inline(always)]
@@ -63,6 +63,16 @@ impl TrieNode {
     #[inline(always)]
     pub fn byte(&self) -> u8 {
         (self.bits & 0xff) as u8
+    }
+
+    #[inline(always)]
+    pub fn subtree_size(&self) -> usize {
+        (self.bits2 >> 8) as usize
+    }
+
+    #[inline(always)]
+    pub fn num_parents(&self) -> usize {
+        (self.bits2 & 0xff) as usize
     }
 
     #[inline(always)]
@@ -93,7 +103,7 @@ impl TokTrie {
             token_data.extend_from_slice(word);
         }
         let mut nodes = Vec::new();
-        trie.serialize(&mut nodes);
+        trie.serialize(&mut nodes, 0);
         let r = TokTrie {
             info: info.clone(),
             token_offsets,
@@ -257,7 +267,7 @@ fn append_bias_core(rec: &impl Recognizer, logits: &mut [f32], n: &TrieNode) {
                 if let Some(tok) = n.token_id() {
                     logits[tok as usize] = 0.0;
                 }
-                if n.subtree_size > 1 {
+                if n.subtree_size() > 1 {
                     append_bias_core(&rec.append(b), logits, n);
                 }
             }
@@ -278,8 +288,8 @@ fn walk_core(n: &TrieNode) -> u32 {
             while p < endp {
                 let n = &*p;
                 p = n.next();
-                sum += n.subtree_size;
-                if n.subtree_size > 1 {
+                sum += n.subtree_size() as u32;
+                if n.subtree_size() > 1 {
                     stack_buf[stack_ptr] = (p, endp);
                     stack_ptr += 1;
                     endp = p;
@@ -356,13 +366,19 @@ impl TrieHash {
             }
         }
     }
-    fn serialize(&mut self, data: &mut Vec<TrieNode>) {
+    fn serialize(&mut self, data: &mut Vec<TrieNode>, num_parents: u32) {
         let idx = data.len();
-        data.push(TrieNode::new(self.byte, self.token_id));
+        data.push(TrieNode::new(self.byte, self.token_id, num_parents as u8));
         self.children.sort_by_key(|e| e.byte);
+        let mut num_ch = self.children.len();
         for entry in &mut self.children {
-            entry.serialize(data);
+            num_ch -= 1;
+            if num_ch == 0 {
+                entry.serialize(data, num_parents + 1);
+            } else {
+                entry.serialize(data, 0);
+            }
         }
-        data[idx].subtree_size = (data.len() - idx) as u32;
+        data[idx].bits2 |= ((data.len() - idx) as u32) << 8;
     }
 }
