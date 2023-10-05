@@ -1,4 +1,4 @@
-use anyhow::Result;
+use anyhow::{anyhow, Result};
 use gvm_abi::rx::TokRxInfo;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
@@ -39,6 +39,21 @@ pub fn tokenizers() -> Vec<Tokenizer> {
         tok!("phi", "Phi 1.5"),
         tok!("gpt2", "GPT-2"),
     ]
+}
+
+pub fn find_tokenizer(name: &str) -> Result<Tokenizer> {
+    for t in tokenizers() {
+        if t.name == name {
+            return Ok(t);
+        }
+    }
+
+    println!("unknown tokenizer: {}", name);
+    println!("available tokenizers:");
+    for t in tokenizers() {
+        println!("  {:20} {}", t.name, t.description);
+    }
+    return Err(anyhow!("unknown tokenizer: {}", name));
 }
 
 fn from_hex(hex_str: &str) -> Result<Vec<u8>> {

@@ -5,7 +5,7 @@ use anyhow::{Ok, Result};
 use clap::Parser;
 use gvm_abi::recognizer::{compute_bias, Recognizer, Uppercase};
 use gvm_abi::toktree::{walk, TokTrie};
-use gvm_tokenizers::tokenizers;
+use gvm_tokenizers::find_tokenizer;
 use indexmap::IndexMap;
 use regex_automata::dfa::{dense, dense::DFA, Automaton};
 use regex_automata::util::{primitives::StateID, syntax};
@@ -43,19 +43,8 @@ fn main() -> Result<()> {
     let mut times = timelog::TimeLog::new();
 
     let cli = Cli::parse();
-    let mut toklist = tokenizers();
 
-    let tokenizer = toklist.iter_mut().find(|t| t.name == cli.tokenizer);
-    if tokenizer.is_none() {
-        println!("unknown tokenizer: {}", cli.tokenizer);
-        println!("available tokenizers:");
-        for t in toklist {
-            println!("  {:20} {}", t.name, t.description);
-        }
-        return Ok(());
-    }
-    let tokenizer = tokenizer.unwrap();
-
+    let mut tokenizer = find_tokenizer(&cli.tokenizer)?;
     tokenizer.load();
     let tok_eos = tokenizer.info.as_ref().unwrap().eos_token;
 
