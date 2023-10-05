@@ -29,7 +29,7 @@ impl Recognizer for Uppercase {
 
     //#[inline(always)]
     fn allowed(&self, byte: u8) -> bool {
-        byte != 0xff
+        byte != (('z' as usize + self.len) & 0xff) as u8
         // let ch = _byte as char;
         // if self.len < 2 {
         //     'A' <= ch && ch <= 'Z'
