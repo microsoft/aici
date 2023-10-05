@@ -1,5 +1,5 @@
 use crate::rx::{StateOffset, TokRx};
-use crate::{println, GuidanceVm, GuidanceVmHelper};
+use crate::{wprintln, GuidanceVm, GuidanceVmHelper};
 
 pub struct RxGvm {
     pub helper: GuidanceVmHelper,
@@ -19,7 +19,7 @@ impl RxGvm {
 
 impl GuidanceVm for RxGvm {
     fn gvm_process_prompt(&mut self) {
-        println!("prompt, {} tokens", self.helper.prompt_length);
+        wprintln!("prompt, {} tokens", self.helper.prompt_length);
         // the regex doesn't care about the prompt
         self.state = StateOffset::START;
         self.compiled
@@ -27,7 +27,7 @@ impl GuidanceVm for RxGvm {
     }
 
     fn gvm_append_token(&mut self, token: u32) {
-        // println!("xapp {:?} {} {}", self as *const _, token, self.state.off);
+        // wprintln!("xapp {:?} {} {}", self as *const _, token, self.state.off);
         self.state = self.compiled.advance(self.state, token);
 
         // save the token, just in case
@@ -46,7 +46,7 @@ impl GuidanceVm for RxGvm {
             compiled: self.compiled.clone(),
             state: self.state.clone(),
         };
-        println!("{} -> {}", self.state.off, r.state.off);
+        wprintln!("{} -> {}", self.state.off, r.state.off);
         r
     }
 }

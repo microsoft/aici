@@ -112,7 +112,7 @@ macro_rules! include_bytes_aligned {
 }
 
 #[macro_export]
-macro_rules! println {
+macro_rules! wprintln {
     () => {
         $crate::printing::_print("\n")
     };
@@ -123,7 +123,7 @@ macro_rules! println {
 }
 
 #[macro_export]
-macro_rules! print {
+macro_rules! wprint {
     ($($arg:tt)*) => {{
         $crate::printing::_print(&format!($($arg)*));
     }};
