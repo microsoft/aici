@@ -51,8 +51,6 @@ void gvm_free(Gvm *gvm);
 // Log a string.
 void gvm_host_print(const uint8_t *ptr, uint32_t size);
 
-// Provisional, not implemented yet:
-
-// Get bytes corresponding to given token. `size` is `sizeof(dst)`.
-// The length of token is returned (even if its bigger than `size`).
-uint32_t gvm_host_token_to_bytes(token_t token, uint8_t dst[], uint32_t size);
+// Read binary representation of TokTrie.
+// Always returns the size of the trie, will write up to `size` bytes to `dst`.
+uint32_t gvm_host_read_token_trie(uint8_t *dst, uint32_t size);

@@ -563,6 +563,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "gvm_abi"
+version = "0.1.0"
+
+[[package]]
+name = "gvm_tokenizers"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "gvm_abi",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "gvmrt"
 version = "0.1.0"
 dependencies = [
@@ -570,6 +584,8 @@ dependencies = [
  "base64",
  "clap",
  "env_logger",
+ "gvm_abi",
+ "gvm_tokenizers",
  "hex",
  "libc",
  "log",

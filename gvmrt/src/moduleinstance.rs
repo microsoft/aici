@@ -1,4 +1,5 @@
 use anyhow::{anyhow, ensure, Result};
+use gvm_abi::rx::TokRxInfo;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
@@ -8,17 +9,19 @@ use wasmtime;
 pub struct GvmContext {
     id: Id,
     log: Vec<u8>,
+    globals: Arc<RwLock<GlobalInfo>>,
 }
 
 impl GvmContext {
-    pub fn from(id: Id) -> Self {
+    pub fn from(id: Id, globals: Arc<RwLock<GlobalInfo>>) -> Self {
         GvmContext {
             id,
             log: Vec::new(),
+            globals,
         }
     }
-    pub fn fake() -> Self {
-        Self::from(1000000)
+    pub fn fake(globals: Arc<RwLock<GlobalInfo>>) -> Self {
+        Self::from(1000000, globals)
     }
 
     pub fn append_line(&mut self, s: &str) {
@@ -47,7 +50,8 @@ struct WasmCtx {
 }
 
 pub struct GlobalInfo {
-    pub vocab_size: u32,
+    pub tokrx_info: TokRxInfo,
+    pub trie_bytes: Vec<u8>,
 }
 
 pub struct GvmInfo {
@@ -57,8 +61,8 @@ pub struct GvmInfo {
 }
 
 impl GvmInfo {
-    pub fn context(&self) -> GvmContext {
-        GvmContext::from(self.id)
+    pub fn context(&self, globals: Arc<RwLock<GlobalInfo>>) -> GvmContext {
+        GvmContext::from(self.id, globals)
     }
 }
 
@@ -174,7 +178,7 @@ impl ModuleInstance {
     ) -> Result<Self> {
         let engine = module.engine();
 
-        let mut store = wasmtime::Store::new(engine, GvmContext::fake());
+        let mut store = wasmtime::Store::new(engine, GvmContext::fake(globals.clone()));
         let instance = linker.instantiate(&mut store, &module)?;
         let memory = instance
             .get_memory(&mut store, "memory")
@@ -209,9 +213,9 @@ impl ModuleInstance {
     }
 
     fn setup_logit_bias(&mut self, id: Id, handle: WasmGvm) -> Result<u32> {
-        let vocab_size = { self.globals.read().unwrap().vocab_size };
+        let vocab_size = { self.globals.read().unwrap().tokrx_info.vocab_size };
         let logit_ptr = self.wasm.call_func_in::<(WasmGvm, u32), WasmPtr>(
-            &GvmContext::from(id),
+            &GvmContext::from(id, self.globals.clone()),
             "gvm_get_logit_bias_buffer",
             (handle, vocab_size),
         )?;
@@ -242,7 +246,7 @@ impl ModuleInstance {
 
                     self.run_init()?;
 
-                    let ctx = GvmContext::from(*id);
+                    let ctx = GvmContext::from(*id, self.globals.clone());
                     let handle = self
                         .wasm
                         .call_func_in::<(), WasmGvm>(&ctx, "gvm_create", ())?;
@@ -269,7 +273,7 @@ impl ModuleInstance {
                                 .get(&cid)
                                 .ok_or(anyhow!("invalid clone_id {} (inner)", cid))?;
                             let child = self.wasm.call_func_in::<WasmGvm, WasmGvm>(
-                                &GvmContext::from(*id),
+                                &GvmContext::from(*id, self.globals.clone()),
                                 "gvm_clone",
                                 parent.handle,
                             )?;
@@ -289,7 +293,7 @@ impl ModuleInstance {
                 .get(&id)
                 .ok_or(anyhow!("invalid Gen id {}", id))?;
             self.wasm.call_func_in::<(WasmGvm, Token), ()>(
-                &ginfo.context(),
+                &ginfo.context(self.globals.clone()),
                 "gvm_append_token",
                 (ginfo.handle, gen),
             )?;
@@ -305,7 +309,7 @@ pub fn setup_linker(engine: &wasmtime::Engine) -> Result<Arc<wasmtime::Linker<Gv
     linker.func_wrap(
         "env",
         "gvm_host_print",
-        |mut caller: wasmtime::Caller<'_, GvmContext>, ptr: i32, len: i32| {
+        |mut caller: wasmtime::Caller<'_, GvmContext>, ptr: u32, len: u32| {
             let mut bytes = if let Some(wasmtime::Extern::Memory(mem)) = caller.get_export("memory")
             {
                 let ptr = ptr as usize;
@@ -318,6 +322,29 @@ pub fn setup_linker(engine: &wasmtime::Engine) -> Result<Arc<wasmtime::Linker<Gv
             caller.data_mut().log.append(&mut bytes);
         },
     )?;
+
+    // uint32_t gvm_host_read_token_trie(uint8_t *dst, uint32_t size);
+    linker.func_wrap(
+        "env",
+        "gvm_host_read_token_trie",
+        |mut caller: wasmtime::Caller<'_, GvmContext>, ptr: u32, len: u32| {
+            let lock = caller.data().globals.clone();
+            let info = lock.read().unwrap();
+            if let Some(wasmtime::Extern::Memory(mem)) = caller.get_export("memory") {
+                if len > 0 {
+                    let ptr = ptr as usize;
+                    let len = len as usize;
+                    let min_len = std::cmp::min(len as usize, info.trie_bytes.len());
+                    mem.write(&mut caller, ptr, &info.trie_bytes[..min_len])
+                        .unwrap();
+                }
+                info.trie_bytes.len() as u32
+            } else {
+                panic!("no memory")
+            }
+        },
+    )?;
+
     let linker = Arc::new(linker);
     Ok(linker)
 }

@@ -86,7 +86,25 @@ impl TrieNode {
     }
 }
 
+#[allow(dead_code)]
+extern "C" {
+    fn gvm_host_read_token_trie(ptr: *mut u8, len: u32) -> u32;
+}
+
 impl TokTrie {
+    pub fn from_env() -> Self {
+        #[cfg(target_arch = "wasm32")]
+        unsafe {
+            let size = gvm_host_read_token_trie(0 as _, 0);
+            let mut buffer = vec![0u8; size as usize];
+            gvm_host_read_token_trie(buffer.as_mut_ptr(), size);
+            Self::from_bytes(&buffer)
+        }
+
+        #[cfg(not(target_arch = "wasm32"))]
+        Self::from_bytes(&std::fs::read("tokenizer.bin").unwrap())
+    }
+
     pub fn from(info: &TokRxInfo, words: &Vec<Vec<u8>>) -> Self {
         let mut trie = TrieHash::new(0xff);
         let mut token_offsets = Vec::new();

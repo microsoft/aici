@@ -7,6 +7,8 @@ use anyhow::{anyhow, ensure, Result};
 use base64;
 use base64::{engine::general_purpose, Engine as _};
 use clap::Parser;
+use gvm_abi::toktree::TokTrie;
+use gvm_tokenizers::{find_tokenizer, Tokenizer};
 use hex;
 use log::{debug, info, warn};
 use rayon::prelude::*;
@@ -35,6 +37,10 @@ struct Cli {
     /// Path to .json metadata for module to install
     #[arg(short = 'j', long)]
     module_meta: Option<String>,
+
+    /// Tokenizer to use; try --tokenizer list to see options
+    #[arg(short, long, default_value = "llama")]
+    tokenizer: String,
 
     /// Run main() from the module just added
     #[arg(short, long)]
@@ -111,10 +117,24 @@ struct TokensReq {
 }
 
 impl Executor {
-    pub fn new(bin_shm: Option<Shm>) -> Result<Self> {
+    pub fn new(bin_shm: Option<Shm>, mut tokenizer: Tokenizer) -> Result<Self> {
         let engine = wasmtime::Engine::default();
         let linker = setup_linker(&engine)?;
-        let globals = GlobalInfo { vocab_size: 0 };
+
+        tokenizer.load();
+        let tokens = tokenizer.token_bytes();
+        let trie = TokTrie::from(&tokenizer.tokrx_info(), &tokens);
+        trie.check_against(&tokens);
+        let bytes = trie.serialize();
+        // validate
+        let trie2 = TokTrie::from_bytes(&bytes);
+        assert!(trie.info() == trie2.info());
+        trie2.check_against(&tokens);
+
+        let globals = GlobalInfo {
+            tokrx_info: tokenizer.tokrx_info(),
+            trie_bytes: bytes,
+        };
 
         Ok(Self {
             cache_path: PathBuf::from("./cache"),
@@ -208,14 +228,6 @@ impl Executor {
         Ok(())
     }
 
-    fn tokens(&mut self, req: TokensReq) -> Result<Value> {
-        let ntok = req.tokens.len();
-        info!("tokens: {} eos={:?}", ntok, req.special.eos);
-        let mut g = self.globals.write().unwrap();
-        g.vocab_size = ntok.try_into()?;
-        Ok(json!({}))
-    }
-
     fn gvm_step(&mut self, req: GvmStepReq) -> Result<Value> {
         for id in req.freed {
             debug!("free module {}", id);
@@ -227,7 +239,7 @@ impl Executor {
             self.mk_instance(&op)?
         }
 
-        let vocab_block_len = { self.globals.read().unwrap().vocab_size * 4 } as usize;
+        let vocab_block_len = { self.globals.read().unwrap().tokrx_info.vocab_size * 4 } as usize;
 
         let binresp_ch = self.bin_shm.as_ref().unwrap();
         let mut slices = binresp_ch.split(vocab_block_len)?;
@@ -302,7 +314,7 @@ impl Dispatcher {
         Ok(Self {
             cmd_ch,
             resp_ch,
-            executor: Executor::new(Some(bin_shm))?,
+            executor: Executor::new(Some(bin_shm), find_tokenizer(&cli.tokenizer)?)?,
         })
     }
 
@@ -315,7 +327,6 @@ impl Dispatcher {
         match json["op"].as_str() {
             Some("ping") => Ok(json!({ "pong": 1 })),
             Some("mk_module") => self.executor.mk_module(serde_json::from_value(json)?),
-            Some("tokens") => self.executor.tokens(serde_json::from_value(json)?),
             Some("step") => self.executor.gvm_step(serde_json::from_value(json)?),
             Some("stop") => std::process::exit(0),
             _ => return Err(anyhow!("bad op")),
@@ -365,7 +376,7 @@ fn main() -> () {
 
     // You can check the value provided by positional arguments, or option arguments
     if let Some(name) = cli.module.as_deref() {
-        let mut exec = Executor::new(None).unwrap();
+        let mut exec = Executor::new(None, find_tokenizer(&cli.tokenizer).unwrap()).unwrap();
         let module_id = if name.len() == 64 && name.chars().all(|c| c.is_digit(16)) {
             name.to_string()
         } else {
