@@ -88,7 +88,7 @@ fn main() -> Result<()> {
         let ch = trie.child_at_bytes(root, &"the".as_bytes()).unwrap();
         println!("ch: {:?}", ch.token_id());
         println!("sz: {} bytes", trie.serialize().len());
-        let mut logits = vec![0.0; tokens.len()];
+        let mut logits = vec![0.0; tokens.len() + 1];
         let rec = Uppercase::new().append('N' as u8).append('E' as u8);
         for _ in 0..100 {
             compute_bias(&trie, rec, &mut logits);
