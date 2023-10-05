@@ -12,3 +12,4 @@ regex_llm/rx.bin
 regex_llm/trie
 perf.data
 gvm_use_tok/src/tokenizers
+tokenizer.bin

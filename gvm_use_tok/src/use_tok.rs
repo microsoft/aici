@@ -6,7 +6,7 @@ use gvm_abi::{
 fn main() {
     init_panic();
 
-    let trie = TokTrie::from_bytes(include_bytes!("tokenizers/gpt4.bin"));
+    let trie = TokTrie::from_env();
     for idx in 1000..1001 {
         let bytes = trie.token(idx);
         wprintln!("{}: {:?}", idx, String::from_utf8_lossy(bytes));
