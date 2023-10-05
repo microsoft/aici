@@ -366,20 +366,23 @@ fn main() -> () {
     // You can check the value provided by positional arguments, or option arguments
     if let Some(name) = cli.module.as_deref() {
         let mut exec = Executor::new(None).unwrap();
-        let wasm_bytes = fs::read(name).unwrap();
-        let meta_bytes = match cli.module_meta.as_deref() {
-            Some(name) => fs::read(name).unwrap(),
-            None => serde_json::to_vec(&Value::Null).unwrap(),
+        let module_id = if name.len() == 64 && name.chars().all(|c| c.is_digit(16)) {
+            name.to_string()
+        } else {
+            let wasm_bytes = fs::read(name).unwrap();
+            let meta_bytes = match cli.module_meta.as_deref() {
+                Some(name) => fs::read(name).unwrap(),
+                None => serde_json::to_vec(&Value::Null).unwrap(),
+            };
+
+            let json = exec.create_module(wasm_bytes, meta_bytes).unwrap();
+            json["module_id"].as_str().unwrap().to_string()
         };
-
-        let json = exec.create_module(wasm_bytes, meta_bytes).unwrap();
-
-        let module_id = json["module_id"].as_str().unwrap();
 
         println!("{}", module_id);
 
         if cli.run {
-            let mut modi = exec.new_instance(module_id).unwrap();
+            let mut modi = exec.new_instance(&module_id).unwrap();
             modi.run_main().unwrap();
         }
 

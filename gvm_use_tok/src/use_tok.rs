@@ -1,13 +1,15 @@
 use gvm_abi::{
     recognizer::{compute_bias, Recognizer, Uppercase},
-    toktree::TokTrie,
+    toktree::TokTrie, printing::init_panic, wprintln,
 };
 
 fn main() {
+    init_panic();
+
     let trie = TokTrie::from_bytes(include_bytes!("tokenizers/gpt4.bin"));
     for idx in 1000..1001 {
         let bytes = trie.token(idx);
-        println!("{}: {:?}", idx, String::from_utf8_lossy(bytes));
+        wprintln!("{}: {:?}", idx, String::from_utf8_lossy(bytes));
     }
 
     let mut logits = vec![0.0; trie.vocab_size()];
@@ -16,5 +18,5 @@ fn main() {
         compute_bias(&trie, &rec, &mut logits);
     }
 
-    println!("res: {}", logits.iter().filter(|x| **x > -50.0).count());
+    wprintln!("res: {}", logits.iter().filter(|x| **x > -50.0).count());
 }
