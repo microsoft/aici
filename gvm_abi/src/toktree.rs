@@ -273,9 +273,9 @@ impl TokTrie {
     }
 }
 
-pub fn append_bias<S: Copy>(trie: &TokTrie, r: &mut impl Recognizer<S>, logits: &mut [f32]) {
+pub fn append_bias<S: Copy>(trie: &TokTrie, r: &mut impl Recognizer<S>, state: S, logits: &mut [f32]) {
     let n = trie.root();
-    let mut stack_buf = [r.initial(); 130];
+    let mut stack_buf = [state; 130];
     let mut stack_ptr = 1;
     let defl_tok = trie.vocab_size() as u32;
     unsafe {
