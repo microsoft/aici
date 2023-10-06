@@ -130,10 +130,6 @@ impl TokTrie {
         off
     }
 
-    fn node_child0(&self, n: &TrieNode) -> usize {
-        return self.node_offset(n) + 1;
-    }
-
     fn next_node(&self, n: &TrieNode) -> usize {
         return self.node_offset(n) + n.subtree_size();
     }
@@ -183,11 +179,8 @@ impl TokTrie {
         }
         let endp = self.next_node(n);
         assert!(endp <= ep);
-        let mut p = self.node_child0(n);
-        while p < endp {
-            let n = &self.nodes[p];
-            p = self.next_node(n);
-            self.validate_node(n, endp, used)
+        for child in self.node_children(n) {
+            self.validate_node(child, endp, used);
         }
     }
 
@@ -248,16 +241,21 @@ impl TokTrie {
     }
 
     pub fn child_at_byte<'a>(&'a self, n: &'a TrieNode, byte: u8) -> Option<&'a TrieNode> {
-        let mut p = self.node_child0(n);
-        let endp = self.next_node(n);
-        while p < endp {
-            let n = &self.nodes[p];
-            if n.byte() == byte {
-                return Some(n);
+        for child in self.node_children(n) {
+            if child.byte() == byte {
+                return Some(child);
             }
-            p = self.next_node(n);
         }
         None
+    }
+
+    pub fn node_children(&self, n: &TrieNode) -> NodeChildren {
+        let off = self.node_offset(n);
+        NodeChildren {
+            trie: self,
+            current_offset: off + 1,
+            end_offset: off + n.subtree_size(),
+        }
     }
 
     pub fn child_at_bytes<'a>(&'a self, mut n: &'a TrieNode, bytes: &[u8]) -> Option<&'a TrieNode> {
@@ -275,8 +273,9 @@ impl TokTrie {
         let mut stack_buf = [state; 130];
         let mut stack_ptr = 1;
         let defl_tok = self.vocab_size() as u32;
-        let mut p = self.node_child0(n);
-        let endp = self.next_node(n);
+        let off = self.node_offset(n);
+        let mut p = off + 1;
+        let endp = off + n.subtree_size();
         while p < endp {
             let n = &self.nodes[p];
             let b = n.byte();
@@ -295,6 +294,26 @@ impl TokTrie {
             }
         }
         //panic!("st: {}", stack_ptr);
+    }
+}
+
+pub struct NodeChildren<'a> {
+    trie: &'a TokTrie,
+    current_offset: usize,
+    end_offset: usize,
+}
+
+impl<'a> Iterator for NodeChildren<'a> {
+    type Item = &'a TrieNode;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.current_offset < self.end_offset {
+            let node = &self.trie.nodes[self.current_offset];
+            self.current_offset += node.subtree_size();
+            Some(node)
+        } else {
+            None
+        }
     }
 }
 
