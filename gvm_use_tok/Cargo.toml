@@ -5,6 +5,7 @@ edition = "2021"
 
 [dependencies]
 gvm_abi = "0.1.0"
+regex-automata = { version = "0.3.8", default-features = false, features = ["dfa", "syntax", "perf"] }
 
 [patch.crates-io]
 gvm_abi = { path = "../gvm_abi" }
