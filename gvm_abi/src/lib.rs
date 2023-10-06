@@ -1,3 +1,4 @@
+pub mod bytes;
 pub mod printing;
 pub mod recognizer;
 pub mod rx;

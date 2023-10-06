@@ -1,5 +1,5 @@
 use anyhow::{anyhow, ensure, Result};
-use gvm_abi::rx::TokRxInfo;
+use gvm_abi::bytes::TokRxInfo;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
