@@ -15,12 +15,19 @@ pub enum SpecialToken {
 }
 
 pub trait Recognizer {
+    /// stack.push(X) where stack.top() trasitions via byte to X
     fn push_byte(&mut self, byte: u8);
+    /// for _ in 0..num { stack.pop() }
     fn pop_bytes(&mut self, num: usize);
-    fn byte_allowed(&mut self, byte: u8) -> bool;
-    fn special_allowed(&mut self, tok: SpecialToken) -> bool;
-    fn trie_finished(&mut self);
+    /// X = stack.top(); stack.empty(); stack.push(X)
     fn collapse(&mut self);
+    /// check if stack.top() transitions via byte to a viable state
+    fn byte_allowed(&mut self, byte: u8) -> bool;
+    /// check if stack.top() transitions via tok to a viable state
+    fn special_allowed(&mut self, tok: SpecialToken) -> bool;
+    /// Called when iteration over the trie is finished
+    /// Stack has exactly one element then.
+    fn trie_finished(&mut self);
 }
 
 pub struct TokTrie {

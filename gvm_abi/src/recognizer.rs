@@ -89,9 +89,13 @@ impl<R: Recognizer + Clone> GuidanceVm for GvmRecognizer<R> {
 }
 
 pub trait FunctionalRecognizer<S: Copy> {
+    /// Initial state
     fn initial(&self) -> S;
+    /// Extend the recognizer with given byte.
     fn append(&self, state: S, byte: u8) -> S;
+    /// Check if given byte is allowed in given state.
     fn byte_allowed(&self, state: S, byte: u8) -> bool;
+    /// Check if given special token is allowed in given state.
     fn special_allowed(&self, state: S, tok: SpecialToken) -> bool;
 }
 
