@@ -126,6 +126,8 @@ class GvmRunner:
         resp = self._cmd_and_resp("tokens")
         self.vocab_size = resp["data"]["vocab_size"]
 
+        self.step_reset()
+
         GvmRunner.instance = self
 
     def _send_cmd(self, data):
@@ -148,43 +150,69 @@ class GvmRunner:
             )
         return resp
 
+    def step_reset(self):
+        self.prompt_q = []
+        self.gen_q = []
+        self.freed_seq_ids = []
+
+    def step_add_prompt(self, id: int, prompt: List[int], module_id: int, module_arg):
+        self.prompt_q.append(
+            {
+                "id": id,
+                "prompt": prompt,
+                "module_id": module_id,
+                "module_arg": module_arg,
+            }
+        )
+
+    def step_add_token(self, id: int, token: int, clone_id: int = None):
+        obj = {"id": id, "gen": token}
+        if clone_id is not None:
+            obj["clone_id"] = clone_id
+        self.gen_q.append(obj)
+
+    def step_free_seq(self, id: int):
+        self.freed_seq_ids.append(id)
+
+    def step_finish(self):
+        cmd = {
+            "op": "step",
+            "freed": self.freed_seq_ids,
+            "ops": self.prompt_q + self.gen_q,
+        }
+        self.batch_size = len(cmd["ops"])
+        assert not self.logit_pending
+        self.logit_pending = True
+        self._send_cmd(cmd)
+        self.step_reset()
+
     def step(
         self,
         freed_seq_ids: List[int],
         seq_group_metadata_list: List["SequenceGroupMetadata"],
     ):
-        prompt_q = []
-        gen_q = []
+        for f in freed_seq_ids:
+            self.step_free_seq(f)
+
         for s in seq_group_metadata_list:
             ids = list(s.seq_data.keys())
             if s.is_prompt:
                 assert len(ids) == 1
                 id = ids[0]
-                prompt_q.append(
-                    {
-                        "id": id,
-                        "prompt": s.seq_data[id].prompt_token_ids,
-                        "module_id": s.sampling_params.gvm_module,
-                        "module_arg": s.sampling_params.gvm_arg,
-                    }
+                self.step_add_prompt(
+                    id,
+                    prompt=s.seq_data[id].prompt_token_ids,
+                    module_id=s.sampling_params.gvm_module,
+                    module_arg=s.sampling_params.gvm_arg,
                 )
             else:
                 for id in ids:
+                    clone_id = None
                     out = s.seq_data[id].output_token_ids
-                    obj = {"id": id, "gen": out[-1]}
                     if len(out) == 1 and id != ids[0]:
-                        obj["clone_id"] = ids[0]
-                    gen_q.append(obj)
-        cmd = {
-            "op": "step",
-            "freed": freed_seq_ids,
-            "ops": prompt_q + gen_q,
-        }
-        self.batch_size = len(cmd["ops"])
-        # self.scheduler.freed_seq_ids = []
-        assert not self.logit_pending
-        self.logit_pending = True
-        self._send_cmd(cmd)
+                        clone_id = ids[0]
+                    self.step_add_token(id, token=out[-1], clone_id=clone_id)
+        self.step_finish()
 
     def flush_logit_bias(self):
         if self.logit_pending:
