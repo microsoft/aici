@@ -1,4 +1,4 @@
 [submodule "vllm"]
 	path = vllm
 	url = https://github.com/mmoskal/vllm
-	branch = wasm
+	branch = hooks
