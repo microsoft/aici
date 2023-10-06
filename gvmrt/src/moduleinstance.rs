@@ -3,6 +3,7 @@ use gvm_abi::rx::TokRxInfo;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
+use std::time::Instant;
 use wasmtime;
 
 #[derive(Clone)]
@@ -203,7 +204,9 @@ impl ModuleInstance {
 
     pub fn run_main(&mut self) -> Result<()> {
         self.run_init()?;
+        let t0 = Instant::now();
         let _ = self.wasm.call_func::<(i32, i32), i32>("main", (0, 0))?;
+        println!("time: {:?}", t0.elapsed());
         Ok(())
     }
 
