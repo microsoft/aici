@@ -3,7 +3,7 @@ mod timelog;
 
 use anyhow::{Ok, Result};
 use clap::Parser;
-use gvm_abi::recognizer::{compute_bias, Recognizer, Uppercase};
+use gvm_abi::recognizer::{compute_bias, LenExcluder};
 use gvm_abi::toktree::{walk, TokTrie};
 use gvm_tokenizers::find_tokenizer;
 use indexmap::IndexMap;
@@ -78,9 +78,9 @@ fn main() -> Result<()> {
         println!("ch: {:?}", ch.token_id());
         println!("sz: {} bytes", trie.serialize().len());
         let mut logits = vec![0.0; tokens.len() + 1];
-        let rec = Uppercase::new().append('N' as u8).append('E' as u8);
+        let mut rec = LenExcluder {};
         for _ in 0..100 {
-            compute_bias(&trie, rec, &mut logits);
+            compute_bias(&trie, &mut rec, &mut logits);
         }
         times.save("compute_bias");
 

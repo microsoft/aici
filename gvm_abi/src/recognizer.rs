@@ -1,42 +1,26 @@
-use crate::toktree::{append_bias, TokTrie};
-
-pub trait Recognizer {
-    fn append(&self, byte: u8) -> Self;
-    fn allowed(&self, byte: u8) -> bool;
-}
+use crate::toktree::{append_bias, TokTrie, Recognizer};
 
 #[inline(never)]
-pub fn compute_bias(trie: &TokTrie, rec: (impl Recognizer + Copy), logits: &mut [f32]) {
+pub fn compute_bias<S: Copy>(trie: &TokTrie, rec: &mut impl Recognizer<S>, logits: &mut [f32]) {
     logits.iter_mut().for_each(|x| *x = -100.0);
     append_bias(trie, rec, logits);
 }
 
-#[derive(Copy, Clone)]
-pub struct Uppercase {
-    len: usize,
-}
+pub struct LenExcluder {}
 
-impl Uppercase {
-    pub fn new() -> Self {
-        Uppercase { len: 0 }
-    }
-}
-
-impl Recognizer for Uppercase {
-    #[inline(never)]
-    fn append(&self, _byte: u8) -> Self {
-        Uppercase { len: self.len + 1 }
+impl Recognizer<u32> for LenExcluder {
+    fn initial(&mut self) -> u32 {
+        0
     }
 
     #[inline(never)]
-    fn allowed(&self, byte: u8) -> bool {
-        byte != (('z' as usize + self.len) & 0xff) as u8
-        // let ch = _byte as char;
-        // if self.len < 2 {
-        //     'A' <= ch && ch <= 'Z'
-        // } else {
-        //     'a' <= ch && ch <= 'z'
-        // }
+    fn append(&mut self, state: u32, _byte: u8) -> u32 {
+        state + 1
+    }
+
+    #[inline(never)]
+    fn allowed(&mut self, state: u32, byte: u8) -> bool {
+        byte != (('z' as u32 + state) & 0xff) as u8
     }
 }
 

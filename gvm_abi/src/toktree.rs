@@ -1,10 +1,15 @@
 // use 8:24 encoding - num_ch:tok_id (ch_byte:ch_off)* - 8 bytes per tree node
 // special case num_ch=0xff -> num_ch=0x100
 
-use crate::{
-    recognizer::Recognizer,
-    rx::{box_from_bytes, clone_as_bytes, clone_vec_as_bytes, vec_from_bytes, TokRxInfo, TokenId},
+use crate::rx::{
+    box_from_bytes, clone_as_bytes, clone_vec_as_bytes, vec_from_bytes, TokRxInfo, TokenId,
 };
+
+pub trait Recognizer<S: Copy> {
+    fn initial(&mut self) -> S;
+    fn append(&mut self, state: S, byte: u8) -> S;
+    fn allowed(&mut self, state: S, byte: u8) -> bool;
+}
 
 pub struct TokTrie {
     info: TokRxInfo,
@@ -268,9 +273,9 @@ impl TokTrie {
     }
 }
 
-pub fn append_bias<T: Recognizer + Copy>(trie: &TokTrie, rec0: T, logits: &mut [f32]) {
+pub fn append_bias<S: Copy>(trie: &TokTrie, r: &mut impl Recognizer<S>, logits: &mut [f32]) {
     let n = trie.root();
-    let mut stack_buf = [rec0; 130];
+    let mut stack_buf = [r.initial(); 130];
     let mut stack_ptr = 1;
     let defl_tok = trie.vocab_size() as u32;
     unsafe {
@@ -279,10 +284,10 @@ pub fn append_bias<T: Recognizer + Copy>(trie: &TokTrie, rec0: T, logits: &mut [
         while p < endp {
             let n = &*p;
             let b = n.byte();
-            let rec = &stack_buf[stack_ptr - 1];
-            if rec.allowed(b) {
+            let rec = stack_buf[stack_ptr - 1];
+            if r.allowed(rec, b) {
                 logits[n.token_id().unwrap_or(defl_tok) as usize] = 0.0;
-                stack_buf[stack_ptr] = rec.append(b);
+                stack_buf[stack_ptr] = r.append(rec, b);
                 stack_ptr += 1;
                 if n.subtree_size() == 1 {
                     stack_ptr -= n.num_parents();
