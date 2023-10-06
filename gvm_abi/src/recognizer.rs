@@ -1,4 +1,4 @@
-use std::{cell::RefCell, rc::Rc};
+use std::rc::Rc;
 
 use crate::{
     toktree::{Recognizer, TokTrie},
@@ -25,7 +25,7 @@ impl FunctionalRecognizer<u32> for LenExcluder {
 
 pub struct GvmRecognizer<R: Recognizer> {
     pub helper: GuidanceVmHelper,
-    pub rec: RefCell<R>,
+    pub rec: R,
     pub trie: Rc<Box<TokTrie>>,
 }
 
@@ -33,14 +33,14 @@ impl<R: Recognizer> GvmRecognizer<R> {
     pub fn from_recognizer(trie: Rc<Box<TokTrie>>, rec: R) -> Self {
         GvmRecognizer {
             helper: GuidanceVmHelper::new(),
-            rec: RefCell::new(rec),
+            rec,
             trie,
         }
     }
 
     fn compute(&mut self) {
-        let rec = &mut *self.rec.get_mut();
-        self.trie.compute_bias(rec, &mut self.helper.logit_biases);
+        self.trie
+            .compute_bias(&mut self.rec, &mut self.helper.logit_biases);
     }
 }
 
@@ -48,7 +48,7 @@ impl<R: Recognizer + Clone> GuidanceVm for GvmRecognizer<R> {
     fn gvm_clone(&mut self) -> Self {
         GvmRecognizer {
             helper: self.helper.clone(),
-            rec: RefCell::new((*self.rec.borrow()).clone()),
+            rec: self.rec.clone(),
             trie: self.trie.clone(),
         }
     }
@@ -62,10 +62,8 @@ impl<R: Recognizer + Clone> GuidanceVm for GvmRecognizer<R> {
     fn gvm_append_token(&mut self, token: u32) {
         // wprintln!("xapp {:?} {} {}", self as *const _, token, self.state.off);
         let bytes = self.trie.token(token);
-
-        let rec = &mut *self.rec.get_mut();
         for b in bytes {
-            rec.push_byte(*b)
+            self.rec.push_byte(*b)
         }
 
         // save the token, just in case
@@ -106,6 +104,7 @@ impl<S: Copy, R: FunctionalRecognizer<S>> StackRecognizer<S, R> {
 }
 
 impl<S: Copy, R: FunctionalRecognizer<S>> Recognizer for StackRecognizer<S, R> {
+    #[inline(always)]
     fn push_byte(&mut self, byte: u8) {
         let state = self.stack[self.stack_ptr];
         let state = self.rec.append(state, byte);
@@ -113,10 +112,12 @@ impl<S: Copy, R: FunctionalRecognizer<S>> Recognizer for StackRecognizer<S, R> {
         self.stack[self.stack_ptr] = state;
     }
 
+    #[inline(always)]
     fn pop_bytes(&mut self, num: usize) {
         self.stack_ptr -= num;
     }
 
+    #[inline(always)]
     fn byte_allowed(&mut self, byte: u8) -> bool {
         self.rec.allowed(self.stack[self.stack_ptr], byte)
     }
