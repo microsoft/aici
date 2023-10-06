@@ -2,8 +2,8 @@ use std::rc::Rc;
 
 use gvm_abi::{
     gvm_expose_all,
-    recognizer::{compute_bias, GvmRecognizer},
-    toktree::{Recognizer, TokTrie},
+    recognizer::{FunctionalRecognizer, GvmRecognizer, StackRecognizer},
+    toktree::TokTrie,
     wprintln, GuidanceVm,
 };
 use regex_automata::{
@@ -11,10 +11,12 @@ use regex_automata::{
     util::{primitives::StateID, syntax},
 };
 
+#[derive(Clone)]
 pub struct RecRx {
     dfa: dense::DFA<Vec<u32>>,
 }
-pub type RxRecognizer = GvmRecognizer<StateID, RecRx>;
+
+pub type RxRecognizer = GvmRecognizer<StackRecognizer<StateID, RecRx>>;
 
 impl RecRx {
     pub fn from_rx(rx: &str) -> Self {
@@ -29,12 +31,14 @@ impl RecRx {
 
     pub fn to_recognizer(self) -> RxRecognizer {
         let trie = Rc::new(Box::new(TokTrie::from_env()));
-        let rec = Rc::new(Box::new(self));
-        GvmRecognizer::<StateID, RecRx>::from_recognizer(trie, rec)
+        GvmRecognizer::<StackRecognizer<StateID, RecRx>>::from_recognizer(
+            trie,
+            StackRecognizer::from(self),
+        )
     }
 }
 
-impl Recognizer<StateID> for RecRx {
+impl FunctionalRecognizer<StateID> for RecRx {
     fn initial(&self) -> StateID {
         self.dfa
             .universal_start_state(regex_automata::Anchored::Yes)
@@ -68,12 +72,12 @@ fn main() {
         .unwrap();
     wprintln!("dfa: {} bytes", dfa.memory_usage());
 
-    let rec = RecRx { dfa };
+    let mut rec = StackRecognizer::from(RecRx { dfa });
     let mut logits = vec![0.0; trie.vocab_size() + 1];
     // let mut rec = LenExcluder {};
     for _ in 0..1000 {
-        let s = rec.initial();
-        compute_bias(&trie, &rec, s, &mut logits);
+        rec.reset();
+        trie.compute_bias(&mut rec, &mut logits);
     }
 
     let count = logits.iter().filter(|x| **x > -50.0).count();

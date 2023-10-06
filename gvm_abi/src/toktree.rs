@@ -5,10 +5,10 @@ use crate::bytes::{
     box_from_bytes, clone_as_bytes, clone_vec_as_bytes, vec_from_bytes, TokRxInfo, TokenId,
 };
 
-pub trait Recognizer<S: Copy> {
-    fn initial(&self) -> S;
-    fn append(&self, state: S, byte: u8) -> S;
-    fn allowed(&self, state: S, byte: u8) -> bool;
+pub trait Recognizer {
+    fn push_byte(&mut self, byte: u8);
+    fn pop_bytes(&mut self, num: usize);
+    fn byte_allowed(&mut self, byte: u8) -> bool;
 }
 
 pub struct TokTrie {
@@ -268,10 +268,9 @@ impl TokTrie {
         Some(n)
     }
 
-    pub fn append_bias<S: Copy>(&self, r: &impl Recognizer<S>, state: S, logits: &mut [f32]) {
+    pub fn compute_bias(&self, r: &mut impl Recognizer, logits: &mut [f32]) {
+        logits.iter_mut().for_each(|x| *x = -100.0);
         let n = self.root();
-        let mut stack_buf = [state; 130];
-        let mut stack_ptr = 1;
         let defl_tok = self.vocab_size() as u32;
         let off = self.node_offset(n);
         let mut p = off + 1;
@@ -279,18 +278,16 @@ impl TokTrie {
         while p < endp {
             let n = &self.nodes[p];
             let b = n.byte();
-            let rec = stack_buf[stack_ptr - 1];
-            if r.allowed(rec, b) {
+            if r.byte_allowed(b) {
                 logits[n.token_id().unwrap_or(defl_tok) as usize] = 0.0;
-                stack_buf[stack_ptr] = r.append(rec, b);
-                stack_ptr += 1;
+                r.push_byte(b);
                 if n.subtree_size() == 1 {
-                    stack_ptr -= n.num_parents();
+                    r.pop_bytes(n.num_parents());
                 }
                 p += 1;
             } else {
                 p += n.subtree_size();
-                stack_ptr -= n.num_parents() - 1;
+                r.pop_bytes(n.num_parents() - 1);
             }
         }
         //panic!("st: {}", stack_ptr);
