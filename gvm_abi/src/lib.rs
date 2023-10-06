@@ -1,8 +1,8 @@
 pub mod printing;
+pub mod recognizer;
 pub mod rx;
 pub mod rxvm;
 pub mod toktree;
-pub mod recognizer;
 
 /// Expose method as extern "C", usage:
 ///     expose!(Foo::set_count(n: i32) -> i32);
@@ -45,7 +45,9 @@ impl GuidanceVmHelper {
         }
     }
     pub fn gvm_get_logit_bias_buffer(&mut self, size: u32) -> *mut f32 {
-        self.logit_biases.resize(size as usize, 0.0);
+        // we keep one more logit at the end as a placeholder to avoid branching in
+        // the inner loop of append_bias
+        self.logit_biases.resize((size + 1) as usize, 0.0);
         self.logit_biases.as_mut_ptr()
     }
     pub fn gvm_get_prompt_buffer(&mut self, size: u32) -> *mut u32 {

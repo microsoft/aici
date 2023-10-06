@@ -34,14 +34,14 @@ impl Recognizer<u32> for LenExcluder {
     }
 }
 
-pub struct GvmRecognizer<S: Copy, R: Recognizer<S> + Clone> {
+pub struct GvmRecognizer<S: Copy, R: Recognizer<S>> {
     pub helper: GuidanceVmHelper,
     pub rec: Rc<Box<R>>,
     pub trie: Rc<Box<TokTrie>>,
     pub state: S,
 }
 
-impl<S: Copy, R: Recognizer<S> + Clone> GvmRecognizer<S, R> {
+impl<S: Copy, R: Recognizer<S>> GvmRecognizer<S, R> {
     pub fn from_recognizer(trie: Rc<Box<TokTrie>>, rec: Rc<Box<R>>) -> Self {
         let state = rec.as_ref().initial();
         GvmRecognizer {
@@ -59,7 +59,7 @@ impl<S: Copy, R: Recognizer<S> + Clone> GvmRecognizer<S, R> {
     }
 }
 
-impl<S: Copy, R: Recognizer<S> + Clone> GuidanceVm for GvmRecognizer<S, R> {
+impl<S: Copy, R: Recognizer<S>> GuidanceVm for GvmRecognizer<S, R> {
     fn gvm_clone(&mut self) -> Self {
         GvmRecognizer {
             helper: self.helper.clone(),

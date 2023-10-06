@@ -1,16 +1,37 @@
+use std::rc::Rc;
+
 use gvm_abi::{
-    printing::init_panic,
-    recognizer::compute_bias,
+    gvm_expose_all,
+    recognizer::{compute_bias, GvmRecognizer},
     toktree::{Recognizer, TokTrie},
-    wprintln,
+    wprintln, GuidanceVm,
 };
 use regex_automata::{
     dfa::{dense, Automaton},
     util::{primitives::StateID, syntax},
 };
 
-struct RecRx {
+pub struct RecRx {
     dfa: dense::DFA<Vec<u32>>,
+}
+pub type RxRecognizer = GvmRecognizer<StateID, RecRx>;
+
+impl RecRx {
+    pub fn from_rx(rx: &str) -> Self {
+        let dfa = dense::Builder::new()
+            .configure(dense::Config::new().start_kind(regex_automata::dfa::StartKind::Anchored))
+            .syntax(syntax::Config::new().unicode(false).utf8(false))
+            .build(&rx)
+            .unwrap();
+        wprintln!("dfa: {} bytes", dfa.memory_usage());
+        RecRx { dfa }
+    }
+
+    pub fn to_recognizer(self) -> RxRecognizer {
+        let trie = Rc::new(Box::new(TokTrie::from_env()));
+        let rec = Rc::new(Box::new(self));
+        GvmRecognizer::<StateID, RecRx>::from_recognizer(trie, rec)
+    }
 }
 
 impl Recognizer<StateID> for RecRx {
@@ -30,8 +51,6 @@ impl Recognizer<StateID> for RecRx {
 }
 
 fn main() {
-    init_panic();
-
     let trie = TokTrie::from_env();
     for idx in 1000..1001 {
         let bytes = trie.token(idx);
@@ -68,3 +87,11 @@ fn main() {
         }
     }
 }
+
+fn tokrx() -> RxRecognizer {
+    let _rx = r#"\{\n?"name": "(\\(["\\\/bfnrt]|u[a-fA-F0-9]{4})|[^"\\\x00-\x1F\x7F]+)*",\n"valid": (true|false),\n"type": "(foo|bar|baz|something|else)",\n"address": \{\n?"street": "(\\(["\\\/bfnrt]|u[a-fA-F0-9]{4})|[^"\\\x00-\x1F\x7F]+)*",\n"city": "(\\(["\\\/bfnrt]|u[a-fA-F0-9]{4})|[^"\\\x00-\x1F\x7F]+)*",\n"state": "([A-Z][A-Z])"\n?\},\n"age": \d+\n?\}"#;
+    let rx = r#"[^X]*"#;
+    RecRx::from_rx(rx).to_recognizer()
+}
+
+gvm_expose_all!(RxRecognizer, tokrx());
