@@ -1,4 +1,4 @@
-use std::rc::Rc;
+use std::{fmt::Debug, rc::Rc};
 
 use crate::{
     toktree::{Recognizer, TokTrie},
@@ -39,6 +39,7 @@ impl<R: Recognizer> GvmRecognizer<R> {
     }
 
     fn compute(&mut self) {
+        // wprintln!("compute");
         self.trie
             .compute_bias(&mut self.rec, &mut self.helper.logit_biases);
     }
@@ -61,10 +62,11 @@ impl<R: Recognizer + Clone> GuidanceVm for GvmRecognizer<R> {
 
     fn gvm_append_token(&mut self, token: u32) {
         let bytes = self.trie.token(token);
-        wprintln!("xapp {} {:?}", token, bytes);
+        // wprintln!("xapp {} {:?}", token, bytes);
         for b in bytes {
             self.rec.push_byte(*b)
         }
+        self.rec.collapse();
 
         // save the token, just in case
         let toks = &mut self.helper.tokens;
@@ -107,7 +109,7 @@ impl<S: Copy, R: FunctionalRecognizer<S>> StackRecognizer<S, R> {
     }
 }
 
-impl<S: Copy, R: FunctionalRecognizer<S>> Recognizer for StackRecognizer<S, R> {
+impl<S: Copy + Debug, R: FunctionalRecognizer<S>> Recognizer for StackRecognizer<S, R> {
     #[inline(always)]
     fn push_byte(&mut self, byte: u8) {
         let state = self.stack[self.stack_ptr];
@@ -124,5 +126,15 @@ impl<S: Copy, R: FunctionalRecognizer<S>> Recognizer for StackRecognizer<S, R> {
     #[inline(always)]
     fn byte_allowed(&mut self, byte: u8) -> bool {
         self.rec.allowed(self.stack[self.stack_ptr], byte)
+    }
+
+    fn trie_finished(&mut self) {
+        // wprintln!("{:?}", &self.stack[0..=self.stack_ptr]);
+        assert!(self.stack_ptr == 0);
+    }
+
+    fn collapse(&mut self) {
+        self.stack[0] = self.stack[self.stack_ptr];
+        self.stack_ptr = 0;
     }
 }

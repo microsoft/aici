@@ -100,8 +100,8 @@ fn main() {
 }
 
 fn tokrx() -> RxRecognizer {
-    let _rx = r#"\{\n?"name": "(\\(["\\\/bfnrt]|u[a-fA-F0-9]{4})|[^"\\\x00-\x1F\x7F]+)*",\n"valid": (true|false),\n"type": "(foo|bar|baz|something|else)",\n"address": \{\n?"street": "(\\(["\\\/bfnrt]|u[a-fA-F0-9]{4})|[^"\\\x00-\x1F\x7F]+)*",\n"city": "(\\(["\\\/bfnrt]|u[a-fA-F0-9]{4})|[^"\\\x00-\x1F\x7F]+)*",\n"state": "([A-Z][A-Z])"\n?\},\n"age": \d+\n?\}"#;
-    let rx = r#"[^X]*"#;
+    let rx = r#"\{\n?"name": "(\\(["\\\/bfnrt]|u[a-fA-F0-9]{4})|[^"\\\x00-\x1F\x7F]+)*",\n"valid": (true|false),\n"type": "(foo|bar|baz|something|else)",\n"address": \{\n?"street": "(\\(["\\\/bfnrt]|u[a-fA-F0-9]{4})|[^"\\\x00-\x1F\x7F]+)*",\n"city": "(\\(["\\\/bfnrt]|u[a-fA-F0-9]{4})|[^"\\\x00-\x1F\x7F]+)*",\n"state": "([A-Z][A-Z])"\n?\},\n"age": \d+\n?\}"#;
+    // let rx = r#"[^X]*"#;
     RecRx::from_rx(rx).to_recognizer()
 }
 

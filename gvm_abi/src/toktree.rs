@@ -9,6 +9,8 @@ pub trait Recognizer {
     fn push_byte(&mut self, byte: u8);
     fn pop_bytes(&mut self, num: usize);
     fn byte_allowed(&mut self, byte: u8) -> bool;
+    fn trie_finished(&mut self);
+    fn collapse(&mut self);
 }
 
 pub struct TokTrie {
@@ -111,7 +113,7 @@ impl TokTrie {
             token_data.extend_from_slice(word);
         }
         let mut nodes = Vec::new();
-        trie.serialize(&mut nodes, 1);
+        trie.serialize(&mut nodes, 0);
         let r = TokTrie {
             info: info.clone(),
             token_offsets,
@@ -301,7 +303,7 @@ impl TokTrie {
                 r.pop_bytes(n.num_parents() - 1);
             }
         }
-        //panic!("st: {}", stack_ptr);
+        r.trie_finished();
     }
 }
 
