@@ -6,10 +6,7 @@ import subprocess
 import ujson
 import numpy as np
 
-from typing import TYPE_CHECKING, List
-
-if TYPE_CHECKING:
-    from vllm.sequence import SequenceGroupMetadata
+from typing import List
 
 # macOS has 31 character name limit, so keep this short
 # (Linux has 255)
@@ -186,34 +183,6 @@ class GvmRunner:
         self._send_cmd(cmd)
         self.step_reset()
 
-    def step(
-        self,
-        freed_seq_ids: List[int],
-        seq_group_metadata_list: List["SequenceGroupMetadata"],
-    ):
-        for f in freed_seq_ids:
-            self.step_free_seq(f)
-
-        for s in seq_group_metadata_list:
-            ids = list(s.seq_data.keys())
-            if s.is_prompt:
-                assert len(ids) == 1
-                id = ids[0]
-                self.step_add_prompt(
-                    id,
-                    prompt=s.seq_data[id].prompt_token_ids,
-                    module_id=s.sampling_params.gvm_module,
-                    module_arg=s.sampling_params.gvm_arg,
-                )
-            else:
-                for id in ids:
-                    clone_id = None
-                    out = s.seq_data[id].output_token_ids
-                    if len(out) == 1 and id != ids[0]:
-                        clone_id = ids[0]
-                    self.step_add_token(id, token=out[-1], clone_id=clone_id)
-        self.step_finish()
-
     def flush_logit_bias(self):
         if self.logit_pending:
             print("Warning: unflushed Gvm logit bias")
@@ -237,15 +206,38 @@ class GvmRunner:
 
 def install_in_vllm(runner: GvmRunner):
     from vllm.sampling_params import SamplingParams
+    from vllm.sequence import SequenceGroupMetadata
     import torch
 
     def step(
         freed_seq_ids: List[int],
-        seq_group_metadata_list: List["SequenceGroupMetadata"],
+        seq_group_metadata_list: List[SequenceGroupMetadata],
         _scheduler_outputs,
     ):
         runner.flush_logit_bias()
-        runner.step(freed_seq_ids, seq_group_metadata_list)
+
+        for f in freed_seq_ids:
+            runner.step_free_seq(f)
+
+        for s in seq_group_metadata_list:
+            ids = list(s.seq_data.keys())
+            if s.is_prompt:
+                assert len(ids) == 1
+                id = ids[0]
+                runner.step_add_prompt(
+                    id,
+                    prompt=s.seq_data[id].prompt_token_ids,
+                    module_id=s.sampling_params.gvm_module,
+                    module_arg=s.sampling_params.gvm_arg,
+                )
+            else:
+                for id in ids:
+                    clone_id = None
+                    out = s.seq_data[id].output_token_ids
+                    if len(out) == 1 and id != ids[0]:
+                        clone_id = ids[0]
+                    runner.step_add_token(id, token=out[-1], clone_id=clone_id)
+        runner.step_finish()
 
     def apply_bias(logits: torch.Tensor):
         bias = (
