@@ -14,17 +14,17 @@ struct RecRx {
 }
 
 impl Recognizer<StateID> for RecRx {
-    fn initial(&mut self) -> StateID {
+    fn initial(&self) -> StateID {
         self.dfa
             .universal_start_state(regex_automata::Anchored::Yes)
             .unwrap()
     }
 
-    fn append(&mut self, state: StateID, byte: u8) -> StateID {
+    fn append(&self, state: StateID, byte: u8) -> StateID {
         self.dfa.next_state(state, byte)
     }
 
-    fn allowed(&mut self, state: StateID, byte: u8) -> bool {
+    fn allowed(&self, state: StateID, byte: u8) -> bool {
         !self.dfa.is_dead_state(self.dfa.next_state(state, byte))
     }
 }
@@ -49,11 +49,12 @@ fn main() {
         .unwrap();
     wprintln!("dfa: {} bytes", dfa.memory_usage());
 
-    let mut rec = RecRx { dfa };
+    let rec = RecRx { dfa };
     let mut logits = vec![0.0; trie.vocab_size() + 1];
     // let mut rec = LenExcluder {};
     for _ in 0..1000 {
-        compute_bias(&trie, &mut rec, &mut logits);
+        let s = rec.initial();
+        compute_bias(&trie, &rec, s, &mut logits);
     }
 
     let count = logits.iter().filter(|x| **x > -50.0).count();

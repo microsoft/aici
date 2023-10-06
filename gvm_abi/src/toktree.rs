@@ -6,9 +6,9 @@ use crate::rx::{
 };
 
 pub trait Recognizer<S: Copy> {
-    fn initial(&mut self) -> S;
-    fn append(&mut self, state: S, byte: u8) -> S;
-    fn allowed(&mut self, state: S, byte: u8) -> bool;
+    fn initial(&self) -> S;
+    fn append(&self, state: S, byte: u8) -> S;
+    fn allowed(&self, state: S, byte: u8) -> bool;
 }
 
 pub struct TokTrie {
@@ -273,7 +273,7 @@ impl TokTrie {
     }
 }
 
-pub fn append_bias<S: Copy>(trie: &TokTrie, r: &mut impl Recognizer<S>, state: S, logits: &mut [f32]) {
+pub fn append_bias<S: Copy>(trie: &TokTrie, r: &impl Recognizer<S>, state: S, logits: &mut [f32]) {
     let n = trie.root();
     let mut stack_buf = [state; 130];
     let mut stack_ptr = 1;

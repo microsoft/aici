@@ -1,3 +1,5 @@
+use std::rc::Rc;
+
 use crate::{
     toktree::{append_bias, Recognizer, TokTrie},
     wprintln, GuidanceVm, GuidanceVmHelper,
@@ -6,7 +8,7 @@ use crate::{
 #[inline(never)]
 pub fn compute_bias<S: Copy>(
     trie: &TokTrie,
-    rec: &mut impl Recognizer<S>,
+    rec: &impl Recognizer<S>,
     state: S,
     logits: &mut [f32],
 ) {
@@ -17,31 +19,31 @@ pub fn compute_bias<S: Copy>(
 pub struct LenExcluder {}
 
 impl Recognizer<u32> for LenExcluder {
-    fn initial(&mut self) -> u32 {
+    fn initial(&self) -> u32 {
         0
     }
 
     #[inline(never)]
-    fn append(&mut self, state: u32, _byte: u8) -> u32 {
+    fn append(&self, state: u32, _byte: u8) -> u32 {
         state + 1
     }
 
     #[inline(never)]
-    fn allowed(&mut self, state: u32, byte: u8) -> bool {
+    fn allowed(&self, state: u32, byte: u8) -> bool {
         byte != (('z' as u32 + state) & 0xff) as u8
     }
 }
 
-pub struct GvmRecognizer<'a, S: Copy, R: Recognizer<S> + Clone> {
+pub struct GvmRecognizer<S: Copy, R: Recognizer<S> + Clone> {
     pub helper: GuidanceVmHelper,
-    pub rec: &'a mut R,
-    pub trie: &'a TokTrie,
+    pub rec: Rc<Box<R>>,
+    pub trie: Rc<Box<TokTrie>>,
     pub state: S,
 }
 
-impl<'a, S: Copy, R: Recognizer<S> + Clone> GvmRecognizer<'a, S, R> {
-    pub fn from_recognizer(trie: &'a TokTrie, rec: &'a mut R) -> Self {
-        let state = rec.initial();
+impl<S: Copy, R: Recognizer<S> + Clone> GvmRecognizer<S, R> {
+    pub fn from_recognizer(trie: Rc<Box<TokTrie>>, rec: Rc<Box<R>>) -> Self {
+        let state = rec.as_ref().initial();
         GvmRecognizer {
             helper: GuidanceVmHelper::new(),
             rec,
@@ -51,22 +53,19 @@ impl<'a, S: Copy, R: Recognizer<S> + Clone> GvmRecognizer<'a, S, R> {
     }
 
     fn compute(&mut self) {
-        compute_bias(
-            self.trie,
-            self.rec,
-            self.state,
-            &mut self.helper.logit_biases,
-        );
+        let trie = (*self.trie).as_ref();
+        let rec = (*self.rec).as_ref();
+        compute_bias(trie, rec, self.state, &mut self.helper.logit_biases);
     }
 }
 
-impl<'a, S: Copy, R: Recognizer<S> + Clone> GuidanceVm for GvmRecognizer<'a, S, R> {
+impl<S: Copy, R: Recognizer<S> + Clone> GuidanceVm for GvmRecognizer<S, R> {
     fn gvm_clone(&mut self) -> Self {
         GvmRecognizer {
             helper: self.helper.clone(),
-            rec: self.rec,
+            rec: self.rec.clone(),
             state: self.state,
-            trie: self.trie,
+            trie: self.trie.clone(),
         }
     }
 

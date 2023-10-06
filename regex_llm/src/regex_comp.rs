@@ -3,8 +3,7 @@ mod timelog;
 
 use anyhow::{Ok, Result};
 use clap::Parser;
-use gvm_abi::recognizer::{compute_bias, LenExcluder};
-use gvm_abi::toktree::{walk, TokTrie};
+use gvm_abi::toktree::TokTrie;
 use gvm_tokenizers::find_tokenizer;
 use indexmap::IndexMap;
 use regex_automata::dfa::{dense, dense::DFA, Automaton};
@@ -67,38 +66,6 @@ fn main() -> Result<()> {
 
         std::fs::write(filename.clone(), &bytes)?;
         println!("wrote {}, {} bytes", filename.display(), bytes.len());
-        return Ok(());
-    }
-
-    if cli.test {
-        let trie = TokTrie::from(&tokenizer.tokrx_info(), &tokens);
-        let root = trie.root();
-        times.save("build_trie");
-        let ch = trie.child_at_bytes(root, &"the".as_bytes()).unwrap();
-        println!("ch: {:?}", ch.token_id());
-        println!("sz: {} bytes", trie.serialize().len());
-        let mut logits = vec![0.0; tokens.len() + 1];
-        let mut rec = LenExcluder {};
-        for _ in 0..100 {
-            compute_bias(&trie, &mut rec, &mut logits);
-        }
-        times.save("compute_bias");
-
-        let mut sum = 0;
-        for _ in 0..100 {
-            sum += walk(&trie);
-        }
-        times.save("walk");
-
-        times.print();
-        println!("res: {}", logits.iter().filter(|x| **x > -50.0).count());
-        println!("sum: {}", sum);
-
-        // for (idx, l) in logits.iter().enumerate() {
-        //     if *l > -50.0 {
-        //         println!("{} {}", idx, String::from_utf8_lossy(&tokens[idx]));
-        //     }
-        // }
         return Ok(());
     }
 
