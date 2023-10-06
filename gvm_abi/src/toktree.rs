@@ -5,10 +5,20 @@ use crate::bytes::{
     box_from_bytes, clone_as_bytes, clone_vec_as_bytes, vec_from_bytes, TokRxInfo, TokenId,
 };
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum SpecialToken {
+    Unknown,
+    Padding,
+    Separator,
+    BeginningOfSentence,
+    EndOfSentence,
+}
+
 pub trait Recognizer {
     fn push_byte(&mut self, byte: u8);
     fn pop_bytes(&mut self, num: usize);
     fn byte_allowed(&mut self, byte: u8) -> bool;
+    fn special_allowed(&mut self, tok: SpecialToken) -> bool;
     fn trie_finished(&mut self);
     fn collapse(&mut self);
 }
@@ -138,6 +148,13 @@ impl TokTrie {
 
     pub fn info(&self) -> &TokRxInfo {
         &self.info
+    }
+
+    pub fn special_token(&self, tok: SpecialToken) -> TokenId {
+        match tok {
+            SpecialToken::EndOfSentence => self.info.tok_eos,
+            _ => todo!(),
+        }
     }
 
     pub fn vocab_size(&self) -> usize {
@@ -272,6 +289,13 @@ impl TokTrie {
 
     pub fn compute_bias(&self, r: &mut impl Recognizer, logits: &mut [f32]) {
         logits.iter_mut().for_each(|x| *x = -100.0);
+
+        for tok in vec![SpecialToken::EndOfSentence] {
+            if r.special_allowed(tok) {
+                logits[self.special_token(tok) as usize] = 0.0;
+            }
+        }
+
         let n = self.root();
         let defl_tok = self.vocab_size() as u32;
         let off = self.node_offset(n);

@@ -3,7 +3,7 @@ use std::rc::Rc;
 use gvm_abi::{
     gvm_expose_all, gvm_harness,
     recognizer::{FunctionalRecognizer, GvmRecognizer, StackRecognizer},
-    toktree::TokTrie,
+    toktree::{SpecialToken, TokTrie},
     wprintln, GuidanceVm,
 };
 use regex_automata::{
@@ -51,8 +51,19 @@ impl FunctionalRecognizer<StateID> for RecRx {
     }
 
     #[inline(always)]
-    fn allowed(&self, state: StateID, byte: u8) -> bool {
+    fn byte_allowed(&self, state: StateID, byte: u8) -> bool {
         !self.dfa.is_dead_state(self.dfa.next_state(state, byte))
+    }
+
+    #[inline(always)]
+    fn special_allowed(&self, state: StateID, tok: SpecialToken) -> bool {
+        match tok {
+            // if in dead state, stop
+            SpecialToken::EndOfSentence => {
+                self.dfa.is_match_state(state) || self.dfa.is_dead_state(state)
+            }
+            _ => false,
+        }
     }
 }
 

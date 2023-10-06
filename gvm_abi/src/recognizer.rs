@@ -1,7 +1,7 @@
 use std::{fmt::Debug, rc::Rc};
 
 use crate::{
-    toktree::{Recognizer, TokTrie},
+    toktree::{Recognizer, SpecialToken, TokTrie},
     wprintln, GuidanceVm, GuidanceVmHelper,
 };
 
@@ -18,8 +18,16 @@ impl FunctionalRecognizer<u32> for LenExcluder {
     }
 
     #[inline(never)]
-    fn allowed(&self, state: u32, byte: u8) -> bool {
+    fn byte_allowed(&self, state: u32, byte: u8) -> bool {
         byte != (('z' as u32 + state) & 0xff) as u8
+    }
+
+    #[inline(never)]
+    fn special_allowed(&self, state: u32, tok: SpecialToken) -> bool {
+        match tok {
+            SpecialToken::EndOfSentence => state < 10,
+            _ => false,
+        }
     }
 }
 
@@ -83,7 +91,8 @@ impl<R: Recognizer + Clone> GuidanceVm for GvmRecognizer<R> {
 pub trait FunctionalRecognizer<S: Copy> {
     fn initial(&self) -> S;
     fn append(&self, state: S, byte: u8) -> S;
-    fn allowed(&self, state: S, byte: u8) -> bool;
+    fn byte_allowed(&self, state: S, byte: u8) -> bool;
+    fn special_allowed(&self, state: S, tok: SpecialToken) -> bool;
 }
 
 #[derive(Clone)]
@@ -125,7 +134,7 @@ impl<S: Copy + Debug, R: FunctionalRecognizer<S>> Recognizer for StackRecognizer
 
     #[inline(always)]
     fn byte_allowed(&mut self, byte: u8) -> bool {
-        self.rec.allowed(self.stack[self.stack_ptr], byte)
+        self.rec.byte_allowed(self.stack[self.stack_ptr], byte)
     }
 
     fn trie_finished(&mut self) {
@@ -136,5 +145,9 @@ impl<S: Copy + Debug, R: FunctionalRecognizer<S>> Recognizer for StackRecognizer
     fn collapse(&mut self) {
         self.stack[0] = self.stack[self.stack_ptr];
         self.stack_ptr = 0;
+    }
+
+    fn special_allowed(&mut self, tok: SpecialToken) -> bool {
+        self.rec.special_allowed(self.stack[self.stack_ptr], tok)
     }
 }
