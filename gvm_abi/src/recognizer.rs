@@ -1,7 +1,7 @@
 use std::rc::Rc;
 
 use crate::{
-    toktree::{append_bias, Recognizer, TokTrie},
+    toktree::{Recognizer, TokTrie},
     wprintln, GuidanceVm, GuidanceVmHelper,
 };
 
@@ -13,7 +13,7 @@ pub fn compute_bias<S: Copy>(
     logits: &mut [f32],
 ) {
     logits.iter_mut().for_each(|x| *x = -100.0);
-    append_bias(trie, rec, state, logits);
+    trie.append_bias(rec, state, logits);
 }
 
 pub struct LenExcluder {}

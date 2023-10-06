@@ -51,21 +51,6 @@ impl TrieNode {
     }
 
     #[inline(always)]
-    unsafe fn next(&self) -> *const TrieNode {
-        self.ptr().add(self.subtree_size())
-    }
-
-    #[inline(always)]
-    unsafe fn ptr(&self) -> *const TrieNode {
-        self as *const TrieNode
-    }
-
-    #[inline(always)]
-    unsafe fn child0(&self) -> *const TrieNode {
-        self.ptr().add(1)
-    }
-
-    #[inline(always)]
     pub fn byte(&self) -> u8 {
         (self.bits & 0xff) as u8
     }
@@ -137,6 +122,22 @@ impl TokTrie {
         r
     }
 
+    fn node_offset(&self, n: &TrieNode) -> usize {
+        let off = unsafe { (n as *const TrieNode).offset_from(self.root() as *const TrieNode) };
+        assert!(off >= 0);
+        let off = off as usize;
+        assert!(off < self.nodes.len());
+        off
+    }
+
+    fn node_child0(&self, n: &TrieNode) -> usize {
+        return self.node_offset(n) + 1;
+    }
+
+    fn next_node(&self, n: &TrieNode) -> usize {
+        return self.node_offset(n) + n.subtree_size();
+    }
+
     pub fn info(&self) -> &TokRxInfo {
         &self.info
     }
@@ -174,28 +175,26 @@ impl TokTrie {
         r
     }
 
-    fn validate_node(&self, n: &TrieNode, ep: *const TrieNode, used: &mut [bool]) {
+    fn validate_node(&self, n: &TrieNode, ep: usize, used: &mut [bool]) {
         if let Some(tok) = n.token_id() {
             assert!(tok < self.info.vocab_size);
             assert!(!used[tok as usize]);
             used[tok as usize] = true;
         }
-        unsafe {
-            let endp = n.next();
-            assert!(endp <= ep);
-            let mut p = n.child0();
-            while p < endp {
-                let n = &*p;
-                p = n.next();
-                self.validate_node(n, endp, used)
-            }
+        let endp = self.next_node(n);
+        assert!(endp <= ep);
+        let mut p = self.node_child0(n);
+        while p < endp {
+            let n = &self.nodes[p];
+            p = self.next_node(n);
+            self.validate_node(n, endp, used)
         }
     }
 
     fn validate(&self) {
         self.validate_node(
             self.root(),
-            self.nodes.as_ptr_range().end,
+            self.next_node(self.root()),
             &mut vec![false; self.info.vocab_size as usize],
         );
         for idx in 0..self.info.vocab_size {
@@ -249,15 +248,14 @@ impl TokTrie {
     }
 
     pub fn child_at_byte<'a>(&'a self, n: &'a TrieNode, byte: u8) -> Option<&'a TrieNode> {
-        unsafe {
-            let mut p = n.child0();
-            let endp = n.next();
-            while p < endp {
-                if (*p).byte() == byte {
-                    return Some(&*p);
-                }
-                p = (*p).next();
+        let mut p = self.node_child0(n);
+        let endp = self.next_node(n);
+        while p < endp {
+            let n = &self.nodes[p];
+            if n.byte() == byte {
+                return Some(n);
             }
+            p = self.next_node(n);
         }
         None
     }
@@ -271,18 +269,16 @@ impl TokTrie {
         }
         Some(n)
     }
-}
 
-pub fn append_bias<S: Copy>(trie: &TokTrie, r: &impl Recognizer<S>, state: S, logits: &mut [f32]) {
-    let n = trie.root();
-    let mut stack_buf = [state; 130];
-    let mut stack_ptr = 1;
-    let defl_tok = trie.vocab_size() as u32;
-    unsafe {
-        let mut p = n.child0();
-        let endp = n.next();
+    pub fn append_bias<S: Copy>(&self, r: &impl Recognizer<S>, state: S, logits: &mut [f32]) {
+        let n = self.root();
+        let mut stack_buf = [state; 130];
+        let mut stack_ptr = 1;
+        let defl_tok = self.vocab_size() as u32;
+        let mut p = self.node_child0(n);
+        let endp = self.next_node(n);
         while p < endp {
-            let n = &*p;
+            let n = &self.nodes[p];
             let b = n.byte();
             let rec = stack_buf[stack_ptr - 1];
             if r.allowed(rec, b) {
@@ -292,48 +288,14 @@ pub fn append_bias<S: Copy>(trie: &TokTrie, r: &impl Recognizer<S>, state: S, lo
                 if n.subtree_size() == 1 {
                     stack_ptr -= n.num_parents();
                 }
-                p = n.child0();
+                p += 1;
             } else {
-                p = n.next();
+                p += n.subtree_size();
                 stack_ptr -= n.num_parents() - 1;
             }
         }
         //panic!("st: {}", stack_ptr);
     }
-}
-
-fn walk_core(n: &TrieNode) -> u32 {
-    let mut sum = 0;
-    let mut stack_buf: [(*const TrieNode, *const TrieNode); 130] = [(0 as _, 0 as _); 130];
-    let mut stack_ptr = 0;
-    unsafe {
-        stack_buf[stack_ptr] = (n.child0(), n.next());
-        stack_ptr += 1;
-        loop {
-            stack_ptr -= 1;
-            let (mut p, mut endp) = stack_buf[stack_ptr];
-            while p < endp {
-                let n = &*p;
-                p = n.next();
-                sum += n.subtree_size() as u32;
-                if n.subtree_size() > 1 {
-                    stack_buf[stack_ptr] = (p, endp);
-                    stack_ptr += 1;
-                    endp = p;
-                    p = n.child0();
-                }
-            }
-            if stack_ptr == 0 {
-                break;
-            }
-        }
-    }
-    sum
-}
-
-pub fn walk(trie: &TokTrie) -> u32 {
-    let n = trie.root();
-    walk_core(n)
 }
 
 #[repr(C)]
