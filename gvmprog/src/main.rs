@@ -1,4 +1,4 @@
-use gvm_abi::{GuidanceVm, GuidanceVmHelper, gvm_expose_all};
+use gvm_abi::{gvm_expose_all, GuidanceVm, GuidanceVmHelper};
 
 pub struct MyGvm {
     helper: GuidanceVmHelper,
@@ -28,6 +28,10 @@ impl GuidanceVm for MyGvm {
         MyGvm {
             helper: self.helper.clone(),
         }
+    }
+
+    fn get_helper(&mut self) -> &mut GuidanceVmHelper {
+        &mut self.helper
     }
 }
 

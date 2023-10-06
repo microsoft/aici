@@ -1,7 +1,7 @@
 use std::rc::Rc;
 
 use gvm_abi::{
-    gvm_expose_all,
+    gvm_expose_all, gvm_harness,
     recognizer::{FunctionalRecognizer, GvmRecognizer, StackRecognizer},
     toktree::TokTrie,
     wprintln, GuidanceVm,
@@ -74,21 +74,26 @@ fn main() {
         .unwrap();
     wprintln!("dfa: {} bytes", dfa.memory_usage());
 
-    let mut rec = StackRecognizer::from(RecRx { dfa });
-    let mut logits = vec![0.0; trie.vocab_size() + 1];
-    // let mut rec = LenExcluder {};
-    for _ in 0..1000 {
-        rec.reset();
-        trie.compute_bias(&mut rec, &mut logits);
-    }
+    let mut t = tokrx();
+    gvm_harness(&mut t, trie.vocab_size(), &vec![1, 2]);
 
-    let count = logits.iter().filter(|x| **x > -50.0).count();
-    wprintln!("resx: {}", count);
-    if count < 100 {
-        for (idx, logit) in logits.iter().enumerate() {
-            if *logit > -50.0 {
-                let bytes = trie.token(idx as u32);
-                wprintln!("{}: {:?}", idx, String::from_utf8_lossy(bytes));
+    if false {
+        let mut rec = StackRecognizer::from(RecRx { dfa });
+        let mut logits = vec![0.0; trie.vocab_size() + 1];
+
+        for _ in 0..1000 {
+            rec.reset();
+            trie.compute_bias(&mut rec, &mut logits);
+        }
+
+        let count = logits.iter().filter(|x| **x > -50.0).count();
+        wprintln!("resx: {}", count);
+        if count < 100 {
+            for (idx, logit) in logits.iter().enumerate() {
+                if *logit > -50.0 {
+                    let bytes = trie.token(idx as u32);
+                    wprintln!("{}: {:?}", idx, String::from_utf8_lossy(bytes));
+                }
             }
         }
     }

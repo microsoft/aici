@@ -1,3 +1,5 @@
+use bytes::TokenId;
+
 pub mod bytes;
 pub mod printing;
 pub mod recognizer;
@@ -66,6 +68,8 @@ pub trait GuidanceVm {
     fn gvm_process_prompt(&mut self);
     /// On return, self.helper.logit_biases are supposed to be updated.
     fn gvm_append_token(&mut self, token: u32);
+    // Used in testing.
+    fn get_helper(&mut self) -> &mut GuidanceVmHelper;
 }
 
 #[macro_export]
@@ -130,4 +134,27 @@ macro_rules! wprint {
     ($($arg:tt)*) => {{
         $crate::printing::_print(&format!($($arg)*));
     }};
+}
+
+pub fn gvm_harness(gvm: &mut impl GuidanceVm, vocab_size: usize, prompt: &[TokenId]) {
+    let logits = unsafe {
+        std::slice::from_raw_parts_mut(
+            gvm.get_helper()
+                .gvm_get_logit_bias_buffer(vocab_size as u32),
+            vocab_size,
+        )
+    };
+    let prompt_buf = unsafe {
+        std::slice::from_raw_parts_mut(
+            gvm.get_helper().gvm_get_prompt_buffer(prompt.len() as u32),
+            prompt.len(),
+        )
+    };
+    prompt_buf.copy_from_slice(&prompt);
+    gvm.gvm_process_prompt();
+    let p0 = logits.iter().filter(|x| **x > -50.0).count();
+    wprintln!("res0: {}", p0);
+    gvm.gvm_append_token(13);
+    let p1 = logits.iter().filter(|x| **x > -50.0).count();
+    wprintln!("res1: {}", p1);
 }

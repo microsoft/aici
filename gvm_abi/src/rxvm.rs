@@ -49,4 +49,8 @@ impl GuidanceVm for RxGvm {
         wprintln!("{} -> {}", self.state.off, r.state.off);
         r
     }
+
+    fn get_helper(&mut self) -> &mut GuidanceVmHelper {
+        &mut self.helper
+    }
 }

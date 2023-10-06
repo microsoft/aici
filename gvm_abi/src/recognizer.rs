@@ -60,8 +60,8 @@ impl<R: Recognizer + Clone> GuidanceVm for GvmRecognizer<R> {
     }
 
     fn gvm_append_token(&mut self, token: u32) {
-        // wprintln!("xapp {:?} {} {}", self as *const _, token, self.state.off);
         let bytes = self.trie.token(token);
+        wprintln!("xapp {} {:?}", token, bytes);
         for b in bytes {
             self.rec.push_byte(*b)
         }
@@ -71,6 +71,10 @@ impl<R: Recognizer + Clone> GuidanceVm for GvmRecognizer<R> {
         toks.push(token);
 
         self.compute();
+    }
+
+    fn get_helper(&mut self) -> &mut GuidanceVmHelper {
+        &mut self.helper
     }
 }
 
