@@ -280,13 +280,21 @@ impl TokTrie {
             let b = n.byte();
             if r.byte_allowed(b) {
                 logits[n.token_id().unwrap_or(defl_tok) as usize] = 0.0;
+
+                // This is slower due to branch mis-prediction:
+                // if n.subtree_size() == 1 {
+                //     r.pop_bytes(n.num_parents() - 1)
+                // } else {
+                //     r.push_byte(b)
+                // }
+
                 r.push_byte(b);
-                // note that the inner-if is much faster than outer, due to branch misprediction
                 r.pop_bytes(if n.subtree_size() == 1 {
                     n.num_parents()
                 } else {
                     0
                 });
+
                 p += 1;
             } else {
                 p += n.subtree_size();

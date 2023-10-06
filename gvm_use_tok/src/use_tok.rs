@@ -45,10 +45,12 @@ impl FunctionalRecognizer<StateID> for RecRx {
             .unwrap()
     }
 
+    #[inline(always)]
     fn append(&self, state: StateID, byte: u8) -> StateID {
         self.dfa.next_state(state, byte)
     }
 
+    #[inline(always)]
     fn allowed(&self, state: StateID, byte: u8) -> bool {
         !self.dfa.is_dead_state(self.dfa.next_state(state, byte))
     }
