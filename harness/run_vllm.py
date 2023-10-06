@@ -7,9 +7,11 @@ import pygvm
 def main(args: argparse.Namespace):
     # Parse the CLI argument and initialize the engine.
     engine_args = EngineArgs.from_cli_args(args)
+
+    # build it first, so it fails fast
+    gvm = pygvm.GvmRunner(rtpath=args.gvm_rt, tokenizer=args.gvm_tokenizer)
+
     engine = LLMEngine.from_engine_args(engine_args)
-    
-    gvm = pygvm.GvmRunner()
     pygvm.install_in_vllm(gvm)
 
     # Test the following prompts.
@@ -35,6 +37,7 @@ def main(args: argparse.Namespace):
     ]
     for (prompt, params) in test_prompts:
         params.gvm_module = args.gvm_module
+        params.gvm_arg = ""
 
     # Run the engine by calling `engine.step()` manually.
     request_id = 0
@@ -67,6 +70,16 @@ if __name__ == '__main__':
             type=str,
             default='',
             help='module id')
+    parser.add_argument(
+            '--gvm-rt',
+            type=str,
+            required=True,
+            help='module id')
+    parser.add_argument(
+            '--gvm-tokenizer',
+            type=str,
+            default='llama',
+            help='tokenizer to use; llama, gpt4, ...')
     parser = EngineArgs.add_cli_args(parser)
     args = parser.parse_args()
     main(args)

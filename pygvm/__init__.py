@@ -92,11 +92,11 @@ class GvmRunner:
 
     def __init__(
         self,
+        rtpath,
         tokenizer="llama",
         json_size=8,
         bin_size=16,
         pref=DEFAULT_SHM_PREF,
-        rtpath=DEFAULT_RT_PATH,
     ) -> None:
         M = 1024 * 1024
 
@@ -110,20 +110,21 @@ class GvmRunner:
         self.resp_ch = MessageChannel(pref + "resp", json_size * M)
         self.bin_shm = mkshm(pref + "bin", bin_size * M)
 
-        self.proc = subprocess.Popen(
-            [
-                rtpath,
-                "--tokenizer=" + tokenizer,
-                "--json-size=" + str(json_size),
-                "--bin-size=" + str(bin_size),
-                "--name=" + pref,
-                "--server",
-            ],
-        )
+        args = [
+            rtpath,
+            "--tokenizer=" + tokenizer,
+            "--json-size=" + str(json_size),
+            "--bin-size=" + str(bin_size),
+            "--name=" + pref,
+            "--server",
+        ]
+
+        print("running: ", args)
+        self.proc = subprocess.Popen(args)
 
         self._cmd_and_resp("ping")
         resp = self._cmd_and_resp("tokens")
-        self.vocab_size = resp.vocab_size
+        self.vocab_size = resp["data"]["vocab_size"]
 
         GvmRunner.instance = self
 
@@ -208,16 +209,23 @@ class GvmRunner:
 
 def install_in_vllm(runner: GvmRunner):
     from vllm.sampling_params import SamplingParams
+    import torch
 
     def step(
         freed_seq_ids: List[int],
         seq_group_metadata_list: List["SequenceGroupMetadata"],
+        _scheduler_outputs,
     ):
         runner.flush_logit_bias()
         runner.step(freed_seq_ids, seq_group_metadata_list)
 
-    def apply_bias(logits):
-        logits += runner.recv_logit_bias()
+    def apply_bias(logits: torch.Tensor):
+        bias = (
+            torch.from_numpy(runner.recv_logit_bias())
+            .to(logits.device)
+            .to(logits.dtype)
+        )
+        logits += bias
 
     SamplingParams.apply_dynamic_logit_bias = apply_bias
     SamplingParams.initiate_step = step
