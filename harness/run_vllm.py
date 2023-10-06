@@ -1,15 +1,19 @@
 import argparse
+from typing import List, Tuple
 
 from vllm import EngineArgs, LLMEngine, SamplingParams
-
+import pygvm
 
 def main(args: argparse.Namespace):
     # Parse the CLI argument and initialize the engine.
     engine_args = EngineArgs.from_cli_args(args)
     engine = LLMEngine.from_engine_args(engine_args)
+    
+    gvm = pygvm.GvmRunner()
+    pygvm.install_in_vllm(gvm)
 
     # Test the following prompts.
-    test_prompts = [
+    test_prompts: List[Tuple[str, SamplingParams]] = [
         ("A robot may not injure a human being",
          SamplingParams(temperature=0.0)),
         ("To be or not to be,",
@@ -24,12 +28,21 @@ def main(args: argparse.Namespace):
          SamplingParams(n=3, best_of=3, use_beam_search=True,
                         temperature=0.0)),
     ]
+    
+    test_prompts = [
+        ("Here is an example JSON about Joe Random Hacker in Seattle:\n",
+         SamplingParams(temperature=0.9, n=3, max_tokens=120))
+    ]
+    for (prompt, params) in test_prompts:
+        params.gvm_module = args.gvm_module
 
     # Run the engine by calling `engine.step()` manually.
     request_id = 0
+    step_no = 0
     while True:
+        step_no += 1
         # To test continuous batching, we add one request at each step.
-        if test_prompts:
+        if test_prompts and step_no % 3 == 1:
             prompt, sampling_params = test_prompts.pop(0)
             engine.add_request(str(request_id), prompt, sampling_params)
             request_id += 1
@@ -37,7 +50,10 @@ def main(args: argparse.Namespace):
         request_outputs = engine.step()
         for request_output in request_outputs:
             if request_output.finished:
-                print(request_output)
+                print("")
+                print("[Prompt] " + request_output.prompt)
+                for out in request_output.outputs:
+                    print("[Completion] " + out.text)
 
         if not (engine.has_unfinished_requests() or test_prompts):
             break
@@ -46,6 +62,11 @@ def main(args: argparse.Namespace):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(
         description='Demo on using the LLMEngine class directly')
+    parser.add_argument(
+            '--gvm-module',
+            type=str,
+            default='',
+            help='module id')
     parser = EngineArgs.add_cli_args(parser)
     args = parser.parse_args()
     main(args)

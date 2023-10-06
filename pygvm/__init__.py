@@ -6,12 +6,10 @@ import subprocess
 import ujson
 import numpy as np
 
-from typing import List
-from vllm.sequence import (
-    SequenceGroupMetadata,
-)
-from vllm.core.scheduler import SchedulerOutputs
-from transformers import PreTrainedTokenizer
+from typing import TYPE_CHECKING, List
+
+if TYPE_CHECKING:
+    from vllm.sequence import SequenceGroupMetadata
 
 # macOS has 31 character name limit, so keep this short
 # (Linux has 255)
@@ -89,11 +87,12 @@ class MessageChannel:
         # self.read_sem.unlink()
 
 
-class GvmIface:
+class GvmRunner:
     instance = None
 
     def __init__(
         self,
+        tokenizer="llama",
         json_size=8,
         bin_size=16,
         pref=DEFAULT_SHM_PREF,
@@ -101,7 +100,6 @@ class GvmIface:
     ) -> None:
         M = 1024 * 1024
 
-        # self.vocab_size = 50257
         self.vocab_size = -1
         self.batch_size = -1
 
@@ -115,6 +113,7 @@ class GvmIface:
         self.proc = subprocess.Popen(
             [
                 rtpath,
+                "--tokenizer=" + tokenizer,
                 "--json-size=" + str(json_size),
                 "--bin-size=" + str(bin_size),
                 "--name=" + pref,
@@ -123,8 +122,10 @@ class GvmIface:
         )
 
         self._cmd_and_resp("ping")
+        resp = self._cmd_and_resp("tokens")
+        self.vocab_size = resp.vocab_size
 
-        GvmIface.instance = self
+        GvmRunner.instance = self
 
     def _send_cmd(self, data):
         assert not self.cmd_pending
@@ -134,7 +135,7 @@ class GvmIface:
     def _cmd_and_resp(self, op: str, data={}):
         data["op"] = op
         self._send_cmd(data)
-        self._expect_response("cmd:" + op)
+        return self._expect_response("cmd:" + op)
 
     def _expect_response(self, ctx):
         assert self.cmd_pending
@@ -146,25 +147,10 @@ class GvmIface:
             )
         return resp
 
-    def set_tokenizer(self, tokenizer: PreTrainedTokenizer):
-        self.vocab_size = tokenizer.vocab_size
-        ids = [[id] for id in range(tokenizer.vocab_size)]
-        tokens = tokenizer.batch_decode(ids)
-        special = {
-            "bos": tokenizer.bos_token_id,
-            "eos": tokenizer.eos_token_id,
-            "unk": tokenizer.unk_token_id,
-            "sep": tokenizer.sep_token_id,
-            "pad": tokenizer.pad_token_id,
-            "cls": tokenizer.cls_token_id,
-        }
-        self._cmd_and_resp("tokens", {"special": special, "tokens": tokens})
-
     def step(
         self,
         freed_seq_ids: List[int],
-        seq_group_metadata_list: List[SequenceGroupMetadata],
-        scheduler_outputs: SchedulerOutputs,
+        seq_group_metadata_list: List["SequenceGroupMetadata"],
     ):
         prompt_q = []
         gen_q = []
@@ -177,8 +163,8 @@ class GvmIface:
                     {
                         "id": id,
                         "prompt": s.seq_data[id].prompt_token_ids,
-                        "module_id": s.sampling_params.wasm_module_id,
-                        "module_arg": s.sampling_params.wasm_arg,
+                        "module_id": s.sampling_params.gvm_module,
+                        "module_arg": s.sampling_params.gvm_arg,
                     }
                 )
             else:
@@ -199,14 +185,6 @@ class GvmIface:
         self.logit_pending = True
         self._send_cmd(cmd)
 
-        # print(ujson.dumps(cmd))
-        # for s in seq_group_metadata_list:
-        #     if s.is_prompt: continue
-        #     print(f'{"Prompt" if s.is_prompt else "Gen"} req={s.request_id}')
-        #     for (id, data) in s.seq_data.items():
-        #         # id is unique for run (so also unique for MT)
-        #         print(f'    {id}: {data}')
-
     def flush_logit_bias(self):
         if self.logit_pending:
             print("Warning: unflushed Gvm logit bias")
@@ -226,3 +204,20 @@ class GvmIface:
     def stop(self):
         self._send_cmd({"op": "stop"})
         self.proc.wait()
+
+
+def install_in_vllm(runner: GvmRunner):
+    from vllm.sampling_params import SamplingParams
+
+    def step(
+        freed_seq_ids: List[int],
+        seq_group_metadata_list: List["SequenceGroupMetadata"],
+    ):
+        runner.flush_logit_bias()
+        runner.step(freed_seq_ids, seq_group_metadata_list)
+
+    def apply_bias(logits):
+        logits += runner.recv_logit_bias()
+
+    SamplingParams.apply_dynamic_logit_bias = apply_bias
+    SamplingParams.initiate_step = step

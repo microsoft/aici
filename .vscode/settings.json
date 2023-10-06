@@ -42,5 +42,8 @@
         "unordered_map": "cpp",
         "vector": "cpp",
         "format": "cpp"
-    }
+    },
+    "python.analysis.extraPaths": [
+        "./vllm"
+    ]
 }

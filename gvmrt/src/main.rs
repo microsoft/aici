@@ -326,6 +326,9 @@ impl Dispatcher {
     fn dispatch_one(&mut self, json: Value) -> Result<Value> {
         match json["op"].as_str() {
             Some("ping") => Ok(json!({ "pong": 1 })),
+            Some("tokens") => Ok(
+                json!({ "vocab_size": self.executor.globals.read().unwrap().tokrx_info.vocab_size }),
+            ),
             Some("mk_module") => self.executor.mk_module(serde_json::from_value(json)?),
             Some("step") => self.executor.gvm_step(serde_json::from_value(json)?),
             Some("stop") => std::process::exit(0),
