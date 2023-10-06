@@ -15,7 +15,8 @@
 		"vscode": {
 			"extensions": [
 				"ms-python.python",
-				"1YiB.rust-bundle"
+				"1YiB.rust-bundle",
+				"dtsvet.vscode-wasm"
 			]
 		}
 	},

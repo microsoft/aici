@@ -6,7 +6,9 @@ mkdir -p src/tokenizers
 (cd ../regex_llm && cargo run --release -- -t gpt4 --save ../gvm_use_tok/tokenizer.bin)
 cargo build --release
 perf stat ./target/release/gvm_use_tok
-#exit $?
+if [ "X$1" = "X-n" ]; then
+    exit 0
+fi
 cargo build --release --target wasm32-unknown-unknown
 cp target/wasm32-unknown-unknown/release/gvm_use_tok.wasm target/opt.wasm
 # wasm-opt -Oz target/wasm32-unknown-unknown/release/gvm_use_tok.wasm -o target/opt.wasm
