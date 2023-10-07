@@ -152,7 +152,7 @@ class GvmRunner:
         self.gen_q = []
         self.freed_seq_ids = []
 
-    def step_add_prompt(self, id: int, prompt: List[int], module_id: int, module_arg):
+    def step_add_prompt(self, id: int, prompt: List[int], module_id: str, module_arg: str):
         self.prompt_q.append(
             {
                 "id": id,

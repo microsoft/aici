@@ -3,100 +3,86 @@ import argparse
 from typing import cast, Optional, Union
 import torch
 import time
+import pygvm
 
 from transformers import (
-    GPT2Tokenizer,
     AutoTokenizer,
     PreTrainedModel,
-    GPT2LMHeadModel,
     LogitsProcessor,
     LogitsProcessorList,
     AutoModelForCausalLM,
-    BitsAndBytesConfig,
     PreTrainedTokenizer,
 )
 
 from transformers.generation.streamers import BaseStreamer
 
-from biascomms import BiasServerComms
-
 device = "cuda" if torch.cuda.is_available() else "cpu"
 
 
 class AsyncLogitProcessor(LogitsProcessor, BaseStreamer):
-    def __init__(self, comms: BiasServerComms) -> None:
+    def __init__(
+        self, runner: pygvm.GvmRunner, module_id: str, module_arg: str
+    ) -> None:
         super().__init__()
-        self.comms = comms
+        self.runner = runner
         self._idx = 0
+        self.wasm_id = 1
+        self.module_id = module_id
+        self.module_arg = module_arg
 
     def put(self, value: torch.LongTensor):
         if self._idx == 0:
-            self.comms.append_prompt_tokens(value)
+            self.runner.step_add_prompt(
+                self.wasm_id, value[0].tolist(), self.module_id, self.module_arg
+            )
         else:
-            self.comms.append_tokens(value)
+            self.runner.step_add_token(self.wasm_id, value[0].tolist())
+        self.runner.step_finish()
         self._idx += 1
 
     def end(self):
         self._idx = 0
-        self.comms.reset()
+        self.wasm_id += 1
+        self.runner.flush_logit_bias()
 
     def __call__(
         self, input_ids: torch.LongTensor, scores: torch.FloatTensor
     ) -> torch.FloatTensor:
-        if self._idx == 50:
-            self._start_time = time.perf_counter()
-        if self._idx == 150:
-            print("Time", time.perf_counter() - self._start_time)
-        bias_tensor = self.comms.get_bias_tensor()
-        assert scores.shape[0] == 1 and scores.shape[1] == bias_tensor.shape[0]
+        bias_tensor = self.runner.recv_logit_bias()
+        bias_tensor = torch.from_numpy(bias_tensor).to(scores.device).to(scores.dtype)
+        # print(bias_tensor.shape, scores.shape, input_ids.shape)
+        assert scores.shape == bias_tensor.shape
         assert input_ids.shape[0] == 1  # and self._idx == input_ids.shape[1]
-        return cast(
-            torch.FloatTensor, bias_tensor.reshape(scores.shape).to(device) + scores
-        )
-
-
-model_name = "gpt2"
-quant = False
-# model_name = "OpenAssistant/llama2-13b-orca-8k-3319"
+        return bias_tensor + scores
 
 
 def main(args):
     if not args.tokenizer:
         args.tokenizer = args.model
     tokenizer = cast(PreTrainedTokenizer, AutoTokenizer.from_pretrained(args.tokenizer))
-    
-    if quant:
-        model = AutoModelForCausalLM.from_pretrained(
-            model_name,
-            load_in_4bit=True,
-            device_map="auto",
-            torch_dtype=torch.bfloat16,
-            quantization_config=BitsAndBytesConfig(
-                load_in_4bit=True,
-                bnb_4bit_compute_dtype=torch.bfloat16,
-                bnb_4bit_use_double_quant=True,
-                bnb_4bit_quant_type="nf4",
-            ),
-        )
-    else:
-        model = AutoModelForCausalLM.from_pretrained(
-            model_name,
-            device_map="auto",
-            torch_dtype=torch.bfloat16,
-        )
+    model = AutoModelForCausalLM.from_pretrained(
+        args.model,
+        device_map="auto",
+        torch_dtype=torch.bfloat16,
+    )
     model = cast(PreTrainedModel, model)
-    # wproc = WasmProcessor(["./built/genbias"], tokenizer)
-    comms = BiasServerComms(["wasmtime", "built/genbias.wasm"], tokenizer.vocab_size)
-    wproc = AsyncLogitProcessor(comms)
-    inp = tokenizer("A list of niceeee colors: red, blue", return_tensors="pt")
+
+    runner = pygvm.GvmRunner(rtpath=args.gvm_rt, tokenizer=args.gvm_tokenizer)
+
+    wproc = AsyncLogitProcessor(runner, args.gvm_module, args.gvm_module_arg)
+    inp = tokenizer(
+        "Here is an example JSON about Joe Random Hacker in Seattle:\n",
+        return_tensors="pt",
+    )
     proc = LogitsProcessorList()
     proc.append(wproc)
     output = model.generate(
-        input_ids=inp.input_ids.to(device),
-        attention_mask=inp.attention_mask.to(device),
+        input_ids=inp.input_ids.to(model.device),
+        attention_mask=inp.attention_mask.to(model.device),
         logits_processor=proc,
         streamer=wproc,
-        max_new_tokens=160,
+        max_new_tokens=200,
+        do_sample=True,
     )
     r = tokenizer.batch_decode(output, skip_special_tokens=True)[0]
     print("\n\n" + r)
@@ -113,8 +99,13 @@ if __name__ == "__main__":
         default="",
         help="tokenizer to use; defaults to model name",
     )
-    parser.add_argument("--gvm-module", type=str, default="", help="module id")
-    parser.add_argument("--gvm-rt", type=str, required=True, help="module id")
+    parser.add_argument(
+        "--gvm-module-arg", type=str, default="", help="arg passed to module"
+    )
+    parser.add_argument(
+        "--gvm-module", type=str, required=True, help="id of the module to run"
+    )
+    parser.add_argument("--gvm-rt", type=str, required=True, help="path to gvmrt")
     parser.add_argument(
         "--gvm-tokenizer",
         type=str,

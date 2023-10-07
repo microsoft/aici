@@ -27,3 +27,4 @@ pytest-forked
 
 ujson
 posix_ipc
+accelerate
