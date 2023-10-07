@@ -1,5 +1,8 @@
 # Guidance Low-Level VM
 
+Best run this in Docker container, using the setup in `.devcontainer`.
+Otherwise, install the stuff from `.devcontainer/Dockerfile`.
+
 Running with with HF Transformers:
 
  * `./scripts/hf.sh`
