@@ -15,7 +15,7 @@ pub enum SpecialToken {
 }
 
 pub trait Recognizer {
-    /// stack.push(X) where stack.top() trasitions via byte to X
+    /// If `stack.top()` trasitions via `byte` to `X`, execute `stack.push(X)`.
     fn push_byte(&mut self, byte: u8);
     /// for _ in 0..num { stack.pop() }
     fn pop_bytes(&mut self, num: usize);

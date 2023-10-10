@@ -15,6 +15,7 @@
 		"vscode": {
 			"extensions": [
 				"ms-python.python",
+				"ms-python.black-formatter",
 				"1YiB.rust-bundle",
 				"dtsvet.vscode-wasm"
 			]

@@ -12,8 +12,6 @@ from typing import List
 # (Linux has 255)
 DEFAULT_SHM_PREF = "/gvm0-"
 
-DEFAULT_RT_PATH = "./gvm/gvmrt/target/debug/gvmrt"
-
 
 def mkshm(name, size):
     shm_name = name + "-shm"
@@ -95,6 +93,17 @@ class GvmRunner:
         bin_size=16,
         pref=DEFAULT_SHM_PREF,
     ) -> None:
+        """
+        Start a new gvmrt process and initialize comms channels.
+
+        Args:
+            rtpath (str): Path to the gvmrt binary.
+            tokenizer (str, optional): One of "llama", "gpt4", "gpt2", "mpt", "phi", "falcon".
+            json_size (int, optional): Size of the JSON message channel in MB. Defaults to 8.
+            bin_size (int, optional): Size of the binary shared memory in MB. Defaults to 16.
+            pref (str, optional): Prefix for the shared memory and message channels. Defaults to "/gvm0-".
+        """
+
         M = 1024 * 1024
 
         self.vocab_size = -1
@@ -148,11 +157,25 @@ class GvmRunner:
         return resp
 
     def step_reset(self):
+        """
+        Reset any pending state for the step.
+        """
         self.prompt_q = []
         self.gen_q = []
         self.freed_seq_ids = []
 
-    def step_add_prompt(self, id: int, prompt: List[int], module_id: str, module_arg: str):
+    def step_add_prompt(
+        self, id: int, prompt: List[int], module_id: str, module_arg: str
+    ):
+        """
+        Add a batch entry to the step.
+
+        Args:
+            id (int): The user-assigned ID of the batch entry - needs to be unique.
+            prompt (List[int]): The tokens in the prompt.
+            module_id (str): The ID of the WASM constraint module (SHA256 hash).
+            module_arg (str): The argument for the module (not used yet).
+        """
         self.prompt_q.append(
             {
                 "id": id,
@@ -163,15 +186,30 @@ class GvmRunner:
         )
 
     def step_add_token(self, id: int, token: int, clone_id: int = None):
+        """
+        Adds a generated token to the step.
+
+        Args:
+            id (int): The ID of the batch-entry - needs to match a previous ID from step_add_prompt(), unless clone_id is set.
+            token (int): The token that was sampled.
+            clone_id (int, optional): The ID of the batch entry to clone if any.
+        """
         obj = {"id": id, "gen": token}
         if clone_id is not None:
             obj["clone_id"] = clone_id
         self.gen_q.append(obj)
 
     def step_free_seq(self, id: int):
+        """
+        Indicates that a given batch entry won't be used anymore.
+        """
         self.freed_seq_ids.append(id)
 
     def step_finish(self):
+        """
+        Send step data to the gvmrt process.
+        recv_logit_bias() (or flush_logit_bias()) needs to be called after this.
+        """
         cmd = {
             "op": "step",
             "freed": self.freed_seq_ids,
@@ -184,12 +222,18 @@ class GvmRunner:
         self.step_reset()
 
     def flush_logit_bias(self):
+        """
+        Drop any pending logit computation.
+        """
         if self.logit_pending:
             print("Warning: unflushed Gvm logit bias")
             self.logit_pending = False
             self._expect_response("flush")
 
     def recv_logit_bias(self):
+        """
+        Retrieve the logit bias for the step last executed with `step_finish()`.
+        """
         assert self.logit_pending
         self.logit_pending = False
         self._expect_response("recv")
@@ -200,6 +244,9 @@ class GvmRunner:
         return arr
 
     def stop(self):
+        """
+        Stops the gvmrt process and waits for it to exit.
+        """
         self._send_cmd({"op": "stop"})
         self.proc.wait()
 
