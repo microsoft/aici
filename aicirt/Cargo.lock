@@ -32,6 +32,40 @@ dependencies = [
 ]
 
 [[package]]
+name = "aici_abi"
+version = "0.1.0"
+
+[[package]]
+name = "aici_tokenizers"
+version = "0.1.0"
+dependencies = [
+ "aici_abi",
+ "anyhow",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "aicirt"
+version = "0.1.0"
+dependencies = [
+ "aici_abi",
+ "aici_tokenizers",
+ "anyhow",
+ "base64",
+ "clap",
+ "env_logger",
+ "hex",
+ "libc",
+ "log",
+ "rayon",
+ "serde",
+ "serde_json",
+ "sha2",
+ "wasmtime",
+]
+
+[[package]]
 name = "anstream"
 version = "0.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -560,40 +594,6 @@ dependencies = [
  "fallible-iterator",
  "indexmap",
  "stable_deref_trait",
-]
-
-[[package]]
-name = "aici_abi"
-version = "0.1.0"
-
-[[package]]
-name = "aici_tokenizers"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "aici_abi",
- "serde",
- "serde_json",
-]
-
-[[package]]
-name = "aicirt"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "base64",
- "clap",
- "env_logger",
- "aici_abi",
- "aici_tokenizers",
- "hex",
- "libc",
- "log",
- "rayon",
- "serde",
- "serde_json",
- "sha2",
- "wasmtime",
 ]
 
 [[package]]

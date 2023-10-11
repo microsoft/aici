@@ -12,6 +12,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "aici_abi"
+version = "0.1.0"
+
+[[package]]
+name = "aici_tokenizers"
+version = "0.1.0"
+dependencies = [
+ "aici_abi",
+ "anyhow",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "anstream"
 version = "0.6.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -118,20 +132,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "5443807d6dff69373d433ab9ef5378ad8df50ca6298caf15de6e52e24aaf54d5"
 
 [[package]]
-name = "aici_abi"
-version = "0.1.0"
-
-[[package]]
-name = "aici_tokenizers"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "aici_abi",
- "serde",
- "serde_json",
-]
-
-[[package]]
 name = "hashbrown"
 version = "0.14.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -204,10 +204,10 @@ checksum = "dbb5fb1acd8a1a18b3dd5be62d25485eb770e05afb408a9627d14d451bae12da"
 name = "regex_llm"
 version = "0.1.0"
 dependencies = [
- "anyhow",
- "clap",
  "aici_abi",
  "aici_tokenizers",
+ "anyhow",
+ "clap",
  "indexmap",
  "regex-automata",
  "serde",

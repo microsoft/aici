@@ -3,12 +3,6 @@
 version = 3
 
 [[package]]
-name = "anyhow"
-version = "1.0.75"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a4668cab20f66d8d020e1fbc0ebe47217433c1b6c8f2040faf858554e394ace6"
-
-[[package]]
 name = "aici_abi"
 version = "0.1.0"
 
@@ -16,11 +10,17 @@ version = "0.1.0"
 name = "aici_tokenizers"
 version = "0.1.0"
 dependencies = [
- "anyhow",
  "aici_abi",
+ "anyhow",
  "serde",
  "serde_json",
 ]
+
+[[package]]
+name = "anyhow"
+version = "1.0.75"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a4668cab20f66d8d020e1fbc0ebe47217433c1b6c8f2040faf858554e394ace6"
 
 [[package]]
 name = "itoa"
