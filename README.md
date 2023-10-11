@@ -1,4 +1,6 @@
-# Aici Low-Level VM
+# Artificial Intelligence Controller Interface (AICI)
+
+
 
 ## Getting started
 
@@ -16,12 +18,12 @@ Running with vllm:
 
 ## Architecture
 
-The Aici Low-Level VM (AICI) can be used to constrain output of an LLM in real time.
-While the GPU is working on the next token of the output, the AICI can use the CPU to
+The Artificial Intelligence Controller Interface (AICI) can be used to constrain output of an LLM in real time.
+While the GPU is working on the next token of the output, the AICI VM can use the CPU to
 compute a user-provided constraint on the next token.
 This adds minmal latency to the LLM generation.
 
-The AICI itself is built on top of [Wasmtime](https://wasmtime.dev/).
+The AICI VM itself is built on top of [Wasmtime](https://wasmtime.dev/).
 It takes [WebAssembly](https://webassembly.org/) (WASM) modules with a specific interface
 (see below) and executes them in parralel while the LLM inference engine is working on the next token.
 This runtime is implemented in the [aicirt](aicirt) crate, while the interface 
