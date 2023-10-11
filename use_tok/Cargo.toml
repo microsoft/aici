@@ -1,5 +1,5 @@
 [package]
-name = "aici_use_tok"
+name = "use_tok"
 version = "0.1.0"
 edition = "2021"
 
@@ -11,5 +11,5 @@ regex-automata = { version = "0.3.8", default-features = false, features = ["dfa
 aici_abi = { path = "../aici_abi" }
 
 [[bin]]
-name = "aici_use_tok"
+name = "use_tok"
 path = "src/use_tok.rs"
