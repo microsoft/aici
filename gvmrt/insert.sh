@@ -1,4 +1,4 @@
 #!/bin/sh
 
-cd ../gvmprog
+cd ../aiciprog
 ./build.sh

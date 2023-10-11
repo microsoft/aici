@@ -2,7 +2,7 @@ use std::io;
 
 #[allow(dead_code)]
 extern "C" {
-    fn gvm_host_print(ptr: *const u8, len: u32);
+    fn aici_host_print(ptr: *const u8, len: u32);
 }
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -14,7 +14,7 @@ pub struct Printer {}
 #[cfg(target_arch = "wasm32")]
 impl io::Write for Printer {
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
-        unsafe { gvm_host_print(buf.as_ptr(), buf.len() as u32) };
+        unsafe { aici_host_print(buf.as_ptr(), buf.len() as u32) };
         Ok(buf.len())
     }
 
@@ -59,7 +59,7 @@ pub fn _print(msg: &str) {
     #[cfg(target_arch = "wasm32")]
     {
         let vec: Vec<u8> = msg.into();
-        unsafe { gvm_host_print(vec.as_ptr(), vec.len() as u32) };
+        unsafe { aici_host_print(vec.as_ptr(), vec.len() as u32) };
     }
 
     #[cfg(not(target_arch = "wasm32"))]
@@ -70,6 +70,6 @@ pub fn _print(msg: &str) {
 }
 
 #[no_mangle]
-pub extern "C" fn gvm_init() {
+pub extern "C" fn aici_init() {
     init_panic();
 }

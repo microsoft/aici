@@ -2,7 +2,7 @@ use std::{fmt::Debug, rc::Rc};
 
 use crate::{
     toktree::{Recognizer, SpecialToken, TokTrie},
-    wprintln, GuidanceVm, GuidanceVmHelper,
+    wprintln, AiciVm, AiciVmHelper,
 };
 
 pub struct LenExcluder {}
@@ -31,16 +31,16 @@ impl FunctionalRecognizer<u32> for LenExcluder {
     }
 }
 
-pub struct GvmRecognizer<R: Recognizer> {
-    pub helper: GuidanceVmHelper,
+pub struct AiciRecognizer<R: Recognizer> {
+    pub helper: AiciVmHelper,
     pub rec: R,
     pub trie: Rc<Box<TokTrie>>,
 }
 
-impl<R: Recognizer> GvmRecognizer<R> {
+impl<R: Recognizer> AiciRecognizer<R> {
     pub fn from_recognizer(trie: Rc<Box<TokTrie>>, rec: R) -> Self {
-        GvmRecognizer {
-            helper: GuidanceVmHelper::new(),
+        AiciRecognizer {
+            helper: AiciVmHelper::new(),
             rec,
             trie,
         }
@@ -53,22 +53,22 @@ impl<R: Recognizer> GvmRecognizer<R> {
     }
 }
 
-impl<R: Recognizer + Clone> GuidanceVm for GvmRecognizer<R> {
-    fn gvm_clone(&mut self) -> Self {
-        GvmRecognizer {
+impl<R: Recognizer + Clone> AiciVm for AiciRecognizer<R> {
+    fn aici_clone(&mut self) -> Self {
+        AiciRecognizer {
             helper: self.helper.clone(),
             rec: self.rec.clone(),
             trie: self.trie.clone(),
         }
     }
 
-    fn gvm_process_prompt(&mut self) {
+    fn aici_process_prompt(&mut self) {
         wprintln!("prompt, {} tokens", self.helper.prompt_length);
         // the regex doesn't care about the prompt
         self.compute();
     }
 
-    fn gvm_append_token(&mut self, token: u32) {
+    fn aici_append_token(&mut self, token: u32) {
         let bytes = self.trie.token(token);
         // wprintln!("xapp {} {:?}", token, bytes);
         for b in bytes {
@@ -83,7 +83,7 @@ impl<R: Recognizer + Clone> GuidanceVm for GvmRecognizer<R> {
         self.compute();
     }
 
-    fn get_helper(&mut self) -> &mut GuidanceVmHelper {
+    fn get_helper(&mut self) -> &mut AiciVmHelper {
         &mut self.helper
     }
 }

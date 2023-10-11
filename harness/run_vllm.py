@@ -2,17 +2,17 @@ import argparse
 from typing import List, Tuple
 
 from vllm import EngineArgs, LLMEngine, SamplingParams
-import pygvm
+import pyaici
 
 def main(args: argparse.Namespace):
     # Parse the CLI argument and initialize the engine.
     engine_args = EngineArgs.from_cli_args(args)
 
     # build it first, so it fails fast
-    gvm = pygvm.GvmRunner(rtpath=args.gvm_rt, tokenizer=args.gvm_tokenizer)
+    aici = pyaici.AiciRunner(rtpath=args.aici_rt, tokenizer=args.aici_tokenizer)
 
     engine = LLMEngine.from_engine_args(engine_args)
-    pygvm.install_in_vllm(gvm)
+    pyaici.install_in_vllm(aici)
 
     # Test the following prompts.
     test_prompts: List[Tuple[str, SamplingParams]] = [
@@ -36,8 +36,8 @@ def main(args: argparse.Namespace):
          SamplingParams(temperature=0.9, n=3, max_tokens=120))
     ]
     for (prompt, params) in test_prompts:
-        params.gvm_module = args.gvm_module
-        params.gvm_arg = ""
+        params.aici_module = args.aici_module
+        params.aici_arg = ""
 
     # Run the engine by calling `engine.step()` manually.
     request_id = 0
@@ -66,17 +66,17 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(
         description='Demo on using the LLMEngine class directly')
     parser.add_argument(
-            '--gvm-module',
+            '--aici-module',
             type=str,
             default='',
             help='module id')
     parser.add_argument(
-            '--gvm-rt',
+            '--aici-rt',
             type=str,
             required=True,
             help='module id')
     parser.add_argument(
-            '--gvm-tokenizer',
+            '--aici-tokenizer',
             type=str,
             default='llama',
             help='tokenizer to use; llama, gpt4, ...')

@@ -34,7 +34,7 @@
 #
 # Then run 'ssh tunnel' to connect to the machine.
 # You can also connect to 'tunnel' in vscode with "Remote-SSH: Connect to host"
-# Once you check out gvm on the remote host, do "Dev-Containers: Reopen in container"
+# Once you check out aici on the remote host, do "Dev-Containers: Reopen in container"
 #
 
 while getopts tn: flag; do

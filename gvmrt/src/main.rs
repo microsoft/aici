@@ -7,8 +7,8 @@ use anyhow::{anyhow, ensure, Result};
 use base64;
 use base64::{engine::general_purpose, Engine as _};
 use clap::Parser;
-use gvm_abi::toktree::TokTrie;
-use gvm_tokenizers::{find_tokenizer, Tokenizer};
+use aici_abi::toktree::TokTrie;
+use aici_tokenizers::{find_tokenizer, Tokenizer};
 use hex;
 use log::{debug, info, warn};
 use rayon::prelude::*;
@@ -59,7 +59,7 @@ struct Cli {
     bin_size: usize,
 
     /// Shm/semaphore name prefix
-    #[arg(long, short, default_value = "/gvm0-")]
+    #[arg(long, short, default_value = "/aici0-")]
     name: String,
 }
 
@@ -72,7 +72,7 @@ impl Cli {
 struct Executor {
     cache_path: PathBuf,
     engine: wasmtime::Engine,
-    linker: Arc<wasmtime::Linker<GvmContext>>,
+    linker: Arc<wasmtime::Linker<AiciContext>>,
     modules: HashMap<String, wasmtime::Module>,
     instances: HashMap<Id, Arc<Mutex<ModuleInstance>>>,
     globals: Arc<RwLock<GlobalInfo>>,
@@ -84,9 +84,9 @@ fn is_hex_string(s: &str) -> bool {
 }
 
 #[derive(Serialize, Deserialize)]
-struct GvmStepReq {
+struct AiciStepReq {
     freed: Vec<Id>,
-    ops: Vec<GvmOp>,
+    ops: Vec<AiciOp>,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -204,9 +204,9 @@ impl Executor {
         Ok(modi)
     }
 
-    fn mk_instance(&mut self, op: &GvmOp) -> Result<()> {
+    fn mk_instance(&mut self, op: &AiciOp) -> Result<()> {
         match op {
-            GvmOp::Gen { id, clone_id, .. } => {
+            AiciOp::Gen { id, clone_id, .. } => {
                 if let Some(cid) = clone_id {
                     ensure!(!self.instances.contains_key(id));
                     let parent = self
@@ -217,7 +217,7 @@ impl Executor {
                     self.instances.insert(*id, parent.clone());
                 }
             }
-            GvmOp::Prompt { id, module_id, .. } => {
+            AiciOp::Prompt { id, module_id, .. } => {
                 ensure!(!self.instances.contains_key(id));
                 let modi = self.new_instance(module_id)?;
                 debug!("new module {} ({})", id, module_id);
@@ -228,7 +228,7 @@ impl Executor {
         Ok(())
     }
 
-    fn gvm_step(&mut self, req: GvmStepReq) -> Result<Value> {
+    fn aici_step(&mut self, req: AiciStepReq) -> Result<Value> {
         for id in req.freed {
             debug!("free module {}", id);
             let _ = self.instances.remove(&id);
@@ -253,8 +253,8 @@ impl Executor {
             .enumerate()
             .map(|(idx, op)| {
                 let instid = match op {
-                    GvmOp::Gen { id, .. } => id,
-                    GvmOp::Prompt { id, .. } => id,
+                    AiciOp::Gen { id, .. } => id,
+                    AiciOp::Prompt { id, .. } => id,
                 };
                 let modi_rc = self
                     .instances
@@ -330,7 +330,7 @@ impl Dispatcher {
                 json!({ "vocab_size": self.executor.globals.read().unwrap().tokrx_info.vocab_size }),
             ),
             Some("mk_module") => self.executor.mk_module(serde_json::from_value(json)?),
-            Some("step") => self.executor.gvm_step(serde_json::from_value(json)?),
+            Some("step") => self.executor.aici_step(serde_json::from_value(json)?),
             Some("stop") => std::process::exit(0),
             _ => return Err(anyhow!("bad op")),
         }

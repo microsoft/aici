@@ -1,5 +1,5 @@
 use anyhow::{anyhow, Result};
-use gvm_abi::bytes::TokRxInfo;
+use aici_abi::bytes::TokRxInfo;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 

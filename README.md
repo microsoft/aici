@@ -1,4 +1,4 @@
-# Guidance Low-Level VM
+# Aici Low-Level VM
 
 ## Getting started
 
@@ -16,25 +16,25 @@ Running with vllm:
 
 ## Architecture
 
-The Guidance Low-Level VM (GVM) can be used to constrain output of an LLM in real time.
-While the GPU is working on the next token of the output, the GVM can use the CPU to
+The Aici Low-Level VM (AICI) can be used to constrain output of an LLM in real time.
+While the GPU is working on the next token of the output, the AICI can use the CPU to
 compute a user-provided constraint on the next token.
 This adds minmal latency to the LLM generation.
 
-The GVM itself is built on top of [Wasmtime](https://wasmtime.dev/).
+The AICI itself is built on top of [Wasmtime](https://wasmtime.dev/).
 It takes [WebAssembly](https://webassembly.org/) (WASM) modules with a specific interface
 (see below) and executes them in parralel while the LLM inference engine is working on the next token.
-This runtime is implemented in the [gvmrt](gvmrt) crate, while the interface 
-is specified in the [gvm_abi](gvm_abi) crate.
+This runtime is implemented in the [aicirt](aicirt) crate, while the interface 
+is specified in the [aici_abi](aici_abi) crate.
 
 The WASM module can be generated in any language that can compile to WASM, but this project focuses on Rust.
 
-The LLM engines are often implemented in Python, and thus the [pygvm](pygvm) Python packages provides
-a class to spin up and communicate with `gvmrt` process via POSIX shared memory and semaphores.
+The LLM engines are often implemented in Python, and thus the [pyaici](pyaici) Python packages provides
+a class to spin up and communicate with `aicirt` process via POSIX shared memory and semaphores.
 Using shared memory ensures there is very little work to be done on the Python side
 (other than wrapping that memory as a tensor).
 
-The (harness)[harness] folder contains samples for using gvmrt with different LLM engines:
+The (harness)[harness] folder contains samples for using aicirt with different LLM engines:
 - [HuggingFace Transformers](harness/run_hf.py), run with `./scripts/hf.sh`
 - [vLLM](harness/run_vllm.py), run with `./scripts/vllm.sh`
 
@@ -42,10 +42,10 @@ The (harness)[harness] folder contains samples for using gvmrt with different LL
 
 ### Low-level interface
 
-Conceptually, the lowest level interface to GVM constraint is this:
+Conceptually, the lowest level interface to AICI constraint is this:
 
 ```rust
-pub trait GuidanceVm {
+pub trait AiciVm {
     /// Process prompt and return logit bias for first token.
     fn process_prompt(&mut self, tokens: &[u32]) -> Vec<f32>;
     /// Compute logit bias for the next token, provided `token` was sampled
@@ -58,8 +58,8 @@ Tokens depend on the tokenizer used (eg., for Llama there 32000 tokens, and for 
 The actual binary interface is a bit more complicated - it asks for the memory to be allocated
 for prompt, has a type to represent constraint, way to allocate and free it, as well as clone it
 (eg., when a beam search branch is split or cut),
-see the [GuidanceVm Rust trait](gvm_abi/src/lib.rs) as well as the 
-[C header file](gvm_abi/src/gvm_iface.h) for details
+see the [AiciVm Rust trait](aici_abi/src/lib.rs) as well as the 
+[C header file](aici_abi/src/aici_iface.h) for details
 (the C header is currently not used other than for documentation).
 
 As for cloning, it may be more efficient to clone the whole VM state, rather than just the constraint
@@ -74,8 +74,8 @@ The constraints are typically expressed on strings or bytes, not tokens.
 To compute the set of tokens that match a string constraint, one needs go through all the possible tokens
 and apply the constraint.
 An efficient way to do this is walk a prefix tree (trie) of all tokens.
-The `gvm_abi` library implements this trie and exposes a way of filtering when provided with a constraints
-implementing the [following interface](gvm_abi/src/toktree.rs):
+The `aici_abi` library implements this trie and exposes a way of filtering when provided with a constraints
+implementing the [following interface](aici_abi/src/toktree.rs):
 
 ```rust
 pub trait Recognizer {
@@ -95,7 +95,7 @@ pub trait Recognizer {
 }
 ```
 
-The `GvmRecognizer` struct converts `Recognizer` to `GuidanceVm`.
+The `AiciRecognizer` struct converts `Recognizer` to `AiciVm`.
 
 ### Functional byte interface
 
@@ -143,7 +143,7 @@ while `special_allowed()` is only implemented for end-of-sequence token
 (which is allowed when the current state is accepting).
 
 The `regex_llm` crate implements a different interface for regular expressions,
-that pre-compiles the DFA with respect to tokens and goes directly down to `GuidanceVm`.
+that pre-compiles the DFA with respect to tokens and goes directly down to `AiciVm`.
 It's unclear if this will be needed.
 
 ### LR(1) grammars

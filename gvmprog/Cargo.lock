@@ -3,12 +3,12 @@
 version = 3
 
 [[package]]
-name = "gvm_abi"
+name = "aici_abi"
 version = "0.1.0"
 
 [[package]]
-name = "gvmprog"
+name = "aiciprog"
 version = "0.1.0"
 dependencies = [
- "gvm_abi",
+ "aici_abi",
 ]

@@ -10,7 +10,7 @@ from typing import List
 
 # macOS has 31 character name limit, so keep this short
 # (Linux has 255)
-DEFAULT_SHM_PREF = "/gvm0-"
+DEFAULT_SHM_PREF = "/aici0-"
 
 
 def mkshm(name, size):
@@ -82,7 +82,7 @@ class MessageChannel:
         # self.read_sem.unlink()
 
 
-class GvmRunner:
+class AiciRunner:
     instance = None
 
     def __init__(
@@ -94,14 +94,14 @@ class GvmRunner:
         pref=DEFAULT_SHM_PREF,
     ) -> None:
         """
-        Start a new gvmrt process and initialize comms channels.
+        Start a new aicirt process and initialize comms channels.
 
         Args:
-            rtpath (str): Path to the gvmrt binary.
+            rtpath (str): Path to the aicirt binary.
             tokenizer (str, optional): One of "llama", "gpt4", "gpt2", "mpt", "phi", "falcon".
             json_size (int, optional): Size of the JSON message channel in MB. Defaults to 8.
             bin_size (int, optional): Size of the binary shared memory in MB. Defaults to 16.
-            pref (str, optional): Prefix for the shared memory and message channels. Defaults to "/gvm0-".
+            pref (str, optional): Prefix for the shared memory and message channels. Defaults to "/aici0-".
         """
 
         M = 1024 * 1024
@@ -134,7 +134,7 @@ class GvmRunner:
 
         self.step_reset()
 
-        GvmRunner.instance = self
+        AiciRunner.instance = self
 
     def _send_cmd(self, data):
         assert not self.cmd_pending
@@ -207,7 +207,7 @@ class GvmRunner:
 
     def step_finish(self):
         """
-        Send step data to the gvmrt process.
+        Send step data to the aicirt process.
         recv_logit_bias() (or flush_logit_bias()) needs to be called after this.
         """
         cmd = {
@@ -226,7 +226,7 @@ class GvmRunner:
         Drop any pending logit computation.
         """
         if self.logit_pending:
-            print("Warning: unflushed Gvm logit bias")
+            print("Warning: unflushed Aici logit bias")
             self.logit_pending = False
             self._expect_response("flush")
 
@@ -245,13 +245,13 @@ class GvmRunner:
 
     def stop(self):
         """
-        Stops the gvmrt process and waits for it to exit.
+        Stops the aicirt process and waits for it to exit.
         """
         self._send_cmd({"op": "stop"})
         self.proc.wait()
 
 
-def install_in_vllm(runner: GvmRunner):
+def install_in_vllm(runner: AiciRunner):
     from vllm.sampling_params import SamplingParams
     from vllm.sequence import SequenceGroupMetadata
     import torch
@@ -274,8 +274,8 @@ def install_in_vllm(runner: GvmRunner):
                 runner.step_add_prompt(
                     id,
                     prompt=s.seq_data[id].prompt_token_ids,
-                    module_id=s.sampling_params.gvm_module,
-                    module_arg=s.sampling_params.gvm_arg,
+                    module_id=s.sampling_params.aici_module,
+                    module_arg=s.sampling_params.aici_arg,
                 )
             else:
                 for id in ids:

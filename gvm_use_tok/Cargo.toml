@@ -1,15 +1,15 @@
 [package]
-name = "gvm_use_tok"
+name = "aici_use_tok"
 version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-gvm_abi = "0.1.0"
+aici_abi = "0.1.0"
 regex-automata = { version = "0.3.8", default-features = false, features = ["dfa", "syntax", "perf"] }
 
 [patch.crates-io]
-gvm_abi = { path = "../gvm_abi" }
+aici_abi = { path = "../aici_abi" }
 
 [[bin]]
-name = "gvm_use_tok"
+name = "aici_use_tok"
 path = "src/use_tok.rs"

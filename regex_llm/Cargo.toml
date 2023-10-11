@@ -12,12 +12,12 @@ serde = { version = "1.0.188", features = ["derive"] }
 serde_json = { version = "1.0.107", features = ["preserve_order"] }
 indexmap = "2.0.1"
 clap = { version = "4.4.6", features = ["derive"] }
-gvm_abi = "0.1.0"
-gvm_tokenizers = "0.1.0"
+aici_abi = "0.1.0"
+aici_tokenizers = "0.1.0"
 
 [patch.crates-io]
-gvm_abi = { path = "../gvm_abi" }
-gvm_tokenizers = { path = "../gvm_tokenizers" }
+aici_abi = { path = "../aici_abi" }
+aici_tokenizers = { path = "../aici_tokenizers" }
 
 [[bin]]
 name = "regex_llm"

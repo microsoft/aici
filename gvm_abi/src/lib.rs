@@ -32,68 +32,68 @@ macro_rules! expose {
 }
 
 #[derive(Clone)]
-pub struct GuidanceVmHelper {
+pub struct AiciVmHelper {
     pub tokens: Vec<u32>,
     pub prompt_length: usize,
     pub logit_biases: Vec<f32>,
 }
 
-// gvm_* are exposed to C in both GuidanceVm and GuidanceVmHelper
-impl GuidanceVmHelper {
+// aici_* are exposed to C in both AiciVm and AiciVmHelper
+impl AiciVmHelper {
     pub fn new() -> Self {
-        GuidanceVmHelper {
+        AiciVmHelper {
             tokens: Vec::new(),
             prompt_length: 0,
             logit_biases: Vec::new(),
         }
     }
-    pub fn gvm_get_logit_bias_buffer(&mut self, size: u32) -> *mut f32 {
+    pub fn aici_get_logit_bias_buffer(&mut self, size: u32) -> *mut f32 {
         // we keep one more logit at the end as a placeholder to avoid branching in
         // the inner loop of append_bias
         self.logit_biases.resize((size + 1) as usize, 0.0);
         self.logit_biases.as_mut_ptr()
     }
-    pub fn gvm_get_prompt_buffer(&mut self, size: u32) -> *mut u32 {
+    pub fn aici_get_prompt_buffer(&mut self, size: u32) -> *mut u32 {
         self.prompt_length = size as usize;
         self.tokens.resize(self.prompt_length, 0);
         self.tokens.as_mut_ptr()
     }
 }
 
-pub trait GuidanceVm {
+pub trait AiciVm {
     /// Create a new instance of VM, based on existing instance, for example when doing beam-search.
-    fn gvm_clone(&mut self) -> Self;
+    fn aici_clone(&mut self) -> Self;
     /// The prompt is in self.helper.tokens.
     /// On return, self.helper.logit_biases are supposed to be updated.
-    fn gvm_process_prompt(&mut self);
+    fn aici_process_prompt(&mut self);
     /// On return, self.helper.logit_biases are supposed to be updated.
-    fn gvm_append_token(&mut self, token: u32);
+    fn aici_append_token(&mut self, token: u32);
     // Used in testing.
-    fn get_helper(&mut self) -> &mut GuidanceVmHelper;
+    fn get_helper(&mut self) -> &mut AiciVmHelper;
 }
 
 #[macro_export]
-macro_rules! gvm_expose_all {
+macro_rules! aici_expose_all {
     ($struct_name:ident, $new:expr) => {
-        $crate::expose!($struct_name::gvm_process_prompt() -> ());
-        $crate::expose!($struct_name::gvm_append_token(token: u32) -> ());
-        $crate::expose!($struct_name::helper::gvm_get_logit_bias_buffer(size: u32) -> *mut f32);
-        $crate::expose!($struct_name::helper::gvm_get_prompt_buffer(size: u32) -> *mut u32);
+        $crate::expose!($struct_name::aici_process_prompt() -> ());
+        $crate::expose!($struct_name::aici_append_token(token: u32) -> ());
+        $crate::expose!($struct_name::helper::aici_get_logit_bias_buffer(size: u32) -> *mut f32);
+        $crate::expose!($struct_name::helper::aici_get_prompt_buffer(size: u32) -> *mut u32);
 
         #[no_mangle]
-        pub extern "C" fn gvm_create() -> *mut $struct_name {
+        pub extern "C" fn aici_create() -> *mut $struct_name {
             let b = Box::new($new);
             Box::into_raw(b)
         }
 
         #[no_mangle]
-        pub extern "C" fn gvm_clone(self_: *mut $struct_name) -> *mut $struct_name {
-            let b = unsafe { (&mut *self_).gvm_clone() };
+        pub extern "C" fn aici_clone(self_: *mut $struct_name) -> *mut $struct_name {
+            let b = unsafe { (&mut *self_).aici_clone() };
             Box::into_raw(Box::new(b))
         }
 
         #[no_mangle]
-        pub extern "C" fn gvm_free(self_: *mut $struct_name) {
+        pub extern "C" fn aici_free(self_: *mut $struct_name) {
             let _drop = unsafe { Box::from_raw(self_) };
         }
     }
@@ -136,25 +136,25 @@ macro_rules! wprint {
     }};
 }
 
-pub fn gvm_harness(gvm: &mut impl GuidanceVm, vocab_size: usize, prompt: &[TokenId]) {
+pub fn aici_harness(aici: &mut impl AiciVm, vocab_size: usize, prompt: &[TokenId]) {
     let logits = unsafe {
         std::slice::from_raw_parts_mut(
-            gvm.get_helper()
-                .gvm_get_logit_bias_buffer(vocab_size as u32),
+            aici.get_helper()
+                .aici_get_logit_bias_buffer(vocab_size as u32),
             vocab_size,
         )
     };
     let prompt_buf = unsafe {
         std::slice::from_raw_parts_mut(
-            gvm.get_helper().gvm_get_prompt_buffer(prompt.len() as u32),
+            aici.get_helper().aici_get_prompt_buffer(prompt.len() as u32),
             prompt.len(),
         )
     };
     prompt_buf.copy_from_slice(&prompt);
-    gvm.gvm_process_prompt();
+    aici.aici_process_prompt();
     let p0 = logits.iter().filter(|x| **x > -50.0).count();
     wprintln!("res0: {}", p0);
-    gvm.gvm_append_token(13);
+    aici.aici_append_token(13);
     let p1 = logits.iter().filter(|x| **x > -50.0).count();
     wprintln!("res1: {}", p1);
 }

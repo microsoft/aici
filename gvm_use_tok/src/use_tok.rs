@@ -1,10 +1,10 @@
 use std::rc::Rc;
 
-use gvm_abi::{
-    gvm_expose_all, gvm_harness,
-    recognizer::{FunctionalRecognizer, GvmRecognizer, StackRecognizer},
+use aici_abi::{
+    aici_expose_all, aici_harness,
+    recognizer::{FunctionalRecognizer, AiciRecognizer, StackRecognizer},
     toktree::{SpecialToken, TokTrie},
-    wprintln, GuidanceVm,
+    wprintln, AiciVm,
 };
 use regex_automata::{
     dfa::{dense, Automaton},
@@ -16,7 +16,7 @@ pub struct RecRx {
     dfa: dense::DFA<Vec<u32>>,
 }
 
-pub type RxRecognizer = GvmRecognizer<StackRecognizer<StateID, RecRx>>;
+pub type RxRecognizer = AiciRecognizer<StackRecognizer<StateID, RecRx>>;
 
 impl RecRx {
     pub fn from_rx(rx: &str) -> Self {
@@ -31,7 +31,7 @@ impl RecRx {
 
     pub fn to_recognizer(self) -> RxRecognizer {
         let trie = Rc::new(Box::new(TokTrie::from_env()));
-        GvmRecognizer::<StackRecognizer<StateID, RecRx>>::from_recognizer(
+        AiciRecognizer::<StackRecognizer<StateID, RecRx>>::from_recognizer(
             trie,
             StackRecognizer::from(self),
         )
@@ -86,7 +86,7 @@ fn main() {
     wprintln!("dfa: {} bytes", dfa.memory_usage());
 
     let mut t = tokrx();
-    gvm_harness(&mut t, trie.vocab_size(), &vec![1, 2]);
+    aici_harness(&mut t, trie.vocab_size(), &vec![1, 2]);
 
     if false {
         let mut rec = StackRecognizer::from(RecRx { dfa });
@@ -116,4 +116,4 @@ fn tokrx() -> RxRecognizer {
     RecRx::from_rx(rx).to_recognizer()
 }
 
-gvm_expose_all!(RxRecognizer, tokrx());
+aici_expose_all!(RxRecognizer, tokrx());

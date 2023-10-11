@@ -1,19 +1,19 @@
-use gvm_abi::{gvm_expose_all, GuidanceVm, GuidanceVmHelper};
+use aici_abi::{aici_expose_all, AiciVm, AiciVmHelper};
 
-pub struct MyGvm {
-    helper: GuidanceVmHelper,
+pub struct MyAici {
+    helper: AiciVmHelper,
 }
 
-fn create() -> MyGvm {
-    MyGvm {
-        helper: GuidanceVmHelper::new(),
+fn create() -> MyAici {
+    MyAici {
+        helper: AiciVmHelper::new(),
     }
 }
 
-impl GuidanceVm for MyGvm {
-    fn gvm_process_prompt(&mut self) {}
+impl AiciVm for MyAici {
+    fn aici_process_prompt(&mut self) {}
 
-    fn gvm_append_token(&mut self, token: u32) {
+    fn aici_append_token(&mut self, token: u32) {
         let toks = &mut self.helper.tokens;
         toks.push(token);
         // finish generation at 10 tokens
@@ -24,17 +24,17 @@ impl GuidanceVm for MyGvm {
         }
     }
 
-    fn gvm_clone(&mut self) -> Self {
-        MyGvm {
+    fn aici_clone(&mut self) -> Self {
+        MyAici {
             helper: self.helper.clone(),
         }
     }
 
-    fn get_helper(&mut self) -> &mut GuidanceVmHelper {
+    fn get_helper(&mut self) -> &mut AiciVmHelper {
         &mut self.helper
     }
 }
 
-gvm_expose_all!(MyGvm, create());
+aici_expose_all!(MyAici, create());
 
 fn main() {}

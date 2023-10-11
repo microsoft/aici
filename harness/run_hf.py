@@ -3,7 +3,7 @@ import argparse
 from typing import cast, Optional, Union
 import torch
 import time
-import pygvm
+import pyaici
 
 from transformers import (
     AutoTokenizer,
@@ -21,7 +21,7 @@ device = "cuda" if torch.cuda.is_available() else "cpu"
 
 class AsyncLogitProcessor(LogitsProcessor, BaseStreamer):
     def __init__(
-        self, runner: pygvm.GvmRunner, module_id: str, module_arg: str
+        self, runner: pyaici.AiciRunner, module_id: str, module_arg: str
     ) -> None:
         super().__init__()
         self.runner = runner
@@ -67,9 +67,9 @@ def main(args):
     )
     model = cast(PreTrainedModel, model)
 
-    runner = pygvm.GvmRunner(rtpath=args.gvm_rt, tokenizer=args.gvm_tokenizer)
+    runner = pyaici.AiciRunner(rtpath=args.aici_rt, tokenizer=args.aici_tokenizer)
 
-    wproc = AsyncLogitProcessor(runner, args.gvm_module, args.gvm_module_arg)
+    wproc = AsyncLogitProcessor(runner, args.aici_module, args.aici_module_arg)
     inp = tokenizer(
         "Here is an example JSON about Joe Random Hacker in Seattle:\n",
         return_tensors="pt",
@@ -90,7 +90,7 @@ def main(args):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
-        description="Demo on using HF Transformers with gvmrt"
+        description="Demo on using HF Transformers with aicirt"
     )
     parser.add_argument("--model", type=str, required=True, help="model to use")
     parser.add_argument(
@@ -100,14 +100,14 @@ if __name__ == "__main__":
         help="tokenizer to use; defaults to model name",
     )
     parser.add_argument(
-        "--gvm-module-arg", type=str, default="", help="arg passed to module"
+        "--aici-module-arg", type=str, default="", help="arg passed to module"
     )
     parser.add_argument(
-        "--gvm-module", type=str, required=True, help="id of the module to run"
+        "--aici-module", type=str, required=True, help="id of the module to run"
     )
-    parser.add_argument("--gvm-rt", type=str, required=True, help="path to gvmrt")
+    parser.add_argument("--aici-rt", type=str, required=True, help="path to aicirt")
     parser.add_argument(
-        "--gvm-tokenizer",
+        "--aici-tokenizer",
         type=str,
         default="llama",
         help="tokenizer to use; llama, gpt4, ...",

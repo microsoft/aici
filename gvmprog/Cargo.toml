@@ -1,10 +1,10 @@
 [package]
-name = "gvmprog"
+name = "aiciprog"
 version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-gvm_abi = "0.1.0"
+aici_abi = "0.1.0"
 
 [patch.crates-io]
-gvm_abi = { path = "../gvm_abi" }
+aici_abi = { path = "../aici_abi" }

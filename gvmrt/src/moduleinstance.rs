@@ -1,5 +1,5 @@
 use anyhow::{anyhow, ensure, Result};
-use gvm_abi::bytes::TokRxInfo;
+use aici_abi::bytes::TokRxInfo;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
@@ -7,15 +7,15 @@ use std::time::Instant;
 use wasmtime;
 
 #[derive(Clone)]
-pub struct GvmContext {
+pub struct AiciContext {
     id: Id,
     log: Vec<u8>,
     globals: Arc<RwLock<GlobalInfo>>,
 }
 
-impl GvmContext {
+impl AiciContext {
     pub fn from(id: Id, globals: Arc<RwLock<GlobalInfo>>) -> Self {
-        GvmContext {
+        AiciContext {
             id,
             log: Vec::new(),
             globals,
@@ -45,7 +45,7 @@ impl GvmContext {
 }
 
 struct WasmCtx {
-    store: wasmtime::Store<GvmContext>,
+    store: wasmtime::Store<AiciContext>,
     instance: wasmtime::Instance,
     memory: wasmtime::Memory,
 }
@@ -55,28 +55,28 @@ pub struct GlobalInfo {
     pub trie_bytes: Vec<u8>,
 }
 
-pub struct GvmInfo {
+pub struct AiciInfo {
     id: Id,
-    handle: WasmGvm,
+    handle: WasmAici,
     logit_ptr: WasmPtr,
 }
 
-impl GvmInfo {
-    pub fn context(&self, globals: Arc<RwLock<GlobalInfo>>) -> GvmContext {
-        GvmContext::from(self.id, globals)
+impl AiciInfo {
+    pub fn context(&self, globals: Arc<RwLock<GlobalInfo>>) -> AiciContext {
+        AiciContext::from(self.id, globals)
     }
 }
 
 pub struct ModuleInstance {
     globals: Arc<RwLock<GlobalInfo>>,
-    gvm_handles: HashMap<Id, GvmInfo>,
+    aici_handles: HashMap<Id, AiciInfo>,
     wasm: WasmCtx,
     ops: Vec<IdxOp>, // for next req
 }
 
 pub struct IdxOp {
     dst_slice: &'static mut [u8],
-    op: GvmOp,
+    op: AiciOp,
 }
 
 pub type Id = usize;
@@ -84,7 +84,7 @@ pub type Token = u32;
 
 #[derive(Serialize, Deserialize)]
 #[serde(untagged)]
-pub enum GvmOp {
+pub enum AiciOp {
     Prompt {
         id: Id,
         prompt: Vec<Token>,
@@ -99,7 +99,7 @@ pub enum GvmOp {
 }
 
 type WasmPtr = u32;
-type WasmGvm = u32;
+type WasmAici = u32;
 
 impl WasmCtx {
     fn call_func<Params, Results>(&mut self, name: &str, params: Params) -> Result<Results>
@@ -122,7 +122,7 @@ impl WasmCtx {
 
     fn call_func_in<Params, Results>(
         &mut self,
-        ginfo: &GvmContext,
+        ginfo: &AiciContext,
         name: &str,
         params: Params,
     ) -> Result<Results>
@@ -174,19 +174,19 @@ impl WasmCtx {
 impl ModuleInstance {
     pub fn new(
         module: wasmtime::Module,
-        linker: Arc<wasmtime::Linker<GvmContext>>,
+        linker: Arc<wasmtime::Linker<AiciContext>>,
         globals: Arc<RwLock<GlobalInfo>>,
     ) -> Result<Self> {
         let engine = module.engine();
 
-        let mut store = wasmtime::Store::new(engine, GvmContext::fake(globals.clone()));
+        let mut store = wasmtime::Store::new(engine, AiciContext::fake(globals.clone()));
         let instance = linker.instantiate(&mut store, &module)?;
         let memory = instance
             .get_memory(&mut store, "memory")
             .ok_or(anyhow!("memory missing"))?;
 
         Ok(ModuleInstance {
-            gvm_handles: HashMap::new(),
+            aici_handles: HashMap::new(),
             ops: Vec::new(),
             wasm: WasmCtx {
                 store,
@@ -198,7 +198,7 @@ impl ModuleInstance {
     }
 
     fn run_init(&mut self) -> Result<()> {
-        self.wasm.call_func::<(), ()>("gvm_init", ())?;
+        self.wasm.call_func::<(), ()>("aici_init", ())?;
         Ok(())
     }
 
@@ -210,25 +210,25 @@ impl ModuleInstance {
         Ok(())
     }
 
-    pub fn add_op(&mut self, dst_slice: &'static mut [u8], op: GvmOp) -> bool {
+    pub fn add_op(&mut self, dst_slice: &'static mut [u8], op: AiciOp) -> bool {
         self.ops.push(IdxOp { dst_slice, op });
         self.ops.len() == 1
     }
 
-    fn setup_logit_bias(&mut self, id: Id, handle: WasmGvm) -> Result<u32> {
+    fn setup_logit_bias(&mut self, id: Id, handle: WasmAici) -> Result<u32> {
         let vocab_size = { self.globals.read().unwrap().tokrx_info.vocab_size };
-        let logit_ptr = self.wasm.call_func_in::<(WasmGvm, u32), WasmPtr>(
-            &GvmContext::from(id, self.globals.clone()),
-            "gvm_get_logit_bias_buffer",
+        let logit_ptr = self.wasm.call_func_in::<(WasmAici, u32), WasmPtr>(
+            &AiciContext::from(id, self.globals.clone()),
+            "aici_get_logit_bias_buffer",
             (handle, vocab_size),
         )?;
 
-        let ginfo = GvmInfo {
+        let ginfo = AiciInfo {
             id,
             handle,
             logit_ptr,
         };
-        self.gvm_handles.insert(id, ginfo);
+        self.aici_handles.insert(id, ginfo);
 
         Ok(logit_ptr)
     }
@@ -239,7 +239,7 @@ impl ModuleInstance {
 
         for opidx in ops {
             match &opidx.op {
-                GvmOp::Prompt {
+                AiciOp::Prompt {
                     id,
                     prompt,
                     module_arg,
@@ -249,35 +249,35 @@ impl ModuleInstance {
 
                     self.run_init()?;
 
-                    let ctx = GvmContext::from(*id, self.globals.clone());
+                    let ctx = AiciContext::from(*id, self.globals.clone());
                     let handle = self
                         .wasm
-                        .call_func_in::<(), WasmGvm>(&ctx, "gvm_create", ())?;
+                        .call_func_in::<(), WasmAici>(&ctx, "aici_create", ())?;
                     let logit_ptr = self.setup_logit_bias(*id, handle)?;
 
-                    let prompt_ptr = self.wasm.call_func_in::<(WasmGvm, u32), WasmPtr>(
+                    let prompt_ptr = self.wasm.call_func_in::<(WasmAici, u32), WasmPtr>(
                         &ctx,
-                        "gvm_get_prompt_buffer",
+                        "aici_get_prompt_buffer",
                         (handle, prompt.len().try_into().unwrap()),
                     )?;
 
                     self.wasm.write_mem(&prompt, prompt_ptr)?;
                     self.wasm
-                        .call_func_in::<WasmGvm, ()>(&ctx, "gvm_process_prompt", handle)?;
+                        .call_func_in::<WasmAici, ()>(&ctx, "aici_process_prompt", handle)?;
                     self.wasm.read_mem(logit_ptr, opidx.dst_slice)?;
                 }
 
-                GvmOp::Gen { id, gen, clone_id } => {
+                AiciOp::Gen { id, gen, clone_id } => {
                     match clone_id {
                         None => {}
                         Some(cid) => {
-                            let handles = &mut self.gvm_handles;
+                            let handles = &mut self.aici_handles;
                             let parent = handles
                                 .get(&cid)
                                 .ok_or(anyhow!("invalid clone_id {} (inner)", cid))?;
-                            let child = self.wasm.call_func_in::<WasmGvm, WasmGvm>(
-                                &GvmContext::from(*id, self.globals.clone()),
-                                "gvm_clone",
+                            let child = self.wasm.call_func_in::<WasmAici, WasmAici>(
+                                &AiciContext::from(*id, self.globals.clone()),
+                                "aici_clone",
                                 parent.handle,
                             )?;
                             self.setup_logit_bias(*id, child)?;
@@ -292,12 +292,12 @@ impl ModuleInstance {
         // only append tokens after everything has been cloned
         for (id, gen, dst_slice) in todo {
             let ginfo = self
-                .gvm_handles
+                .aici_handles
                 .get(&id)
                 .ok_or(anyhow!("invalid Gen id {}", id))?;
-            self.wasm.call_func_in::<(WasmGvm, Token), ()>(
+            self.wasm.call_func_in::<(WasmAici, Token), ()>(
                 &ginfo.context(self.globals.clone()),
-                "gvm_append_token",
+                "aici_append_token",
                 (ginfo.handle, gen),
             )?;
             self.wasm.read_mem(ginfo.logit_ptr, dst_slice)?;
@@ -307,12 +307,12 @@ impl ModuleInstance {
     }
 }
 
-pub fn setup_linker(engine: &wasmtime::Engine) -> Result<Arc<wasmtime::Linker<GvmContext>>> {
-    let mut linker = wasmtime::Linker::<GvmContext>::new(engine);
+pub fn setup_linker(engine: &wasmtime::Engine) -> Result<Arc<wasmtime::Linker<AiciContext>>> {
+    let mut linker = wasmtime::Linker::<AiciContext>::new(engine);
     linker.func_wrap(
         "env",
-        "gvm_host_print",
-        |mut caller: wasmtime::Caller<'_, GvmContext>, ptr: u32, len: u32| {
+        "aici_host_print",
+        |mut caller: wasmtime::Caller<'_, AiciContext>, ptr: u32, len: u32| {
             let mut bytes = if let Some(wasmtime::Extern::Memory(mem)) = caller.get_export("memory")
             {
                 let ptr = ptr as usize;
@@ -326,11 +326,11 @@ pub fn setup_linker(engine: &wasmtime::Engine) -> Result<Arc<wasmtime::Linker<Gv
         },
     )?;
 
-    // uint32_t gvm_host_read_token_trie(uint8_t *dst, uint32_t size);
+    // uint32_t aici_host_read_token_trie(uint8_t *dst, uint32_t size);
     linker.func_wrap(
         "env",
-        "gvm_host_read_token_trie",
-        |mut caller: wasmtime::Caller<'_, GvmContext>, ptr: u32, len: u32| {
+        "aici_host_read_token_trie",
+        |mut caller: wasmtime::Caller<'_, AiciContext>, ptr: u32, len: u32| {
             let lock = caller.data().globals.clone();
             let info = lock.read().unwrap();
             if let Some(wasmtime::Extern::Memory(mem)) = caller.get_export("memory") {

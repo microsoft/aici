@@ -97,16 +97,16 @@ impl TrieNode {
 
 #[allow(dead_code)]
 extern "C" {
-    fn gvm_host_read_token_trie(ptr: *mut u8, len: u32) -> u32;
+    fn aici_host_read_token_trie(ptr: *mut u8, len: u32) -> u32;
 }
 
 impl TokTrie {
     pub fn from_env() -> Self {
         #[cfg(target_arch = "wasm32")]
         unsafe {
-            let size = gvm_host_read_token_trie(0 as _, 0);
+            let size = aici_host_read_token_trie(0 as _, 0);
             let mut buffer = vec![0u8; size as usize];
-            gvm_host_read_token_trie(buffer.as_mut_ptr(), size);
+            aici_host_read_token_trie(buffer.as_mut_ptr(), size);
             Self::from_bytes(&buffer)
         }
 

@@ -1,12 +1,12 @@
-# GuidanceVM Runtime (gvmrt)
+# AiciVM Runtime (aicirt)
 
 Multi-threaded wasmtime-based runner.
 
 ## Scenario
 
-- vLLM starts GvmRt 
+- vLLM starts AiciRt 
 - user sends request to vLLM: store_wasm(wasm_binary, metadata) -> wasm_id
-- vLLM handles this request by asking GvmRt
+- vLLM handles this request by asking AiciRt
 - user sends request to vLLM: complete(prompt, wasm_input, wasm_id)
 - vLLM asks MT to start instance of wasm_id, with given wasm_input, prompt -> instance_id
 - 

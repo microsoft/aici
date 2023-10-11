@@ -3,8 +3,8 @@ mod timelog;
 
 use anyhow::{Ok, Result};
 use clap::Parser;
-use gvm_abi::toktree::TokTrie;
-use gvm_tokenizers::find_tokenizer;
+use aici_abi::toktree::TokTrie;
+use aici_tokenizers::find_tokenizer;
 use indexmap::IndexMap;
 use regex_automata::dfa::{dense, dense::DFA, Automaton};
 use regex_automata::util::{primitives::StateID, syntax};
@@ -14,7 +14,7 @@ use std::collections::{HashMap, HashSet};
 use std::hash::Hash;
 use std::path::PathBuf;
 
-use gvm_abi::rx::{StateOffset, TokRx, TokenId};
+use aici_abi::rx::{StateOffset, TokRx, TokenId};
 
 const DEAD_STATE: u32 = StateOffset::DEAD.off;
 const START_STATE: u32 = StateOffset::START.off;

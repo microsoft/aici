@@ -1,15 +1,15 @@
-use gvm_abi::{
-    gvm_expose_all, include_bytes_aligned,
+use aici_abi::{
+    aici_expose_all, include_bytes_aligned,
     rx::{StateOffset, TokRx},
-    rxvm::RxGvm,
-    GuidanceVm,
+    rxvm::RxAici,
+    AiciVm,
 };
 
 fn tokrx() -> TokRx {
     TokRx::deserialize(include_bytes_aligned!(u32, "../../regex_llm/rx.bin"))
 }
 
-gvm_expose_all!(RxGvm, RxGvm::from_token_compiled(tokrx()));
+aici_expose_all!(RxAici, RxAici::from_token_compiled(tokrx()));
 
 fn main() {
     let t = tokrx();
