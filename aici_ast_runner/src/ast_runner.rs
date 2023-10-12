@@ -1,3 +1,25 @@
+/*
+- byte-level constraint that forces a specific string can cause unusual tokenization, for example:
+  "I am about" will likely force the model to output ["I", " am", " a", "b", "out"] instead of ["I", " am", " about"]
+  This is because after "I am" we allow both " a" and " about" but the model finds " a" much more likely
+- this is a problem, since the model can later get confused with [" a", "b", "out"] tokens being used instead of [" about"]
+- this could be fixed by giving boost to longer tokens, but that doesn't work for regexps: simplest example
+  ".*" would always prefer the longest possible token (eg. 128 space token in gpt4 case)
+- thus, the "Fixed" step shouldn't be implemented at byte level, and instead tokenize the string and then force
+  these specific tokens; the regexps in "Gen" should avoid long forced strings
+
+- the tokenization algorithm is not simply the greedy longest prefix - it breaks string into "words", splits words
+  into single-byte tokens and then merges adjecnt pairs of tokens in order of token number, see
+  https://github.com/openai/tiktoken/blob/main/tiktoken/_educational.py
+- in all tokenizers (gpt4, llama, phi, ...), all tokens fit one of these 3 categories:
+  - only whitespace (not only ' ', but also '\n', '\t' etc)
+  - start with a ' '
+  - have no ' '
+
+- we could have a warning when the token encoding is not optimal
+
+- Gen("\d+"); Fixed(" years") should be equivalent to Gen("\d+ years")? (modulo token problems above)
+*/
 mod rx;
 
 use serde::{Deserialize, Serialize};
@@ -77,19 +99,21 @@ impl Runner {
         }
     }
 
-    fn stop(&mut self) {
+    fn stop(&mut self, info: &str) {
         let rec = StackRecognizer::from(FixedArgs {
             text: "".to_string(),
         });
         self.rec = Box::new(rec);
+        wprintln!("stop: {}", info)
     }
 
-    fn next_step(&mut self) {
+    fn next_step(&mut self, info: &str) {
         self.curr_step += 1;
         if self.curr_step < self.program.steps.len() {
+            wprintln!("step -> {}; {}", self.curr_step, info);
             self.new_step();
         } else {
-            self.stop();
+            self.stop(info);
         }
     }
 
@@ -112,10 +136,32 @@ impl Runner {
         }
     }
 
+    fn all_disallowed(&mut self) {
+        self.helper
+            .logit_biases
+            .iter_mut()
+            .for_each(|x| *x = -100.0);
+    }
+
     fn compute(&mut self) {
         // wprintln!("compute");
+        self.all_disallowed();
         self.trie
-            .compute_bias(&mut *self.rec, &mut self.helper.logit_biases);
+            .add_bias(&mut *self.rec, &mut self.helper.logit_biases);
+    }
+
+    #[allow(dead_code)]
+    fn log_prob(&self, tok: &str) {
+        if let Some(id) = self.trie.token_id(tok.as_bytes()) {
+            wprintln!(
+                "prob '{}' {} = {}",
+                tok,
+                id,
+                self.helper.logit_biases[id as usize]
+            );
+        } else {
+            wprintln!("prob '{}' -> no token", tok)
+        }
     }
 }
 
@@ -133,7 +179,12 @@ impl AiciVm for Runner {
 
     fn aici_append_token(&mut self, token: u32) {
         let bytes = self.trie.token(token);
-        wprintln!("xapp {} {:?}", token, bytes);
+        wprintln!(
+            "xapp {} '{}' st={}",
+            token,
+            String::from_utf8_lossy(bytes),
+            self.curr_step
+        );
 
         // save the token, just in case
         let toks = &mut self.helper.tokens;
@@ -146,13 +197,12 @@ impl AiciVm for Runner {
         rec.collapse();
 
         if self.tok_limit == 1 {
-            self.next_step();
+            self.next_step("token limit reached");
         } else if (0..=255).all(|byte| !rec.byte_allowed(byte)) {
             if rec.special_allowed(SpecialToken::EndOfSentence) {
-                self.next_step();
+                self.next_step("no bytes, but only EOS allowed");
             } else {
-                wprintln!("no more bytes allowed, but no end of sentence");
-                self.stop();
+                self.stop("no bytes, no EOS");
             }
         } else {
             if self.tok_limit > 0 {
@@ -161,6 +211,8 @@ impl AiciVm for Runner {
         }
 
         self.compute();
+        // self.log_prob(" a");
+        // self.log_prob(" about");
     }
 
     fn get_helper(&mut self) -> &mut AiciVmHelper {
@@ -176,7 +228,7 @@ fn sample_prog() -> Runner {
     Runner::new(Program {
         steps: vec![
             Step::Fixed {
-                text: "I am ".to_string(),
+                text: "I am about ".to_string(),
             },
             Step::Gen {
                 max_tokens: 5,

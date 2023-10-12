@@ -2,7 +2,7 @@
 
 set -e
 set -x
-(cd use_tok && ./wasm.sh)
+(cd aici_ast_runner && ./wasm.sh)
 mod=`cat tmp/runlog.txt |grep '^[a-f0-9]\{64\}$'`
 
 RUST_LOG=debug \

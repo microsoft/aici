@@ -33,7 +33,7 @@ def main(args: argparse.Namespace):
     
     test_prompts = [
         ("Here is an example JSON about Joe Random Hacker in Seattle:\n",
-         SamplingParams(temperature=0.9, n=3, max_tokens=120))
+         SamplingParams(temperature=0.9, n=1, max_tokens=120))
     ]
     for (prompt, params) in test_prompts:
         params.aici_module = args.aici_module

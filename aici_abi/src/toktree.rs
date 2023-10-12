@@ -175,6 +175,32 @@ impl TokTrie {
         &self.token_data[off..(off + len as usize)]
     }
 
+    pub fn token_id(&self, bytes: &[u8]) -> Option<TokenId> {
+        let (tok, len) = self.prefix_token_id(bytes);
+        // wprintln!("tok_id {:?} {:?} {:?} ", bytes, tok, len);
+        if len == bytes.len() {
+            Some(tok)
+        } else {
+            None
+        }
+    }
+
+    pub fn prefix_token_id(&self, bytes: &[u8]) -> (TokenId, usize) {
+        assert!(bytes.len() > 0);
+        let mut last = (0, 0);
+        let mut n = self.root();
+        for (idx, byte) in bytes.iter().enumerate() {
+            n = match self.child_at_byte(n, *byte) {
+                Some(n) => n,
+                None => break,
+            };
+            if let Some(tok) = n.token_id() {
+                last = (tok, idx + 1);
+            }
+        }
+        return last;
+    }
+
     pub fn from_bytes(bytes: &[u8]) -> Self {
         let pref = std::mem::size_of::<TokTrieHeader>();
         let hd = *box_from_bytes::<TokTrieHeader>(&bytes[0..pref]);
@@ -296,7 +322,10 @@ impl TokTrie {
 
     pub fn compute_bias(&self, r: &mut dyn Recognizer, logits: &mut [f32]) {
         logits.iter_mut().for_each(|x| *x = -100.0);
+        self.add_bias(r, logits)
+    }
 
+    pub fn add_bias(&self, r: &mut dyn Recognizer, logits: &mut [f32]) {
         for tok in vec![SpecialToken::EndOfSentence] {
             if r.special_allowed(tok) {
                 logits[self.special_token(tok) as usize] = 0.0;

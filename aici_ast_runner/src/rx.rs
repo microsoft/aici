@@ -13,6 +13,11 @@ pub struct RecRx {
 
 impl RecRx {
     pub fn from_rx(rx: &str) -> Self {
+        let rx = if rx.ends_with("$") {
+            rx.to_string()
+        } else {
+            rx.to_string() + "$"
+        };
         let dfa = dense::Builder::new()
             .configure(dense::Config::new().start_kind(regex_automata::dfa::StartKind::Anchored))
             .syntax(syntax::Config::new().unicode(false).utf8(false))
@@ -42,11 +47,9 @@ impl FunctionalRecognizer<RecRxState> for RecRx {
 
     #[inline(always)]
     fn special_allowed(&self, state: RecRxState, tok: SpecialToken) -> bool {
+        let state = self.dfa.next_eoi_state(state);
         match tok {
-            // if in dead state, stop
-            SpecialToken::EndOfSentence => {
-                self.dfa.is_match_state(state) || self.dfa.is_dead_state(state)
-            }
+            SpecialToken::EndOfSentence => self.dfa.is_match_state(state),
             _ => false,
         }
     }
