@@ -63,6 +63,7 @@ async def validation_exception_handler(request, exc):  # pylint: disable=unused-
 
 async def check_model(request) -> Optional[JSONResponse]:
     if request.model == "" or request.model == "*" or request.model == served_model:
+        request.model = served_model
         return
     ret = create_error_response(
         HTTPStatus.NOT_FOUND,
