@@ -11,5 +11,5 @@ regex_llm/rx.bin
 .hypothesis
 regex_llm/trie
 perf.data
-use_tok/src/tokenizers
+*/src/tokenizers
 tokenizer.bin
