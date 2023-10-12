@@ -4,7 +4,7 @@ COPY requirements.txt /tmp/requirements.txt
 RUN pip install -r /tmp/requirements.txt
 # takes forever!
 RUN pip install git+https://github.com/NVIDIA/TransformerEngine.git@stable
-RUN pip install typing_extensions==4.4.0
+RUN pip install typing_extensions==4.5.0
 
 RUN apt-get update && apt-get -y install strace wabt \
 linux-tools-common linux-tools-generic linux-tools-`uname -r`
