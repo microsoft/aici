@@ -23,7 +23,8 @@ pub struct ModuleInstance {
     store: wasmtime::Store<ModuleData>,
     memory: wasmtime::Memory,
     instance: wasmtime::Instance,
-    info: AiciInfo,
+    handle: WasmAici,
+    logit_ptr: WasmPtr,
     globals: Arc<RwLock<GlobalInfo>>,
     ops: Vec<IdxOp>, // for next req
     error: bool,
@@ -72,13 +73,6 @@ impl ModuleData {
 pub struct GlobalInfo {
     pub tokrx_info: TokRxInfo,
     pub trie_bytes: Vec<u8>,
-}
-
-#[derive(Clone)]
-pub struct AiciInfo {
-    id: Id,
-    handle: WasmAici,
-    logit_ptr: WasmPtr,
 }
 
 pub struct IdxOp {
@@ -198,11 +192,8 @@ impl ModuleInstance {
         store.data_mut().memory = Some(memory);
 
         Ok(ModuleInstance {
-            info: AiciInfo {
-                id,
-                handle: 0,
-                logit_ptr: 0,
-            },
+            handle: 0,
+            logit_ptr: 0,
             ops: Vec::new(),
             store,
             memory,
@@ -220,7 +211,8 @@ impl ModuleInstance {
             self.store.data().linker.clone(),
             self.globals.clone(),
         )?;
-        fork.info = self.info.clone();
+        fork.handle = self.handle;
+        fork.logit_ptr = self.logit_ptr;
         let src = self.memory;
         let dst = fork.memory;
         info!(
@@ -260,8 +252,8 @@ impl ModuleInstance {
             (handle, vocab_size),
         )?;
 
-        self.info.handle = handle;
-        self.info.logit_ptr = logit_ptr;
+        self.handle = handle;
+        self.logit_ptr = logit_ptr;
 
         Ok(logit_ptr)
     }
@@ -292,9 +284,9 @@ impl ModuleInstance {
                 AiciOp::Gen { gen, .. } => {
                     self.call_func::<(WasmAici, Token), ()>(
                         "aici_append_token",
-                        (self.info.handle, *gen),
+                        (self.handle, *gen),
                     )?;
-                    self.read_mem(self.info.logit_ptr, opidx.dst_slice)?;
+                    self.read_mem(self.logit_ptr, opidx.dst_slice)?;
                 }
             };
         }
