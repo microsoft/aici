@@ -297,6 +297,8 @@ impl Executor {
 
         ensure!(slices.len() >= numops, "shm size too small");
 
+        let mut ids = Vec::new();
+
         let reqs = req
             .ops
             .into_iter()
@@ -305,6 +307,7 @@ impl Executor {
                     AiciOp::Gen { id, .. } => id,
                     AiciOp::Prompt { id, .. } => id,
                 };
+                ids.push(instid);
                 let modinst_rc = self.instances.get(&instid).unwrap();
                 let slice = slices.pop().unwrap();
 
@@ -322,13 +325,20 @@ impl Executor {
                 Err(err) => {
                     json!({
                         "type": "error",
+                        "millis": 0,
+                        "logs": err.to_string(),
                         "error": err.to_string()
                     })
                 }
             })
             .collect::<Vec<_>>();
 
-        Ok(Value::Array(results))
+        let mut map = serde_json::Map::new();
+        for (id, result) in ids.into_iter().zip(results.into_iter()) {
+            map.insert(id.to_string(), result);
+        }
+
+        Ok(Value::Object(map))
     }
 }
 

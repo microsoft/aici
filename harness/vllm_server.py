@@ -378,6 +378,9 @@ class AiciCompletionRequest(CompletionRequest):
     aici_module: Optional[str] = None
     aici_arg: Optional[Union[dict, str]] = None
 
+class AiciCompletionResponseStreamChoice(CompletionResponseStreamChoice):
+    logs: str
+    millis: int
 
 @app.post("/v1/completions")
 async def create_completion(request: AiciCompletionRequest, raw_request: Request):
@@ -500,12 +503,17 @@ async def create_completion(request: AiciCompletionRequest, raw_request: Request
     def create_stream_response_json(
         index: int,
         text: str,
+        aici: Optional[dict] = None,
         logprobs: Optional[LogProbs] = None,
         finish_reason: Optional[str] = None,
     ) -> str:
-        choice_data = CompletionResponseStreamChoice(
+        if aici is None:
+            aici = {}
+        choice_data = AiciCompletionResponseStreamChoice(
             index=index,
             text=text,
+            logs=aici.get("logs", ""),
+            millis=aici.get("millis", 0),
             logprobs=logprobs,
             finish_reason=finish_reason,
         )
@@ -540,6 +548,7 @@ async def create_completion(request: AiciCompletionRequest, raw_request: Request
                 response_json = create_stream_response_json(
                     index=i,
                     text=delta_text,
+                    aici=aici.response_by_seq_id(output.seq_id),
                     logprobs=logprobs,
                 )
                 yield f"data: {response_json}\n\n"

@@ -109,6 +109,7 @@ class AiciRunner:
 
         self.vocab_size = -1
         self.batch_size = -1
+        self.last_response = {}
 
         self.logit_pending = False
         self.cmd_pending = False
@@ -245,7 +246,7 @@ class AiciRunner:
         """
         assert self.logit_pending
         self.logit_pending = False
-        self._expect_response("recv")
+        self.last_response = self._expect_response("recv")["data"]
         n = self.batch_size
         arr = np.frombuffer(
             self.bin_shm, dtype=np.float32, offset=0, count=n * self.vocab_size
@@ -259,6 +260,11 @@ class AiciRunner:
         self._send_cmd({"op": "stop"})
         self.proc.wait()
 
+    def response_by_seq_id(self, seq_id: int):
+        """
+        Get the response for a given batch entry ID.
+        """
+        return self.last_response.get(str(seq_id), None)
 
 def install_in_vllm(runner: AiciRunner):
     from vllm.sampling_params import SamplingParams

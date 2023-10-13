@@ -1,6 +1,6 @@
 use aici_abi::bytes::TokRxInfo;
 use anyhow::{anyhow, ensure, Result};
-use log::info;
+use log::debug;
 use serde_json::{json, Value};
 use std::sync::{Arc, RwLock};
 use std::time::Instant;
@@ -10,6 +10,7 @@ use wasmtime;
 pub struct ModuleData {
     id: Id,
     log: Vec<u8>,
+    printed_log: usize,
     globals: Arc<RwLock<GlobalInfo>>,
     module_arg: Arc<String>,
     linker: Arc<wasmtime::Linker<ModuleData>>,
@@ -49,22 +50,50 @@ fn write_caller_mem(
     src.len() as u32
 }
 
+const MAXLINE: usize = 512;
+const MAXLOG: usize = 2048;
+
 impl ModuleData {
     pub fn append_line(&mut self, s: &str) {
-        self.log.extend_from_slice(s.as_bytes());
-        self.log.push(10)
+        let bytes = s.as_bytes();
+        if bytes.len() > MAXLINE {
+            self.log.extend_from_slice(&bytes[..MAXLINE]);
+            self.log.push(46);
+            self.log.push(46);
+            self.log.push(46);
+        } else {
+            self.log.extend_from_slice(bytes);
+        }
+        self.log.push(10);
+        if self.log.len() > MAXLOG {
+            let drop = MAXLINE + 64;
+            self.printed_log = std::cmp::max(0, self.printed_log as isize - drop as isize) as usize;
+            self.log.drain(0..drop);
+        }
+    }
+
+    pub fn string_log(&mut self) -> String {
+        self.printed_log = 0;
+        let logs = String::from_utf8_lossy(&self.log).to_string();
+        self.log.clear();
+        logs
     }
 
     pub fn flush_logs(&mut self, name: &str) {
-        if self.log.len() == 0 {
+        if !log::log_enabled!(log::Level::Debug) {
             return;
         }
 
-        let logs = String::from_utf8_lossy(&self.log).to_string();
-        self.log.clear();
+        let data = &self.log[self.printed_log..];
+        if data.len() == 0 {
+            return;
+        }
+
+        let logs = String::from_utf8_lossy(data).to_string();
+        self.printed_log = self.log.len();
 
         for line in logs.lines() {
-            println!("{}:{}> {}", self.id, name, line)
+            debug!("{}:{}> {}", self.id, name, line);
         }
     }
 }
@@ -164,6 +193,7 @@ impl ModuleInstance {
             ModuleData {
                 id,
                 log: Vec::new(),
+                printed_log: 0,
                 globals: globals.clone(),
                 module_arg,
                 module: module.clone(),
@@ -203,11 +233,6 @@ impl ModuleInstance {
         fork.logit_ptr = self.logit_ptr;
         let src = self.memory;
         let dst = fork.memory;
-        info!(
-            "grow mem to: {} from {}",
-            src.data_size(&self.store),
-            dst.data_size(&fork.store)
-        );
         let missing_size = src.data_size(&self.store) - dst.data_size(&fork.store);
         dst.grow(&mut fork.store, (missing_size >> 16) as u64)?;
         dst.data_mut(&mut fork.store)
@@ -248,6 +273,7 @@ impl ModuleInstance {
 
     pub fn exec(&mut self) -> Result<Value> {
         let opidx = std::mem::replace(&mut self.op, None).unwrap();
+        let t0 = Instant::now();
 
         match opidx.op {
             ThreadOp::Prompt { prompt, .. } => {
@@ -272,7 +298,13 @@ impl ModuleInstance {
             }
         }
 
-        Ok(json!({}))
+        let logs = self.store.data_mut().string_log();
+
+        Ok(json!({
+            "type": "ok",
+            "millis": t0.elapsed().as_millis() as u64,
+            "logs": logs,
+        }))
     }
 }
 
