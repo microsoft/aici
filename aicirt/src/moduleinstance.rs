@@ -7,28 +7,29 @@ use std::sync::{Arc, RwLock};
 use std::time::Instant;
 use wasmtime;
 
-#[derive(Clone)]
-pub struct AiciContext {
+// this is avaiable to functions called from wasm
+pub struct ModuleData {
     id: Id,
     log: Vec<u8>,
     globals: Arc<RwLock<GlobalInfo>>,
-    // TODO there is way too much cloning of this thing
     module_arg: String,
+    linker: Arc<wasmtime::Linker<ModuleData>>,
+    instance: Option<wasmtime::Instance>,
+    memory: Option<wasmtime::Memory>,
+    module: wasmtime::Module,
 }
 
-impl AiciContext {
-    pub fn from(id: Id, module_arg: String, globals: Arc<RwLock<GlobalInfo>>) -> Self {
-        AiciContext {
-            id,
-            log: Vec::new(),
-            globals,
-            module_arg,
-        }
-    }
-    pub fn fake(globals: Arc<RwLock<GlobalInfo>>) -> Self {
-        Self::from(1000000, "".to_string(), globals)
-    }
+pub struct ModuleInstance {
+    store: wasmtime::Store<ModuleData>,
+    memory: wasmtime::Memory,
+    instance: wasmtime::Instance,
+    info: AiciInfo,
+    globals: Arc<RwLock<GlobalInfo>>,
+    ops: Vec<IdxOp>, // for next req
+    error: bool,
+}
 
+impl ModuleData {
     pub fn append_line(&mut self, s: &str) {
         self.log.extend_from_slice(s.as_bytes());
         self.log.push(10)
@@ -48,15 +49,6 @@ impl AiciContext {
     }
 }
 
-struct WasmCtx {
-    store: wasmtime::Store<AiciContext>,
-    linker: Arc<wasmtime::Linker<AiciContext>>,
-    instance: wasmtime::Instance,
-    memory: wasmtime::Memory,
-    module: wasmtime::Module,
-    error: bool,
-}
-
 pub struct GlobalInfo {
     pub tokrx_info: TokRxInfo,
     pub trie_bytes: Vec<u8>,
@@ -67,20 +59,6 @@ pub struct AiciInfo {
     id: Id,
     handle: WasmAici,
     logit_ptr: WasmPtr,
-}
-
-impl AiciInfo {
-    pub fn context(&self, module_arg: String, globals: Arc<RwLock<GlobalInfo>>) -> AiciContext {
-        AiciContext::from(self.id, module_arg, globals)
-    }
-}
-
-pub struct ModuleInstance {
-    globals: Arc<RwLock<GlobalInfo>>,
-    info: AiciInfo,
-    module_arg: String,
-    wasm: WasmCtx,
-    ops: Vec<IdxOp>, // for next req
 }
 
 pub struct IdxOp {
@@ -110,7 +88,7 @@ pub enum AiciOp {
 type WasmPtr = u32;
 type WasmAici = u32;
 
-impl WasmCtx {
+impl ModuleInstance {
     fn call_func<Params, Results>(&mut self, name: &str, params: Params) -> Result<Results>
     where
         Params: wasmtime::WasmParams,
@@ -132,23 +110,6 @@ impl WasmCtx {
             _ => {}
         }
         ctx.flush_logs(name);
-        r
-    }
-
-    fn call_func_in<Params, Results>(
-        &mut self,
-        ginfo: &AiciContext,
-        name: &str,
-        params: Params,
-    ) -> Result<Results>
-    where
-        Params: wasmtime::WasmParams,
-        Results: wasmtime::WasmResults,
-    {
-        let mut ginfo = ginfo.clone();
-        ginfo = std::mem::replace(self.store.data_mut(), ginfo);
-        let r = self.call_func(name, params);
-        let _ = std::mem::replace(self.store.data_mut(), ginfo);
         r
     }
 
@@ -188,70 +149,81 @@ impl WasmCtx {
 
 impl ModuleInstance {
     pub fn new(
+        id: Id,
         module: wasmtime::Module,
         module_arg: String,
-        linker: Arc<wasmtime::Linker<AiciContext>>,
+        linker: Arc<wasmtime::Linker<ModuleData>>,
         globals: Arc<RwLock<GlobalInfo>>,
     ) -> Result<Self> {
         let engine = module.engine();
 
-        let mut store = wasmtime::Store::new(engine, AiciContext::fake(globals.clone()));
+        let mut store = wasmtime::Store::new(
+            engine,
+            ModuleData {
+                id,
+                log: Vec::new(),
+                globals: globals.clone(),
+                module_arg,
+                module: module.clone(),
+                linker: linker.clone(),
+                instance: None,
+                memory: None,
+            },
+        );
         let instance = linker.instantiate(&mut store, &module)?;
         let memory = instance
             .get_memory(&mut store, "memory")
             .ok_or(anyhow!("memory missing"))?;
+        store.data_mut().instance = Some(instance);
+        store.data_mut().memory = Some(memory);
 
         Ok(ModuleInstance {
             info: AiciInfo {
-                id: 0,
+                id,
                 handle: 0,
                 logit_ptr: 0,
             },
             ops: Vec::new(),
-            module_arg,
-            wasm: WasmCtx {
-                store,
-                instance,
-                memory,
-                module,
-                linker,
-                error: false,
-            },
+            store,
+            memory,
+            instance,
             globals,
+            error: false,
         })
     }
 
-    pub fn fork(&mut self) -> Result<Self> {
+    pub fn fork(&mut self, id: Id) -> Result<Self> {
         let mut fork = Self::new(
-            self.wasm.module.clone(),
-            self.module_arg.clone(),
-            self.wasm.linker.clone(),
+            id,
+            self.store.data().module.clone(),
+            self.store.data().module_arg.clone(),
+            self.store.data().linker.clone(),
             self.globals.clone(),
         )?;
         fork.info = self.info.clone();
-        let src = self.wasm.memory;
-        let dst = fork.wasm.memory;
+        let src = self.memory;
+        let dst = fork.memory;
         info!(
             "grow mem to: {} from {}",
-            src.data_size(&self.wasm.store),
-            dst.data_size(&fork.wasm.store)
+            src.data_size(&self.store),
+            dst.data_size(&fork.store)
         );
-        let missing_size = src.data_size(&self.wasm.store) - dst.data_size(&fork.wasm.store);
-        dst.grow(&mut fork.wasm.store, (missing_size >> 16) as u64)?;
-        dst.data_mut(&mut fork.wasm.store)
-            .copy_from_slice(src.data(&self.wasm.store));
+        let missing_size = src.data_size(&self.store) - dst.data_size(&fork.store);
+        dst.grow(&mut fork.store, (missing_size >> 16) as u64)?;
+        dst.data_mut(&mut fork.store)
+            .copy_from_slice(src.data(&self.store));
         Ok(fork)
     }
 
     fn run_init(&mut self) -> Result<()> {
-        self.wasm.call_func::<(), ()>("aici_init", ())?;
+        self.call_func::<(), ()>("aici_init", ())?;
         Ok(())
     }
 
     pub fn run_main(&mut self) -> Result<()> {
         self.run_init()?;
         let t0 = Instant::now();
-        let _ = self.wasm.call_func::<(i32, i32), i32>("main", (0, 0))?;
+        let _ = self.call_func::<(i32, i32), i32>("main", (0, 0))?;
         println!("time: {:?}", t0.elapsed());
         Ok(())
     }
@@ -261,15 +233,13 @@ impl ModuleInstance {
         self.ops.len() == 1
     }
 
-    fn setup_logit_bias(&mut self, id: Id, handle: WasmAici) -> Result<u32> {
+    fn setup_logit_bias(&mut self, handle: WasmAici) -> Result<u32> {
         let vocab_size = { self.globals.read().unwrap().tokrx_info.vocab_size };
-        let logit_ptr = self.wasm.call_func_in::<(WasmAici, u32), WasmPtr>(
-            &AiciContext::from(id, self.module_arg.clone(), self.globals.clone()),
+        let logit_ptr = self.call_func::<(WasmAici, u32), WasmPtr>(
             "aici_get_logit_bias_buffer",
             (handle, vocab_size),
         )?;
 
-        self.info.id = id;
         self.info.handle = handle;
         self.info.logit_ptr = logit_ptr;
 
@@ -283,36 +253,28 @@ impl ModuleInstance {
 
         for opidx in ops {
             match &opidx.op {
-                AiciOp::Prompt { id, prompt, .. } => {
+                AiciOp::Prompt { prompt, .. } => {
                     self.run_init()?;
 
-                    let ctx = AiciContext::from(*id, self.module_arg.clone(), self.globals.clone());
-                    let handle = self
-                        .wasm
-                        .call_func_in::<(), WasmAici>(&ctx, "aici_create", ())?;
-                    let logit_ptr = self.setup_logit_bias(*id, handle)?;
+                    let handle = self.call_func::<(), WasmAici>("aici_create", ())?;
+                    let logit_ptr = self.setup_logit_bias(handle)?;
 
-                    let prompt_ptr = self.wasm.call_func_in::<(WasmAici, u32), WasmPtr>(
-                        &ctx,
+                    let prompt_ptr = self.call_func::<(WasmAici, u32), WasmPtr>(
                         "aici_get_prompt_buffer",
                         (handle, prompt.len().try_into().unwrap()),
                     )?;
 
-                    self.wasm.write_mem(&prompt, prompt_ptr)?;
-                    self.wasm
-                        .call_func_in::<WasmAici, ()>(&ctx, "aici_process_prompt", handle)?;
-                    self.wasm.read_mem(logit_ptr, opidx.dst_slice)?;
+                    self.write_mem(&prompt, prompt_ptr)?;
+                    self.call_func::<WasmAici, ()>("aici_process_prompt", handle)?;
+                    self.read_mem(logit_ptr, opidx.dst_slice)?;
                 }
 
-                AiciOp::Gen { id, gen, .. } => {
-                    self.info.id = *id;
-                    let ginfo = &self.info;
-                    self.wasm.call_func_in::<(WasmAici, Token), ()>(
-                        &ginfo.context(self.module_arg.clone(), self.globals.clone()),
+                AiciOp::Gen { gen, .. } => {
+                    self.call_func::<(WasmAici, Token), ()>(
                         "aici_append_token",
-                        (ginfo.handle, *gen),
+                        (self.info.handle, *gen),
                     )?;
-                    self.wasm.read_mem(ginfo.logit_ptr, opidx.dst_slice)?;
+                    self.read_mem(self.info.logit_ptr, opidx.dst_slice)?;
                 }
             };
         }
@@ -321,12 +283,12 @@ impl ModuleInstance {
     }
 }
 
-pub fn setup_linker(engine: &wasmtime::Engine) -> Result<Arc<wasmtime::Linker<AiciContext>>> {
-    let mut linker = wasmtime::Linker::<AiciContext>::new(engine);
+pub fn setup_linker(engine: &wasmtime::Engine) -> Result<Arc<wasmtime::Linker<ModuleData>>> {
+    let mut linker = wasmtime::Linker::<ModuleData>::new(engine);
     linker.func_wrap(
         "env",
         "aici_host_print",
-        |mut caller: wasmtime::Caller<'_, AiciContext>, ptr: u32, len: u32| {
+        |mut caller: wasmtime::Caller<'_, ModuleData>, ptr: u32, len: u32| {
             let mut bytes = if let Some(wasmtime::Extern::Memory(mem)) = caller.get_export("memory")
             {
                 let ptr = ptr as usize;
@@ -344,7 +306,7 @@ pub fn setup_linker(engine: &wasmtime::Engine) -> Result<Arc<wasmtime::Linker<Ai
     linker.func_wrap(
         "env",
         "aici_host_read_token_trie",
-        |mut caller: wasmtime::Caller<'_, AiciContext>, ptr: u32, len: u32| {
+        |mut caller: wasmtime::Caller<'_, ModuleData>, ptr: u32, len: u32| {
             let lock = caller.data().globals.clone();
             let info = lock.read().unwrap();
             if let Some(wasmtime::Extern::Memory(mem)) = caller.get_export("memory") {
@@ -366,7 +328,7 @@ pub fn setup_linker(engine: &wasmtime::Engine) -> Result<Arc<wasmtime::Linker<Ai
     linker.func_wrap(
         "env",
         "aici_host_read_arg",
-        |mut caller: wasmtime::Caller<'_, AiciContext>, ptr: u32, len: u32| {
+        |mut caller: wasmtime::Caller<'_, ModuleData>, ptr: u32, len: u32| {
             if let Some(wasmtime::Extern::Memory(mem)) = caller.get_export("memory") {
                 let rlen = caller.data().module_arg.as_bytes().len();
                 if len > 0 {

@@ -72,7 +72,7 @@ impl Cli {
 struct Executor {
     cache_path: PathBuf,
     engine: wasmtime::Engine,
-    linker: Arc<wasmtime::Linker<AiciContext>>,
+    linker: Arc<wasmtime::Linker<ModuleData>>,
     modules: HashMap<String, wasmtime::Module>,
     instances: HashMap<Id, Arc<Mutex<ModuleInstance>>>,
     globals: Arc<RwLock<GlobalInfo>>,
@@ -192,7 +192,12 @@ impl Executor {
         self.create_module(wasm_bytes, meta_bytes)
     }
 
-    pub fn new_instance(&mut self, module_id: &str, module_arg: &str) -> Result<ModuleInstance> {
+    pub fn new_instance(
+        &mut self,
+        id: Id,
+        module_id: &str,
+        module_arg: &str,
+    ) -> Result<ModuleInstance> {
         ensure!(is_hex_string(module_id), "invalid module_id");
 
         let module = match self.modules.get(module_id) {
@@ -207,6 +212,7 @@ impl Executor {
         };
 
         let modi = ModuleInstance::new(
+            id,
             module,
             module_arg.to_string(),
             self.linker.clone(),
@@ -225,7 +231,7 @@ impl Executor {
                         .get(cid)
                         .ok_or(anyhow!("invalid clone_id {}", cid))?;
                     info!("fork {} -> ({})", cid, id);
-                    let copy = parent.lock().unwrap().fork()?;
+                    let copy = parent.lock().unwrap().fork(*id)?;
                     self.instances.insert(*id, Arc::new(Mutex::new(copy)));
                 }
             }
@@ -236,7 +242,7 @@ impl Executor {
                 ..
             } => {
                 ensure!(!self.instances.contains_key(id));
-                let modi = self.new_instance(module_id, module_arg)?;
+                let modi = self.new_instance(*id, module_id, module_arg)?;
                 info!("new module {} ({})", id, module_id);
                 self.instances.insert(*id, Arc::new(Mutex::new(modi)));
             }
@@ -420,7 +426,7 @@ fn main() -> () {
         println!("{}", module_id);
 
         if cli.run {
-            let mut modi = exec.new_instance(&module_id, "").unwrap();
+            let mut modi = exec.new_instance(42, &module_id, "").unwrap();
             modi.run_main().unwrap();
         }
 
