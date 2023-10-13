@@ -216,6 +216,10 @@ class AiciRunner:
             "ops": self.prompt_q + self.gen_q,
         }
         self.batch_size = len(cmd["ops"])
+        if len(cmd["freed"]) == 0 and self.batch_size == 0:
+            # nothing to do
+            self.step_reset()
+            return
         assert not self.logit_pending
         self.logit_pending = True
         self._send_cmd(cmd)
@@ -226,7 +230,7 @@ class AiciRunner:
         Drop any pending logit computation.
         """
         if self.logit_pending:
-            print("Warning: unflushed Aici logit bias")
+            print("Warning: unflushed AICI logit bias")
             self.logit_pending = False
             self._expect_response("flush")
 

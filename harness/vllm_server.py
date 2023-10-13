@@ -6,6 +6,7 @@
 import argparse
 import asyncio
 import json
+import ujson
 import time
 from http import HTTPStatus
 from typing import AsyncGenerator, Dict, List, Optional, Tuple, Union
@@ -17,6 +18,7 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, StreamingResponse
 from packaging import version
+import pyaici
 
 from vllm.engine.arg_utils import AsyncEngineArgs
 from vllm.engine.async_llm_engine import AsyncLLMEngine
@@ -364,8 +366,13 @@ async def create_chat_completion(request: ChatCompletionRequest, raw_request: Re
     return response
 
 
+class AiciCompletionRequest(CompletionRequest):
+    aici_module: Optional[str] = None
+    aici_arg: Optional[Union[dict, str]] = None
+
+
 @app.post("/v1/completions")
-async def create_completion(request: CompletionRequest, raw_request: Request):
+async def create_completion(request: AiciCompletionRequest, raw_request: Request):
     """Completion API similar to OpenAI's API.
 
     See https://platform.openai.com/docs/api-reference/completions/create
@@ -451,6 +458,14 @@ async def create_completion(request: CompletionRequest, raw_request: Request):
             logprobs=request.logprobs,
             use_beam_search=request.use_beam_search,
         )
+        if request.aici_module is not None:
+            sampling_params.aici_module = request.aici_module
+        if isinstance(request.aici_arg, str):
+            sampling_params.aici_arg = request.aici_arg
+        elif request.aici_arg is None:
+            sampling_params.aici_arg = ""
+        else:
+            sampling_params.aici_arg = ujson.dumps(request.aici_arg)
     except ValueError as e:
         return create_error_response(HTTPStatus.BAD_REQUEST, str(e))
 
@@ -623,6 +638,14 @@ if __name__ == "__main__":
         "the huggingface name.",
     )
 
+    parser.add_argument("--aici-rt", type=str, required=True, help="path to aicirt")
+    parser.add_argument(
+        "--aici-tokenizer",
+        type=str,
+        default="llama",
+        help="tokenizer to use; llama, gpt4, ...",
+    )
+
     parser = AsyncEngineArgs.add_cli_args(parser)
     args = parser.parse_args()
 
@@ -641,10 +664,15 @@ if __name__ == "__main__":
     else:
         served_model = args.model
 
+    # build it first, so it fails fast
+    aici = pyaici.AiciRunner(rtpath=args.aici_rt, tokenizer=args.aici_tokenizer)
+
     engine_args = AsyncEngineArgs.from_cli_args(args)
     engine = AsyncLLMEngine.from_engine_args(engine_args)
     engine_model_config = asyncio.run(engine.get_model_config())
     max_model_len = engine_model_config.get_max_model_len()
+
+    pyaici.install_in_vllm(aici)
 
     # A separate tokenizer to map token IDs to strings.
     tokenizer = get_tokenizer(
