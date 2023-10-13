@@ -12,7 +12,7 @@ pub struct ModuleData {
     id: Id,
     log: Vec<u8>,
     globals: Arc<RwLock<GlobalInfo>>,
-    module_arg: String,
+    module_arg: Arc<String>,
     linker: Arc<wasmtime::Linker<ModuleData>>,
     instance: Option<wasmtime::Instance>,
     memory: Option<wasmtime::Memory>,
@@ -27,6 +27,26 @@ pub struct ModuleInstance {
     globals: Arc<RwLock<GlobalInfo>>,
     ops: Vec<IdxOp>, // for next req
     error: bool,
+}
+
+fn read_caller_mem(caller: &wasmtime::Caller<'_, ModuleData>, ptr: u32, len: u32) -> Vec<u8> {
+    let mem = caller.data().memory.unwrap();
+    let ptr = ptr as usize;
+    Vec::from(&mem.data(&caller)[ptr..(ptr + len as usize)])
+}
+
+fn write_caller_mem(
+    caller: &mut wasmtime::Caller<'_, ModuleData>,
+    ptr: u32,
+    len: u32,
+    src: &[u8],
+) -> u32 {
+    if len > 0 {
+        let mem = caller.data().memory.unwrap();
+        let min_len = std::cmp::min(len as usize, src.len());
+        mem.write(caller, ptr as usize, &src[..min_len]).unwrap();
+    }
+    src.len() as u32
 }
 
 impl ModuleData {
@@ -151,7 +171,7 @@ impl ModuleInstance {
     pub fn new(
         id: Id,
         module: wasmtime::Module,
-        module_arg: String,
+        module_arg: Arc<String>,
         linker: Arc<wasmtime::Linker<ModuleData>>,
         globals: Arc<RwLock<GlobalInfo>>,
     ) -> Result<Self> {
@@ -289,16 +309,8 @@ pub fn setup_linker(engine: &wasmtime::Engine) -> Result<Arc<wasmtime::Linker<Mo
         "env",
         "aici_host_print",
         |mut caller: wasmtime::Caller<'_, ModuleData>, ptr: u32, len: u32| {
-            let mut bytes = if let Some(wasmtime::Extern::Memory(mem)) = caller.get_export("memory")
-            {
-                let ptr = ptr as usize;
-                let len = len as usize;
-                let m = &mem.data(&caller)[ptr..(ptr + len)];
-                Vec::from(m)
-            } else {
-                panic!("no memory")
-            };
-            caller.data_mut().log.append(&mut bytes);
+            let m = read_caller_mem(&caller, ptr, len);
+            caller.data_mut().log.extend_from_slice(&m);
         },
     )?;
 
@@ -309,18 +321,7 @@ pub fn setup_linker(engine: &wasmtime::Engine) -> Result<Arc<wasmtime::Linker<Mo
         |mut caller: wasmtime::Caller<'_, ModuleData>, ptr: u32, len: u32| {
             let lock = caller.data().globals.clone();
             let info = lock.read().unwrap();
-            if let Some(wasmtime::Extern::Memory(mem)) = caller.get_export("memory") {
-                if len > 0 {
-                    let ptr = ptr as usize;
-                    let len = len as usize;
-                    let min_len = std::cmp::min(len as usize, info.trie_bytes.len());
-                    mem.write(&mut caller, ptr, &info.trie_bytes[..min_len])
-                        .unwrap();
-                }
-                info.trie_bytes.len() as u32
-            } else {
-                panic!("no memory")
-            }
+            write_caller_mem(&mut caller, ptr, len, &info.trie_bytes)
         },
     )?;
 
@@ -329,20 +330,8 @@ pub fn setup_linker(engine: &wasmtime::Engine) -> Result<Arc<wasmtime::Linker<Mo
         "env",
         "aici_host_read_arg",
         |mut caller: wasmtime::Caller<'_, ModuleData>, ptr: u32, len: u32| {
-            if let Some(wasmtime::Extern::Memory(mem)) = caller.get_export("memory") {
-                let rlen = caller.data().module_arg.as_bytes().len();
-                if len > 0 {
-                    let ptr = ptr as usize;
-                    let len = len as usize;
-                    let min_len = std::cmp::min(len as usize, rlen);
-                    let data = caller.data().module_arg.clone();
-                    let data = data.as_bytes();
-                    mem.write(&mut caller, ptr, &data[..min_len]).unwrap();
-                }
-                rlen as u32
-            } else {
-                panic!("no memory")
-            }
+            let arg = caller.data().module_arg.clone();
+            write_caller_mem(&mut caller, ptr, len, arg.as_bytes())
         },
     )?;
 

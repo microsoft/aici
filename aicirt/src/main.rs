@@ -214,7 +214,7 @@ impl Executor {
         let modi = ModuleInstance::new(
             id,
             module,
-            module_arg.to_string(),
+            Arc::new(module_arg.to_string()),
             self.linker.clone(),
             self.globals.clone(),
         )?;
