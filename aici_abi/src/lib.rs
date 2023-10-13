@@ -6,6 +6,7 @@ pub mod recognizer;
 pub mod rx;
 pub mod rxvm;
 pub mod toktree;
+pub mod arg;
 
 /// Expose method as extern "C", usage:
 ///     expose!(Foo::set_count(n: i32) -> i32);

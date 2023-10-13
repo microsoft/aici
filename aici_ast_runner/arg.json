@@ -1,0 +1,26 @@
+{
+  "steps": [
+    {
+      "Fixed": {
+        "text": "I am about "
+      }
+    },
+    {
+      "Gen": {
+        "max_tokens": 5,
+        "rx": "\\d\\d"
+      }
+    },
+    {
+      "Fixed": {
+        "text": " years and "
+      }
+    },
+    {
+      "Gen": {
+        "max_tokens": 5,
+        "rx": "\\d+"
+      }
+    }
+  ]
+}

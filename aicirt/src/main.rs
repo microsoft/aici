@@ -3,12 +3,12 @@ mod msgchannel;
 mod semaphore;
 mod shm;
 
+use aici_abi::toktree::TokTrie;
+use aici_tokenizers::{find_tokenizer, Tokenizer};
 use anyhow::{anyhow, ensure, Result};
 use base64;
 use base64::{engine::general_purpose, Engine as _};
 use clap::Parser;
-use aici_abi::toktree::TokTrie;
-use aici_tokenizers::{find_tokenizer, Tokenizer};
 use hex;
 use log::{debug, info, warn};
 use rayon::prelude::*;
@@ -186,7 +186,7 @@ impl Executor {
         self.create_module(wasm_bytes, meta_bytes)
     }
 
-    pub fn new_instance(&mut self, module_id: &str) -> Result<ModuleInstance> {
+    pub fn new_instance(&mut self, module_id: &str, module_arg: &str) -> Result<ModuleInstance> {
         ensure!(is_hex_string(module_id), "invalid module_id");
 
         let module = match self.modules.get(module_id) {
@@ -200,7 +200,12 @@ impl Executor {
             Some(v) => v.clone(),
         };
 
-        let modi = ModuleInstance::new(module, self.linker.clone(), self.globals.clone())?;
+        let modi = ModuleInstance::new(
+            module,
+            module_arg.to_string(),
+            self.linker.clone(),
+            self.globals.clone(),
+        )?;
         Ok(modi)
     }
 
@@ -217,9 +222,14 @@ impl Executor {
                     self.instances.insert(*id, parent.clone());
                 }
             }
-            AiciOp::Prompt { id, module_id, .. } => {
+            AiciOp::Prompt {
+                id,
+                module_id,
+                module_arg,
+                ..
+            } => {
                 ensure!(!self.instances.contains_key(id));
-                let modi = self.new_instance(module_id)?;
+                let modi = self.new_instance(module_id, module_arg)?;
                 debug!("new module {} ({})", id, module_id);
                 self.instances.insert(*id, Arc::new(Mutex::new(modi)));
             }
@@ -396,7 +406,7 @@ fn main() -> () {
         println!("{}", module_id);
 
         if cli.run {
-            let mut modi = exec.new_instance(&module_id).unwrap();
+            let mut modi = exec.new_instance(&module_id, "").unwrap();
             modi.run_main().unwrap();
         }
 

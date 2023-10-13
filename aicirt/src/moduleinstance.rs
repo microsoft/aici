@@ -1,5 +1,5 @@
-use anyhow::{anyhow, ensure, Result};
 use aici_abi::bytes::TokRxInfo;
+use anyhow::{anyhow, ensure, Result};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
@@ -11,18 +11,21 @@ pub struct AiciContext {
     id: Id,
     log: Vec<u8>,
     globals: Arc<RwLock<GlobalInfo>>,
+    // TODO there is way too much cloning of this thing
+    module_arg: String,
 }
 
 impl AiciContext {
-    pub fn from(id: Id, globals: Arc<RwLock<GlobalInfo>>) -> Self {
+    pub fn from(id: Id, module_arg: String, globals: Arc<RwLock<GlobalInfo>>) -> Self {
         AiciContext {
             id,
             log: Vec::new(),
             globals,
+            module_arg,
         }
     }
     pub fn fake(globals: Arc<RwLock<GlobalInfo>>) -> Self {
-        Self::from(1000000, globals)
+        Self::from(1000000, "".to_string(), globals)
     }
 
     pub fn append_line(&mut self, s: &str) {
@@ -62,14 +65,15 @@ pub struct AiciInfo {
 }
 
 impl AiciInfo {
-    pub fn context(&self, globals: Arc<RwLock<GlobalInfo>>) -> AiciContext {
-        AiciContext::from(self.id, globals)
+    pub fn context(&self, module_arg: String, globals: Arc<RwLock<GlobalInfo>>) -> AiciContext {
+        AiciContext::from(self.id, module_arg, globals)
     }
 }
 
 pub struct ModuleInstance {
     globals: Arc<RwLock<GlobalInfo>>,
     aici_handles: HashMap<Id, AiciInfo>,
+    module_arg: String,
     wasm: WasmCtx,
     ops: Vec<IdxOp>, // for next req
 }
@@ -174,6 +178,7 @@ impl WasmCtx {
 impl ModuleInstance {
     pub fn new(
         module: wasmtime::Module,
+        module_arg: String,
         linker: Arc<wasmtime::Linker<AiciContext>>,
         globals: Arc<RwLock<GlobalInfo>>,
     ) -> Result<Self> {
@@ -188,6 +193,7 @@ impl ModuleInstance {
         Ok(ModuleInstance {
             aici_handles: HashMap::new(),
             ops: Vec::new(),
+            module_arg,
             wasm: WasmCtx {
                 store,
                 instance,
@@ -218,7 +224,7 @@ impl ModuleInstance {
     fn setup_logit_bias(&mut self, id: Id, handle: WasmAici) -> Result<u32> {
         let vocab_size = { self.globals.read().unwrap().tokrx_info.vocab_size };
         let logit_ptr = self.wasm.call_func_in::<(WasmAici, u32), WasmPtr>(
-            &AiciContext::from(id, self.globals.clone()),
+            &AiciContext::from(id, self.module_arg.clone(), self.globals.clone()),
             "aici_get_logit_bias_buffer",
             (handle, vocab_size),
         )?;
@@ -239,17 +245,10 @@ impl ModuleInstance {
 
         for opidx in ops {
             match &opidx.op {
-                AiciOp::Prompt {
-                    id,
-                    prompt,
-                    module_arg,
-                    ..
-                } => {
-                    ensure!(module_arg == "", "module_arg not supported yet");
-
+                AiciOp::Prompt { id, prompt, .. } => {
                     self.run_init()?;
 
-                    let ctx = AiciContext::from(*id, self.globals.clone());
+                    let ctx = AiciContext::from(*id, self.module_arg.clone(), self.globals.clone());
                     let handle = self
                         .wasm
                         .call_func_in::<(), WasmAici>(&ctx, "aici_create", ())?;
@@ -276,7 +275,11 @@ impl ModuleInstance {
                                 .get(&cid)
                                 .ok_or(anyhow!("invalid clone_id {} (inner)", cid))?;
                             let child = self.wasm.call_func_in::<WasmAici, WasmAici>(
-                                &AiciContext::from(*id, self.globals.clone()),
+                                &AiciContext::from(
+                                    *id,
+                                    self.module_arg.clone(),
+                                    self.globals.clone(),
+                                ),
                                 "aici_clone",
                                 parent.handle,
                             )?;
@@ -296,7 +299,7 @@ impl ModuleInstance {
                 .get(&id)
                 .ok_or(anyhow!("invalid Gen id {}", id))?;
             self.wasm.call_func_in::<(WasmAici, Token), ()>(
-                &ginfo.context(self.globals.clone()),
+                &ginfo.context(self.module_arg.clone(), self.globals.clone()),
                 "aici_append_token",
                 (ginfo.handle, gen),
             )?;
@@ -342,6 +345,28 @@ pub fn setup_linker(engine: &wasmtime::Engine) -> Result<Arc<wasmtime::Linker<Ai
                         .unwrap();
                 }
                 info.trie_bytes.len() as u32
+            } else {
+                panic!("no memory")
+            }
+        },
+    )?;
+
+    // uint32_t aici_host_read_arg(uint8_t *dst, uint32_t size);
+    linker.func_wrap(
+        "env",
+        "aici_host_read_arg",
+        |mut caller: wasmtime::Caller<'_, AiciContext>, ptr: u32, len: u32| {
+            if let Some(wasmtime::Extern::Memory(mem)) = caller.get_export("memory") {
+                let rlen = caller.data().module_arg.as_bytes().len();
+                if len > 0 {
+                    let ptr = ptr as usize;
+                    let len = len as usize;
+                    let min_len = std::cmp::min(len as usize, rlen);
+                    let data = caller.data().module_arg.clone();
+                    let data = data.as_bytes();
+                    mem.write(&mut caller, ptr, &data[..min_len]).unwrap();
+                }
+                rlen as u32
             } else {
                 panic!("no memory")
             }

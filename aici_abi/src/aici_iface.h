@@ -54,3 +54,6 @@ void aici_host_print(const uint8_t *ptr, uint32_t size);
 // Read binary representation of TokTrie.
 // Always returns the size of the trie, will write up to `size` bytes to `dst`.
 uint32_t aici_host_read_token_trie(uint8_t *dst, uint32_t size);
+
+// Similar, for argument passed by the user (typically JSON).
+uint32_t aici_host_read_arg(uint8_t *dst, uint32_t size);

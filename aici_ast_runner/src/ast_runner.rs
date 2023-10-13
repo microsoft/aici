@@ -28,7 +28,7 @@ use std::rc::Rc;
 use crate::rx::RecRx;
 
 use aici_abi::{
-    aici_expose_all,
+    aici_expose_all, arg,
     recognizer::{AnythingGoes, FunctionalRecognizer, StackRecognizer},
     toktree::{Recognizer, SpecialToken, TokTrie},
     wprintln, AiciVm, AiciVmHelper,
@@ -221,28 +221,31 @@ impl AiciVm for Runner {
 }
 
 fn main() {
-    let _run = sample_prog();
+//    let _run = sample_prog();
 }
 
 fn sample_prog() -> Runner {
-    Runner::new(Program {
-        steps: vec![
-            Step::Fixed {
-                text: "I am about ".to_string(),
-            },
-            Step::Gen {
-                max_tokens: 5,
-                rx: Some(r#"\d\d"#.to_string()),
-            },
-            Step::Fixed {
-                text: " years and ".to_string(),
-            },
-            Step::Gen {
-                max_tokens: 5,
-                rx: Some(r#"\d+"#.to_string()),
-            },
-        ],
-    })
+    let a = arg::arg_bytes();
+    let p: Program = serde_json::from_slice(&a).unwrap();
+    Runner::new(p)
+    // Runner::new(Program {
+    //     steps: vec![
+    //         Step::Fixed {
+    //             text: "I am about ".to_string(),
+    //         },
+    //         Step::Gen {
+    //             max_tokens: 5,
+    //             rx: Some(r#"\d\d"#.to_string()),
+    //         },
+    //         Step::Fixed {
+    //             text: " years and ".to_string(),
+    //         },
+    //         Step::Gen {
+    //             max_tokens: 5,
+    //             rx: Some(r#"\d+"#.to_string()),
+    //         },
+    //     ],
+    // })
 }
 
 aici_expose_all!(Runner, sample_prog());
