@@ -5,7 +5,7 @@ set -x
 
 (cd aicirt && cargo build --release)
 
-RUST_LOG=debug \
+RUST_LOG=info \
 PYTHONPATH=.:vllm \
 python harness/vllm_server.py \
     --aici-rt ./aicirt/target/release/aicirt \

@@ -5,6 +5,7 @@ import struct
 import subprocess
 import ujson
 import numpy as np
+import base64
 
 from typing import List
 
@@ -148,13 +149,17 @@ class AiciRunner:
 
     def _expect_response(self, ctx):
         assert self.cmd_pending
-        self.cmd_pending = False
         resp = self.resp_ch.recv_json()
+        self.cmd_pending = False
         if resp["type"] != "ok":
             raise ChildProcessError(
                 f"Bad response ({ctx}): {ujson.dumps(resp)[0:1000]}"
             )
         return resp
+
+    def upload_module(self, wasm: bytes, meta={}):
+        b64 = base64.b64encode(wasm).decode("utf-8")
+        return self._cmd_and_resp("mk_module", {"binary": b64, "meta": meta})
 
     def step_reset(self):
         """

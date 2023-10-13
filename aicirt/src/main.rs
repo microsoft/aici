@@ -7,10 +7,10 @@ use aici_abi::toktree::TokTrie;
 use aici_tokenizers::{find_tokenizer, Tokenizer};
 use anyhow::{anyhow, ensure, Result};
 use base64;
-use base64::{engine::general_purpose, Engine as _};
+use base64::Engine as _;
 use clap::Parser;
 use hex;
-use log::{debug, info, warn};
+use log::{info, warn};
 use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
@@ -159,29 +159,35 @@ impl Executor {
 
         let filepath = self.cache_path.join(format!("{}.bin", id));
         let mut time = 0;
-        if !filepath.exists() {
-            let timer = Instant::now();
+        let compiled_size = match fs::metadata(&filepath) {
+            Ok(m) => m.len() as usize,
+            Err(_) => {
+                let timer = Instant::now();
 
-            fs::create_dir_all(&self.cache_path)?;
-            let compiled = self.engine.precompile_module(&wasm_bytes)?;
-            fs::write(filepath, compiled)?;
+                fs::create_dir_all(&self.cache_path)?;
+                let compiled = self.engine.precompile_module(&wasm_bytes)?;
+                let clen = compiled.len();
+                fs::write(filepath, compiled)?;
 
-            let jsonpath = self.cache_path.join(format!("{}.json", id));
-            fs::write(jsonpath, &meta_bytes)?;
+                let jsonpath = self.cache_path.join(format!("{}.json", id));
+                fs::write(jsonpath, &meta_bytes)?;
 
-            time = timer.elapsed().as_millis();
-        }
+                time = timer.elapsed().as_millis();
+                clen
+            }
+        };
 
         Ok(json!({
             "module_id": id,
             "wasm_size": wasm_bytes.len(),
             "meta_size": meta_bytes.len(),
+            "compiled_size": compiled_size,
             "time": time
         }))
     }
 
     fn mk_module(&self, req: MkModuleReq) -> Result<Value> {
-        let wasm_bytes = general_purpose::STANDARD.decode(req.binary)?;
+        let wasm_bytes = base64::engine::general_purpose::STANDARD.decode(req.binary)?;
         let meta_bytes = serde_json::to_vec(&req.meta)?;
         self.create_module(wasm_bytes, meta_bytes)
     }
@@ -218,7 +224,7 @@ impl Executor {
                         .instances
                         .get(cid)
                         .ok_or(anyhow!("invalid clone_id {}", cid))?;
-                    debug!("clone {} -> ({})", cid, id);
+                    info!("clone {} -> ({})", cid, id);
                     self.instances.insert(*id, parent.clone());
                 }
             }
@@ -230,7 +236,7 @@ impl Executor {
             } => {
                 ensure!(!self.instances.contains_key(id));
                 let modi = self.new_instance(module_id, module_arg)?;
-                debug!("new module {} ({})", id, module_id);
+                info!("new module {} ({})", id, module_id);
                 self.instances.insert(*id, Arc::new(Mutex::new(modi)));
             }
         };
@@ -240,7 +246,7 @@ impl Executor {
 
     fn aici_step(&mut self, req: AiciStepReq) -> Result<Value> {
         for id in req.freed {
-            debug!("free module {}", id);
+            info!("free module {}", id);
             let _ = self.instances.remove(&id);
         }
 

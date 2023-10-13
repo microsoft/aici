@@ -10,6 +10,7 @@ import ujson
 import time
 from http import HTTPStatus
 from typing import AsyncGenerator, Dict, List, Optional, Tuple, Union
+from starlette.requests import Request
 
 import fastapi
 import uvicorn
@@ -63,6 +64,7 @@ logger = init_logger(__name__)
 served_model = None
 app = fastapi.FastAPI()
 engine = None
+aici = None
 
 
 def create_error_response(status_code: HTTPStatus, message: str) -> JSONResponse:
@@ -161,6 +163,12 @@ async def check_length(
         )
     else:
         return input_ids, None
+
+
+@app.post("/v1/aici_modules")
+async def upload_aici_module(request: Request):
+    contents = await request.body()
+    return aici.upload_module(contents, {})
 
 
 @app.get("/v1/models")

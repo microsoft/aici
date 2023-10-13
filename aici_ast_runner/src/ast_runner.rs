@@ -180,7 +180,7 @@ impl AiciVm for Runner {
     fn aici_append_token(&mut self, token: u32) {
         let bytes = self.trie.token(token);
         wprintln!(
-            "xapp {} '{}' st={}",
+            "append {} '{}' st={}",
             token,
             String::from_utf8_lossy(bytes),
             self.curr_step
