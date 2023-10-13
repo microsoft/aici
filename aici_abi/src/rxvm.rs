@@ -39,17 +39,6 @@ impl AiciVm for RxAici {
             .compute_logit_bias(self.state, &mut self.helper.logit_biases);
     }
 
-    // implement by hand for now - we may need some special processing here
-    fn aici_clone(&mut self) -> Self {
-        let r = RxAici {
-            helper: self.helper.clone(),
-            compiled: self.compiled.clone(),
-            state: self.state.clone(),
-        };
-        wprintln!("{} -> {}", self.state.off, r.state.off);
-        r
-    }
-
     fn get_helper(&mut self) -> &mut AiciVmHelper {
         &mut self.helper
     }

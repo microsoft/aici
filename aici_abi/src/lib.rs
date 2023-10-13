@@ -1,12 +1,12 @@
 use bytes::TokenId;
 
+pub mod arg;
 pub mod bytes;
 pub mod printing;
 pub mod recognizer;
 pub mod rx;
 pub mod rxvm;
 pub mod toktree;
-pub mod arg;
 
 /// Expose method as extern "C", usage:
 ///     expose!(Foo::set_count(n: i32) -> i32);
@@ -62,8 +62,6 @@ impl AiciVmHelper {
 }
 
 pub trait AiciVm {
-    /// Create a new instance of VM, based on existing instance, for example when doing beam-search.
-    fn aici_clone(&mut self) -> Self;
     /// The prompt is in self.helper.tokens.
     /// On return, self.helper.logit_biases are supposed to be updated.
     fn aici_process_prompt(&mut self);
@@ -85,17 +83,6 @@ macro_rules! aici_expose_all {
         pub extern "C" fn aici_create() -> *mut $struct_name {
             let b = Box::new($new);
             Box::into_raw(b)
-        }
-
-        #[no_mangle]
-        pub extern "C" fn aici_clone(self_: *mut $struct_name) -> *mut $struct_name {
-            let b = unsafe { (&mut *self_).aici_clone() };
-            Box::into_raw(Box::new(b))
-        }
-
-        #[no_mangle]
-        pub extern "C" fn aici_free(self_: *mut $struct_name) {
-            let _drop = unsafe { Box::from_raw(self_) };
         }
     }
 }
@@ -147,7 +134,8 @@ pub fn aici_harness(aici: &mut impl AiciVm, vocab_size: usize, prompt: &[TokenId
     };
     let prompt_buf = unsafe {
         std::slice::from_raw_parts_mut(
-            aici.get_helper().aici_get_prompt_buffer(prompt.len() as u32),
+            aici.get_helper()
+                .aici_get_prompt_buffer(prompt.len() as u32),
             prompt.len(),
         )
     };

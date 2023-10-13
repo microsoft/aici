@@ -54,14 +54,6 @@ impl<R: Recognizer> AiciRecognizer<R> {
 }
 
 impl<R: Recognizer + Clone> AiciVm for AiciRecognizer<R> {
-    fn aici_clone(&mut self) -> Self {
-        AiciRecognizer {
-            helper: self.helper.clone(),
-            rec: self.rec.clone(),
-            trie: self.trie.clone(),
-        }
-    }
-
     fn aici_process_prompt(&mut self) {
         wprintln!("prompt, {} tokens", self.helper.prompt_length);
         // the regex doesn't care about the prompt

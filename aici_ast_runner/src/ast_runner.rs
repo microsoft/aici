@@ -166,10 +166,6 @@ impl Runner {
 }
 
 impl AiciVm for Runner {
-    fn aici_clone(&mut self) -> Self {
-        todo!()
-    }
-
     fn aici_process_prompt(&mut self) {
         wprintln!("prompt, {} tokens", self.helper.prompt_length);
         // ignore the prompt (for now)
