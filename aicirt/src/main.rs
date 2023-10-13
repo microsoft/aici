@@ -224,8 +224,9 @@ impl Executor {
                         .instances
                         .get(cid)
                         .ok_or(anyhow!("invalid clone_id {}", cid))?;
-                    info!("clone {} -> ({})", cid, id);
-                    self.instances.insert(*id, parent.clone());
+                    info!("fork {} -> ({})", cid, id);
+                    let copy = parent.lock().unwrap().fork()?;
+                    self.instances.insert(*id, Arc::new(Mutex::new(copy)));
                 }
             }
             AiciOp::Prompt {
@@ -301,12 +302,19 @@ impl Executor {
             .into_par_iter()
             .map(|req| req.lock().as_deref_mut().unwrap().exec());
 
-        // first wait for everyone to finish
-        let results = par_iter.collect::<Vec<_>>();
-        // select first error if any
-        results.into_iter().collect::<Result<Vec<_>>>()?;
+        let results = par_iter
+            .map(|x| match x {
+                Ok(v) => v,
+                Err(err) => {
+                    json!({
+                        "type": "error",
+                        "error": err.to_string()
+                    })
+                }
+            })
+            .collect::<Vec<_>>();
 
-        Ok(json!({}))
+        Ok(Value::Array(results))
     }
 }
 

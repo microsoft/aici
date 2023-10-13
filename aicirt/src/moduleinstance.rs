@@ -1,7 +1,8 @@
 use aici_abi::bytes::TokRxInfo;
 use anyhow::{anyhow, ensure, Result};
+use log::info;
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+use serde_json::{json, Value};
 use std::sync::{Arc, RwLock};
 use std::time::Instant;
 use wasmtime;
@@ -49,8 +50,11 @@ impl AiciContext {
 
 struct WasmCtx {
     store: wasmtime::Store<AiciContext>,
+    linker: Arc<wasmtime::Linker<AiciContext>>,
     instance: wasmtime::Instance,
     memory: wasmtime::Memory,
+    module: wasmtime::Module,
+    error: bool,
 }
 
 pub struct GlobalInfo {
@@ -58,6 +62,7 @@ pub struct GlobalInfo {
     pub trie_bytes: Vec<u8>,
 }
 
+#[derive(Clone)]
 pub struct AiciInfo {
     id: Id,
     handle: WasmAici,
@@ -72,7 +77,7 @@ impl AiciInfo {
 
 pub struct ModuleInstance {
     globals: Arc<RwLock<GlobalInfo>>,
-    aici_handles: HashMap<Id, AiciInfo>,
+    info: AiciInfo,
     module_arg: String,
     wasm: WasmCtx,
     ops: Vec<IdxOp>, // for next req
@@ -111,13 +116,19 @@ impl WasmCtx {
         Params: wasmtime::WasmParams,
         Results: wasmtime::WasmResults,
     {
+        if self.error {
+            return Err(anyhow!("Previous WASM Error"));
+        }
         let f = self
             .instance
             .get_typed_func::<Params, Results>(&mut self.store, name)?;
         let r = f.call(&mut self.store, params);
         let ctx = self.store.data_mut();
         match &r {
-            Err(e) => ctx.append_line(&format!("WASM Error: {}", e.to_string())),
+            Err(e) => {
+                self.error = true;
+                ctx.append_line(&format!("WASM Error: {}", e.to_string()))
+            }
             _ => {}
         }
         ctx.flush_logs(name);
@@ -191,16 +202,45 @@ impl ModuleInstance {
             .ok_or(anyhow!("memory missing"))?;
 
         Ok(ModuleInstance {
-            aici_handles: HashMap::new(),
+            info: AiciInfo {
+                id: 0,
+                handle: 0,
+                logit_ptr: 0,
+            },
             ops: Vec::new(),
             module_arg,
             wasm: WasmCtx {
                 store,
                 instance,
                 memory,
+                module,
+                linker,
+                error: false,
             },
             globals,
         })
+    }
+
+    pub fn fork(&mut self) -> Result<Self> {
+        let mut fork = Self::new(
+            self.wasm.module.clone(),
+            self.module_arg.clone(),
+            self.wasm.linker.clone(),
+            self.globals.clone(),
+        )?;
+        fork.info = self.info.clone();
+        let src = self.wasm.memory;
+        let dst = fork.wasm.memory;
+        info!(
+            "grow mem to: {} from {}",
+            src.data_size(&self.wasm.store),
+            dst.data_size(&fork.wasm.store)
+        );
+        let missing_size = src.data_size(&self.wasm.store) - dst.data_size(&fork.wasm.store);
+        dst.grow(&mut fork.wasm.store, (missing_size >> 16) as u64)?;
+        dst.data_mut(&mut fork.wasm.store)
+            .copy_from_slice(src.data(&self.wasm.store));
+        Ok(fork)
     }
 
     fn run_init(&mut self) -> Result<()> {
@@ -229,19 +269,17 @@ impl ModuleInstance {
             (handle, vocab_size),
         )?;
 
-        let ginfo = AiciInfo {
-            id,
-            handle,
-            logit_ptr,
-        };
-        self.aici_handles.insert(id, ginfo);
+        self.info.id = id;
+        self.info.handle = handle;
+        self.info.logit_ptr = logit_ptr;
 
         Ok(logit_ptr)
     }
 
-    pub fn exec(&mut self) -> Result<()> {
+    pub fn exec(&mut self) -> Result<Value> {
         let ops = std::mem::replace(&mut self.ops, Vec::new());
-        let mut todo = Vec::new();
+
+        assert!(ops.len() == 1);
 
         for opidx in ops {
             match &opidx.op {
@@ -266,47 +304,20 @@ impl ModuleInstance {
                     self.wasm.read_mem(logit_ptr, opidx.dst_slice)?;
                 }
 
-                AiciOp::Gen { id, gen, clone_id } => {
-                    match clone_id {
-                        None => {}
-                        Some(cid) => {
-                            let handles = &mut self.aici_handles;
-                            let parent = handles
-                                .get(&cid)
-                                .ok_or(anyhow!("invalid clone_id {} (inner)", cid))?;
-                            let child = self.wasm.call_func_in::<WasmAici, WasmAici>(
-                                &AiciContext::from(
-                                    *id,
-                                    self.module_arg.clone(),
-                                    self.globals.clone(),
-                                ),
-                                "aici_clone",
-                                parent.handle,
-                            )?;
-                            self.setup_logit_bias(*id, child)?;
-                        }
-                    }
-
-                    todo.push((*id, *gen, opidx.dst_slice));
+                AiciOp::Gen { id, gen, .. } => {
+                    self.info.id = *id;
+                    let ginfo = &self.info;
+                    self.wasm.call_func_in::<(WasmAici, Token), ()>(
+                        &ginfo.context(self.module_arg.clone(), self.globals.clone()),
+                        "aici_append_token",
+                        (ginfo.handle, *gen),
+                    )?;
+                    self.wasm.read_mem(ginfo.logit_ptr, opidx.dst_slice)?;
                 }
             };
         }
 
-        // only append tokens after everything has been cloned
-        for (id, gen, dst_slice) in todo {
-            let ginfo = self
-                .aici_handles
-                .get(&id)
-                .ok_or(anyhow!("invalid Gen id {}", id))?;
-            self.wasm.call_func_in::<(WasmAici, Token), ()>(
-                &ginfo.context(self.module_arg.clone(), self.globals.clone()),
-                "aici_append_token",
-                (ginfo.handle, gen),
-            )?;
-            self.wasm.read_mem(ginfo.logit_ptr, dst_slice)?;
-        }
-
-        Ok(())
+        Ok(json!({}))
     }
 }
 

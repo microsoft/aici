@@ -11,9 +11,9 @@ prog = "aici_ast_runner"
 ast = {
     "steps": [
         {"Fixed": {"text": "I WAS about "}},
-        {"Gen": {"max_tokens": 5, "rx": "\\d\\d"}},
+        {"Gen": {"max_tokens": 5, "rx": r"\d\d"}},
         {"Fixed": {"text": " years and "}},
-        {"Gen": {"max_tokens": 5, "rx": "\\d+"}},
+        {"Gen": {"max_tokens": 5, "rx": r"\d+"}},
     ]
 }
 
@@ -40,11 +40,12 @@ def upload_wasm():
             )
 
 
-def ask_completion(prompt, aici_module, aici_arg, temperature=0, max_tokens=200):
+def ask_completion(prompt, aici_module, aici_arg, temperature=0, max_tokens=200, n=1):
     json = {
         "model": "",
         "prompt": prompt,
         "max_tokens": max_tokens,
+        "n": n,
         "temperature": temperature,
         "stream": True,
         "aici_module": aici_module,
@@ -56,30 +57,37 @@ def ask_completion(prompt, aici_module, aici_arg, temperature=0, max_tokens=200)
             f"bad response to completions: {resp.status_code} {resp.reason}: {resp.text}"
         )
     full_resp = []
+    texts = [""] * n
     for line in resp.iter_lines():
         if line:
             decoded_line: str = line.decode("utf-8")
             if decoded_line.startswith("data: {"):
                 d = ujson.decode(decoded_line[6:])
                 full_resp.append(d)
-                i0 = [ch for ch in d["choices"] if ch["index"] == 0]
-                if len(i0) > 0:
-                    print(i0[0]["text"], end="")
+                for ch in d["choices"]:
+                    idx = ch["index"]
+                    if idx == 0:
+                        print(ch["text"], end="")
+                    texts[idx] += ch["text"]
             elif decoded_line == "data: [DONE]":
                 print(" [DONE]")
             else:
                 print(decoded_line)
 
+    if len(texts) > 1:
+        print(texts[1:])
     os.makedirs("tmp", exist_ok=True)
     path = "tmp/response.json"
     with open(path, "w") as f:
-        ujson.dump({"request": json, "response": full_resp}, f, indent=1)
+        ujson.dump(
+            {"request": json, "texts": texts, "response": full_resp}, f, indent=1
+        )
     print(f"response saved to {path}")
 
 
 def main():
     mod = upload_wasm()
-    ask_completion(prompt="42\n", aici_module=mod, aici_arg=ast)
+    ask_completion(prompt="42\n", aici_module=mod, aici_arg=ast, n=5, temperature=0.5)
 
 
 main()
