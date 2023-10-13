@@ -90,6 +90,31 @@ struct AiciStepReq {
 }
 
 #[derive(Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum AiciOp {
+    Prompt {
+        id: Id,
+        prompt: Vec<Token>,
+        module_id: String,
+        module_arg: String,
+    },
+    Gen {
+        id: Id,
+        gen: Token,
+        clone_id: Option<Id>,
+    },
+}
+
+impl AiciOp {
+    pub fn to_thread_op(self) -> ThreadOp {
+        match self {
+            AiciOp::Prompt { prompt, .. } => ThreadOp::Prompt { prompt },
+            AiciOp::Gen { gen, .. } => ThreadOp::Gen { gen },
+        }
+    }
+}
+
+#[derive(Serialize, Deserialize)]
 struct MkModuleReq {
     binary: String,
     #[serde(default = "mk_null")]
@@ -211,14 +236,14 @@ impl Executor {
             Some(v) => v.clone(),
         };
 
-        let modi = ModuleInstance::new(
+        let modinst = ModuleInstance::new(
             id,
             module,
             Arc::new(module_arg.to_string()),
             self.linker.clone(),
             self.globals.clone(),
         )?;
-        Ok(modi)
+        Ok(modinst)
     }
 
     fn mk_instance(&mut self, op: &AiciOp) -> Result<()> {
@@ -242,9 +267,9 @@ impl Executor {
                 ..
             } => {
                 ensure!(!self.instances.contains_key(id));
-                let modi = self.new_instance(*id, module_id, module_arg)?;
+                let modinst = self.new_instance(*id, module_id, module_arg)?;
                 info!("new module {} ({})", id, module_id);
-                self.instances.insert(*id, Arc::new(Mutex::new(modi)));
+                self.instances.insert(*id, Arc::new(Mutex::new(modinst)));
             }
         };
 
@@ -270,46 +295,29 @@ impl Executor {
 
         let numops = req.ops.len();
 
+        ensure!(slices.len() >= numops, "shm size too small");
+
         let reqs = req
             .ops
             .into_iter()
-            .enumerate()
-            .map(|(idx, op)| {
+            .map(|op| -> Arc<Mutex<ModuleInstance>> {
                 let instid = match op {
                     AiciOp::Gen { id, .. } => id,
                     AiciOp::Prompt { id, .. } => id,
                 };
-                let modi_rc = self
-                    .instances
-                    .get(&instid)
-                    .ok_or(anyhow!("no such instance: {}", instid))?;
-                let slice = slices.pop().ok_or(anyhow!(
-                    "shm size too small at {}/{}, block={}b",
-                    idx,
-                    numops,
-                    vocab_block_len
-                ))?;
-                let is_first = {
-                    let mut lck = modi_rc.lock();
-                    lck.as_deref_mut().unwrap().add_op(slice, op)
-                };
-                if is_first {
-                    Ok::<_, anyhow::Error>(Some(modi_rc))
-                } else {
-                    Ok(None)
-                }
+                let modinst_rc = self.instances.get(&instid).unwrap();
+                let slice = slices.pop().unwrap();
+
+                let mut lck = modinst_rc.lock();
+                lck.as_deref_mut().unwrap().add_op(slice, op.to_thread_op());
+
+                modinst_rc.clone()
             })
-            .collect::<Result<Vec<_>, _>>()?
-            .iter()
-            .filter_map(|x| x.clone())
             .collect::<Vec<_>>();
 
-        let par_iter = reqs
+        let results = reqs
             .into_par_iter()
-            .map(|req| req.lock().as_deref_mut().unwrap().exec());
-
-        let results = par_iter
-            .map(|x| match x {
+            .map(|req| match req.lock().as_deref_mut().unwrap().exec() {
                 Ok(v) => v,
                 Err(err) => {
                     json!({
@@ -426,8 +434,8 @@ fn main() -> () {
         println!("{}", module_id);
 
         if cli.run {
-            let mut modi = exec.new_instance(42, &module_id, "").unwrap();
-            modi.run_main().unwrap();
+            let mut modinst = exec.new_instance(42, &module_id, "").unwrap();
+            modinst.run_main().unwrap();
         }
 
         return ();

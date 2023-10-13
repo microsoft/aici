@@ -1,7 +1,6 @@
 use aici_abi::bytes::TokRxInfo;
 use anyhow::{anyhow, ensure, Result};
 use log::info;
-use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::sync::{Arc, RwLock};
 use std::time::Instant;
@@ -26,8 +25,8 @@ pub struct ModuleInstance {
     handle: WasmAici,
     logit_ptr: WasmPtr,
     globals: Arc<RwLock<GlobalInfo>>,
-    ops: Vec<IdxOp>, // for next req
-    error: bool,
+    op: Option<IdxOp>,
+    had_error: bool,
 }
 
 fn read_caller_mem(caller: &wasmtime::Caller<'_, ModuleData>, ptr: u32, len: u32) -> Vec<u8> {
@@ -77,26 +76,15 @@ pub struct GlobalInfo {
 
 pub struct IdxOp {
     dst_slice: &'static mut [u8],
-    op: AiciOp,
+    op: ThreadOp,
 }
 
 pub type Id = usize;
 pub type Token = u32;
 
-#[derive(Serialize, Deserialize)]
-#[serde(untagged)]
-pub enum AiciOp {
-    Prompt {
-        id: Id,
-        prompt: Vec<Token>,
-        module_id: String,
-        module_arg: String,
-    },
-    Gen {
-        id: Id,
-        gen: Token,
-        clone_id: Option<Id>,
-    },
+pub enum ThreadOp {
+    Prompt { prompt: Vec<Token> },
+    Gen { gen: Token },
 }
 
 type WasmPtr = u32;
@@ -108,7 +96,7 @@ impl ModuleInstance {
         Params: wasmtime::WasmParams,
         Results: wasmtime::WasmResults,
     {
-        if self.error {
+        if self.had_error {
             return Err(anyhow!("Previous WASM Error"));
         }
         let f = self
@@ -118,7 +106,7 @@ impl ModuleInstance {
         let ctx = self.store.data_mut();
         match &r {
             Err(e) => {
-                self.error = true;
+                self.had_error = true;
                 ctx.append_line(&format!("WASM Error: {}", e.to_string()))
             }
             _ => {}
@@ -194,12 +182,12 @@ impl ModuleInstance {
         Ok(ModuleInstance {
             handle: 0,
             logit_ptr: 0,
-            ops: Vec::new(),
+            op: None,
             store,
             memory,
             instance,
             globals,
-            error: false,
+            had_error: false,
         })
     }
 
@@ -240,9 +228,9 @@ impl ModuleInstance {
         Ok(())
     }
 
-    pub fn add_op(&mut self, dst_slice: &'static mut [u8], op: AiciOp) -> bool {
-        self.ops.push(IdxOp { dst_slice, op });
-        self.ops.len() == 1
+    pub fn add_op(&mut self, dst_slice: &'static mut [u8], op: ThreadOp) {
+        assert!(self.op.is_none());
+        self.op = Some(IdxOp { dst_slice, op });
     }
 
     fn setup_logit_bias(&mut self, handle: WasmAici) -> Result<u32> {
@@ -259,36 +247,29 @@ impl ModuleInstance {
     }
 
     pub fn exec(&mut self) -> Result<Value> {
-        let ops = std::mem::replace(&mut self.ops, Vec::new());
+        let opidx = std::mem::replace(&mut self.op, None).unwrap();
 
-        assert!(ops.len() == 1);
+        match opidx.op {
+            ThreadOp::Prompt { prompt, .. } => {
+                self.run_init()?;
 
-        for opidx in ops {
-            match &opidx.op {
-                AiciOp::Prompt { prompt, .. } => {
-                    self.run_init()?;
+                let handle = self.call_func::<(), WasmAici>("aici_create", ())?;
+                let logit_ptr = self.setup_logit_bias(handle)?;
 
-                    let handle = self.call_func::<(), WasmAici>("aici_create", ())?;
-                    let logit_ptr = self.setup_logit_bias(handle)?;
+                let prompt_ptr = self.call_func::<(WasmAici, u32), WasmPtr>(
+                    "aici_get_prompt_buffer",
+                    (handle, prompt.len().try_into().unwrap()),
+                )?;
 
-                    let prompt_ptr = self.call_func::<(WasmAici, u32), WasmPtr>(
-                        "aici_get_prompt_buffer",
-                        (handle, prompt.len().try_into().unwrap()),
-                    )?;
+                self.write_mem(&prompt, prompt_ptr)?;
+                self.call_func::<WasmAici, ()>("aici_process_prompt", handle)?;
+                self.read_mem(logit_ptr, opidx.dst_slice)?;
+            }
 
-                    self.write_mem(&prompt, prompt_ptr)?;
-                    self.call_func::<WasmAici, ()>("aici_process_prompt", handle)?;
-                    self.read_mem(logit_ptr, opidx.dst_slice)?;
-                }
-
-                AiciOp::Gen { gen, .. } => {
-                    self.call_func::<(WasmAici, Token), ()>(
-                        "aici_append_token",
-                        (self.handle, *gen),
-                    )?;
-                    self.read_mem(self.logit_ptr, opidx.dst_slice)?;
-                }
-            };
+            ThreadOp::Gen { gen, .. } => {
+                self.call_func::<(WasmAici, Token), ()>("aici_append_token", (self.handle, gen))?;
+                self.read_mem(self.logit_ptr, opidx.dst_slice)?;
+            }
         }
 
         Ok(json!({}))
