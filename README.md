@@ -41,7 +41,10 @@ Using shared memory ensures there is very little work to be done on the Python s
 
 The (harness)[harness] folder contains samples for using aicirt with different LLM engines:
 - [HuggingFace Transformers](harness/run_hf.py), run with `./scripts/hf.sh`
-- [vLLM](harness/run_vllm.py), run with `./scripts/vllm.sh`
+- [vLLM script](harness/run_vllm.py), run with `./scripts/vllm.sh`
+- [vLLM REST server](harness/vllm_server.py), run with `./scripts/server.sh`;
+  the REST server is compatible with OpenAI and adds an endpoint for uploading WASM modules;
+  see [./scripts/upload.py](scripts/upload.py) for an example on how it can be used
 
 ## Interfaces
 
