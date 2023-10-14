@@ -69,7 +69,11 @@ def main(args):
 
     runner = pyaici.AiciRunner(rtpath=args.aici_rt, tokenizer=args.aici_tokenizer)
 
-    wproc = AsyncLogitProcessor(runner, args.aici_module, args.aici_module_arg)
+    arg = ""
+    if args.aici_module_arg:
+        with open(args.aici_module_arg) as f:
+            arg = f.read()
+    wproc = AsyncLogitProcessor(runner, args.aici_module, arg)
     inp = tokenizer(
         "Here is an example JSON about Joe Random Hacker in Seattle:\n",
         return_tensors="pt",
@@ -100,7 +104,10 @@ if __name__ == "__main__":
         help="tokenizer to use; defaults to model name",
     )
     parser.add_argument(
-        "--aici-module-arg", type=str, default="", help="arg passed to module"
+        "--aici-module-arg",
+        type=str,
+        default="",
+        help="arg passed to module (filename)",
     )
     parser.add_argument(
         "--aici-module", type=str, required=True, help="id of the module to run"

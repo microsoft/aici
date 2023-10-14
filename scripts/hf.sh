@@ -10,6 +10,7 @@ PYTHONPATH=. \
 python harness/run_hf.py \
     --aici-rt ./aicirt/target/release/aicirt \
     --aici-module $mod \
+    --aici-module-arg aici_ast_runner/arg.json \
     --aici-tokenizer llama \
     --model NousResearch/Llama-2-7b-chat-hf \
     --tokenizer hf-internal-testing/llama-tokenizer

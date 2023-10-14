@@ -4,17 +4,20 @@
 
 ## Getting started
 
-Best run this in Docker container, using the setup in `.devcontainer`.
-Otherwise, install the stuff from `.devcontainer/Dockerfile`.
+Use Docker container, using the setup in `.devcontainer` (in VSCode "Reopen in container").
 
-Running with with HF Transformers:
+Best start with `./scripts/hf.sh` - you should get valid JSON output.
 
- * `./scripts/hf.sh`
+Then setup vLLM. These steps generate files in workspace, so they will survive container rebuilds:
+* `git submodule update --init --recursive`
+* `cd vllm`
+* `python setup.py build`
 
-Running with vllm:
+You can test out vLLM with `./scripts/vllm.sh`.
 
-* first setup vllm as per their instructions
-* `./scripts/vllm.sh`
+Then run the server:
+* `./scripts/server.sh`
+* from a different terminal: `./scripts/upload.py`
 
 ## Architecture
 

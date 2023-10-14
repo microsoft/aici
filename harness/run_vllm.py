@@ -35,9 +35,13 @@ def main(args: argparse.Namespace):
         ("Here is an example JSON about Joe Random Hacker in Seattle:\n",
          SamplingParams(temperature=0.9, n=1, max_tokens=120))
     ]
+    arg = ""
+    if args.aici_module_arg:
+        with open(args.aici_module_arg) as f:
+            arg = f.read()
     for (prompt, params) in test_prompts:
         params.aici_module = args.aici_module
-        params.aici_arg = ""
+        params.aici_arg = arg
 
     # Run the engine by calling `engine.step()` manually.
     request_id = 0
@@ -70,6 +74,9 @@ if __name__ == '__main__':
             type=str,
             default='',
             help='module id')
+    parser.add_argument(
+        "--aici-module-arg", type=str, default="", help="arg passed to module (filename)"
+    )
     parser.add_argument(
             '--aici-rt',
             type=str,

@@ -2,24 +2,18 @@
   "steps": [
     {
       "Fixed": {
-        "text": "I am about "
+        "text": "```\n"
       }
     },
     {
       "Gen": {
-        "max_tokens": 5,
-        "rx": "\\d\\d"
+        "max_tokens": 100,
+        "rx": "\\{\\n?\"name\": \"(\\\\([\"\\\\\\/bfnrt]|u[a-fA-F0-9]{4})|[^\"\\\\\\x00-\\x1F\\x7F]+)*\",\\n\"valid\": (true|false),\\n\"type\": \"(foo|bar|baz|something|else)\",\\n\"address\": \\{\\n?\"street\": \"(\\\\([\"\\\\\\/bfnrt]|u[a-fA-F0-9]{4})|[^\"\\\\\\x00-\\x1F\\x7F]+)*\",\\n\"city\": \"(\\\\([\"\\\\\\/bfnrt]|u[a-fA-F0-9]{4})|[^\"\\\\\\x00-\\x1F\\x7F]+)*\",\\n\"state\": \"([A-Z][A-Z])\"\\n?\\},\\n\"age\": \\d+\\n?\\}"
       }
     },
     {
       "Fixed": {
-        "text": " years and "
-      }
-    },
-    {
-      "Gen": {
-        "max_tokens": 5,
-        "rx": "\\d+"
+        "text": "\n```"
       }
     }
   ]
