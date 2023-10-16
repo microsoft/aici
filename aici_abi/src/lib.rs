@@ -1,8 +1,7 @@
 use bytes::TokenId;
 
-pub mod arg;
+pub mod host;
 pub mod bytes;
-pub mod printing;
 pub mod recognizer;
 pub mod rx;
 pub mod rxvm;
@@ -109,18 +108,18 @@ macro_rules! include_bytes_aligned {
 #[macro_export]
 macro_rules! wprintln {
     () => {
-        $crate::printing::_print("\n")
+        $crate::host::_print("\n")
     };
     ($($arg:tt)*) => {{
-        $crate::printing::_print(&format!($($arg)*));
-        $crate::printing::_print("\n");
+        $crate::host::_print(&format!($($arg)*));
+        $crate::host::_print("\n");
     }};
 }
 
 #[macro_export]
 macro_rules! wprint {
     ($($arg:tt)*) => {{
-        $crate::printing::_print(&format!($($arg)*));
+        $crate::host::_print(&format!($($arg)*));
     }};
 }
 

@@ -29,7 +29,7 @@ use std::rc::Rc;
 use crate::rx::RecRx;
 
 use aici_abi::{
-    aici_expose_all, arg,
+    aici_expose_all, host,
     recognizer::{AnythingGoes, FunctionalRecognizer, StackRecognizer},
     toktree::{Recognizer, SpecialToken, TokTrie},
     wprintln, AiciVm, AiciVmHelper,
@@ -218,11 +218,11 @@ impl AiciVm for Runner {
 }
 
 fn main() {
-//    let _run = sample_prog();
+    //    let _run = sample_prog();
 }
 
 fn sample_prog() -> Runner {
-    let a = arg::arg_bytes();
+    let a = host::arg_bytes();
     let p: Program = serde_json::from_slice(&a).unwrap();
     Runner::new(p)
     // Runner::new(Program {
