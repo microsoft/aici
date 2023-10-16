@@ -1,4 +1,8 @@
-use aici_abi::{recognizer::FunctionalRecognizer, toktree::SpecialToken, wprintln};
+use aici_abi::{
+    recognizer::{FunctionalRecognizer, StackRecognizer},
+    toktree::SpecialToken,
+    wprintln,
+};
 use regex_automata::{
     dfa::{dense, Automaton},
     util::{primitives::StateID, syntax},
@@ -10,6 +14,8 @@ pub type RecRxState = StateID;
 pub struct RecRx {
     dfa: dense::DFA<Vec<u32>>,
 }
+
+pub type RxStackRecognizer = StackRecognizer<StateID, RecRx>;
 
 impl RecRx {
     pub fn from_rx(rx: &str) -> Self {
@@ -25,6 +31,10 @@ impl RecRx {
             .unwrap();
         wprintln!("dfa: {} bytes", dfa.memory_usage());
         Self { dfa }
+    }
+
+    pub fn to_stack_recognizer(self) -> RxStackRecognizer {
+        StackRecognizer::from(self)
     }
 }
 

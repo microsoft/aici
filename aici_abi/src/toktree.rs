@@ -310,12 +310,12 @@ impl TokTrie {
         Some(n)
     }
 
-    pub fn compute_bias(&self, r: &mut dyn Recognizer, logits: &mut [f32]) {
+    pub fn compute_bias(&self, r: &mut impl Recognizer, logits: &mut [f32]) {
         logits.iter_mut().for_each(|x| *x = -100.0);
         self.add_bias(r, logits)
     }
 
-    pub fn add_bias(&self, r: &mut dyn Recognizer, logits: &mut [f32]) {
+    pub fn add_bias(&self, r: &mut impl Recognizer, logits: &mut [f32]) {
         for tok in vec![SpecialToken::EndOfSentence] {
             if r.special_allowed(tok) {
                 logits[self.special_token(tok) as usize] = 0.0;

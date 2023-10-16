@@ -1,11 +1,15 @@
-use bytes::TokenId;
+use std::rc::Rc;
 
-pub mod host;
+use toktree::{SpecialToken, TokTrie};
+
 pub mod bytes;
+pub mod host;
 pub mod recognizer;
 pub mod rx;
 pub mod rxvm;
 pub mod toktree;
+
+pub type TokenId = bytes::TokenId;
 
 /// Expose method as extern "C", usage:
 ///     expose!(Foo::set_count(n: i32) -> i32);
@@ -36,6 +40,7 @@ pub struct AiciVmHelper {
     pub tokens: Vec<u32>,
     pub prompt_length: usize,
     pub logit_biases: Vec<f32>,
+    pub trie: Rc<Box<TokTrie>>,
 }
 
 // aici_* are exposed to C in both AiciVm and AiciVmHelper
@@ -45,6 +50,7 @@ impl AiciVmHelper {
             tokens: Vec::new(),
             prompt_length: 0,
             logit_biases: Vec::new(),
+            trie: Rc::new(Box::new(TokTrie::from_host())),
         }
     }
     pub fn aici_get_logit_bias_buffer(&mut self, size: u32) -> *mut f32 {
@@ -57,6 +63,19 @@ impl AiciVmHelper {
         self.prompt_length = size as usize;
         self.tokens.resize(self.prompt_length, 0);
         self.tokens.as_mut_ptr()
+    }
+
+    pub fn all_disallowed(&mut self) {
+        self.logit_biases.iter_mut().for_each(|x| *x = -100.0);
+    }
+
+    pub fn allow_one(&mut self, tok: TokenId) {
+        self.all_disallowed();
+        self.logit_biases[tok as usize] = 0.0;
+    }
+
+    pub fn allow_eos(&mut self) {
+        self.allow_one(self.trie.special_token(SpecialToken::EndOfSentence));
     }
 }
 

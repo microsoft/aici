@@ -1,10 +1,21 @@
 use std::io;
 
+use crate::bytes::TokenId;
+
 #[allow(dead_code)]
 extern "C" {
+    // Log a string.
     fn aici_host_print(ptr: *const u8, len: u32);
-    fn aici_host_read_arg(ptr: *mut u8, len: u32) -> u32;
+
+    // Read binary representation of TokTrie.
+    // Always returns the size of the trie, will write up to `size` bytes to `dst`.
     fn aici_host_read_token_trie(ptr: *mut u8, len: u32) -> u32;
+
+    // Similar, for argument passed by the user (typically JSON).
+    fn aici_host_read_arg(ptr: *mut u8, len: u32) -> u32;
+
+    // Tokenize given UTF8 string. `dst_size` is in elements, not bytes. Returns number of generated tokens.
+    fn aici_host_tokenize(src: *const u8, src_size: u32, dst: *mut u32, dst_size: u32) -> u32;
 }
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -100,4 +111,22 @@ pub fn trie_bytes() -> Vec<u8> {
 
     #[cfg(not(target_arch = "wasm32"))]
     std::fs::read("tokenizer.bin").unwrap()
+}
+
+pub fn tokenize(s: &str) -> Vec<TokenId> {
+    // fn aici_host_tokenize(src: *const u8, src_size: u32, dst: *mut u32, dst_size: u32) -> u32;
+    let slen = s.len() as u32;
+    let cap = slen / 3 + 10;
+    let mut res = Vec::with_capacity(cap as usize);
+    let len = unsafe { aici_host_tokenize(s.as_ptr(), slen, res.as_mut_ptr(), cap) };
+    if len > res.len() as u32 {
+        // unlikely...
+        res = Vec::with_capacity(len as usize);
+        unsafe { aici_host_tokenize(s.as_ptr(), slen, res.as_mut_ptr(), len) };
+    }
+    unsafe {
+        res.set_len(len as usize);
+    }
+    // trim size
+    res.clone()
 }

@@ -23,18 +23,19 @@
 */
 mod rx;
 
+use rx::RxStackRecognizer;
 use serde::{Deserialize, Serialize};
-use std::rc::Rc;
 
 use crate::rx::RecRx;
 
 use aici_abi::{
-    aici_expose_all, host,
-    recognizer::{AnythingGoes, FunctionalRecognizer, StackRecognizer},
-    toktree::{Recognizer, SpecialToken, TokTrie},
-    wprintln, AiciVm, AiciVmHelper,
+    aici_expose_all,
+    host::{self, tokenize},
+    toktree::{Recognizer, SpecialToken},
+    wprintln, AiciVm, AiciVmHelper, TokenId,
 };
 
+// The JSON AST
 #[derive(Serialize, Deserialize, Clone)]
 pub enum Step {
     Fixed {
@@ -51,41 +52,18 @@ pub struct Program {
     pub steps: Vec<Step>,
 }
 
+enum StepState {
+    Fixed { tokens: Vec<TokenId> },
+    Gen { rx: RxStackRecognizer },
+    Stop,
+}
 pub struct Runner {
     helper: AiciVmHelper,
     program: Program,
-    curr_step: usize,
-    trie: Rc<Box<TokTrie>>,
-    rec: Box<dyn Recognizer>,
-    tok_limit: usize,
-}
-
-#[derive(Clone)]
-pub struct FixedArgs {
-    pub text: String,
-}
-
-impl FunctionalRecognizer<u32> for FixedArgs {
-    fn initial(&self) -> u32 {
-        0
-    }
-
-    fn append(&self, state: u32, _byte: u8) -> u32 {
-        state + 1
-    }
-
-    fn byte_allowed(&self, state: u32, byte: u8) -> bool {
-        let idx = state as usize;
-        let bytes = self.text.as_bytes();
-        idx < bytes.len() && bytes[idx] == byte
-    }
-
-    fn special_allowed(&self, state: u32, tok: SpecialToken) -> bool {
-        match tok {
-            SpecialToken::EndOfSentence => state >= self.text.len() as u32,
-            _ => false,
-        }
-    }
+    state: StepState,
+    step_idx: usize,
+    token_idx_in_step: usize,
+    max_tokens_in_step: usize,
 }
 
 impl Runner {
@@ -93,67 +71,144 @@ impl Runner {
         Self {
             helper: AiciVmHelper::new(),
             program,
-            curr_step: 0,
-            trie: Rc::new(Box::new(TokTrie::from_host())),
-            rec: Box::new(StackRecognizer::from(AnythingGoes {})),
-            tok_limit: 0,
+            step_idx: 0,
+            state: StepState::Stop,
+            token_idx_in_step: 0,
+            max_tokens_in_step: usize::MAX,
         }
     }
 
+    fn set_state(&mut self, state: StepState) {
+        self.state = state;
+        self.token_idx_in_step = 0;
+        self.max_tokens_in_step = usize::MAX;
+    }
+
     fn stop(&mut self, info: &str) {
-        let rec = StackRecognizer::from(FixedArgs {
-            text: "".to_string(),
-        });
-        self.rec = Box::new(rec);
+        self.set_state(StepState::Stop);
         wprintln!("stop: {}", info)
     }
 
     fn next_step(&mut self, info: &str) {
-        self.curr_step += 1;
-        if self.curr_step < self.program.steps.len() {
-            wprintln!("step -> {}; {}", self.curr_step, info);
+        self.step_idx += 1;
+        if self.step_idx < self.program.steps.len() {
+            wprintln!("step -> {}; {}", self.step_idx, info);
             self.new_step();
         } else {
+            self.step_idx = self.program.steps.len();
             self.stop(info);
         }
     }
 
-    fn new_step(&mut self) {
-        match &self.program.steps[self.curr_step] {
-            Step::Fixed { text } => {
-                let rec = StackRecognizer::from(FixedArgs { text: text.clone() });
-                self.rec = Box::new(rec);
-                self.tok_limit = 0; // no limit
-            }
-            Step::Gen { max_tokens, rx } => {
-                if let Some(rx) = rx {
-                    let rec = StackRecognizer::from(RecRx::from_rx(&rx));
-                    self.rec = Box::new(rec);
-                } else {
-                    self.rec = Box::new(StackRecognizer::from(AnythingGoes {}));
+    fn step_state(&mut self) -> StepState {
+        match &self.program.steps[self.step_idx] {
+            Step::Fixed { text } => StepState::Fixed {
+                tokens: tokenize(&text),
+            },
+            Step::Gen { rx, .. } => {
+                let rx = match rx {
+                    Some(rx) => rx,
+                    None => ".*",
+                };
+                StepState::Gen {
+                    rx: RecRx::from_rx(&rx).to_stack_recognizer(),
                 }
-                self.tok_limit = *max_tokens;
             }
         }
     }
 
-    fn all_disallowed(&mut self) {
-        self.helper
-            .logit_biases
-            .iter_mut()
-            .for_each(|x| *x = -100.0);
+    fn new_step(&mut self) {
+        let state = self.step_state();
+        self.set_state(state);
+        match &self.program.steps[self.step_idx] {
+            Step::Fixed { .. } => {}
+            Step::Gen { max_tokens, .. } => {
+                self.max_tokens_in_step = *max_tokens;
+            }
+        }
+    }
+
+    fn check_step_finished_inner(&mut self) {
+        if self.token_idx_in_step >= self.max_tokens_in_step {
+            self.next_step("max tokens reached");
+            return;
+        }
+
+        match &mut self.state {
+            StepState::Stop => {}
+            StepState::Fixed { tokens } => {
+                if self.token_idx_in_step >= tokens.len() {
+                    self.next_step("fixed finished")
+                }
+            }
+            StepState::Gen { rx } => {
+                if (0..=255).all(|byte| !rx.byte_allowed(byte)) {
+                    if !rx.special_allowed(SpecialToken::EndOfSentence) {
+                        self.stop("no bytes, no EOS");
+                    } else {
+                        self.next_step("rx finished")
+                    }
+                }
+            }
+        }
+    }
+
+    fn check_step_finished(&mut self) {
+        loop {
+            let s0 = self.step_idx;
+            self.check_step_finished_inner();
+            if s0 == self.step_idx {
+                break;
+            }
+        }
+    }
+
+    fn advance(&mut self, token: TokenId) {
+        let bytes = self.helper.trie.token(token);
+        wprintln!(
+            "append {} '{}' st: {}.{}",
+            token,
+            String::from_utf8_lossy(bytes),
+            self.step_idx,
+            self.token_idx_in_step
+        );
+
+        match &mut self.state {
+            StepState::Stop => {}
+            StepState::Fixed { .. } => {
+                self.token_idx_in_step += 1;
+            }
+            StepState::Gen { rx } => {
+                for b in bytes {
+                    rx.push_byte(*b)
+                }
+                rx.collapse();
+            }
+        }
+
+        self.check_step_finished();
     }
 
     fn compute(&mut self) {
-        // wprintln!("compute");
-        self.all_disallowed();
-        self.trie
-            .add_bias(&mut *self.rec, &mut self.helper.logit_biases);
+        match &mut self.state {
+            StepState::Stop => {
+                return self.helper.allow_eos();
+            }
+            StepState::Fixed { tokens } => {
+                let t = tokens[self.token_idx_in_step];
+                return self.helper.allow_one(t);
+            }
+            StepState::Gen { rx } => {
+                self.helper.all_disallowed();
+                self.helper.trie.add_bias(rx, &mut self.helper.logit_biases);
+                return;
+            }
+        }
     }
 
     #[allow(dead_code)]
-    fn log_prob(&self, tok: &str) {
-        if let Some(id) = self.trie.token_id(tok.as_bytes()) {
+    fn print_prob(&self, tok: &str) {
+        if let Some(id) = self.helper.trie.token_id(tok.as_bytes()) {
             wprintln!(
                 "prob '{}' {} = {}",
                 tok,
@@ -171,45 +226,19 @@ impl AiciVm for Runner {
         wprintln!("prompt, {} tokens", self.helper.prompt_length);
         // ignore the prompt (for now)
         self.new_step();
+        self.check_step_finished();
         self.compute();
     }
 
     fn aici_append_token(&mut self, token: u32) {
-        let bytes = self.trie.token(token);
-        wprintln!(
-            "append {} '{}' st={}",
-            token,
-            String::from_utf8_lossy(bytes),
-            self.curr_step
-        );
-
         // save the token, just in case
         let toks = &mut self.helper.tokens;
         toks.push(token);
 
-        let rec = &mut *self.rec;
-        for b in bytes {
-            rec.push_byte(*b)
-        }
-        rec.collapse();
-
-        if self.tok_limit == 1 {
-            self.next_step("token limit reached");
-        } else if (0..=255).all(|byte| !rec.byte_allowed(byte)) {
-            if rec.special_allowed(SpecialToken::EndOfSentence) {
-                self.next_step("no bytes, but only EOS allowed");
-            } else {
-                self.stop("no bytes, no EOS");
-            }
-        } else {
-            if self.tok_limit > 0 {
-                self.tok_limit -= 1;
-            }
-        }
-
+        self.advance(token);
         self.compute();
-        // self.log_prob(" a");
-        // self.log_prob(" about");
+        // self.print_prob(" a");
+        // self.print_prob(" about");
     }
 
     fn get_helper(&mut self) -> &mut AiciVmHelper {

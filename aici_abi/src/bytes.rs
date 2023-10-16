@@ -1,6 +1,6 @@
 use std::{mem::size_of, slice::from_raw_parts};
 
-pub type TokenId = u32;
+pub(crate) type TokenId = u32;
 
 #[repr(C)]
 #[derive(Clone, PartialEq, Eq, Debug)]
