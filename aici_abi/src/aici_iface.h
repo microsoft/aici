@@ -49,3 +49,6 @@ uint32_t aici_host_read_token_trie(uint8_t *dst, uint32_t size);
 
 // Similar, for argument passed by the user (typically JSON).
 uint32_t aici_host_read_arg(uint8_t *dst, uint32_t size);
+
+// Tokenize given UTF8 string. `dst_size` is in elements, not bytes. Returns number of generated tokens.
+uint32_t aici_host_tokenize(const uint8_t *src, uint32_t src_size, uint32_t *dst, uint32_t dst_size);

@@ -20,6 +20,7 @@ sha2 = "0.10.7"
 wasmtime = "13.0.0"
 aici_abi = "0.1.0"
 aici_tokenizers = "0.1.0"
+tokenizers = "0.14.1"
 
 [patch.crates-io]
 aici_abi = { path = "../aici_abi" }

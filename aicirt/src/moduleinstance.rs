@@ -1,9 +1,10 @@
-use aici_abi::bytes::TokRxInfo;
+use aici_abi::bytes::{clone_vec_as_bytes, TokRxInfo};
 use anyhow::{anyhow, ensure, Result};
 use log::debug;
 use serde_json::{json, Value};
 use std::sync::{Arc, RwLock};
 use std::time::Instant;
+use tokenizers::Tokenizer;
 use wasmtime;
 
 // this is avaiable to functions called from wasm
@@ -17,6 +18,7 @@ pub struct ModuleData {
     instance: Option<wasmtime::Instance>,
     memory: Option<wasmtime::Memory>,
     module: wasmtime::Module,
+    tokenizer: Option<Tokenizer>,
 }
 
 pub struct ModuleInstance {
@@ -101,6 +103,7 @@ impl ModuleData {
 pub struct GlobalInfo {
     pub tokrx_info: TokRxInfo,
     pub trie_bytes: Vec<u8>,
+    pub hf_tokenizer_bytes: &'static [u8],
 }
 
 pub struct IdxOp {
@@ -200,6 +203,7 @@ impl ModuleInstance {
                 linker: linker.clone(),
                 instance: None,
                 memory: None,
+                tokenizer: None,
             },
         );
         let instance = linker.instantiate(&mut store, &module)?;
@@ -337,6 +341,34 @@ pub fn setup_linker(engine: &wasmtime::Engine) -> Result<Arc<wasmtime::Linker<Mo
         |mut caller: wasmtime::Caller<'_, ModuleData>, ptr: u32, len: u32| {
             let arg = caller.data().module_arg.clone();
             write_caller_mem(&mut caller, ptr, len, arg.as_bytes())
+        },
+    )?;
+
+    // uint32_t aici_host_tokenize(const uint8_t *src, uint32_t src_size, uint32_t *dst, uint32_t dst_size);
+    linker.func_wrap(
+        "env",
+        "aici_host_tokenize",
+        |mut caller: wasmtime::Caller<'_, ModuleData>,
+         src: u32,
+         src_size: u32,
+         dst: u32,
+         dst_size: u32| {
+            if caller.data().tokenizer.is_none() {
+                let lock = caller.data().globals.clone();
+                let info = lock.read().unwrap();
+                let tok = Tokenizer::from_bytes(info.hf_tokenizer_bytes).unwrap();
+                caller.data_mut().tokenizer = Some(tok);
+            };
+            let m = read_caller_mem(&caller, src, src_size);
+            let s = String::from_utf8_lossy(&m);
+            let tokens = caller.data().tokenizer.as_ref().unwrap().encode(s, false);
+            match tokens {
+                Err(_) => 0,
+                Ok(tokens) => {
+                    let bytes = clone_vec_as_bytes(&tokens.get_ids());
+                    write_caller_mem(&mut caller, dst, 4 * dst_size, &bytes) / 4
+                }
+            }
         },
     )?;
 

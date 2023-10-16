@@ -159,6 +159,7 @@ impl Executor {
         let globals = GlobalInfo {
             tokrx_info: tokenizer.tokrx_info(),
             trie_bytes: bytes,
+            hf_tokenizer_bytes: tokenizer.hf_bytes,
         };
 
         Ok(Self {

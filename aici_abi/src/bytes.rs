@@ -10,7 +10,7 @@ pub struct TokRxInfo {
 }
 
 
-pub fn clone_vec_as_bytes<T>(input: &Vec<T>) -> Vec<u8> {
+pub fn clone_vec_as_bytes<T>(input: &[T]) -> Vec<u8> {
     unsafe {
         let byte_slice = from_raw_parts(input.as_ptr() as *const u8, input.len() * size_of::<T>());
         byte_slice.to_vec()
