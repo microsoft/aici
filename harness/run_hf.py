@@ -67,7 +67,7 @@ def main(args):
     )
     model = cast(PreTrainedModel, model)
 
-    runner = pyaici.runner_from_cli(args)
+    runner = pyaici.AiciRunner.from_cli(args)
 
     arg = ""
     if args.aici_module_arg:

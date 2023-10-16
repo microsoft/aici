@@ -88,6 +88,15 @@ class MessageChannel:
 class AiciRunner:
     instance = None
 
+    @staticmethod
+    def from_cli(args: argparse.ArgumentParser):
+        aici = AiciRunner(
+            rtpath=args.aici_rt,
+            tokenizer=args.aici_tokenizer,
+            trace_file=args.aici_trace,
+        )
+        return aici
+
     def __init__(
         self,
         rtpath,
@@ -376,11 +385,3 @@ def add_cli_args(parser: argparse.ArgumentParser, single=False):
             help="arg passed to module (filename)",
         )
 
-
-def runner_from_cli(args: argparse.ArgumentParser):
-    aici = AiciRunner(
-        rtpath=args.aici_rt,
-        tokenizer=args.aici_tokenizer,
-        trace_file=args.aici_trace,
-    )
-    return aici

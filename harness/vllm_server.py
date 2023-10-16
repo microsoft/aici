@@ -678,7 +678,7 @@ if __name__ == "__main__":
         served_model = args.model
 
     # build it first, so it fails fast
-    aici = pyaici.runner_from_cli(args)
+    aici = pyaici.AiciRunner.from_cli(args)
 
     engine_args = AsyncEngineArgs.from_cli_args(args)
     engine = AsyncLLMEngine.from_engine_args(engine_args)

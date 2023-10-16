@@ -10,7 +10,7 @@ def main(args: argparse.Namespace):
     engine_args = EngineArgs.from_cli_args(args)
 
     # build it first, so it fails fast
-    aici = pyaici.runner_from_cli(args)
+    aici = pyaici.AiciRunner.from_cli(args)
 
     engine = LLMEngine.from_engine_args(engine_args)
     pyaici.install_in_vllm(aici)
