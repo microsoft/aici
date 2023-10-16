@@ -325,17 +325,7 @@ impl Executor {
 
         let results = reqs
             .into_par_iter()
-            .map(|req| match req.lock().as_deref_mut().unwrap().exec() {
-                Ok(v) => v,
-                Err(err) => {
-                    json!({
-                        "type": "error",
-                        "millis": 0,
-                        "logs": err.to_string(),
-                        "error": err.to_string()
-                    })
-                }
-            })
+            .map(|req| req.lock().as_deref_mut().unwrap().exec())
             .collect::<Vec<_>>();
 
         let mut map = serde_json::Map::new();

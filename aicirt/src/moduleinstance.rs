@@ -275,9 +275,29 @@ impl ModuleInstance {
         Ok(logit_ptr)
     }
 
-    pub fn exec(&mut self) -> Result<Value> {
-        let opidx = std::mem::replace(&mut self.op, None).unwrap();
+    pub fn exec(&mut self) -> Value {
+        let mut json_type = "ok";
+        let mut suffix = "".to_string();
         let t0 = Instant::now();
+
+        match self.exec_inner() {
+            Ok(_) => {}
+            Err(e) => {
+                json_type = "error";
+                suffix = format!("\nError: {}", e.to_string());
+            }
+        };
+
+        let logs = self.store.data_mut().string_log();
+        json!({
+            "type": json_type,
+            "millis": t0.elapsed().as_millis() as u64,
+            "logs": logs + &suffix,
+        })
+    }
+
+    fn exec_inner(&mut self) -> Result<()> {
+        let opidx = std::mem::replace(&mut self.op, None).unwrap();
 
         match opidx.op {
             ThreadOp::Prompt { prompt, .. } => {
@@ -302,13 +322,7 @@ impl ModuleInstance {
             }
         }
 
-        let logs = self.store.data_mut().string_log();
-
-        Ok(json!({
-            "type": "ok",
-            "millis": t0.elapsed().as_millis() as u64,
-            "logs": logs,
-        }))
+        Ok(())
     }
 }
 
