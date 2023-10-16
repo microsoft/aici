@@ -18,7 +18,8 @@
 
 - we could have a warning when the token encoding is not optimal
 
-- Gen("\d+"); Fixed(" years") should be equivalent to Gen("\d+ years")? (modulo token problems above)
+- Gen("\d+"); Fixed(" years") should be equivalent to Gen("\d+ years"), that is the model decides when to stop
+    generating digits and start generating " years" (modulo token problems above)
 */
 mod rx;
 
