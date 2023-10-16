@@ -23,6 +23,8 @@
 */
 mod rx;
 
+use std::fmt::Debug;
+
 use rx::RxStackRecognizer;
 use serde::{Deserialize, Serialize};
 
@@ -36,7 +38,7 @@ use aici_abi::{
 };
 
 // The JSON AST
-#[derive(Serialize, Deserialize, Clone)]
+#[derive(Serialize, Deserialize, Clone, Debug)]
 pub enum Step {
     Fixed {
         text: String,
@@ -52,156 +54,208 @@ pub struct Program {
     pub steps: Vec<Step>,
 }
 
-enum StepState {
+enum StepSpecific {
     Fixed { tokens: Vec<TokenId> },
     Gen { rx: RxStackRecognizer },
     Stop,
 }
-pub struct Runner {
-    helper: AiciVmHelper,
-    program: Program,
-    state: StepState,
-    step_idx: usize,
+struct StepState {
+    ast: Step,
+    specific: StepSpecific,
     token_idx_in_step: usize,
     max_tokens_in_step: usize,
+}
+pub struct Runner {
+    helper: AiciVmHelper,
+    step_idx: usize,
+    states: Vec<StepState>,
+}
+
+impl Debug for StepState {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}/", self.token_idx_in_step)?;
+        if self.max_tokens_in_step > 10000 {
+            write!(f, "inf")?;
+        } else {
+            write!(f, "{}", self.max_tokens_in_step)?;
+        }
+        Ok(())
+    }
+}
+
+impl StepState {
+    #[allow(dead_code)]
+    fn pp(&self) -> String {
+        format!("{:?}", self.ast)
+    }
+
+    fn from_specific(ast: &Step, specific: StepSpecific, max_tokens: usize) -> StepState {
+        StepState {
+            ast: ast.clone(),
+            specific,
+            token_idx_in_step: 0,
+            max_tokens_in_step: max_tokens,
+        }
+    }
+
+    fn from_ast(s: &Step) -> StepState {
+        match s {
+            Step::Fixed { text } => Self::from_specific(
+                s,
+                StepSpecific::Fixed {
+                    tokens: tokenize(&text),
+                },
+                usize::MAX,
+            ),
+
+            Step::Gen { rx, max_tokens } => {
+                let rx = match rx {
+                    Some(rx) => &rx,
+                    None => ".*",
+                };
+                Self::from_specific(
+                    s,
+                    StepSpecific::Gen {
+                        rx: RecRx::from_rx(&rx).to_stack_recognizer(),
+                    },
+                    *max_tokens,
+                )
+            }
+        }
+    }
+
+    fn check_eos(&self, optional: bool) -> bool {
+        self.token_idx_in_step >= self.max_tokens_in_step
+            || match &self.specific {
+                StepSpecific::Stop => true,
+                StepSpecific::Fixed { tokens } => self.token_idx_in_step >= tokens.len(),
+                StepSpecific::Gen { rx } => {
+                    rx.special_allowed(SpecialToken::EndOfSentence)
+                        && (optional || (0..=255).all(|byte| !rx.byte_allowed(byte)))
+                }
+            }
+    }
+
+    fn allows_eos(&self) -> bool {
+        self.check_eos(true)
+    }
+
+    fn _forces_eos(&self) -> bool {
+        self.check_eos(false)
+    }
+
+    fn advance(&mut self, helper: &AiciVmHelper, token: TokenId) {
+        self.token_idx_in_step += 1;
+        match &mut self.specific {
+            StepSpecific::Stop => {}
+            StepSpecific::Fixed { .. } => {}
+            StepSpecific::Gen { rx } => helper.trie.append_token(rx, token),
+        }
+    }
+
+    // the mut on self is bogus - the state of the 'rx' doesn't change
+    fn allows_token(&mut self, helper: &AiciVmHelper, token: TokenId) -> bool {
+        if token == helper.trie.special_token(SpecialToken::EndOfSentence) {
+            return self.allows_eos();
+        }
+        match &mut self.specific {
+            StepSpecific::Stop => false,
+            StepSpecific::Fixed { tokens } => {
+                self.token_idx_in_step < tokens.len() && tokens[self.token_idx_in_step] == token
+            }
+            StepSpecific::Gen { rx } => helper.trie.token_allowed(rx, token),
+        }
+    }
+
+    fn apply_to(&mut self, helper: &mut AiciVmHelper) {
+        match &mut self.specific {
+            StepSpecific::Stop => {
+                helper.allow_eos();
+            }
+            StepSpecific::Fixed { tokens } => {
+                if self.token_idx_in_step < tokens.len() {
+                    helper.allow_one(tokens[self.token_idx_in_step]);
+                }
+            }
+            StepSpecific::Gen { rx } => {
+                helper.trie.add_bias(rx, &mut helper.logit_biases);
+            }
+        }
+    }
 }
 
 impl Runner {
     pub fn new(program: Program) -> Self {
+        let mut states = program
+            .steps
+            .iter()
+            .map(StepState::from_ast)
+            .collect::<Vec<_>>();
+        let stop_ast = Step::Fixed {
+            text: "[STOP]".to_string(),
+        };
+        states.push(StepState::from_specific(
+            &stop_ast,
+            StepSpecific::Stop,
+            usize::MAX,
+        ));
+
+        for (idx, state) in states.iter().enumerate() {
+            wprintln!("[{}] {} {:?}", idx, state.pp(), state);
+        }
+
         Self {
             helper: AiciVmHelper::new(),
-            program,
             step_idx: 0,
-            state: StepState::Stop,
-            token_idx_in_step: 0,
-            max_tokens_in_step: usize::MAX,
+            states,
         }
-    }
-
-    fn set_state(&mut self, state: StepState) {
-        self.state = state;
-        self.token_idx_in_step = 0;
-        self.max_tokens_in_step = usize::MAX;
     }
 
     fn stop(&mut self, info: &str) {
-        self.set_state(StepState::Stop);
+        self.step_idx = self.states.len() - 1;
         wprintln!("stop: {}", info)
-    }
-
-    fn next_step(&mut self, info: &str) {
-        self.step_idx += 1;
-        if self.step_idx < self.program.steps.len() {
-            wprintln!("step -> {}; {}", self.step_idx, info);
-            self.new_step();
-        } else {
-            self.step_idx = self.program.steps.len();
-            self.stop(info);
-        }
-    }
-
-    fn step_state(&mut self) -> StepState {
-        match &self.program.steps[self.step_idx] {
-            Step::Fixed { text } => StepState::Fixed {
-                tokens: tokenize(&text),
-            },
-            Step::Gen { rx, .. } => {
-                let rx = match rx {
-                    Some(rx) => rx,
-                    None => ".*",
-                };
-                StepState::Gen {
-                    rx: RecRx::from_rx(&rx).to_stack_recognizer(),
-                }
-            }
-        }
-    }
-
-    fn new_step(&mut self) {
-        let state = self.step_state();
-        self.set_state(state);
-        match &self.program.steps[self.step_idx] {
-            Step::Fixed { .. } => {}
-            Step::Gen { max_tokens, .. } => {
-                self.max_tokens_in_step = *max_tokens;
-            }
-        }
-    }
-
-    fn check_step_finished_inner(&mut self) {
-        if self.token_idx_in_step >= self.max_tokens_in_step {
-            self.next_step("max tokens reached");
-            return;
-        }
-
-        match &mut self.state {
-            StepState::Stop => {}
-            StepState::Fixed { tokens } => {
-                if self.token_idx_in_step >= tokens.len() {
-                    self.next_step("fixed finished")
-                }
-            }
-            StepState::Gen { rx } => {
-                if (0..=255).all(|byte| !rx.byte_allowed(byte)) {
-                    if !rx.special_allowed(SpecialToken::EndOfSentence) {
-                        self.stop("no bytes, no EOS");
-                    } else {
-                        self.next_step("rx finished")
-                    }
-                }
-            }
-        }
-    }
-
-    fn check_step_finished(&mut self) {
-        loop {
-            let s0 = self.step_idx;
-            self.check_step_finished_inner();
-            if s0 == self.step_idx {
-                break;
-            }
-        }
     }
 
     fn advance(&mut self, token: TokenId) {
         let bytes = self.helper.trie.token(token);
         wprintln!(
-            "append {} '{}' st: {}.{}/{}",
+            "append {} '{}' [{}] {:?}",
             token,
             String::from_utf8_lossy(bytes),
             self.step_idx,
-            self.token_idx_in_step,
-            std::cmp::min(self.max_tokens_in_step, 10000)
+            self.states[self.step_idx]
         );
 
-        self.token_idx_in_step += 1;
-        match &mut self.state {
-            StepState::Stop => {}
-            StepState::Fixed { .. } => {}
-            StepState::Gen { rx } => {
-                for b in bytes {
-                    rx.push_byte(*b)
-                }
-                rx.collapse();
+        // skip as many states as we can (that allow EOS), and find the last one that allows the token
+        let mut last_idx = usize::MAX;
+        for idx in self.step_idx..self.states.len() {
+            if self.states[idx].allows_token(&self.helper, token) {
+                last_idx = idx;
+            }
+            if !self.states[idx].allows_eos() {
+                break;
             }
         }
 
-        self.check_step_finished();
+        if last_idx == usize::MAX {
+            self.stop("no state allows token");
+            return;
+        }
+
+        if self.step_idx != last_idx {
+            self.step_idx = last_idx;
+        }
+
+        self.states[last_idx].advance(&mut self.helper, token);
+        wprintln!(" => [{}] {:?}", self.step_idx, self.states[self.step_idx]);
     }
 
     fn compute(&mut self) {
-        match &mut self.state {
-            StepState::Stop => {
-                return self.helper.allow_eos();
-            }
-            StepState::Fixed { tokens } => {
-                let t = tokens[self.token_idx_in_step];
-                return self.helper.allow_one(t);
-            }
-            StepState::Gen { rx } => {
-                self.helper.all_disallowed();
-                self.helper.trie.add_bias(rx, &mut self.helper.logit_biases);
-                return;
+        self.helper.all_disallowed();
+        for state in &mut self.states[self.step_idx..] {
+            state.apply_to(&mut self.helper);
+            if !state.allows_eos() {
+                break;
             }
         }
     }
@@ -225,8 +279,6 @@ impl AiciVm for Runner {
     fn aici_process_prompt(&mut self) {
         wprintln!("prompt, {} tokens", self.helper.prompt_length);
         // ignore the prompt (for now)
-        self.new_step();
-        self.check_step_finished();
         self.compute();
     }
 

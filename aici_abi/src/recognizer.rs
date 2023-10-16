@@ -129,7 +129,7 @@ impl<S: Copy + Debug, R: FunctionalRecognizer<S>> Recognizer for StackRecognizer
     }
 
     #[inline(always)]
-    fn byte_allowed(&mut self, byte: u8) -> bool {
+    fn byte_allowed(&self, byte: u8) -> bool {
         self.rec.byte_allowed(self.stack[self.stack_ptr], byte)
     }
 
@@ -143,7 +143,7 @@ impl<S: Copy + Debug, R: FunctionalRecognizer<S>> Recognizer for StackRecognizer
         self.stack_ptr = 0;
     }
 
-    fn special_allowed(&mut self, tok: SpecialToken) -> bool {
+    fn special_allowed(&self, tok: SpecialToken) -> bool {
         self.rec.special_allowed(self.stack[self.stack_ptr], tok)
     }
 }

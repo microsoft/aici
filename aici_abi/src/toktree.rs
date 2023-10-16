@@ -25,9 +25,9 @@ pub trait Recognizer {
     /// X = stack.top(); stack.empty(); stack.push(X)
     fn collapse(&mut self);
     /// check if stack.top() transitions via byte to a viable state
-    fn byte_allowed(&mut self, byte: u8) -> bool;
+    fn byte_allowed(&self, byte: u8) -> bool;
     /// check if stack.top() transitions via tok to a viable state
-    fn special_allowed(&mut self, tok: SpecialToken) -> bool;
+    fn special_allowed(&self, tok: SpecialToken) -> bool;
     /// Called when iteration over the trie is finished
     /// Stack has exactly one element then.
     fn trie_finished(&mut self);
@@ -312,16 +312,40 @@ impl TokTrie {
 
     pub fn compute_bias(&self, r: &mut impl Recognizer, logits: &mut [f32]) {
         logits.iter_mut().for_each(|x| *x = -100.0);
-        self.add_bias(r, logits)
-    }
-
-    pub fn add_bias(&self, r: &mut impl Recognizer, logits: &mut [f32]) {
         for tok in vec![SpecialToken::EndOfSentence] {
             if r.special_allowed(tok) {
                 logits[self.special_token(tok) as usize] = 0.0;
             }
         }
+        self.add_bias(r, logits)
+    }
 
+    pub fn append_token(&self, r: &mut impl Recognizer, t: TokenId) {
+        let bytes = self.token(t);
+        for &byte in bytes {
+            r.push_byte(byte)
+        }
+        r.collapse()
+    }
+
+    pub fn token_allowed(&self, r: &mut impl Recognizer, t: TokenId) -> bool {
+        let bytes = self.token(t);
+        let mut num = 0;
+        let mut ok = true;
+        for &byte in bytes {
+            if r.byte_allowed(byte) {
+                r.push_byte(byte);
+                num += 1;
+            } else {
+                ok = false;
+                break;
+            }
+        }
+        r.pop_bytes(num);
+        ok
+    }
+
+    pub fn add_bias(&self, r: &mut impl Recognizer, logits: &mut [f32]) {
         let n = self.root();
         let defl_tok = self.vocab_size() as u32;
         let off = self.node_offset(n);

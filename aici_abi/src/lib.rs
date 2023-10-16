@@ -70,7 +70,6 @@ impl AiciVmHelper {
     }
 
     pub fn allow_one(&mut self, tok: TokenId) {
-        self.all_disallowed();
         self.logit_biases[tok as usize] = 0.0;
     }
 
