@@ -1,8 +1,11 @@
 // use 8:24 encoding - num_ch:tok_id (ch_byte:ch_off)* - 8 bytes per tree node
 // special case num_ch=0xff -> num_ch=0x100
 
-use crate::bytes::{
-    box_from_bytes, clone_as_bytes, clone_vec_as_bytes, vec_from_bytes, TokRxInfo, TokenId,
+use crate::{
+    bytes::{
+        box_from_bytes, clone_as_bytes, clone_vec_as_bytes, vec_from_bytes, TokRxInfo, TokenId,
+    },
+    host::trie_bytes,
 };
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -95,23 +98,10 @@ impl TrieNode {
     }
 }
 
-#[allow(dead_code)]
-extern "C" {
-    fn aici_host_read_token_trie(ptr: *mut u8, len: u32) -> u32;
-}
-
 impl TokTrie {
-    pub fn from_env() -> Self {
-        #[cfg(target_arch = "wasm32")]
-        unsafe {
-            let size = aici_host_read_token_trie(0 as _, 0);
-            let mut buffer = vec![0u8; size as usize];
-            aici_host_read_token_trie(buffer.as_mut_ptr(), size);
-            Self::from_bytes(&buffer)
-        }
-
-        #[cfg(not(target_arch = "wasm32"))]
-        Self::from_bytes(&std::fs::read("tokenizer.bin").unwrap())
+    pub fn from_host() -> Self {
+        let buffer = trie_bytes();
+        Self::from_bytes(&buffer)
     }
 
     pub fn from(info: &TokRxInfo, words: &Vec<Vec<u8>>) -> Self {

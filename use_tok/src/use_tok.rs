@@ -30,7 +30,7 @@ impl RecRx {
     }
 
     pub fn to_recognizer(self) -> RxRecognizer {
-        let trie = Rc::new(Box::new(TokTrie::from_env()));
+        let trie = Rc::new(Box::new(TokTrie::from_host()));
         AiciRecognizer::<StackRecognizer<StateID, RecRx>>::from_recognizer(
             trie,
             StackRecognizer::from(self),
@@ -68,7 +68,7 @@ impl FunctionalRecognizer<StateID> for RecRx {
 }
 
 fn main() {
-    let trie = TokTrie::from_env();
+    let trie = TokTrie::from_host();
     for idx in 1000..1001 {
         let bytes = trie.token(idx);
         wprintln!("{}: {:?}", idx, String::from_utf8_lossy(bytes));

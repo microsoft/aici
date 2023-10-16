@@ -94,7 +94,7 @@ impl Runner {
             helper: AiciVmHelper::new(),
             program,
             curr_step: 0,
-            trie: Rc::new(Box::new(TokTrie::from_env())),
+            trie: Rc::new(Box::new(TokTrie::from_host())),
             rec: Box::new(StackRecognizer::from(AnythingGoes {})),
             tok_limit: 0,
         }
