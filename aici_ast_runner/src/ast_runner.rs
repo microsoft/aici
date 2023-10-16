@@ -166,18 +166,18 @@ impl Runner {
     fn advance(&mut self, token: TokenId) {
         let bytes = self.helper.trie.token(token);
         wprintln!(
-            "append {} '{}' st: {}.{}",
+            "append {} '{}' st: {}.{}/{}",
             token,
             String::from_utf8_lossy(bytes),
             self.step_idx,
-            self.token_idx_in_step
+            self.token_idx_in_step,
+            std::cmp::min(self.max_tokens_in_step, 10000)
         );
 
+        self.token_idx_in_step += 1;
         match &mut self.state {
             StepState::Stop => {}
-            StepState::Fixed { .. } => {
-                self.token_idx_in_step += 1;
-            }
+            StepState::Fixed { .. } => {}
             StepState::Gen { rx } => {
                 for b in bytes {
                     rx.push_byte(*b)

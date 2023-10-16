@@ -1,6 +1,6 @@
 use std::io;
 
-use crate::bytes::TokenId;
+use crate::{bytes::TokenId, wprintln};
 
 #[allow(dead_code)]
 extern "C" {
@@ -114,7 +114,6 @@ pub fn trie_bytes() -> Vec<u8> {
 }
 
 pub fn tokenize(s: &str) -> Vec<TokenId> {
-    // fn aici_host_tokenize(src: *const u8, src_size: u32, dst: *mut u32, dst_size: u32) -> u32;
     let slen = s.len() as u32;
     let cap = slen / 3 + 10;
     let mut res = Vec::with_capacity(cap as usize);
@@ -127,6 +126,7 @@ pub fn tokenize(s: &str) -> Vec<TokenId> {
     unsafe {
         res.set_len(len as usize);
     }
+    wprintln!("tokenize: '{}' -> {:?}", s, res);
     // trim size
     res.clone()
 }

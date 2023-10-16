@@ -40,7 +40,9 @@ def upload_wasm():
             )
 
 
-def ask_completion(prompt, aici_module, aici_arg, temperature=0, max_tokens=200, n=1):
+def ask_completion(
+    prompt, aici_module, aici_arg, temperature=0, max_tokens=200, n=1, log=False
+):
     json = {
         "model": "",
         "prompt": prompt,
@@ -67,15 +69,20 @@ def ask_completion(prompt, aici_module, aici_arg, temperature=0, max_tokens=200,
                 for ch in d["choices"]:
                     idx = ch["index"]
                     if idx == 0:
-                        print(ch["text"], end="")
+                        if log:
+                            l=ch["logs"].rstrip('\n')
+                            if l:
+                                print(l)
+                            # print(f"*** TOK: '{ch['text']}'")
+                        else:
+                            print(ch["text"], end="")
                     texts[idx] += ch["text"]
             elif decoded_line == "data: [DONE]":
                 print(" [DONE]")
             else:
                 print(decoded_line)
 
-    if len(texts) > 1:
-        print(texts[1:])
+    print(texts)
     os.makedirs("tmp", exist_ok=True)
     path = "tmp/response.json"
     with open(path, "w") as f:
@@ -87,7 +94,15 @@ def ask_completion(prompt, aici_module, aici_arg, temperature=0, max_tokens=200,
 
 def main():
     mod = upload_wasm()
-    ask_completion(prompt="42\n", aici_module=mod, aici_arg=ast, n=5, temperature=0.5)
+    ask_completion(
+        prompt="42\n",
+        aici_module=mod,
+        aici_arg=ast,
+        n=1,
+        temperature=0.5,
+        log=True,
+        max_tokens=20,
+    )
 
 
 main()
