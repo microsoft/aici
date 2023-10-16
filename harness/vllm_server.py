@@ -378,9 +378,11 @@ class AiciCompletionRequest(CompletionRequest):
     aici_module: Optional[str] = None
     aici_arg: Optional[Union[dict, str]] = None
 
+
 class AiciCompletionResponseStreamChoice(CompletionResponseStreamChoice):
     logs: str
     millis: int
+
 
 @app.post("/v1/completions")
 async def create_completion(request: AiciCompletionRequest, raw_request: Request):
@@ -655,13 +657,7 @@ if __name__ == "__main__":
         "the huggingface name.",
     )
 
-    parser.add_argument("--aici-rt", type=str, required=True, help="path to aicirt")
-    parser.add_argument(
-        "--aici-tokenizer",
-        type=str,
-        default="llama",
-        help="tokenizer to use; llama, gpt4, ...",
-    )
+    pyaici.add_cli_args(parser)
 
     parser = AsyncEngineArgs.add_cli_args(parser)
     args = parser.parse_args()
@@ -682,7 +678,7 @@ if __name__ == "__main__":
         served_model = args.model
 
     # build it first, so it fails fast
-    aici = pyaici.AiciRunner(rtpath=args.aici_rt, tokenizer=args.aici_tokenizer)
+    aici = pyaici.runner_from_cli(args)
 
     engine_args = AsyncEngineArgs.from_cli_args(args)
     engine = AsyncLLMEngine.from_engine_args(engine_args)

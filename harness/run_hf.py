@@ -67,7 +67,7 @@ def main(args):
     )
     model = cast(PreTrainedModel, model)
 
-    runner = pyaici.AiciRunner(rtpath=args.aici_rt, tokenizer=args.aici_tokenizer)
+    runner = pyaici.runner_from_cli(args)
 
     arg = ""
     if args.aici_module_arg:
@@ -103,21 +103,6 @@ if __name__ == "__main__":
         default="",
         help="tokenizer to use; defaults to model name",
     )
-    parser.add_argument(
-        "--aici-module-arg",
-        type=str,
-        default="",
-        help="arg passed to module (filename)",
-    )
-    parser.add_argument(
-        "--aici-module", type=str, required=True, help="id of the module to run"
-    )
-    parser.add_argument("--aici-rt", type=str, required=True, help="path to aicirt")
-    parser.add_argument(
-        "--aici-tokenizer",
-        type=str,
-        default="llama",
-        help="tokenizer to use; llama, gpt4, ...",
-    )
+    pyaici.add_cli_args(parser, single=True)
     args = parser.parse_args()
     main(args)

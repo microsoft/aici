@@ -10,7 +10,7 @@ prog = "aici_ast_runner"
 
 ast = {
     "steps": [
-        {"Fixed": {"text": "I WAS about "}},
+        {"Fixed": {"text": "I am about "}},
         {"Gen": {"max_tokens": 5, "rx": r"\d\d"}},
         {"Fixed": {"text": " years and "}},
         {"Gen": {"max_tokens": 5, "rx": r"\d+"}},

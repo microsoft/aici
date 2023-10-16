@@ -6,6 +6,8 @@ import subprocess
 import ujson
 import numpy as np
 import base64
+import time
+import argparse
 
 from typing import List
 
@@ -93,6 +95,7 @@ class AiciRunner:
         json_size=8,
         bin_size=16,
         pref=DEFAULT_SHM_PREF,
+        trace_file=None,
     ) -> None:
         """
         Start a new aicirt process and initialize comms channels.
@@ -111,8 +114,14 @@ class AiciRunner:
         self.batch_size = -1
         self.last_response = {}
 
+        if trace_file:
+            self.trace_file = open(trace_file, "w")
+        else:
+            self.trace_file = None
+
         self.logit_pending = False
         self.cmd_pending = False
+        self.last_cmd = {}
 
         self.cmd_ch = MessageChannel(pref + "cmd", json_size * M)
         self.resp_ch = MessageChannel(pref + "resp", json_size * M)
@@ -140,6 +149,7 @@ class AiciRunner:
 
     def _send_cmd(self, data):
         assert not self.cmd_pending
+        self.last_cmd = data
         self.cmd_pending = True
         self.cmd_ch.send_json(data)
 
@@ -152,11 +162,30 @@ class AiciRunner:
         assert self.cmd_pending
         resp = self.resp_ch.recv_json()
         self.cmd_pending = False
+        if self.trace_file is not None:
+            self.trace_file.write(
+                ujson.dumps(
+                    {
+                        "timestamp": time.time() * 1000,
+                        "cmd": self.last_cmd,
+                        "resp": resp,
+                    }
+                )
+                + "\n"
+            )
+            self.trace_file.flush()
         if resp["type"] != "ok":
             raise ChildProcessError(
                 f"Bad response ({ctx}): {ujson.dumps(resp)[0:1000]}"
             )
         return resp
+
+    def replay(self, prev_trace: str):
+        with open(prev_trace) as f:
+            for line in f:
+                obj = ujson.loads(line)
+                self._send_cmd(obj["cmd"])
+                self._expect_response("replay")
 
     def upload_module(self, wasm: bytes, meta={}):
         b64 = base64.b64encode(wasm).decode("utf-8")
@@ -266,6 +295,7 @@ class AiciRunner:
         """
         return self.last_response.get(str(seq_id), None)
 
+
 def install_in_vllm(runner: AiciRunner):
     from vllm.sampling_params import SamplingParams
     from vllm.sequence import SequenceGroupMetadata
@@ -311,3 +341,46 @@ def install_in_vllm(runner: AiciRunner):
 
     SamplingParams.apply_dynamic_logit_bias = apply_bias
     SamplingParams.initiate_step = step
+
+
+def add_cli_args(parser: argparse.ArgumentParser, single=False):
+    parser.add_argument(
+        "--aici-rt",
+        type=str,
+        required=True,
+        help="path to aicirt",
+    )
+    parser.add_argument(
+        "--aici-tokenizer",
+        type=str,
+        default="llama",
+        help="tokenizer to use; llama, gpt4, ...",
+    )
+    parser.add_argument(
+        "--aici-trace",
+        type=str,
+        help="save trace of aicirt interaction to a JSONL file",
+    )
+
+    if single:
+        parser.add_argument(
+            "--aici-module",
+            type=str,
+            required=True,
+            help="id of the module to run",
+        )
+        parser.add_argument(
+            "--aici-module-arg",
+            type=str,
+            default="",
+            help="arg passed to module (filename)",
+        )
+
+
+def runner_from_cli(args: argparse.ArgumentParser):
+    aici = AiciRunner(
+        rtpath=args.aici_rt,
+        tokenizer=args.aici_tokenizer,
+        trace_file=args.aici_trace,
+    )
+    return aici
