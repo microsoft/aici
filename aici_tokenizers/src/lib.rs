@@ -1,5 +1,5 @@
-use anyhow::{anyhow, Result};
 use aici_abi::bytes::TokRxInfo;
+use anyhow::{anyhow, Result};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
@@ -18,6 +18,7 @@ pub struct Tokenizer {
     pub description: String,
     pub info: Option<TokenInfo>,
     info_bytes: &'static [u8],
+    pub hf_bytes: &'static [u8],
 }
 
 macro_rules! tok {
@@ -26,6 +27,7 @@ macro_rules! tok {
             name: $name.into(),
             description: $desc.into(),
             info_bytes: include_bytes!(concat!("tokenizers/", $name, ".json")),
+            hf_bytes: include_bytes!(concat!("hf-tokenizers/", $name, ".json")),
             info: None,
         }
     };
