@@ -1,4 +1,5 @@
 {
+"hf_model": "tiiuae/falcon-7b",
 "eos_token":11,
   "special": {
 "<|endoftext|>":11,

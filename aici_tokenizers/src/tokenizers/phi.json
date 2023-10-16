@@ -1,4 +1,5 @@
 {
+"hf_model": "microsoft/phi-1_5",
 "eos_token":50256,
   "special": {
     "<|endoftext|>": 50256

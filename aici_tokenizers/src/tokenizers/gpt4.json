@@ -1,4 +1,5 @@
 {
+"hf_model": "Xenova/gpt-4",
 "eos_token":100257,
   "special": {
 "<|endoftext|>":100257,

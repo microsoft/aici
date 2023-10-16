@@ -1,4 +1,5 @@
 {
+"hf_model": "codellama/CodeLlama-34b-Instruct-hf",
 "eos_token":2,
   "special": {
 "</s>":2,

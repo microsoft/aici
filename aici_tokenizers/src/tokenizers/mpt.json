@@ -1,4 +1,5 @@
 {
+"hf_model": "mosaicml/mpt-7b",
 "eos_token":0,
   "special": {
 "<|endoftext|>":0,

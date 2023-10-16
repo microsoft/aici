@@ -5,6 +5,7 @@ use std::collections::BTreeMap;
 
 #[derive(Serialize, Deserialize)]
 pub struct TokenInfo {
+    pub hf_model: String,
     pub eos_token: u32,
     pub vocab_size: Option<u32>,
     pub special: BTreeMap<String, u32>,
