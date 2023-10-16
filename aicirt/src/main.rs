@@ -156,6 +156,10 @@ impl Executor {
         assert!(trie.info() == trie2.info());
         trie2.check_against(&tokens);
 
+        // let tok = tokenizers::Tokenizer::from_bytes(tokenizer.hf_bytes).unwrap();
+        // let tokens = tok.encode("I am something", false).unwrap();
+        // println!("tokens: {:?}", tokens);
+
         let globals = GlobalInfo {
             tokrx_info: tokenizer.tokrx_info(),
             trie_bytes: bytes,

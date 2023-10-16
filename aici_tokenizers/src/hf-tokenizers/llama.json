@@ -35,10 +35,6 @@
 "type": "Sequence",
 "normalizers": [
 {
-"type": "Prepend",
-"prepend": "▁"
-},
-{
 "type": "Replace",
 "pattern": {
 "String": " "
