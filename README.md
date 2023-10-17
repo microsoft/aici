@@ -8,14 +8,11 @@ Use Docker container, using the setup in `.devcontainer` (in VSCode "Reopen in c
 
 Best start with `./scripts/hf.sh` - you should get valid JSON output.
 
-Then setup vLLM. These steps generate files in workspace, so they will survive container rebuilds:
-* `git submodule update --init --recursive`
-* `cd vllm`
-* `python setup.py build`
+Then setup vLLM with `./scripts/init-vllm.sh`.
+It generates files in workspace, so they will survive container rebuilds.
+When done (it takes a few minutes), you can test out vLLM with `./scripts/vllm.sh`.
 
-You can test out vLLM with `./scripts/vllm.sh`.
-
-Then run the server:
+Then run the server (after installing vllm):
 * `./scripts/server.sh`
 * from a different terminal: `./scripts/upload.py`
 

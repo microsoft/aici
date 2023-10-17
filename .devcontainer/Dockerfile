@@ -1,10 +1,18 @@
-FROM nvcr.io/nvidia/pytorch:22.12-py3
+FROM nvcr.io/nvidia/pytorch:23.09-py3
+
+# A100:
+ENV TORCH_CUDA_ARCH_LIST="8.0"
+ENV NVTE_FRAMEWORK=pytorch
 
 COPY requirements.txt /tmp/requirements.txt
 RUN pip install -r /tmp/requirements.txt
+
+# crashes docker?
+# RUN pip install -v -U git+https://github.com/facebookresearch/xformers.git@main#egg=xformers
+
 # takes forever!
 RUN pip install git+https://github.com/NVIDIA/TransformerEngine.git@stable
-RUN pip install typing_extensions==4.5.0
+# RUN pip install typing_extensions==4.5.0
 
 RUN apt-get update && apt-get -y install strace wabt \
 linux-tools-common linux-tools-generic linux-tools-`uname -r`
@@ -19,3 +27,5 @@ RUN rustup target add wasm32-unknown-unknown
 RUN cd /tmp && \
     curl -L https://github.com/WebAssembly/wabt/releases/download/1.0.33/wabt-1.0.33.tar.xz | tar Jxf - && \
     cd wabt-1.0.33 && make gcc-release && cp -v bin/wasm-* /usr/bin && cd .. && rm -rf wabt-1.0.33
+
+RUN pip install -U flash-attn
