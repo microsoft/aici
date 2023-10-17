@@ -25,15 +25,59 @@ use aici_abi::{
 };
 
 // The JSON AST
-#[derive(Serialize, Deserialize, Clone, Debug)]
+#[derive(Serialize, Deserialize, Clone)]
 pub enum Step {
+    // Generate exactly the provided string
     Fixed {
         text: String,
     },
-    Gen {
-        max_tokens: Option<usize>,
-        rx: Option<String>,
+    // Generate exactly one of the provided strings
+    Choose {
+        options: Vec<String>,
     },
+    // Generate text. It can be constrained with a regexp.
+    // The length can be constrained in several ways.
+    Gen {
+        rx: Option<String>,
+        stop_at: Option<String>,
+        max_tokens: Option<usize>,
+        max_words: Option<usize>,
+        max_bytes: Option<usize>,
+    },
+}
+
+impl Debug for Step {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Step::Fixed { text } => write!(f, "Fixed({:?})", text),
+            Step::Choose { options } => write!(f, "Choose({:?})", options),
+            Step::Gen {
+                rx,
+                stop_at,
+                max_tokens,
+                max_words,
+                max_bytes,
+            } => {
+                write!(f, "Gen(")?;
+                if let Some(rx) = rx {
+                    write!(f, "/{:?}/ ", rx)?;
+                };
+                if let Some(stop_at) = stop_at {
+                    write!(f, "stop_at:{:?}, ", stop_at)?;
+                };
+                if let Some(max_tokens) = max_tokens {
+                    write!(f, "max_tokens:{:?}, ", max_tokens)?;
+                };
+                if let Some(max_words) = max_words {
+                    write!(f, "max_words:{:?}, ", max_words)?;
+                };
+                if let Some(max_bytes) = max_bytes {
+                    write!(f, "max_bytes:{:?}, ", max_bytes)?;
+                };
+                write!(f, ")")
+            }
+        }
+    }
 }
 
 #[derive(Serialize, Deserialize, Clone)]
@@ -42,15 +86,24 @@ pub struct Program {
 }
 
 enum StepSpecific {
-    Fixed { tokens: Vec<TokenId> },
+    Options { tokens: Vec<Vec<TokenId>> },
     Gen { rx: RxStackRecognizer },
     Stop,
 }
 struct StepState {
     ast: Step,
     specific: StepSpecific,
-    token_idx: usize,
+
+    // stop conditions
+    stop_at: Option<String>,
     max_tokens: usize,
+    max_words: usize,
+    max_bytes: usize,
+
+    // state so far for this step
+    tokens: Vec<TokenId>,
+    bytes: Vec<u8>,
+    word_idx: usize,
 }
 pub struct Runner {
     helper: AiciVmHelper,
@@ -60,14 +113,24 @@ pub struct Runner {
 
 impl Debug for StepState {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}/", self.token_idx)?;
+        write!(f, "tok:{}/", self.tokens.len())?;
         if self.max_tokens > 10000 {
             write!(f, "inf")?;
         } else {
             write!(f, "{}", self.max_tokens)?;
         }
+        if self.max_words < 10000 {
+            write!(f, " word:{}/{}", self.word_idx, self.max_words)?;
+        }
+        if self.max_bytes < 10000 {
+            write!(f, " byte:{}/{}", self.bytes.len(), self.max_bytes)?;
+        }
         Ok(())
     }
+}
+
+fn has_token_at(t: TokenId, idx: usize) -> impl for<'a> Fn(&'a Vec<TokenId>) -> bool {
+    move |v: &Vec<TokenId>| idx < v.len() && v[idx] == t
 }
 
 impl StepState {
@@ -76,12 +139,17 @@ impl StepState {
         format!("{:?}", self.ast)
     }
 
-    fn from_specific(ast: &Step, specific: StepSpecific, max_tokens: usize) -> StepState {
+    fn from_specific(ast: &Step, specific: StepSpecific) -> StepState {
         StepState {
             ast: ast.clone(),
             specific,
-            token_idx: 0,
-            max_tokens,
+            word_idx: 0,
+            stop_at: None,
+            tokens: Vec::new(),
+            bytes: Vec::new(),
+            max_words: usize::MAX,
+            max_bytes: usize::MAX,
+            max_tokens: usize::MAX,
         }
     }
 
@@ -89,33 +157,58 @@ impl StepState {
         match s {
             Step::Fixed { text } => Self::from_specific(
                 s,
-                StepSpecific::Fixed {
-                    tokens: tokenize(&text),
+                StepSpecific::Options {
+                    tokens: vec![tokenize(&text)],
                 },
-                usize::MAX,
             ),
 
-            Step::Gen { rx, max_tokens } => {
+            Step::Choose { options } => Self::from_specific(
+                s,
+                StepSpecific::Options {
+                    tokens: options.iter().map(|s| tokenize(s)).collect(),
+                },
+            ),
+
+            Step::Gen {
+                rx,
+                stop_at,
+                max_tokens,
+                max_bytes,
+                max_words,
+            } => {
                 let rx = match rx {
                     Some(rx) => &rx,
                     None => ".*",
                 };
-                Self::from_specific(
+                let mut r = Self::from_specific(
                     s,
                     StepSpecific::Gen {
                         rx: RecRx::from_rx(&rx).to_stack_recognizer(),
                     },
-                    max_tokens.unwrap_or(usize::MAX),
-                )
+                );
+                r.max_bytes = max_bytes.unwrap_or(usize::MAX);
+                r.max_words = max_words.unwrap_or(usize::MAX);
+                r.max_tokens = max_tokens.unwrap_or(usize::MAX);
+                r.stop_at = stop_at.clone();
+                r
             }
         }
     }
 
     fn check_eos(&self, optional: bool) -> bool {
-        self.token_idx >= self.max_tokens
+        self.tokens.len() >= self.max_tokens
+            || self.bytes.len() >= self.max_bytes
+            || self.word_idx >= self.max_words
+            || (self.stop_at.is_some() && self.stop_at.as_ref().unwrap().is_empty())
             || match &self.specific {
                 StepSpecific::Stop => true,
-                StepSpecific::Fixed { tokens } => self.token_idx >= tokens.len(),
+                StepSpecific::Options { tokens } => {
+                    if optional {
+                        tokens.iter().any(|t| self.tokens.len() >= t.len())
+                    } else {
+                        tokens.iter().all(|t| self.tokens.len() >= t.len())
+                    }
+                }
                 StepSpecific::Gen { rx } => {
                     rx.special_allowed(SpecialToken::EndOfSentence)
                         && (optional || (0..=255).all(|byte| !rx.byte_allowed(byte)))
@@ -127,16 +220,45 @@ impl StepState {
         self.check_eos(true)
     }
 
-    fn _forces_eos(&self) -> bool {
+    fn forces_eos(&self) -> bool {
         self.check_eos(false)
     }
 
     fn advance(&mut self, helper: &AiciVmHelper, token: TokenId) {
-        self.token_idx += 1;
+        self.tokens.push(token);
+
+        let bytes = helper.trie.token(token);
+        let sidx = self.bytes.len();
+        self.bytes.extend_from_slice(bytes);
+        for idx in sidx.saturating_sub(1)..self.bytes.len().saturating_sub(1) {
+            if !is_boundry(self.bytes[idx]) && is_boundry(self.bytes[idx + 1]) {
+                self.word_idx += 1;
+                break;
+            }
+        }
+
+        if let Some(stop) = &self.stop_at {
+            let slen = stop.len();
+            if slen > 0 {
+                let pos = self.bytes[sidx.saturating_sub(slen)..]
+                    .windows(stop.len())
+                    .position(|w| w == stop.as_bytes());
+                if pos.is_some() {
+                    self.stop_at = Some("".to_string())
+                }
+            }
+        }
+
         match &mut self.specific {
             StepSpecific::Stop => {}
-            StepSpecific::Fixed { .. } => {}
+            StepSpecific::Options { tokens } => {
+                tokens.retain(has_token_at(token, self.tokens.len() - 1))
+            }
             StepSpecific::Gen { rx } => helper.trie.append_token(rx, token),
+        }
+
+        fn is_boundry(b: u8) -> bool {
+            b == b' ' || b == b'\n' || b == b'\t'
         }
     }
 
@@ -145,10 +267,13 @@ impl StepState {
         if token == helper.trie.special_token(SpecialToken::EndOfSentence) {
             return self.allows_eos();
         }
+        if self.forces_eos() {
+            return false;
+        }
         match &mut self.specific {
             StepSpecific::Stop => false,
-            StepSpecific::Fixed { tokens } => {
-                self.token_idx < tokens.len() && tokens[self.token_idx] == token
+            StepSpecific::Options { tokens } => {
+                tokens.iter().any(has_token_at(token, self.tokens.len()))
             }
             StepSpecific::Gen { rx } => helper.trie.token_allowed(rx, token),
         }
@@ -159,9 +284,11 @@ impl StepState {
             StepSpecific::Stop => {
                 helper.allow_eos();
             }
-            StepSpecific::Fixed { tokens } => {
-                if self.token_idx < tokens.len() {
-                    helper.allow_one(tokens[self.token_idx]);
+            StepSpecific::Options { tokens } => {
+                for v in tokens {
+                    if self.tokens.len() < v.len() {
+                        helper.allow_one(v[self.tokens.len()]);
+                    }
                 }
             }
             StepSpecific::Gen { rx } => {
@@ -181,11 +308,7 @@ impl Runner {
         let stop_ast = Step::Fixed {
             text: "[STOP]".to_string(),
         };
-        states.push(StepState::from_specific(
-            &stop_ast,
-            StepSpecific::Stop,
-            usize::MAX,
-        ));
+        states.push(StepState::from_specific(&stop_ast, StepSpecific::Stop));
 
         for (idx, state) in states.iter().enumerate() {
             wprintln!("[{}] {} {:?}", idx, state.pp(), state);

@@ -4,6 +4,8 @@ import requests
 import ujson
 import sys
 import os
+import re
+from typing import Optional
 
 base_url = "http://127.0.0.1:8080/v1/"
 prog = "aici_ast_runner"
@@ -19,12 +21,30 @@ ast = {
 }
 
 
-def gen(rx, max_tokens=None):
-    return {"Gen": {"max_tokens": max_tokens, "rx": rx}}
+def gen(
+    rx: str,
+    stop_at: Optional[str] = None,
+    max_tokens=None,
+    max_words=None,
+    max_bytes=None,
+):
+    return {
+        "Gen": {
+            "rx": rx,
+            "stop_at": stop_at,
+            "max_tokens": max_tokens,
+            "max_words": max_words,
+            "max_bytes": max_bytes,
+        }
+    }
 
 
-def fixed(text):
+def fixed(text: str):
     return {"Fixed": {"text": text}}
+
+
+def choose(options: list[str]):
+    return {"Choose": {"options": options}}
 
 
 def json_to_steps(json_value):
@@ -32,20 +52,22 @@ def json_to_steps(json_value):
     strrx = r'(\\(["\\\/bfnrt]|u[a-fA-F0-9]{4})|[^"\\\x00-\x1F\x7F]+)+'
     steps = []
 
-    def get_rx(v):
+    def value_step(v):
         if isinstance(v, bool):
-            return r"(true|false)"
+            return choose(["true", "false"])
         elif isinstance(v, int):
-            return r"\d{1,10}"
+            return gen(rx=r"\d{1,10}")
         elif isinstance(v, float):
-            return r"\d{1,10}(\.\d{1,10})?"
+            return gen(rx=r"\d{1,10}(\.\d{1,10})?")
         elif isinstance(v, str):
             if v == "":
-                return strrx
+                return gen(rx=strrx, max_bytes=80)
+            elif re.search(r'[\[\.\\{()}*+]', v):
+                return gen(rx=f"({v})")
             else:
-                return f"({v})"
+                return choose(v.split("|"))
         elif v is None:
-            return "null"
+            return fixed("null")
 
     def inner(v):
         nonlocal steps
@@ -63,12 +85,12 @@ def json_to_steps(json_value):
                 idx += 1
                 steps.append(fixed(f'"{k}":'))
                 if isinstance(v, str):
-                    steps += [fixed('"'), gen(get_rx(v)), fixed('"')]
+                    steps += [fixed('"'), value_step(v), fixed('"')]
                 else:
                     inner(v)
             steps.append(fixed("\n}"))
         else:
-            steps.append(gen(get_rx(v)))
+            steps.append(value_step(v))
 
     inner(json_value)
 
@@ -137,6 +159,9 @@ def ask_completion(
                             l = ch["logs"].rstrip("\n")
                             if l:
                                 print(l)
+                            if "Previous WASM Error" in l:
+                                print("Bailing out due to WASM error")
+                                sys.exit(1)
                             # print(f"*** TOK: '{ch['text']}'")
                         else:
                             print(ch["text"], end="")
@@ -165,6 +190,7 @@ def main():
             {
                 "name": "",
                 "valid": True,
+                "description": "",
                 "type": "foo|bar|baz|something|else",
                 "address": {"street": "", "city": "", "state": "[A-Z][A-Z]"},
                 "age": 1,
@@ -174,7 +200,7 @@ def main():
     }
     mod = upload_wasm()
     ask_completion(
-        prompt="Joe in Seattle\n",
+        prompt="Joe R. Hacker in Seattle\n",
         aici_module=mod,
         aici_arg=ast,
         n=1,
