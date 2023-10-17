@@ -2,6 +2,7 @@
 
 set -x
 set -e
+(cd ../aicirt && cargo build --release)
 cargo build --release --target wasm32-unknown-unknown
 cp target/wasm32-unknown-unknown/release/aici_ast_runner.wasm target/opt.wasm
 # wasm-opt -Oz target/wasm32-unknown-unknown/release/aici_ast_runner.wasm -o target/opt.wasm
