@@ -62,22 +62,22 @@ enum StepSpecific {
 struct StepState {
     ast: Step,
     specific: StepSpecific,
-    token_idx_in_step: usize,
-    max_tokens_in_step: usize,
+    token_idx: usize,
+    max_tokens: usize,
 }
 pub struct Runner {
     helper: AiciVmHelper,
-    step_idx: usize,
+    state_idx: usize,
     states: Vec<StepState>,
 }
 
 impl Debug for StepState {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}/", self.token_idx_in_step)?;
-        if self.max_tokens_in_step > 10000 {
+        write!(f, "{}/", self.token_idx)?;
+        if self.max_tokens > 10000 {
             write!(f, "inf")?;
         } else {
-            write!(f, "{}", self.max_tokens_in_step)?;
+            write!(f, "{}", self.max_tokens)?;
         }
         Ok(())
     }
@@ -93,8 +93,8 @@ impl StepState {
         StepState {
             ast: ast.clone(),
             specific,
-            token_idx_in_step: 0,
-            max_tokens_in_step: max_tokens,
+            token_idx: 0,
+            max_tokens,
         }
     }
 
@@ -125,10 +125,10 @@ impl StepState {
     }
 
     fn check_eos(&self, optional: bool) -> bool {
-        self.token_idx_in_step >= self.max_tokens_in_step
+        self.token_idx >= self.max_tokens
             || match &self.specific {
                 StepSpecific::Stop => true,
-                StepSpecific::Fixed { tokens } => self.token_idx_in_step >= tokens.len(),
+                StepSpecific::Fixed { tokens } => self.token_idx >= tokens.len(),
                 StepSpecific::Gen { rx } => {
                     rx.special_allowed(SpecialToken::EndOfSentence)
                         && (optional || (0..=255).all(|byte| !rx.byte_allowed(byte)))
@@ -145,7 +145,7 @@ impl StepState {
     }
 
     fn advance(&mut self, helper: &AiciVmHelper, token: TokenId) {
-        self.token_idx_in_step += 1;
+        self.token_idx += 1;
         match &mut self.specific {
             StepSpecific::Stop => {}
             StepSpecific::Fixed { .. } => {}
@@ -161,7 +161,7 @@ impl StepState {
         match &mut self.specific {
             StepSpecific::Stop => false,
             StepSpecific::Fixed { tokens } => {
-                self.token_idx_in_step < tokens.len() && tokens[self.token_idx_in_step] == token
+                self.token_idx < tokens.len() && tokens[self.token_idx] == token
             }
             StepSpecific::Gen { rx } => helper.trie.token_allowed(rx, token),
         }
@@ -173,8 +173,8 @@ impl StepState {
                 helper.allow_eos();
             }
             StepSpecific::Fixed { tokens } => {
-                if self.token_idx_in_step < tokens.len() {
-                    helper.allow_one(tokens[self.token_idx_in_step]);
+                if self.token_idx < tokens.len() {
+                    helper.allow_one(tokens[self.token_idx]);
                 }
             }
             StepSpecific::Gen { rx } => {
@@ -206,13 +206,13 @@ impl Runner {
 
         Self {
             helper: AiciVmHelper::new(),
-            step_idx: 0,
+            state_idx: 0,
             states,
         }
     }
 
     fn stop(&mut self, info: &str) {
-        self.step_idx = self.states.len() - 1;
+        self.state_idx = self.states.len() - 1;
         wprintln!("stop: {}", info)
     }
 
@@ -222,13 +222,13 @@ impl Runner {
             "append {} '{}' [{}] {:?}",
             token,
             String::from_utf8_lossy(bytes),
-            self.step_idx,
-            self.states[self.step_idx]
+            self.state_idx,
+            self.states[self.state_idx]
         );
 
         // skip as many states as we can (that allow EOS), and find the last one that allows the token
         let mut last_idx = usize::MAX;
-        for idx in self.step_idx..self.states.len() {
+        for idx in self.state_idx..self.states.len() {
             if self.states[idx].allows_token(&self.helper, token) {
                 last_idx = idx;
             }
@@ -242,17 +242,17 @@ impl Runner {
             return;
         }
 
-        if self.step_idx != last_idx {
-            self.step_idx = last_idx;
+        if self.state_idx != last_idx {
+            self.state_idx = last_idx;
         }
 
         self.states[last_idx].advance(&mut self.helper, token);
-        wprintln!(" => [{}] {:?}", self.step_idx, self.states[self.step_idx]);
+        wprintln!(" => [{}] {:?}", self.state_idx, self.states[self.state_idx]);
     }
 
     fn compute(&mut self) {
         self.helper.all_disallowed();
-        for state in &mut self.states[self.step_idx..] {
+        for state in &mut self.states[self.state_idx..] {
             state.apply_to(&mut self.helper);
             if !state.allows_eos() {
                 break;
