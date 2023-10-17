@@ -19,6 +19,67 @@ ast = {
 }
 
 
+def gen(rx, max_tokens=200):
+    return {"Gen": {"max_tokens": max_tokens, "rx": rx}}
+
+
+def fixed(text):
+    return {"Fixed": {"text": text}}
+
+
+def json_to_steps(json_value):
+    # currently we fail for possibly empty rx, so put + not * at the end
+    strrx = r'(\\(["\\\/bfnrt]|u[a-fA-F0-9]{4})|[^"\\\x00-\x1F\x7F]+)*'
+    steps = []
+
+    def get_rx(v):
+        if isinstance(v, bool):
+            return r"(true|false)"
+        elif isinstance(v, int) or isinstance(v, float):
+            return r"\d+"
+        elif isinstance(v, str):
+            if v == "":
+                return strrx
+            else:
+                return f"({v})"
+        elif v is None:
+            return "null"
+
+    def inner(v):
+        nonlocal steps
+        if isinstance(v, list):
+            steps.append(fixed("["))
+            if len(v) > 0:
+                inner(v[0])
+            steps.append(fixed("]"))
+        elif isinstance(v, dict):
+            steps.append(fixed("{\n"))
+            idx = 0
+            for k, v in v.items():
+                if idx > 0:
+                    steps.append(fixed(",\n"))
+                idx += 1
+                steps.append(fixed(f'"{k}":'))
+                if isinstance(v, str):
+                    steps += [fixed('"'), gen(get_rx(v)), fixed('"')]
+                else:
+                    inner(v)
+            steps.append(fixed("\n}"))
+        else:
+            steps.append(gen(get_rx(v)))
+
+    inner(json_value)
+
+    new_steps = []
+    for step in steps:
+        if "Fixed" in step:
+            if len(new_steps) > 0 and "Fixed" in new_steps[-1]:
+                new_steps[-1]["Fixed"]["text"] += step["Fixed"]["text"]
+                continue
+        new_steps.append(step)
+    return new_steps
+
+
 def upload_wasm():
     r = subprocess.run(["sh", "wasm.sh"], cwd=prog)
     if r.returncode != 0:
@@ -71,7 +132,7 @@ def ask_completion(
                     idx = ch["index"]
                     if idx == 0:
                         if log:
-                            l=ch["logs"].rstrip('\n')
+                            l = ch["logs"].rstrip("\n")
                             if l:
                                 print(l)
                             # print(f"*** TOK: '{ch['text']}'")
@@ -83,7 +144,10 @@ def ask_completion(
             else:
                 print(decoded_line)
 
-    print(texts)
+    if len(texts) == 1:
+        print(texts[0])
+    else:
+        print(texts)
     os.makedirs("tmp", exist_ok=True)
     path = "tmp/response.json"
     with open(path, "w") as f:
@@ -94,15 +158,26 @@ def ask_completion(
 
 
 def main():
+    ast = {
+        "steps": json_to_steps(
+            {
+                "name": "",
+                "valid": True,
+                "type": "foo|bar|baz|something|else",
+                "address": {"street": "", "city": "", "state": "[A-Z][A-Z]"},
+                "age": 1,
+            }
+        )
+    }
     mod = upload_wasm()
     ask_completion(
-        prompt="42\n",
+        prompt="Joe in Seattle\n",
         aici_module=mod,
         aici_arg=ast,
         n=1,
         temperature=0.5,
         log=True,
-        max_tokens=20,
+        max_tokens=1000,
     )
 
 

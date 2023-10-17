@@ -42,7 +42,7 @@ impl FunctionalRecognizer<RecRxState> for RecRx {
     fn initial(&self) -> RecRxState {
         self.dfa
             .universal_start_state(regex_automata::Anchored::Yes)
-            .unwrap()
+            .expect("dfa has no universal start state; make sure it doesn't match empty string")
     }
 
     #[inline(always)]
