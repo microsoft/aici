@@ -19,7 +19,7 @@ ast = {
 }
 
 
-def gen(rx, max_tokens=200):
+def gen(rx, max_tokens=None):
     return {"Gen": {"max_tokens": max_tokens, "rx": rx}}
 
 
@@ -35,8 +35,10 @@ def json_to_steps(json_value):
     def get_rx(v):
         if isinstance(v, bool):
             return r"(true|false)"
-        elif isinstance(v, int) or isinstance(v, float):
-            return r"\d+"
+        elif isinstance(v, int):
+            return r"\d{1,10}"
+        elif isinstance(v, float):
+            return r"\d{1,10}(\.\d{1,10})?"
         elif isinstance(v, str):
             if v == "":
                 return strrx
@@ -166,6 +168,7 @@ def main():
                 "type": "foo|bar|baz|something|else",
                 "address": {"street": "", "city": "", "state": "[A-Z][A-Z]"},
                 "age": 1,
+                "fraction": 1.5,
             }
         )
     }

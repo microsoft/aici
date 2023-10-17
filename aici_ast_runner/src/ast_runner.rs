@@ -1,13 +1,4 @@
 /*
-- byte-level constraint that forces a specific string can cause unusual tokenization, for example:
-  "I am about" will likely force the model to output ["I", " am", " a", "b", "out"] instead of ["I", " am", " about"]
-  This is because after "I am" we allow both " a" and " about" but the model finds " a" much more likely
-- this is a problem, since the model can later get confused with [" a", "b", "out"] tokens being used instead of [" about"]
-- this could be fixed by giving boost to longer tokens, but that doesn't work for regexps: simplest example
-  ".*" would always prefer the longest possible token (eg. 128 space token in gpt4 case)
-- thus, the "Fixed" step shouldn't be implemented at byte level, and instead tokenize the string and then force
-  these specific tokens; the regexps in "Gen" should avoid long forced strings
-
 - the tokenization algorithm is not simply the greedy longest prefix - it breaks string into "words", splits words
   into single-byte tokens and then merges adjecnt pairs of tokens in order of token number, see
   https://github.com/openai/tiktoken/blob/main/tiktoken/_educational.py
@@ -15,12 +6,8 @@
   - only whitespace (not only ' ', but also '\n', '\t' etc)
   - start with a ' '
   - have no ' '
-
-- we could have a warning when the token encoding is not optimal
-
-- Gen("\d+"); Fixed(" years") should be equivalent to Gen("\d+ years"), that is the model decides when to stop
-    generating digits and start generating " years" (modulo token problems above)
 */
+
 mod rx;
 
 use std::fmt::Debug;
@@ -44,7 +31,7 @@ pub enum Step {
         text: String,
     },
     Gen {
-        max_tokens: usize,
+        max_tokens: Option<usize>,
         rx: Option<String>,
     },
 }
@@ -118,7 +105,7 @@ impl StepState {
                     StepSpecific::Gen {
                         rx: RecRx::from_rx(&rx).to_stack_recognizer(),
                     },
-                    *max_tokens,
+                    max_tokens.unwrap_or(usize::MAX),
                 )
             }
         }
