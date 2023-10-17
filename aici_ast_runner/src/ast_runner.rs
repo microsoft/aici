@@ -201,7 +201,7 @@ impl StepState {
             || self.word_idx >= self.max_words
             || (self.stop_at.is_some() && self.stop_at.as_ref().unwrap().is_empty())
             || match &self.specific {
-                StepSpecific::Stop => true,
+                StepSpecific::Stop => false,
                 StepSpecific::Options { tokens } => {
                     if optional {
                         tokens.iter().any(|t| self.tokens.len() >= t.len())
@@ -329,7 +329,7 @@ impl Runner {
     fn advance(&mut self, token: TokenId) {
         let bytes = self.helper.trie.token(token);
         wprintln!(
-            "append {} '{}' [{}] {:?}",
+            "advance {} '{}' [{}] {:?}",
             token,
             String::from_utf8_lossy(bytes),
             self.state_idx,
@@ -363,6 +363,9 @@ impl Runner {
     fn compute(&mut self) {
         self.helper.all_disallowed();
         for state in &mut self.states[self.state_idx..] {
+            if state.forces_eos() {
+                continue;
+            }
             state.apply_to(&mut self.helper);
             if !state.allows_eos() {
                 break;

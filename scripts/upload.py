@@ -47,9 +47,15 @@ def choose(options: list[str]):
     return {"Choose": {"options": options}}
 
 
+def is_step(d: dict):
+    return len(d) == 1 and ("Fixed" in d or "Gen" in d or "Choose" in d)
+
+
+strrx = r'(\\(["\\\/bfnrt]|u[a-fA-F0-9]{4})|[^"\\\x00-\x1F\x7F]+)+'
+
+
 def json_to_steps(json_value):
     # currently we fail for possibly empty rx, so put + not * at the end
-    strrx = r'(\\(["\\\/bfnrt]|u[a-fA-F0-9]{4})|[^"\\\x00-\x1F\x7F]+)+'
     steps = []
 
     def value_step(v):
@@ -61,8 +67,8 @@ def json_to_steps(json_value):
             return gen(rx=r"\d{1,10}(\.\d{1,10})?")
         elif isinstance(v, str):
             if v == "":
-                return gen(rx=strrx, max_bytes=80)
-            elif re.search(r'[\[\.\\{()}*+]', v):
+                return gen(rx=strrx, max_words=20)
+            elif re.search(r"[\[\.\\{()}*+]", v):
                 return gen(rx=f"({v})")
             else:
                 return choose(v.split("|"))
@@ -77,6 +83,9 @@ def json_to_steps(json_value):
                 inner(v[0])
             steps.append(fixed("]"))
         elif isinstance(v, dict):
+            if is_step(v):
+                steps.append(v)
+                return
             steps.append(fixed("{\n"))
             idx = 0
             for k, v in v.items():
