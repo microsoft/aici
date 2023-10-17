@@ -29,7 +29,7 @@ def fixed(text):
 
 def json_to_steps(json_value):
     # currently we fail for possibly empty rx, so put + not * at the end
-    strrx = r'(\\(["\\\/bfnrt]|u[a-fA-F0-9]{4})|[^"\\\x00-\x1F\x7F]+)*'
+    strrx = r'(\\(["\\\/bfnrt]|u[a-fA-F0-9]{4})|[^"\\\x00-\x1F\x7F]+)+'
     steps = []
 
     def get_rx(v):
