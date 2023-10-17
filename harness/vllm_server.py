@@ -50,7 +50,8 @@ from vllm.transformers_utils.tokenizer import get_tokenizer
 from vllm.utils import random_uuid
 
 try:
-    import fastchat
+    # just importing fastchat spins a bunch of threads for no good reason; disable for now
+    import fastchat_DISABLED
     from fastchat.conversation import Conversation, SeparatorStyle
     from fastchat.model.model_adapter import get_conversation_template
 
@@ -631,6 +632,8 @@ async def create_completion(request: AiciCompletionRequest, raw_request: Request
 
 
 if __name__ == "__main__":
+    print("sleep")
+    time.sleep(100)
     parser = argparse.ArgumentParser(
         description="vLLM OpenAI-Compatible RESTful API server."
     )
@@ -693,6 +696,8 @@ if __name__ == "__main__":
         tokenizer_mode=engine_args.tokenizer_mode,
         trust_remote_code=engine_args.trust_remote_code,
     )
+
+    time.sleep(10)
 
     uvicorn.run(
         app,
