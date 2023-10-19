@@ -8,8 +8,8 @@
   - have no ' '
 */
 
-mod rx;
 mod cfg;
+mod rx;
 
 use std::fmt::Debug;
 
@@ -413,7 +413,7 @@ impl AiciVm for Runner {
 }
 
 fn main() {
-    // cfg::cfg_test().unwrap();
+    cfg::cfg_test().unwrap();
     //    let _run = sample_prog();
 }
 
