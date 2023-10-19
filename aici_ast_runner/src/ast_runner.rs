@@ -9,6 +9,7 @@
 */
 
 mod rx;
+mod cfg;
 
 use std::fmt::Debug;
 
@@ -412,6 +413,7 @@ impl AiciVm for Runner {
 }
 
 fn main() {
+    // cfg::cfg_test().unwrap();
     //    let _run = sample_prog();
 }
 

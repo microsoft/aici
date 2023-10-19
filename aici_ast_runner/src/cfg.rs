@@ -1,18 +1,10 @@
-use anyhow::Result;
+use aici_abi::wprintln;
+use anyhow::{Result};
 use cfgrammar::{
     yacc::{YaccGrammar, YaccKind},
     TIdx,
 };
-use clap::Parser;
-use gvm_tokenizers::find_tokenizer;
 use lrtable::{from_yacc, Action, Minimiser, StIdx, StateTable};
-
-#[derive(Parser)]
-struct Cli {
-    /// Tokenizer to use; try -t list to see options
-    #[arg(short, long, default_value = "llama")]
-    tokenizer: String,
-}
 
 type StorageT = u32;
 
@@ -85,12 +77,6 @@ Factor:
     ;
 %%
     "#;
-    let cli = Cli::parse();
-
-    let mut tokenizer = find_tokenizer(&cli.tokenizer)?;
-    tokenizer.load();
-
-    println!("loaded tokenizer: {}", tokenizer.name);
 
     let grm = YaccGrammar::new(
         YaccKind::Original(cfgrammar::yacc::YaccOriginalActionKind::NoAction),
@@ -100,10 +86,10 @@ Factor:
     let (sgraph, stable) = from_yacc(&grm, Minimiser::Pager).unwrap();
 
     if false {
-        println!("core\n{}\n\n", sgraph.pp(&grm, true));
+        wprintln!("core\n{}\n\n", sgraph.pp(&grm, true));
         for pidx in grm.iter_pidxs() {
             let prod = grm.prod(pidx);
-            println!("{:?} -> {}", prod, prod.len());
+            wprintln!("{:?} -> {}", prod, prod.len());
         }
     }
 
@@ -124,10 +110,10 @@ Factor:
 
     for tok in tokens {
         let r = psr.parse_lexeme(tok.0, &mut pstack);
-        println!("t: {:?} {:?} {:?}", tok, grm.token_name(tok), r);
+        wprintln!("t: {:?} {:?} {:?}", tok, grm.token_name(tok), r);
     }
 
-    // println!("loaded grammar\n{}", sgraph.pp(&grm, false));
+    // wprintln!("loaded grammar\n{}", sgraph.pp(&grm, false));
 
     Ok(())
 }

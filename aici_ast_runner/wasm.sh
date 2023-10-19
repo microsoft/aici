@@ -21,4 +21,4 @@ cargo build --release
 cd ..
 mkdir -p tmp
 ./aicirt/target/release/aicirt --tokenizer gpt4 --module $p/target/opt.wasm --run | tee tmp/runlog.txt
-ls -l $p/target/opt.wasm
+ls -l $p/target/opt.wasm $p/target/strip.wasm
