@@ -1,5 +1,6 @@
 from .prompt import PromptNode
 from .model import ModelNode, ChatModelNode
+from .endpoint import EndpointNode
 from .constrain import ConstraintNode
 
 class GenNode(PromptNode):
@@ -13,10 +14,12 @@ class GenNode(PromptNode):
     def set_parent(self, parent): 
         super().set_parent(parent)
         model = self.get_parent_of_type(ModelNode)
+        endpoint = self.get_parent_of_type(EndpointNode)
 
         # TODO this will fail in cases where we are building subprompts and then only later prepending a model
-        assert model is not None, "Gen must have an ancestor of type ModelNode"
-        self.is_chat = isinstance(model, ChatModelNode)
+        assert (model is not None) or (endpoint is not None), "Gen must have an ancestor of type ModelNode or EndpointNode"
+        if model is not None:
+            self.is_chat = isinstance(model, ChatModelNode)
 
     def _generate_text(self, prefix):
         model = self.get_parent_of_type(ModelNode)
@@ -42,7 +45,8 @@ class GenNode(PromptNode):
         return self.generated_text
 
     def _get_plan_step(self):
-        return '{"Gen": {"max_tokens": ' + str(self.max_tokens) + ', "rx": ".+"}}'
+        return {"Gen": {"max_tokens": self.max_tokens, "rx": r".+"}}
+        #'{"Gen": {"max_tokens": ' + str(self.max_tokens) + ', "rx": ".+"}}'
     
 
 def gen(prompt_code:PromptNode, max_tokens=1000, **genargs) -> PromptNode:

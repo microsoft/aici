@@ -194,19 +194,30 @@ def ask_completion(
 
 
 def main():
+    #ast = {
+    #    "steps": json_to_steps(
+    #        {
+    #            "name": "",
+    #            "valid": True,
+    #            "description": "",
+    #            "type": "foo|bar|baz|something|else",
+    #            "address": {"street": "", "city": "", "state": "[A-Z][A-Z]"},
+    #            "age": 1,
+    #            "fraction": 1.5,
+    #        }
+    #    )
+    #}
+
     ast = {
-        "steps": json_to_steps(
-            {
-                "name": "",
-                "valid": True,
-                "description": "",
-                "type": "foo|bar|baz|something|else",
-                "address": {"street": "", "city": "", "state": "[A-Z][A-Z]"},
-                "age": 1,
-                "fraction": 1.5,
-            }
-        )
+    "steps": [
+        {"Fixed": {"text": "I am about "}},
+        {"Gen": {"max_tokens": 10, "rx": r"\d+"}},
+        {"Fixed": {"text": " years and "}},
+        {"Gen": {"max_tokens": 10, "rx": r"\d+"}},
+        {"Fixed": {"text": " months."}},
+        ]
     }
+
     mod = upload_wasm()
     ask_completion(
         prompt="Joe R. Hacker in Seattle\n",

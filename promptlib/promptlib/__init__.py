@@ -6,6 +6,9 @@ from promptlib.constrain import constrain
 
 from promptlib.models import LLM, TransformersLLM
 
+from promptlib.endpoints import AICI, Endpoint
+from promptlib.endpoint import EndpointNode, set_endpoint
+
 setattr(PromptNode, "append", append)
 setattr(PromptNode, "begin", begin)
 setattr(PromptNode, "begin_chat", begin_chat)
@@ -17,3 +20,4 @@ setattr(PromptNode, "gen", gen)
 setattr(PromptNode, "choose", choose)
 setattr(PromptNode, "constrain", constrain)
 setattr(PromptNode, "set_model", set_model)
+setattr(PromptNode, "set_endpoint", set_endpoint)

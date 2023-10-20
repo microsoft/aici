@@ -85,19 +85,21 @@ class PromptNode:
 
     def build_linear_plan(self):
         steps = self._get_plan_steps_ascending()
+        steps = [s for s in steps if s is not None]
+        return {"steps": steps}
         # TODO check that this renders correctly
-        str_steps = "{steps: ["
-        first = True
-        for s in steps:
-            if s is None:
-                continue
-            if not first:
-                str_steps += ",\n"
-            else:
-                first = False
-            str_steps += s
-        str_steps += "]}"
-        return str_steps
+        #str_steps = "{steps: ["
+        #first = True
+        #for s in steps:
+        #    if s is None:
+        #        continue
+        #    if not first:
+        #        str_steps += ",\n"
+        #    else:
+        #        first = False
+        #    str_steps += s
+        #str_steps += "]}"
+        #return str_steps
 
     # This starts at a root, and builds a plan to execute all the children.
     def build_tree_plan(self):
@@ -116,8 +118,9 @@ class TextNode(PromptNode):
         return self.text
     
     def _get_plan_step(self):
-        quoted_text = self.text.replace('\\','\\\\').replace('"', '\'')
-        return '{"Fixed": {"text": "' + quoted_text + '"}}'
+        #quoted_text = self.text.replace('\\','\\\\').replace('"', '\'')
+        return {"Fixed": {"text": self.text}}
+        #'{"Fixed": {"text": "' + quoted_text + '"}}'
 
 
 def append(prompt_code:PromptNode, text:str) -> PromptNode:
