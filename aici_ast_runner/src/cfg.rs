@@ -1,6 +1,9 @@
-use std::collections::HashMap;
+use std::{cell::RefCell, collections::HashMap, rc::Rc, vec};
 
-use aici_abi::wprintln;
+use aici_abi::{
+    toktree::{Recognizer, SpecialToken},
+    wprintln,
+};
 use anyhow::Result;
 use cfgrammar::{
     yacc::{YaccGrammar, YaccKind},
@@ -14,6 +17,7 @@ use regex_automata::{
 use vob::{vob, Vob};
 
 type StorageT = u32;
+type PatIdx = usize;
 type PStack<StorageT> = Vec<StIdx<StorageT>>; // Parse stack
 
 #[derive(Debug, Clone, Copy)]
@@ -23,15 +27,16 @@ enum ParseResult {
     Continue,
 }
 
-struct DfaInfo {
+struct Lexer {
     dfa: dense::DFA<Vec<u32>>,
     patterns: Vec<String>,
     skip_patterns: Vob,
     friendly_pattern_names: Vec<String>,
-    tokenset_by_state: HashMap<StateID, vob::Vob>,
+    possible_by_state: HashMap<StateID, vob::Vob>,
+    initial: StateID,
 }
 
-impl DfaInfo {
+impl Lexer {
     pub fn from(
         patterns: Vec<String>,
         skip_patterns: Vob,
@@ -56,9 +61,9 @@ impl DfaInfo {
         let anch = regex_automata::Anchored::Yes;
 
         let mut incoming = HashMap::new();
-        let s0 = dfa.universal_start_state(anch).unwrap();
-        let mut todo = vec![s0];
-        incoming.insert(s0, Vec::new());
+        let initial = dfa.universal_start_state(anch).unwrap();
+        let mut todo = vec![initial];
+        incoming.insert(initial, Vec::new());
         while todo.len() > 0 {
             let s = todo.pop().unwrap();
             for b in 0..=255 {
@@ -109,25 +114,64 @@ impl DfaInfo {
 
         wprintln!(
             "tokenset_by_state: {:?}",
-            tokenset_by_state.get(&dfa.next_state(s0, b'a'))
+            tokenset_by_state.get(&dfa.next_state(initial, b'a'))
         );
 
         println!("visited: {:?}", tokenset_by_state.len());
 
-        DfaInfo {
+        Lexer {
             dfa,
             patterns,
             skip_patterns,
             friendly_pattern_names,
-            tokenset_by_state,
+            possible_by_state: tokenset_by_state,
+            initial,
+        }
+    }
+
+    fn possible_tokens(&self, state: StateID) -> &Vob {
+        self.possible_by_state.get(&state).unwrap()
+    }
+
+    fn advance(&self, prev: StateID, byte: u8) -> Option<(StateID, Option<PatIdx>)> {
+        let dfa = &self.dfa;
+        let state = dfa.next_state(prev, byte);
+        if dfa.is_dead_state(state) {
+            // if prev is a match state, find the token that matched
+            if dfa.is_match_state(prev) {
+                // we take the first token that matched
+                // (eg., "while" will match both keyword and identifier, but keyword is first)
+                let pat_idx = (0..dfa.match_len(prev))
+                    .map(|idx| dfa.match_pattern(prev, idx).as_usize())
+                    .min()
+                    .unwrap();
+
+                // wprintln!("token: {}", self.dfa_info.friendly_pattern_names[pat_idx]);
+
+                let state = dfa.next_state(self.initial, byte);
+                if self.skip_patterns[pat_idx] {
+                    // whitespace, comment, etc.
+                    Some((state, None))
+                } else {
+                    Some((state, Some(pat_idx)))
+                }
+            } else {
+                None
+            }
+        } else {
+            Some((state, None))
         }
     }
 }
 
-struct GrammarInfo {
+struct Parser {
     grm: YaccGrammar<StorageT>,
     stable: StateTable<StorageT>,
-    dfa: DfaInfo,
+    lexer: Lexer,
+    byte_states: Vec<ByteState>,
+    pat_idx_to_tidx: Vec<TIdx<u32>>,
+    possible_tokens_by_state: RefCell<HashMap<StIdx<u32>, Vob>>,
+    tidx_to_pat_idx: HashMap<TIdx<u32>, usize>,
 }
 
 fn is_rx(name: &str) -> bool {
@@ -151,13 +195,10 @@ fn quote_rx(name: &str) -> String {
         .collect::<String>()
 }
 
-impl GrammarInfo {
+impl Parser {
     pub fn from(yacc: &str) -> Self {
-        let grm = YaccGrammar::new(
-            YaccKind::Original(cfgrammar::yacc::YaccOriginalActionKind::NoAction),
-            yacc,
-        )
-        .unwrap();
+        let grmkind = YaccKind::Original(cfgrammar::yacc::YaccOriginalActionKind::NoAction);
+        let grm = YaccGrammar::new(grmkind, yacc).unwrap();
         let (sgraph, stable) = from_yacc(&grm, Minimiser::Pager).unwrap();
 
         if false {
@@ -168,12 +209,12 @@ impl GrammarInfo {
             }
         }
 
-        let mut tidx = grm
+        let mut pat_idx_to_tidx = grm
             .iter_tidxs()
             .filter(|tidx| grm.token_name(*tidx).is_some())
             .collect::<Vec<_>>();
 
-        tidx.sort_by_key(|tidx| {
+        pat_idx_to_tidx.sort_by_key(|tidx| {
             let name = grm.token_name(*tidx).unwrap();
             let l = name.len() as isize;
             if is_rx(name) {
@@ -183,7 +224,7 @@ impl GrammarInfo {
             }
         });
 
-        let patterns = tidx
+        let patterns = pat_idx_to_tidx
             .iter()
             .map(|tok| {
                 let name = grm.token_name(*tok).unwrap();
@@ -195,9 +236,9 @@ impl GrammarInfo {
             })
             .collect::<Vec<_>>();
 
-        let mut pat_idx_by_tidx = HashMap::new();
+        let mut tidx_to_pat_idx = HashMap::new();
         for (idx, _tok) in patterns.iter().enumerate() {
-            pat_idx_by_tidx.insert(tidx[idx], idx);
+            tidx_to_pat_idx.insert(pat_idx_to_tidx[idx], idx);
             // wprintln!("tok: {:?} {:?}", tok, tidx[idx]);
         }
 
@@ -212,7 +253,7 @@ impl GrammarInfo {
             for pidx in grm.rule_to_prods(ridx) {
                 let toks = grm.prod(*pidx);
                 if let [Symbol::Token(tidx)] = toks {
-                    let idx = *pat_idx_by_tidx.get(&tidx).unwrap();
+                    let idx = *tidx_to_pat_idx.get(&tidx).unwrap();
                     friendly_pattern_names[idx] = rname.to_string();
                     if rname == "SKIP" {
                         skip_patterns.set(idx, true);
@@ -223,8 +264,38 @@ impl GrammarInfo {
 
         wprintln!("patterns: {:?}", friendly_pattern_names);
 
-        let dfa = DfaInfo::from(patterns, skip_patterns, friendly_pattern_names);
-        GrammarInfo { grm, stable, dfa }
+        let dfa = Lexer::from(patterns, skip_patterns, friendly_pattern_names);
+        Parser {
+            grm,
+            stable,
+            lexer: dfa,
+            byte_states: vec![],
+            pat_idx_to_tidx,
+            tidx_to_pat_idx,
+            possible_tokens_by_state: RefCell::new(HashMap::new()),
+        }
+    }
+
+    fn viable_tokens(&self, stidx: StIdx<StorageT>) -> Vob {
+        if let Some(r) = self.possible_tokens_by_state.borrow().get(&stidx) {
+            r.clone()
+        } else {
+            let mut r = vob![false; self.lexer.patterns.len()];
+            for tidx in self.stable.state_actions(stidx) {
+                match self.stable.action(stidx, tidx) {
+                    Action::Error => {}
+                    _ => {
+                        if let Some(pat_idx) = self.tidx_to_pat_idx.get(&tidx) {
+                            r.set(*pat_idx, true);
+                        }
+                    }
+                }
+            }
+            self.possible_tokens_by_state
+                .borrow_mut()
+                .insert(stidx, r.clone());
+            r
+        }
     }
 
     fn parse_lexeme(&self, lexeme: StorageT, pstack: &mut PStack<StorageT>) -> ParseResult {
@@ -254,11 +325,122 @@ impl GrammarInfo {
             }
         }
     }
+
+    fn try_push(&self, byte: u8) -> Option<ByteState> {
+        let top = self.byte_states.last().unwrap();
+        match self.lexer.advance(top.lexer_state, byte) {
+            // Error?
+            None => None,
+            // Just new state, no token
+            Some((state, None)) => {
+                self.mk_byte_state(state, top.parse_stack.clone(), top.viable.clone())
+            }
+            // New state and token generated
+            Some((state, Some(pat_idx))) => {
+                let tidx = self.pat_idx_to_tidx[pat_idx];
+                let mut pstack = (*top.parse_stack).clone();
+                match self.parse_lexeme(tidx.0, &mut pstack) {
+                    ParseResult::Accept => panic!("accept non EOF?"),
+                    ParseResult::Continue => {
+                        let stidx = *pstack.last().unwrap();
+                        let viable = self.viable_tokens(stidx);
+                        self.mk_byte_state(state, Rc::new(pstack), viable)
+                    }
+                    ParseResult::Error => None,
+                }
+            }
+        }
+    }
+
+    fn mk_byte_state(
+        &self,
+        state: StateID,
+        pstack: Rc<PStack<StorageT>>,
+        mut viable: Vob,
+    ) -> Option<ByteState> {
+        viable &= self.lexer.possible_tokens(state);
+        if vob_is_zero(&viable) {
+            None
+        } else {
+            Some(ByteState {
+                lexer_state: state,
+                parse_stack: pstack,
+                viable,
+            })
+        }
+    }
+}
+
+fn vob_is_zero(v: &Vob) -> bool {
+    for b in v.iter_storage() {
+        if b != 0 {
+            return false;
+        }
+    }
+    true
+}
+
+struct ByteState {
+    lexer_state: StateID,
+    parse_stack: Rc<PStack<StorageT>>,
+    viable: Vob,
+}
+
+impl Recognizer for Parser {
+    /*
+
+    state: DFA state, set of viable tokens, LR(1) stack
+
+    push(byte):
+        prev = state
+        state = state.next(byte)
+        if dead(state):
+            tok = matches(prev)
+            if tok != white space:
+                LR(1) <- tok
+            state = state0.next(byte)
+            viable = possible_tokens(state) & (viable(LR(1)) | {white space})
+        else
+            viable = viable & possible_tokens(state)
+            if viable is empty
+                reject
+            else
+                continue
+
+    */
+
+    fn push_byte(&mut self, byte: u8) {
+        let st = self.try_push(byte).unwrap();
+        self.byte_states.push(st)
+    }
+
+    fn pop_bytes(&mut self, num: usize) {
+        self.byte_states.truncate(self.byte_states.len() - num);
+    }
+
+    fn collapse(&mut self) {
+        let final_state = self.byte_states.pop().unwrap();
+        self.byte_states.clear();
+        self.byte_states.push(final_state);
+    }
+
+    fn byte_allowed(&self, byte: u8) -> bool {
+        let st = self.try_push(byte);
+        st.is_some()
+    }
+
+    fn special_allowed(&self, tok: SpecialToken) -> bool {
+        todo!()
+    }
+
+    fn trie_finished(&mut self) {
+        todo!()
+    }
 }
 
 pub fn cfg_test() -> Result<()> {
     let grm = include_bytes!("../c.y");
-    let _ = GrammarInfo::from(&String::from_utf8_lossy(grm));
+    let _ = Parser::from(&String::from_utf8_lossy(grm));
 
     // let mut pstack = Vec::new();
     // pstack.push(stable.start_state());
@@ -306,25 +488,3 @@ pub fn cfg_test() -> Result<()> {
 
     Ok(())
 }
-
-/*
-
-state: DFA state, set of viable tokens, LR(1) stack
-
-push(byte):
-    prev = state
-    state = state.next(byte)
-    if dead(state):
-        tok = matches(prev)
-        if tok != white space:
-            LR(1) <- tok
-        state = state0.next(byte)
-        viable = possible_tokens(state) & (viable(LR(1)) | {white space})
-    else
-        viable = viable & possible_tokens(state)
-        if viable is empty
-            reject
-        else
-            continue
-
-*/

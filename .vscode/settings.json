@@ -45,5 +45,14 @@
     },
     "python.analysis.extraPaths": [
         "./vllm"
+    ],
+    "spellright.language": [
+        "en"
+    ],
+    "spellright.documentTypes": [
+        "markdown",
+        "latex",
+        "plaintext",
+        "rust"
     ]
 }

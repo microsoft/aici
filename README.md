@@ -21,11 +21,11 @@ Then run the server (after installing vllm):
 The Artificial Intelligence Controller Interface (AICI) can be used to constrain output of an LLM in real time.
 While the GPU is working on the next token of the output, the AICI VM can use the CPU to
 compute a user-provided constraint on the next token.
-This adds minmal latency to the LLM generation.
+This adds minimal latency to the LLM generation.
 
 The AICI VM itself is built on top of [Wasmtime](https://wasmtime.dev/).
 It takes [WebAssembly](https://webassembly.org/) (WASM) modules with a specific interface
-(see below) and executes them in parralel while the LLM inference engine is working on the next token.
+(see below) and executes them in parallel while the LLM inference engine is working on the next token.
 This runtime is implemented in the [aicirt](aicirt) crate, while the interface 
 is specified in the [aici_abi](aici_abi) crate.
 

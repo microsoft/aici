@@ -1,7 +1,8 @@
 /*
 - the tokenization algorithm is not simply the greedy longest prefix - it breaks string into "words", splits words
-  into single-byte tokens and then merges adjecnt pairs of tokens in order of token number, see
+  into single-byte tokens and then merges adjacent pairs of tokens in order of token number, see
   https://github.com/openai/tiktoken/blob/main/tiktoken/_educational.py
+- models are also trained on sub-optimal tokenizations, via "subword regularization": https://arxiv.org/abs/1804.10959
 - in all tokenizers (gpt4, llama, phi, ...), all tokens fit one of these 3 categories:
   - only whitespace (not only ' ', but also '\n', '\t' etc)
   - start with a ' '
@@ -36,7 +37,7 @@ pub enum Step {
     Choose {
         options: Vec<String>,
     },
-    // Generate text. It can be constrained with a regexp.
+    // Generate text. It can be constrained with a regex.
     // The length can be constrained in several ways.
     Gen {
         rx: Option<String>,
@@ -263,7 +264,7 @@ impl StepState {
         }
     }
 
-    // the mut on self is bogus - the state of the 'rx' doesn't change
+    // the 'mut' on self is bogus - the state of the 'rx' doesn't change
     fn allows_token(&mut self, helper: &AiciVmHelper, token: TokenId) -> bool {
         if token == helper.trie.special_token(SpecialToken::EndOfSentence) {
             return self.allows_eos();
