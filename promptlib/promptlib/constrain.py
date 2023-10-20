@@ -16,6 +16,13 @@ class ConstraintNode(PromptNode):
         assert model.llm.supports_constraints, "Model must support constraints"
         self.is_chat = isinstance(model, ChatModelNode)
 
+    def _get_plan_step(self):
+        dict = {"type": self.constraint.get_type()}
+        dict.update(self.constraint.get_constraint_args())
+        dict.update(self._get_attributes())
+        return {"constraint": dict}
+
+
 
 def constrain(prompt_code:PromptNode, constraint:Constraint) -> PromptNode:
     node = ConstraintNode(constraint)

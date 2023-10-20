@@ -5,6 +5,9 @@ class LLM:
         self.supports_constraints = False
         pass
 
+    def get_name():
+        return "<unspecified>"
+
     def __call__(self, prompt, constraints=None, **kwargs):
         pass
 

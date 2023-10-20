@@ -17,4 +17,7 @@ class OpenAIChatLLM(ChatLLM):
             **kwargs
         )
         return response["choices"][0]["message"]["content"]
+    
+    def get_name(self):
+        return self.model_name
 

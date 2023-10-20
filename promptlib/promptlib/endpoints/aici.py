@@ -88,19 +88,15 @@ def _submit_program(base_url, aici_module, aici_arg, temperature=0, max_tokens=2
                     if idx == 0:
                         if log:
                             l = ch["logs"].rstrip("\n")
-                            if l:
-                                print(l)
                             if "Previous WASM Error" in l:
-                                print("Bailing out due to WASM error")
-                                sys.exit(1)
-                            # print(f"*** TOK: '{ch['text']}'")
-                        else:
-                            print(ch["text"], end="")
+                                raise "Bailing out due to WASM error: " + l
+                        #else:
+                        #    print(ch["text"], end="")
                     texts[idx] += ch["text"]
-            elif decoded_line == "data: [DONE]":
-                print(" [DONE]")
-            else:
-                print(decoded_line)
+            #elif decoded_line == "data: [DONE]":
+            #    print(" [DONE]")
+            #else:
+            #    print(decoded_line)
 
     if len(texts) == 1:
         print(texts[0])
@@ -112,4 +108,4 @@ def _submit_program(base_url, aici_module, aici_arg, temperature=0, max_tokens=2
         ujson.dump(
             {"request": json, "texts": texts, "response": full_resp}, f, indent=1
         )
-    print(f"response saved to {path}")
+    #print(f"response saved to {path}")

@@ -5,8 +5,14 @@ from .constrain import ConstraintNode
 
 class GenNode(PromptNode):
 
-    def __init__(self, max_tokens=1000, **genargs):
-        super().__init__()
+    def __init__(self, max_tokens=1000, id:str=None, tags:dict=None, **genargs):
+        args = {}
+        if id is not None:
+            args["id"] = id
+        if tags is not None:
+            args["tags"] = tags
+
+        super().__init__(**args)
         self.max_tokens = max_tokens
         self.generated_text = None
         self.genargs = genargs
@@ -45,9 +51,15 @@ class GenNode(PromptNode):
         return self.generated_text
 
     def _get_plan_step(self):
-        return {"Gen": {"max_tokens": self.max_tokens, "rx": r".+"}}
-        #'{"Gen": {"max_tokens": ' + str(self.max_tokens) + ', "rx": ".+"}}'
+        dict = {"max_tokens": self.max_tokens, "rx": r".+"}
+        dict.update(self._get_attributes())
+        return {"Gen": dict}
     
+    def _get_attributes(self):
+        attr = super()._get_attributes()
+        attr.update({"genargs": self.genargs})
+        return attr
+
 
 def gen(prompt_code:PromptNode, max_tokens=1000, **genargs) -> PromptNode:
     node = GenNode(max_tokens, **genargs)
@@ -57,11 +69,16 @@ def gen(prompt_code:PromptNode, max_tokens=1000, **genargs) -> PromptNode:
 
 class ChoiceNode(GenNode):
     
-    def __init__(self, choices:list):
+    def __init__(self, choices:list, **args):
         self.choices = choices
         #self.choices_logprobs = None figure out how to get logprobs
         self.choice = None
-        super().__init__() # TODO add genargs to super that end up logit_biasing to the choices
+        super().__init__(**args) # TODO add genargs to super that end up logit_biasing to the choices
+
+    def _get_plan_step(self):
+        dict = {"rx": r"|".join(self.choices)}
+        dict.update(self._get_attributes())
+        return {"Gen": dict}
 
 
 def choose(prompt_code:PromptNode, choices:list) -> PromptNode:

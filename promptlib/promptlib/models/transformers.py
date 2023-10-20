@@ -11,6 +11,9 @@ class TransformersLLM(LLM):
         self.model = AutoModelForCausalLM.from_pretrained(model_name, **model_args)
         self.supports_constraints = True
 
+    def get_name(self):
+        return self.model_name
+
     def supportsConstraints():
         return True
     

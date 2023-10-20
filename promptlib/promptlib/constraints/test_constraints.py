@@ -13,6 +13,12 @@ class DummyCharacterConstraint(Constraint):
 
     def valid_next_chars(self):
         return self.positiveConstraint
+    
+    def get_type(self):
+        return "regex"
+    
+    def get_constraint_args(self):
+        return {"rx": r"[" + "|".join(self.positiveConstraint) + "]+"}
 
 
 
@@ -37,3 +43,11 @@ class OddEvenDigitConstraint(Constraint):
             return OddEvenDigitConstraint(prevDigitWasEven = False)
         else:
             return OddEvenDigitConstraint(prevDigitWasEven = True)
+        
+    def get_type(self):
+        return "regex"
+    
+    def get_constraint_args(self):
+        # this is a regex that recognizes any string consisting of alternating odd and even digits, starting with either odd or even
+        regex = r"^(?:[13579][02468])*[13579]|[02468]([13579]?|(?:[13579][02468])*)$"
+        return {"rx": regex}

@@ -4,6 +4,12 @@ class Constraint:
     def __init__(self):
         pass
 
+    def get_type(self):
+        return "<unspecified>"
+    
+    def get_constraint_args(self):
+        return {}
+
     def set_context(self, prefix, lm):
         pass
 
