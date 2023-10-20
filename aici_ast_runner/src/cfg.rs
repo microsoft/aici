@@ -313,7 +313,8 @@ impl CfgParser {
             }
         }
 
-        let mut r = vob![false; self.lexer.patterns.len()];
+        // skip patterns (whitespace) are always viable
+        let mut r = self.lexer.skip_patterns.clone();
         for tidx in self.stable.state_actions(stidx) {
             match self.stable.action(stidx, tidx) {
                 Action::Error => {}
@@ -331,10 +332,31 @@ impl CfgParser {
         r
     }
 
+    #[allow(dead_code)]
+    fn friendly_token_name(&self, lexeme: TIdx<StorageT>) -> &str {
+        if let Some(pidx) = self.tidx_to_pat_idx.get(&lexeme) {
+            &self.lexer.friendly_pattern_names[*pidx]
+        } else if self.grm.eof_token_idx() == lexeme {
+            return "<EOF>";
+        } else {
+            return "<???>";
+        }
+    }
+
     fn parse_lexeme(&self, lexeme: TIdx<StorageT>, pstack: &mut PStack<StorageT>) -> ParseResult {
         loop {
             let stidx = *pstack.last().unwrap();
-            match self.stable.action(stidx, lexeme) {
+
+            let act = self.stable.action(stidx, lexeme);
+
+            wprintln!(
+                "tidx: {:?} {:?} {:?}",
+                self.friendly_token_name(lexeme),
+                pstack,
+                act
+            );
+
+            match act {
                 Action::Reduce(pidx) => {
                     let ridx = self.grm.prod_to_rule(pidx);
                     let pop_idx = pstack.len() - self.grm.prod(pidx).len();
@@ -357,19 +379,42 @@ impl CfgParser {
         }
     }
 
+    #[allow(dead_code)]
+    fn print_viable(&self, lbl: &str, vob: &Vob) {
+        wprintln!("viable tokens {}:", lbl);
+        for (idx, b) in vob.iter().enumerate() {
+            if b {
+                wprintln!("  {}: {}", idx, self.lexer.friendly_pattern_names[idx]);
+            }
+        }
+    }
+
     // None means EOF
     fn try_push(&self, byte: Option<u8>) -> Option<ByteState> {
         let top = self.byte_states.last().unwrap();
-        match self.lexer.advance(top.lexer_state, byte) {
+        wprintln!("advance: {:?} {:?}", top.lexer_state, byte,);
+        let (info, res) = match self.lexer.advance(top.lexer_state, byte) {
             // Error?
-            None => None,
+            None => ("lex-err", None),
             // Just new state, no token
-            Some((state, None)) => {
-                self.mk_byte_state(state, top.parse_stack.clone(), top.viable.clone())
-            }
+            Some((state, None)) => (
+                "lex",
+                self.mk_byte_state(state, top.parse_stack.clone(), top.viable.clone()),
+            ),
             // New state and token generated
-            Some((state, Some(pat_idx))) => self.run_parser(pat_idx, top, state),
-        }
+            Some((state, Some(pat_idx))) => ("parse", self.run_parser(pat_idx, top, state)),
+        };
+        wprintln!(
+            "push: {:?} -> {} {}",
+            if let Some(b) = byte {
+                (b as char).to_string()
+            } else {
+                "<EOF>".to_string()
+            },
+            info,
+            if res.is_none() { "error" } else { "ok" }
+        );
+        res
     }
 
     fn run_parser(&self, pat_idx: usize, top: &ByteState, state: StateID) -> Option<ByteState> {
@@ -392,7 +437,10 @@ impl CfgParser {
         pstack: Rc<PStack<StorageT>>,
         mut viable: Vob,
     ) -> Option<ByteState> {
-        viable &= self.lexer.possible_tokens(state);
+        let lextoks = self.lexer.possible_tokens(state);
+        self.print_viable("v", &viable);
+        self.print_viable("lex", lextoks);
+        viable &= lextoks;
         if vob_is_zero(&viable) {
             None
         } else {
@@ -502,7 +550,7 @@ pub fn cfg_test() -> Result<()> {
     let sample = include_bytes!("../sample.c");
 
     for b in sample {
-        wprintln!("b: {}", *b as char);
+        wprintln!("b: '{}'", *b as char);
         let r = cfg.try_push_byte(*b);
         if !r {
             wprintln!("error");
