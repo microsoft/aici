@@ -112,10 +112,12 @@ impl Lexer {
             }
         }
 
-        wprintln!(
-            "tokenset_by_state: {:?}",
-            tokenset_by_state.get(&dfa.next_state(initial, b'a'))
-        );
+        if false {
+            wprintln!(
+                "tokenset_by_state: {:?}",
+                tokenset_by_state.get(&dfa.next_state(initial, b'a'))
+            );
+        }
 
         println!("visited: {:?}", tokenset_by_state.len());
 
@@ -133,38 +135,59 @@ impl Lexer {
         self.possible_by_state.get(&state).unwrap()
     }
 
-    fn advance(&self, prev: StateID, byte: u8) -> Option<(StateID, Option<PatIdx>)> {
+    fn get_token(&self, state: StateID) -> Option<PatIdx> {
+        assert!(self.dfa.is_match_state(state));
+
+        // we take the first token that matched
+        // (eg., "while" will match both keyword and identifier, but keyword is first)
+        let pat_idx = (0..self.dfa.match_len(state))
+            .map(|idx| self.dfa.match_pattern(state, idx).as_usize())
+            .min()
+            .unwrap();
+
+        if true {
+            wprintln!("token: {}", self.friendly_pattern_names[pat_idx]);
+        }
+
+        if self.skip_patterns[pat_idx] {
+            // whitespace, comment, etc.
+            None
+        } else {
+            Some(pat_idx)
+        }
+    }
+
+    fn advance(&self, prev: StateID, byte: Option<u8>) -> Option<(StateID, Option<PatIdx>)> {
         let dfa = &self.dfa;
-        let state = dfa.next_state(prev, byte);
-        if dfa.is_dead_state(state) {
-            // if prev is a match state, find the token that matched
-            if dfa.is_match_state(prev) {
-                // we take the first token that matched
-                // (eg., "while" will match both keyword and identifier, but keyword is first)
-                let pat_idx = (0..dfa.match_len(prev))
-                    .map(|idx| dfa.match_pattern(prev, idx).as_usize())
-                    .min()
-                    .unwrap();
-
-                // wprintln!("token: {}", self.dfa_info.friendly_pattern_names[pat_idx]);
-
-                let state = dfa.next_state(self.initial, byte);
-                if self.skip_patterns[pat_idx] {
-                    // whitespace, comment, etc.
-                    Some((state, None))
+        if let Some(byte) = byte {
+            let state = dfa.next_state(prev, byte);
+            wprintln!("state: {:?} {:?} {:?}", prev, byte as char, state);
+            if dfa.is_dead_state(dfa.next_eoi_state(state)) {
+                let final_state = dfa.next_eoi_state(prev);
+                // if final_state is a match state, find the token that matched
+                if dfa.is_match_state(final_state) {
+                    let tok = self.get_token(final_state);
+                    let state = dfa.next_state(self.initial, byte);
+                    Some((state, tok))
                 } else {
-                    Some((state, Some(pat_idx)))
+                    None
                 }
+            } else {
+                Some((state, None))
+            }
+        } else {
+            let final_state = dfa.next_eoi_state(prev);
+            if dfa.is_match_state(final_state) {
+                let tok = self.get_token(final_state);
+                Some((self.initial, tok))
             } else {
                 None
             }
-        } else {
-            Some((state, None))
         }
     }
 }
 
-struct Parser {
+pub struct CfgParser {
     grm: YaccGrammar<StorageT>,
     stable: StateTable<StorageT>,
     lexer: Lexer,
@@ -195,7 +218,7 @@ fn quote_rx(name: &str) -> String {
         .collect::<String>()
 }
 
-impl Parser {
+impl CfgParser {
     pub fn from(yacc: &str) -> Self {
         let grmkind = YaccKind::Original(cfgrammar::yacc::YaccOriginalActionKind::NoAction);
         let grm = YaccGrammar::new(grmkind, yacc).unwrap();
@@ -265,11 +288,16 @@ impl Parser {
         wprintln!("patterns: {:?}", friendly_pattern_names);
 
         let dfa = Lexer::from(patterns, skip_patterns, friendly_pattern_names);
-        Parser {
+        let byte_state = ByteState {
+            lexer_state: dfa.initial,
+            parse_stack: Rc::new(vec![stable.start_state()]),
+            viable: vob![true; dfa.patterns.len()],
+        };
+        CfgParser {
             grm,
             stable,
             lexer: dfa,
-            byte_states: vec![],
+            byte_states: vec![byte_state],
             pat_idx_to_tidx,
             tidx_to_pat_idx,
             possible_tokens_by_state: RefCell::new(HashMap::new()),
@@ -277,33 +305,36 @@ impl Parser {
     }
 
     fn viable_tokens(&self, stidx: StIdx<StorageT>) -> Vob {
-        if let Some(r) = self.possible_tokens_by_state.borrow().get(&stidx) {
-            r.clone()
-        } else {
-            let mut r = vob![false; self.lexer.patterns.len()];
-            for tidx in self.stable.state_actions(stidx) {
-                match self.stable.action(stidx, tidx) {
-                    Action::Error => {}
-                    _ => {
-                        if let Some(pat_idx) = self.tidx_to_pat_idx.get(&tidx) {
-                            r.set(*pat_idx, true);
-                        }
+        {
+            let tmp = self.possible_tokens_by_state.borrow();
+            let r = tmp.get(&stidx);
+            if let Some(r) = r {
+                return r.clone();
+            }
+        }
+
+        let mut r = vob![false; self.lexer.patterns.len()];
+        for tidx in self.stable.state_actions(stidx) {
+            match self.stable.action(stidx, tidx) {
+                Action::Error => {}
+                _ => {
+                    if let Some(pat_idx) = self.tidx_to_pat_idx.get(&tidx) {
+                        r.set(*pat_idx, true);
                     }
                 }
             }
-            self.possible_tokens_by_state
-                .borrow_mut()
-                .insert(stidx, r.clone());
-            r
         }
+
+        self.possible_tokens_by_state
+            .borrow_mut()
+            .insert(stidx, r.clone());
+        r
     }
 
-    fn parse_lexeme(&self, lexeme: StorageT, pstack: &mut PStack<StorageT>) -> ParseResult {
+    fn parse_lexeme(&self, lexeme: TIdx<StorageT>, pstack: &mut PStack<StorageT>) -> ParseResult {
         loop {
             let stidx = *pstack.last().unwrap();
-            let la_tidx = TIdx(lexeme);
-
-            match self.stable.action(stidx, la_tidx) {
+            match self.stable.action(stidx, lexeme) {
                 Action::Reduce(pidx) => {
                     let ridx = self.grm.prod_to_rule(pidx);
                     let pop_idx = pstack.len() - self.grm.prod(pidx).len();
@@ -326,7 +357,8 @@ impl Parser {
         }
     }
 
-    fn try_push(&self, byte: u8) -> Option<ByteState> {
+    // None means EOF
+    fn try_push(&self, byte: Option<u8>) -> Option<ByteState> {
         let top = self.byte_states.last().unwrap();
         match self.lexer.advance(top.lexer_state, byte) {
             // Error?
@@ -336,19 +368,21 @@ impl Parser {
                 self.mk_byte_state(state, top.parse_stack.clone(), top.viable.clone())
             }
             // New state and token generated
-            Some((state, Some(pat_idx))) => {
-                let tidx = self.pat_idx_to_tidx[pat_idx];
-                let mut pstack = (*top.parse_stack).clone();
-                match self.parse_lexeme(tidx.0, &mut pstack) {
-                    ParseResult::Accept => panic!("accept non EOF?"),
-                    ParseResult::Continue => {
-                        let stidx = *pstack.last().unwrap();
-                        let viable = self.viable_tokens(stidx);
-                        self.mk_byte_state(state, Rc::new(pstack), viable)
-                    }
-                    ParseResult::Error => None,
-                }
+            Some((state, Some(pat_idx))) => self.run_parser(pat_idx, top, state),
+        }
+    }
+
+    fn run_parser(&self, pat_idx: usize, top: &ByteState, state: StateID) -> Option<ByteState> {
+        let tidx = self.pat_idx_to_tidx[pat_idx];
+        let mut pstack = (*top.parse_stack).clone();
+        match self.parse_lexeme(tidx, &mut pstack) {
+            ParseResult::Accept => panic!("accept non EOF?"),
+            ParseResult::Continue => {
+                let stidx = *pstack.last().unwrap();
+                let viable = self.viable_tokens(stidx);
+                self.mk_byte_state(state, Rc::new(pstack), viable)
             }
+            ParseResult::Error => None,
         }
     }
 
@@ -386,7 +420,7 @@ struct ByteState {
     viable: Vob,
 }
 
-impl Recognizer for Parser {
+impl Recognizer for CfgParser {
     /*
 
     state: DFA state, set of viable tokens, LR(1) stack
@@ -410,7 +444,7 @@ impl Recognizer for Parser {
     */
 
     fn push_byte(&mut self, byte: u8) {
-        let st = self.try_push(byte).unwrap();
+        let st = self.try_push(Some(byte)).unwrap();
         self.byte_states.push(st)
     }
 
@@ -425,22 +459,62 @@ impl Recognizer for Parser {
     }
 
     fn byte_allowed(&self, byte: u8) -> bool {
-        let st = self.try_push(byte);
+        let st = self.try_push(Some(byte));
         st.is_some()
     }
 
     fn special_allowed(&self, tok: SpecialToken) -> bool {
-        todo!()
+        match tok {
+            SpecialToken::EndOfSentence => {
+                if let Some(st) = self.try_push(None) {
+                    let tidx = self.grm.eof_token_idx();
+                    let mut pstack = (*st.parse_stack).clone();
+                    match self.parse_lexeme(tidx, &mut pstack) {
+                        ParseResult::Accept => true,
+                        _ => false,
+                    }
+                } else {
+                    false
+                }
+            }
+            _ => false,
+        }
     }
 
     fn trie_finished(&mut self) {
-        todo!()
+        assert!(self.byte_states.len() == 1);
+    }
+
+    fn try_push_byte(&mut self, byte: u8) -> bool {
+        if let Some(st) = self.try_push(Some(byte)) {
+            self.byte_states.push(st);
+            true
+        } else {
+            false
+        }
     }
 }
 
 pub fn cfg_test() -> Result<()> {
     let grm = include_bytes!("../c.y");
-    let _ = Parser::from(&String::from_utf8_lossy(grm));
+    let mut cfg = CfgParser::from(&String::from_utf8_lossy(grm));
+
+    let sample = include_bytes!("../sample.c");
+
+    for b in sample {
+        wprintln!("b: {}", *b as char);
+        let r = cfg.try_push_byte(*b);
+        if !r {
+            wprintln!("error");
+            break;
+        }
+    }
+
+    if cfg.special_allowed(SpecialToken::EndOfSentence) {
+        wprintln!("accept EOS");
+    } else {
+        wprintln!("reject EOS");
+    }
 
     // let mut pstack = Vec::new();
     // pstack.push(stable.start_state());

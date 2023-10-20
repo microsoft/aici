@@ -31,6 +31,15 @@ pub trait Recognizer {
     /// Called when iteration over the trie is finished
     /// Stack has exactly one element then.
     fn trie_finished(&mut self);
+
+    fn try_push_byte(&mut self, byte: u8) -> bool {
+        if self.byte_allowed(byte) {
+            self.push_byte(byte);
+            true
+        } else {
+            false
+        }
+    }
 }
 
 pub struct TokTrie {
@@ -333,8 +342,7 @@ impl TokTrie {
         let mut num = 0;
         let mut ok = true;
         for &byte in bytes {
-            if r.byte_allowed(byte) {
-                r.push_byte(byte);
+            if r.try_push_byte(byte) {
                 num += 1;
             } else {
                 ok = false;
@@ -354,17 +362,9 @@ impl TokTrie {
         while p < endp {
             let n = &self.nodes[p];
             let b = n.byte();
-            if r.byte_allowed(b) {
+            if r.try_push_byte(b) {
                 logits[n.token_id().unwrap_or(defl_tok) as usize] = 0.0;
 
-                // This is slower due to branch mis-prediction:
-                // if n.subtree_size() == 1 {
-                //     r.pop_bytes(n.num_parents() - 1)
-                // } else {
-                //     r.push_byte(b)
-                // }
-
-                r.push_byte(b);
                 r.pop_bytes(if n.subtree_size() == 1 {
                     n.num_parents()
                 } else {
