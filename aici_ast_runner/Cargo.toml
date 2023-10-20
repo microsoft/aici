@@ -13,6 +13,7 @@ lrlex = "0.13.3"
 lrpar = "0.13.3"
 lrtable = "0.13.3"
 anyhow = "1.0.75"
+vob = "3.0.3"
 
 [patch.crates-io]
 aici_abi = { path = "../aici_abi" }

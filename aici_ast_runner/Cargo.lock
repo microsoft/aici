@@ -28,6 +28,7 @@ dependencies = [
  "regex-automata 0.3.9",
  "serde",
  "serde_json",
+ "vob",
 ]
 
 [[package]]
