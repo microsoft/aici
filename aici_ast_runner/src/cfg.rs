@@ -2,7 +2,7 @@ use std::{cell::RefCell, collections::HashMap, rc::Rc, vec};
 
 use aici_abi::{
     toktree::{Recognizer, SpecialToken},
-    wprintln,
+    wprint, wprintln,
 };
 use anyhow::Result;
 use cfgrammar::{
@@ -119,7 +119,7 @@ impl Lexer {
             );
         }
 
-        println!("visited: {:?}", tokenset_by_state.len());
+        wprintln!("visited: {:?}", tokenset_by_state.len());
 
         Lexer {
             dfa,
@@ -147,7 +147,7 @@ impl Lexer {
             .min()
             .unwrap();
 
-        if true {
+        if false {
             wprintln!("token: {}", self.friendly_pattern_names[pat_idx]);
         }
 
@@ -158,7 +158,7 @@ impl Lexer {
         let dfa = &self.dfa;
         if let Some(byte) = byte {
             let state = dfa.next_state(prev, byte);
-            wprintln!("state: {:?} {:?} {:?}", prev, byte as char, state);
+            // wprintln!("lex: {:?} -{:?}-> {:?}", prev, byte as char, state);
             if dfa.is_dead_state(dfa.next_eoi_state(state)) {
                 let final_state = dfa.next_eoi_state(prev);
                 // if final_state is a match state, find the token that matched
@@ -192,6 +192,7 @@ pub struct CfgParser {
     pat_idx_to_tidx: Vec<TIdx<u32>>,
     possible_tokens_by_state: RefCell<HashMap<StIdx<u32>, Vob>>,
     tidx_to_pat_idx: HashMap<TIdx<u32>, usize>,
+    logging: bool,
 }
 
 fn is_rx(name: &str) -> bool {
@@ -301,6 +302,7 @@ impl CfgParser {
             pat_idx_to_tidx,
             tidx_to_pat_idx,
             possible_tokens_by_state: RefCell::new(HashMap::new()),
+            logging: true,
         }
     }
 
@@ -349,12 +351,14 @@ impl CfgParser {
 
             let act = self.stable.action(stidx, lexeme);
 
-            wprintln!(
-                "tidx: {:?} {:?} {:?}",
-                self.friendly_token_name(lexeme),
-                pstack,
-                act
-            );
+            if self.logging {
+                wprintln!(
+                    "parse: {:?} {:?} -> {:?}",
+                    pstack,
+                    self.friendly_token_name(lexeme),
+                    act
+                );
+            }
 
             match act {
                 Action::Reduce(pidx) => {
@@ -392,6 +396,14 @@ impl CfgParser {
     // None means EOF
     fn try_push(&self, byte: Option<u8>) -> Option<ByteState> {
         let top = self.byte_states.last().unwrap();
+        if self.logging {
+            wprint!("try_push: ");
+            if let Some(b) = byte {
+                wprint!("{:?}", b as char)
+            } else {
+                wprint!("<EOF>")
+            }
+        }
         // wprintln!("advance: {:?} {:?}", top.lexer_state, byte,);
         let (info, res) = match self.lexer.advance(top.lexer_state, byte) {
             // Error?
@@ -404,25 +416,28 @@ impl CfgParser {
             // New state and token generated
             Some((state, Some(pat_idx))) => ("parse", self.run_parser(pat_idx, top, state)),
         };
-        wprintln!(
-            "push: {:?} -> {} {}",
-            if let Some(b) = byte {
-                (b as char).to_string()
-            } else {
-                "<EOF>".to_string()
-            },
-            info,
-            if res.is_none() { "error" } else { "ok" }
-        );
+        if self.logging {
+            wprintln!(
+                " -> {} {}",
+                info,
+                if res.is_none() { "error" } else { "ok" }
+            );
+        }
         res
     }
 
     fn run_parser(&self, pat_idx: usize, top: &ByteState, state: StateID) -> Option<ByteState> {
+        if self.logging {
+            wprintln!();
+        }
         if self.lexer.skip_patterns[pat_idx] {
             let stidx = *top.parse_stack.last().unwrap();
             let viable = self.viable_tokens(stidx);
             //print!("st {:?} ", stidx);
             //self.print_viable("reset", &viable);
+            if self.logging {
+                wprintln!("parse: {:?} skip", top.parse_stack);
+            }
             // reset viable states - they have been narrowed down to SKIP
             self.mk_byte_state(state, top.parse_stack.clone(), viable)
         } else {
@@ -560,7 +575,6 @@ pub fn cfg_test() -> Result<()> {
 
     let mut ok = true;
     for b in sample {
-        wprintln!("\nb: '{}'", *b as char);
         let r = cfg.try_push_byte(*b);
         if !r {
             ok = false;
