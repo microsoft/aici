@@ -136,7 +136,9 @@ impl Lexer {
     }
 
     fn get_token(&self, state: StateID) -> Option<PatIdx> {
-        assert!(self.dfa.is_match_state(state));
+        if !self.dfa.is_match_state(state) {
+            return None;
+        }
 
         // we take the first token that matched
         // (eg., "while" will match both keyword and identifier, but keyword is first)
@@ -149,12 +151,7 @@ impl Lexer {
             wprintln!("token: {}", self.friendly_pattern_names[pat_idx]);
         }
 
-        if self.skip_patterns[pat_idx] {
-            // whitespace, comment, etc.
-            None
-        } else {
-            Some(pat_idx)
-        }
+        Some(pat_idx)
     }
 
     fn advance(&self, prev: StateID, byte: Option<u8>) -> Option<(StateID, Option<PatIdx>)> {
@@ -165,23 +162,23 @@ impl Lexer {
             if dfa.is_dead_state(dfa.next_eoi_state(state)) {
                 let final_state = dfa.next_eoi_state(prev);
                 // if final_state is a match state, find the token that matched
-                if dfa.is_match_state(final_state) {
-                    let tok = self.get_token(final_state);
+                let tok = self.get_token(final_state);
+                if tok.is_none() {
+                    None
+                } else {
                     let state = dfa.next_state(self.initial, byte);
                     Some((state, tok))
-                } else {
-                    None
                 }
             } else {
                 Some((state, None))
             }
         } else {
             let final_state = dfa.next_eoi_state(prev);
-            if dfa.is_match_state(final_state) {
-                let tok = self.get_token(final_state);
-                Some((self.initial, tok))
-            } else {
+            let tok = self.get_token(final_state);
+            if tok.is_none() {
                 None
+            } else {
+                Some((self.initial, tok))
             }
         }
     }
@@ -266,7 +263,10 @@ impl CfgParser {
         }
 
         let mut skip_patterns = vob![false; patterns.len()];
-        let mut friendly_pattern_names = patterns.clone();
+        let mut friendly_pattern_names = pat_idx_to_tidx
+            .iter()
+            .map(|tok| grm.token_name(*tok).unwrap().to_string())
+            .collect::<Vec<_>>();
 
         for ridx in grm.iter_rules() {
             let rname = grm.rule_name_str(ridx);
@@ -392,7 +392,7 @@ impl CfgParser {
     // None means EOF
     fn try_push(&self, byte: Option<u8>) -> Option<ByteState> {
         let top = self.byte_states.last().unwrap();
-        wprintln!("advance: {:?} {:?}", top.lexer_state, byte,);
+        // wprintln!("advance: {:?} {:?}", top.lexer_state, byte,);
         let (info, res) = match self.lexer.advance(top.lexer_state, byte) {
             // Error?
             None => ("lex-err", None),
@@ -418,16 +418,25 @@ impl CfgParser {
     }
 
     fn run_parser(&self, pat_idx: usize, top: &ByteState, state: StateID) -> Option<ByteState> {
-        let tidx = self.pat_idx_to_tidx[pat_idx];
-        let mut pstack = (*top.parse_stack).clone();
-        match self.parse_lexeme(tidx, &mut pstack) {
-            ParseResult::Accept => panic!("accept non EOF?"),
-            ParseResult::Continue => {
-                let stidx = *pstack.last().unwrap();
-                let viable = self.viable_tokens(stidx);
-                self.mk_byte_state(state, Rc::new(pstack), viable)
+        if self.lexer.skip_patterns[pat_idx] {
+            let stidx = *top.parse_stack.last().unwrap();
+            let viable = self.viable_tokens(stidx);
+            //print!("st {:?} ", stidx);
+            //self.print_viable("reset", &viable);
+            // reset viable states - they have been narrowed down to SKIP
+            self.mk_byte_state(state, top.parse_stack.clone(), viable)
+        } else {
+            let tidx = self.pat_idx_to_tidx[pat_idx];
+            let mut pstack = (*top.parse_stack).clone();
+            match self.parse_lexeme(tidx, &mut pstack) {
+                ParseResult::Accept => panic!("accept non EOF?"),
+                ParseResult::Continue => {
+                    let stidx = *pstack.last().unwrap();
+                    let viable = self.viable_tokens(stidx);
+                    self.mk_byte_state(state, Rc::new(pstack), viable)
+                }
+                ParseResult::Error => None,
             }
-            ParseResult::Error => None,
         }
     }
 
@@ -438,8 +447,8 @@ impl CfgParser {
         mut viable: Vob,
     ) -> Option<ByteState> {
         let lextoks = self.lexer.possible_tokens(state);
-        self.print_viable("v", &viable);
-        self.print_viable("lex", lextoks);
+        // self.print_viable("v", &viable);
+        // self.print_viable("lex", lextoks);
         viable &= lextoks;
         if vob_is_zero(&viable) {
             None
@@ -549,19 +558,24 @@ pub fn cfg_test() -> Result<()> {
 
     let sample = include_bytes!("../sample.c");
 
+    let mut ok = true;
     for b in sample {
-        wprintln!("b: '{}'", *b as char);
+        wprintln!("\nb: '{}'", *b as char);
         let r = cfg.try_push_byte(*b);
         if !r {
-            wprintln!("error");
+            ok = false;
             break;
         }
     }
 
-    if cfg.special_allowed(SpecialToken::EndOfSentence) {
-        wprintln!("accept EOS");
+    if ok {
+        if cfg.special_allowed(SpecialToken::EndOfSentence) {
+            wprintln!("accept EOS");
+        } else {
+            wprintln!("reject EOS");
+        }
     } else {
-        wprintln!("reject EOS");
+        wprintln!("reject");
     }
 
     // let mut pstack = Vec::new();

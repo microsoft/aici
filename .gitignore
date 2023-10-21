@@ -13,3 +13,4 @@ regex_llm/trie
 perf.data
 */src/tokenizers
 tokenizer.bin
+log.txt
