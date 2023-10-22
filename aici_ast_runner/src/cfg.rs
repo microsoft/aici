@@ -239,7 +239,7 @@ pub struct CfgParser {
     lexer: Lexer,
     byte_states: Vec<ByteState>,
     pat_idx_to_tidx: Vec<TIdx<u32>>,
-    possible_tokens_by_state: RefCell<HashMap<StIdx<u32>, Vob>>,
+    possible_tokens_by_state: RefCell<HashMap<StIdx<u32>, Rc<Vob>>>,
     stats: RefCell<CfgStats>,
     tidx_to_pat_idx: HashMap<TIdx<u32>, usize>,
     logging: bool,
@@ -341,7 +341,7 @@ impl CfgParser {
         let byte_state = ByteState {
             lexer_state: dfa.file_start,
             parse_stack: Rc::new(vec![stable.start_state()]),
-            viable: vob![true; dfa.patterns.len()],
+            viable: Rc::new(vob![true; dfa.patterns.len()]),
         };
         CfgParser {
             grm,
@@ -359,7 +359,7 @@ impl CfgParser {
         }
     }
 
-    fn viable_tokens(&self, stidx: StIdx<StorageT>) -> Vob {
+    fn viable_tokens(&self, stidx: StIdx<StorageT>) -> Rc<Vob> {
         {
             let tmp = self.possible_tokens_by_state.borrow();
             let r = tmp.get(&stidx);
@@ -381,10 +381,11 @@ impl CfgParser {
             }
         }
 
+        let rr = Rc::new(r);
         self.possible_tokens_by_state
             .borrow_mut()
-            .insert(stidx, r.clone());
-        r
+            .insert(stidx, rr.clone());
+        rr
     }
 
     #[allow(dead_code)]
@@ -522,7 +523,7 @@ impl CfgParser {
         &self,
         state: StateID,
         pstack: Rc<PStack<StorageT>>,
-        mut viable: Vob,
+        viable: Rc<Vob>,
     ) -> Option<ByteState> {
         {
             let mut s = self.stats.borrow_mut();
@@ -533,8 +534,7 @@ impl CfgParser {
             self.print_viable("v", &viable);
             self.print_viable("lex", lextoks);
         }
-        viable &= lextoks;
-        if vob_is_zero(&viable) {
+        if vob_and_is_zero(&viable, &lextoks) {
             None
         } else {
             Some(ByteState {
@@ -544,6 +544,16 @@ impl CfgParser {
             })
         }
     }
+}
+
+fn vob_and_is_zero(a: &Vob, b: &Vob) -> bool {
+    assert!(a.len() == b.len());
+    for (a, b) in a.iter_storage().zip(b.iter_storage()) {
+        if a & b != 0 {
+            return false;
+        }
+    }
+    return true;
 }
 
 fn vob_is_zero(v: &Vob) -> bool {
@@ -558,7 +568,7 @@ fn vob_is_zero(v: &Vob) -> bool {
 struct ByteState {
     lexer_state: StateID,
     parse_stack: Rc<PStack<StorageT>>,
-    viable: Vob,
+    viable: Rc<Vob>,
 }
 
 impl Recognizer for CfgParser {
