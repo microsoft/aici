@@ -1,4 +1,4 @@
-use std::{cell::RefCell, collections::HashMap, rc::Rc, vec};
+use std::{cell::RefCell, rc::Rc, time::Instant, vec};
 
 use aici_abi::{
     toktree::{Recognizer, SpecialToken, TokTrie},
@@ -14,6 +14,7 @@ use regex_automata::{
     dfa::{dense, Automaton},
     util::{primitives::StateID, syntax},
 };
+use rustc_hash::FxHashMap;
 use vob::{vob, Vob};
 
 type StorageT = u32;
@@ -32,7 +33,7 @@ struct Lexer {
     patterns: Vec<String>,
     skip_patterns: Vob,
     friendly_pattern_names: Vec<String>,
-    possible_by_state: HashMap<StateID, vob::Vob>,
+    possible_by_state: FxHashMap<StateID, vob::Vob>,
     initial: StateID,
     file_start: StateID,
     logging: bool,
@@ -68,7 +69,7 @@ impl Lexer {
 
         let anch = regex_automata::Anchored::Yes;
 
-        let mut incoming = HashMap::new();
+        let mut incoming = FxHashMap::default();
         let initial = dfa.universal_start_state(anch).unwrap();
         let mut todo = vec![initial];
         incoming.insert(initial, Vec::new());
@@ -85,7 +86,7 @@ impl Lexer {
         }
 
         let states = incoming.keys().map(|x| *x).collect::<Vec<_>>();
-        let mut tokenset_by_state = HashMap::new();
+        let mut tokenset_by_state = FxHashMap::default();
 
         for s in &states {
             let mut v = vob![false; patterns.len()];
@@ -239,9 +240,9 @@ pub struct CfgParser {
     lexer: Lexer,
     byte_states: Vec<ByteState>,
     pat_idx_to_tidx: Vec<TIdx<u32>>,
-    possible_tokens_by_state: RefCell<HashMap<StIdx<u32>, Rc<Vob>>>,
+    possible_tokens_by_state: RefCell<FxHashMap<StIdx<u32>, Rc<Vob>>>,
     stats: RefCell<CfgStats>,
-    tidx_to_pat_idx: HashMap<TIdx<u32>, usize>,
+    tidx_to_pat_idx: FxHashMap<TIdx<u32>, usize>,
     logging: bool,
 }
 
@@ -307,7 +308,7 @@ impl CfgParser {
             })
             .collect::<Vec<_>>();
 
-        let mut tidx_to_pat_idx = HashMap::new();
+        let mut tidx_to_pat_idx = FxHashMap::default();
         for (idx, _tok) in patterns.iter().enumerate() {
             tidx_to_pat_idx.insert(pat_idx_to_tidx[idx], idx);
         }
@@ -350,7 +351,7 @@ impl CfgParser {
             byte_states: vec![byte_state],
             pat_idx_to_tidx,
             tidx_to_pat_idx,
-            possible_tokens_by_state: RefCell::new(HashMap::new()),
+            possible_tokens_by_state: RefCell::new(FxHashMap::default()),
             stats: RefCell::new(CfgStats {
                 yacc_actions: 0,
                 states_pushed: 0,
@@ -634,18 +635,23 @@ pub fn cfg_test() -> Result<()> {
     let toks = trie.greedy_tokenize(sample);
 
     let mut logits = trie.alloc_logits();
+    let t0 = Instant::now();
 
     for tok in &toks[0..100] {
         let tok = *tok;
         trie.compute_bias(&mut cfg, &mut logits);
-        wprintln!(
-            "tok: {:?} {}; {}",
-            trie.token_str(tok),
-            logits[tok as usize],
-            cfg.get_stats()
-        );
+        if false {
+            wprintln!(
+                "tok: {:?} {}; {}",
+                trie.token_str(tok),
+                logits[tok as usize],
+                cfg.get_stats()
+            );
+        }
         trie.append_token(&mut cfg, tok);
     }
+
+    wprintln!("time: {:?}", t0.elapsed());
 
     if false {
         let mut ok = true;

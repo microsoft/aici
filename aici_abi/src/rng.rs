@@ -11,7 +11,7 @@ impl Rng {
 
     pub fn gen(&mut self) -> usize {
         // xor-shift algorithm
-        #[cfg(all(target_pointer_width = "32"))]
+        #[cfg(target_pointer_width = "32")]
         {
             let mut x = self.state;
             x ^= x << 13;
@@ -20,7 +20,7 @@ impl Rng {
             self.state = x;
             x
         }
-        #[cfg(all(target_pointer_width = "64"))]
+        #[cfg(target_pointer_width = "64")]
         {
             let mut x = self.state;
             x ^= x << 13;

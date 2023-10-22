@@ -14,6 +14,7 @@ lrpar = "0.13.3"
 lrtable = "0.13.3"
 anyhow = "1.0.75"
 vob = "3.0.3"
+rustc-hash = "1.1.0"
 
 [patch.crates-io]
 aici_abi = { path = "../aici_abi" }
