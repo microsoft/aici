@@ -34,6 +34,7 @@ struct Lexer {
     friendly_pattern_names: Vec<String>,
     possible_by_state: HashMap<StateID, vob::Vob>,
     initial: StateID,
+    file_start: StateID,
 }
 
 impl Lexer {
@@ -55,8 +56,13 @@ impl Lexer {
         wprintln!(
             "dfa: {} bytes, {} patterns",
             dfa.memory_usage(),
-            patterns.len()
+            patterns.len(),
         );
+        if false {
+            for p in &patterns {
+                wprintln!("  {}", p)
+            }
+        }
 
         let anch = regex_automata::Anchored::Yes;
 
@@ -81,9 +87,10 @@ impl Lexer {
 
         for s in &states {
             let mut v = vob![false; patterns.len()];
-            if dfa.is_match_state(*s) {
-                for idx in 0..dfa.match_len(*s) {
-                    let idx = dfa.match_pattern(*s, idx).as_usize();
+            let s2 = dfa.next_eoi_state(*s);
+            if dfa.is_match_state(s2) {
+                for idx in 0..dfa.match_len(s2) {
+                    let idx = dfa.match_pattern(s2, idx).as_usize();
                     v.set(idx, true);
                 }
             }
@@ -112,23 +119,41 @@ impl Lexer {
             }
         }
 
-        if false {
-            wprintln!(
-                "tokenset_by_state: {:?}",
-                tokenset_by_state.get(&dfa.next_state(initial, b'a'))
-            );
-        }
+        // pretend we've just seen a newline at the beginning of the file
+        // TODO: this should be configurable
+        let file_start = dfa.next_state(initial, b'\n');
+        wprintln!(
+            "initial: {:?} {:?}; {} states",
+            initial,
+            file_start,
+            states.len()
+        );
 
-        wprintln!("visited: {:?}", tokenset_by_state.len());
-
-        Lexer {
+        let lex = Lexer {
             dfa,
             patterns,
             skip_patterns,
             friendly_pattern_names,
             possible_by_state: tokenset_by_state,
             initial,
+            file_start,
+        };
+
+        if false {
+            for s in &states {
+                if lex.is_dead(*s) {
+                    wprintln!("dead: {:?} {}", s, lex.dfa.is_dead_state(*s));
+                }
+            }
+
+            wprintln!("possible_tokens: {:#?}", lex.possible_by_state);
         }
+
+        lex
+    }
+
+    fn is_dead(&self, state: StateID) -> bool {
+        vob_is_zero(self.possible_tokens(state))
     }
 
     fn possible_tokens(&self, state: StateID) -> &Vob {
@@ -158,8 +183,14 @@ impl Lexer {
         let dfa = &self.dfa;
         if let Some(byte) = byte {
             let state = dfa.next_state(prev, byte);
-            // wprintln!("lex: {:?} -{:?}-> {:?}", prev, byte as char, state);
-            if dfa.is_dead_state(dfa.next_eoi_state(state)) {
+            wprintln!(
+                "lex: {:?} -{:?}-> {:?} d={}",
+                prev,
+                byte as char,
+                state,
+                self.is_dead(state),
+            );
+            if self.is_dead(state) {
                 let final_state = dfa.next_eoi_state(prev);
                 // if final_state is a match state, find the token that matched
                 let tok = self.get_token(final_state);
@@ -167,6 +198,7 @@ impl Lexer {
                     None
                 } else {
                     let state = dfa.next_state(self.initial, byte);
+                    wprintln!("lex0: {:?} -{:?}-> {:?}", self.initial, byte as char, state);
                     Some((state, tok))
                 }
             } else {
@@ -290,7 +322,7 @@ impl CfgParser {
 
         let dfa = Lexer::from(patterns, skip_patterns, friendly_pattern_names);
         let byte_state = ByteState {
-            lexer_state: dfa.initial,
+            lexer_state: dfa.file_start,
             parse_stack: Rc::new(vec![stable.start_state()]),
             viable: vob![true; dfa.patterns.len()],
         };
@@ -574,10 +606,14 @@ pub fn cfg_test() -> Result<()> {
     let sample = include_bytes!("../sample.c");
 
     let mut ok = true;
-    for b in sample {
+    for (idx, b) in sample.iter().enumerate() {
         let r = cfg.try_push_byte(*b);
         if !r {
             ok = false;
+            wprintln!(
+                "reject at {:?}",
+                String::from_utf8_lossy(&sample[idx.saturating_sub(100)..idx])
+            );
             break;
         }
     }

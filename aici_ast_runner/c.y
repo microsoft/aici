@@ -4,8 +4,10 @@
 %%
 
 SKIP
-    : "//\*[^*]*\*+([^/*][^*]*\*+)*//"
-    | "/[ \t\v\n\f]/"
+    : "//\*[^*]*\*+([^/*][^*]*\*+)*//" 	// block comment
+	| "///.*/" 							// line comment
+	| "/\n[ \t\v\f]*#(.*\\\n)*.*/" 		// pre-processor
+    | "/[ \t\v\n\f]+/"					// white-space
     ;
 
 IDENTIFIER: "/[a-zA-Z_][0-9a-zA-Z_]*/" ;
@@ -16,13 +18,13 @@ CONSTANT
         : "/0[xX][0-9a-fA-F]+[uUlL]*?/"
         | "/0[0-9]+[uUlL]*?/"
         | "/[0-9]+[uUlL]*?/"
-        | "/[a-zA-Z_]?'(\\.|[^\\'])+/"
+        | "/[a-zA-Z_]?'(\\.|[^\\'])+'/"
         | "/[0-9]+[Ee][+-]?[0-9]+[flFL]?/"
         | "/[0-9]*\\.[0-9]+([Ee][+-]?[0-9]+)?[flFL]?/"
         | "/[0-9]+\\.[0-9]*([Ee][+-]?[0-9]+)?[flFL]?/"
         ;
 
-STRING_LITERAL: '/[a-zA-Z_]?\"(\\.|[^\\"])*\"/' ;
+STRING_LITERAL: '/[a-zA-Z_]?"(\\.|[^\\"])*"/' ;
 
 primary_expression
 	: IDENTIFIER
@@ -191,6 +193,7 @@ storage_class_specifier
 	| "static"
 	| "auto"
 	| "register"
+	| "inline"
 	;
 
 type_specifier
@@ -203,6 +206,7 @@ type_specifier
 	| "double"
 	| "signed"
 	| "unsigned"
+	| "bool"
 	| struct_or_union_specifier
 	| enum_specifier
 	| TYPE_NAME
@@ -368,8 +372,6 @@ labeled_statement
 compound_statement
 	: "{" "}"
 	| "{" statement_list "}"
-	| "{" declaration_list "}"
-	| "{" declaration_list statement_list "}"
 	;
 
 declaration_list
@@ -377,9 +379,14 @@ declaration_list
 	| declaration_list declaration
 	;
 
+statement_or_declaration
+    : statement
+	| declaration
+	;
+
 statement_list
-	: statement
-	| statement_list statement
+	: statement_or_declaration
+	| statement_list statement_or_declaration
 	;
 
 expression_statement
