@@ -54,5 +54,10 @@
         "latex",
         "plaintext",
         "rust"
+    ],
+    "cSpell.words": [
+        "aici",
+        "logit",
+        "wprintln"
     ]
 }

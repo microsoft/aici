@@ -18,7 +18,7 @@ pub enum SpecialToken {
 }
 
 pub trait Recognizer {
-    /// If `stack.top()` trasitions via `byte` to `X`, execute `stack.push(X)`.
+    /// If `stack.top()` transitions via `byte` to `X`, execute `stack.push(X)`.
     fn push_byte(&mut self, byte: u8);
     /// for _ in 0..num { stack.pop() }
     fn pop_bytes(&mut self, num: usize);
@@ -167,11 +167,50 @@ impl TokTrie {
         self.info.vocab_size as usize
     }
 
+    pub fn alloc_logits(&self) -> Vec<f32> {
+        vec![0.0; self.vocab_size() + 1]
+    }
+
+    pub fn token_str(&self, idx: u32) -> String {
+        String::from_utf8_lossy(self.token(idx)).to_string()
+    }
+
     pub fn token(&self, idx: u32) -> &[u8] {
         let off = self.token_offsets[idx as usize];
         let len = off & 0xff;
         let off = (off >> 8) as usize;
         &self.token_data[off..(off + len as usize)]
+    }
+
+    pub fn greedy_tokenize(&self, bytes: &[u8]) -> Vec<TokenId> {
+        let mut r = Vec::new();
+        if bytes.len() == 0 {
+            return r;
+        }
+
+        let mut n = self.root();
+        let mut last_tok = None;
+        let mut last_idx = 0;
+        let mut idx = 0;
+        while idx < bytes.len() {
+            match self.child_at_byte(n, bytes[idx]) {
+                Some(c) => {
+                    if let Some(tok) = c.token_id() {
+                        last_tok = Some(tok);
+                        last_idx = idx;
+                    }
+                    n = c;
+                }
+                None => {
+                    r.push(last_tok.unwrap());
+                    idx = last_idx;
+                    n = self.root();
+                }
+            }
+            idx = idx + 1;
+        }
+        r.push(last_tok.unwrap());
+        r
     }
 
     pub fn token_id(&self, bytes: &[u8]) -> Option<TokenId> {
