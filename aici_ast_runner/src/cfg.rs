@@ -304,7 +304,6 @@ impl CfgParser {
         let mut tidx_to_pat_idx = HashMap::new();
         for (idx, _tok) in patterns.iter().enumerate() {
             tidx_to_pat_idx.insert(pat_idx_to_tidx[idx], idx);
-            // wprintln!("tok: {:?} {:?}", tok, tidx[idx]);
         }
 
         let mut skip_patterns = vob![false; patterns.len()];
@@ -346,7 +345,7 @@ impl CfgParser {
             pat_idx_to_tidx,
             tidx_to_pat_idx,
             possible_tokens_by_state: RefCell::new(HashMap::new()),
-            logging: true,
+            logging: false,
         }
     }
 
@@ -448,7 +447,6 @@ impl CfgParser {
                 wprint!("<EOF>")
             }
         }
-        // wprintln!("advance: {:?} {:?}", top.lexer_state, byte,);
         let (info, res) = match self.lexer.advance(top.lexer_state, byte) {
             // Error?
             None => ("lex-err", None),
@@ -477,7 +475,6 @@ impl CfgParser {
         if self.lexer.skip_patterns[pat_idx] {
             let stidx = *top.parse_stack.last().unwrap();
             let viable = self.viable_tokens(stidx);
-            //print!("st {:?} ", stidx);
             //self.print_viable("reset", &viable);
             if self.logging {
                 wprintln!("parse: {:?} skip", top.parse_stack);
@@ -506,8 +503,10 @@ impl CfgParser {
         mut viable: Vob,
     ) -> Option<ByteState> {
         let lextoks = self.lexer.possible_tokens(state);
-        // self.print_viable("v", &viable);
-        // self.print_viable("lex", lextoks);
+        if false {
+            self.print_viable("v", &viable);
+            self.print_viable("lex", lextoks);
+        }
         viable &= lextoks;
         if vob_is_zero(&viable) {
             None
@@ -537,28 +536,6 @@ struct ByteState {
 }
 
 impl Recognizer for CfgParser {
-    /*
-
-    state: DFA state, set of viable tokens, LR(1) stack
-
-    push(byte):
-        prev = state
-        state = state.next(byte)
-        if dead(state):
-            tok = matches(prev)
-            if tok != white space:
-                LR(1) <- tok
-            state = state0.next(byte)
-            viable = possible_tokens(state) & (viable(LR(1)) | {white space})
-        else
-            viable = viable & possible_tokens(state)
-            if viable is empty
-                reject
-            else
-                continue
-
-    */
-
     fn push_byte(&mut self, byte: u8) {
         let st = self.try_push(Some(byte)).unwrap();
         self.byte_states.push(st)
@@ -641,50 +618,6 @@ pub fn cfg_test() -> Result<()> {
     } else {
         wprintln!("reject");
     }
-
-    // let mut pstack = Vec::new();
-    // pstack.push(stable.start_state());
-    // let psr = ParserState {
-    //     grm: &grm,
-    //     stable: &stable,
-    // };
-
-    // let s = "(0+1)*Q2";
-    // let mut tokens = s
-    //     .char_indices()
-    //     .map(|(index, ch)| &s[index..index + ch.len_utf8()])
-    //     .map(|chstr| grm.token_idx(chstr).unwrap())
-    //     .collect::<Vec<_>>();
-    // tokens.push(grm.eof_token_idx());
-
-    // // for tok in tokens {
-    // //     let r = psr.parse_lexeme(tok.0, &mut pstack);
-    // //     wprintln!("t: {:?} {:?} {:?}", tok, grm.token_name(tok), r);
-    // // }
-
-    // let patterns = vec![
-    //     r#"foo"#, //
-    //     r#"fob"#, //
-    //     r#"\w+"#, //
-    //     r#"\d+"#, //
-    // ];
-    // //wprintln!("dfa: {:?}", dfa);
-    // let s = "fooXX";
-    // let mut state = dfa.universal_start_state(anch).unwrap();
-    // for b in s.as_bytes() {
-    //     wprintln!("state: {:?} {:?}", state, b);
-    //     let state2 = dfa.next_eoi_state(state);
-    //     if dfa.is_match_state(state2) {
-    //         for idx in 0..dfa.match_len(state2) {
-    //             let pat = patterns[dfa.match_pattern(state2, idx).as_usize()];
-    //             wprintln!("  match: {}", pat);
-    //         }
-    //     } else if dfa.is_dead_state(state) {
-    //         wprintln!("dead");
-    //         break;
-    //     }
-    //     state = dfa.next_state(state, *b);
-    // }
 
     Ok(())
 }
