@@ -1,7 +1,7 @@
 use std::{cell::RefCell, collections::HashMap, rc::Rc, vec};
 
 use aici_abi::{
-    toktree::{Recognizer, SpecialToken},
+    toktree::{Recognizer, SpecialToken, TokTrie},
     wprint, wprintln,
 };
 use anyhow::Result;
@@ -228,6 +228,11 @@ impl Lexer {
     }
 }
 
+struct CfgStats {
+    yacc_actions: usize,
+    states_pushed: usize,
+}
+
 pub struct CfgParser {
     grm: YaccGrammar<StorageT>,
     stable: StateTable<StorageT>,
@@ -235,6 +240,7 @@ pub struct CfgParser {
     byte_states: Vec<ByteState>,
     pat_idx_to_tidx: Vec<TIdx<u32>>,
     possible_tokens_by_state: RefCell<HashMap<StIdx<u32>, Vob>>,
+    stats: RefCell<CfgStats>,
     tidx_to_pat_idx: HashMap<TIdx<u32>, usize>,
     logging: bool,
 }
@@ -345,6 +351,10 @@ impl CfgParser {
             pat_idx_to_tidx,
             tidx_to_pat_idx,
             possible_tokens_by_state: RefCell::new(HashMap::new()),
+            stats: RefCell::new(CfgStats {
+                yacc_actions: 0,
+                states_pushed: 0,
+            }),
             logging: false,
         }
     }
@@ -450,7 +460,7 @@ impl CfgParser {
         let (info, res) = match self.lexer.advance(top.lexer_state, byte) {
             // Error?
             None => ("lex-err", None),
-            // Just new state, no token
+            // Just new state, no token - the hot path
             Some((state, None)) => (
                 "lex",
                 self.mk_byte_state(state, top.parse_stack.clone(), top.viable.clone()),
@@ -469,6 +479,10 @@ impl CfgParser {
     }
 
     fn run_parser(&self, pat_idx: usize, top: &ByteState, state: StateID) -> Option<ByteState> {
+        {
+            let mut s = self.stats.borrow_mut();
+            s.yacc_actions += 1;
+        }
         if self.logging {
             wprintln!();
         }
@@ -496,12 +510,24 @@ impl CfgParser {
         }
     }
 
+    pub fn get_stats(&self) -> String {
+        let mut s = self.stats.borrow_mut();
+        let r = format!("yacc: {}/{}", s.yacc_actions, s.states_pushed);
+        s.yacc_actions = 0;
+        s.states_pushed = 0;
+        r
+    }
+
     fn mk_byte_state(
         &self,
         state: StateID,
         pstack: Rc<PStack<StorageT>>,
         mut viable: Vob,
     ) -> Option<ByteState> {
+        {
+            let mut s = self.stats.borrow_mut();
+            s.states_pushed += 1;
+        }
         let lextoks = self.lexer.possible_tokens(state);
         if false {
             self.print_viable("v", &viable);
@@ -589,34 +615,69 @@ impl Recognizer for CfgParser {
 }
 
 pub fn cfg_test() -> Result<()> {
-    let grm = include_bytes!("../c.y");
-    let mut cfg = CfgParser::from(&String::from_utf8_lossy(grm));
+    let yacc_bytes = include_bytes!("../c.y");
+    let mut cfg = CfgParser::from(&String::from_utf8_lossy(yacc_bytes));
+    let mut rng = aici_abi::rng::Rng::new(0);
 
+    let trie = TokTrie::from_host();
     let sample = include_bytes!("../sample.c");
+    let toks = trie.greedy_tokenize(sample);
 
-    let mut ok = true;
-    for (idx, b) in sample.iter().enumerate() {
-        let r = cfg.try_push_byte(*b);
-        if !r {
-            ok = false;
+    let mut logits = trie.alloc_logits();
 
-            wprintln!(
-                "reject at\n{:?}\n{:?}",
-                String::from_utf8_lossy(&sample[idx.saturating_sub(50)..idx]),
-                String::from_utf8_lossy(&sample[idx..std::cmp::min(idx + 30, sample.len())])
-            );
-            break;
-        }
+    for tok in &toks[0..100] {
+        let tok = *tok;
+        trie.compute_bias(&mut cfg, &mut logits);
+        wprintln!(
+            "tok: {:?} {}; {}",
+            trie.token_str(tok),
+            logits[tok as usize],
+            cfg.get_stats()
+        );
+        trie.append_token(&mut cfg, tok);
     }
 
-    if ok {
-        if cfg.special_allowed(SpecialToken::EndOfSentence) {
-            wprintln!("accept EOS");
-        } else {
-            wprintln!("reject EOS");
+    if false {
+        let mut ok = true;
+        let mut idx = 0;
+        while idx < sample.len() {
+            let b = sample[idx];
+            // wprintln!("idx {} {:?}", idx, b as char);
+            let r = cfg.try_push_byte(b);
+            if !r {
+                ok = false;
+                wprintln!(
+                    "reject at\n{:?}\n{:?}",
+                    String::from_utf8_lossy(&sample[idx.saturating_sub(50)..idx]),
+                    String::from_utf8_lossy(&sample[idx..std::cmp::min(idx + 30, sample.len())])
+                );
+                break;
+            }
+            idx += 1;
+
+            let max_pop = cfg.byte_states.len() - 1;
+            if max_pop > 0 && rng.gen_up_to(4) == 0 {
+                let num = rng.gen_up_to(max_pop - 1) + 1;
+                // wprintln!("pop {} {}", num, cfg.byte_states.len());
+                cfg.pop_bytes(num);
+                idx -= num;
+            }
+
+            if rng.gen_up_to(10) == 0 {
+                // wprintln!("collapse");
+                cfg.collapse();
+            }
         }
-    } else {
-        wprintln!("reject");
+
+        if ok {
+            if cfg.special_allowed(SpecialToken::EndOfSentence) {
+                wprintln!("accept EOS");
+            } else {
+                wprintln!("reject EOS");
+            }
+        } else {
+            wprintln!("reject");
+        }
     }
 
     Ok(())
