@@ -35,6 +35,7 @@ struct Lexer {
     possible_by_state: HashMap<StateID, vob::Vob>,
     initial: StateID,
     file_start: StateID,
+    logging: bool,
 }
 
 impl Lexer {
@@ -43,6 +44,7 @@ impl Lexer {
         skip_patterns: Vob,
         friendly_pattern_names: Vec<String>,
     ) -> Self {
+        let logging = false;
         let dfa = dense::Builder::new()
             .configure(
                 dense::Config::new()
@@ -92,6 +94,9 @@ impl Lexer {
                 for idx in 0..dfa.match_len(s2) {
                     let idx = dfa.match_pattern(s2, idx).as_usize();
                     v.set(idx, true);
+                    if logging {
+                        wprintln!("  match: {:?} {}", *s, patterns[idx])
+                    }
                 }
             }
             tokenset_by_state.insert(*s, v);
@@ -113,7 +118,9 @@ impl Lexer {
                 }
             }
 
-            wprintln!("iter {} {}", num_set, states.len());
+            if logging {
+                wprintln!("iter {} {}", num_set, states.len());
+            }
             if num_set == 0 {
                 break;
             }
@@ -137,9 +144,10 @@ impl Lexer {
             possible_by_state: tokenset_by_state,
             initial,
             file_start,
+            logging,
         };
 
-        if false {
+        if logging {
             for s in &states {
                 if lex.is_dead(*s) {
                     wprintln!("dead: {:?} {}", s, lex.dfa.is_dead_state(*s));
@@ -172,7 +180,7 @@ impl Lexer {
             .min()
             .unwrap();
 
-        if false {
+        if self.logging {
             wprintln!("token: {}", self.friendly_pattern_names[pat_idx]);
         }
 
@@ -183,13 +191,15 @@ impl Lexer {
         let dfa = &self.dfa;
         if let Some(byte) = byte {
             let state = dfa.next_state(prev, byte);
-            wprintln!(
-                "lex: {:?} -{:?}-> {:?} d={}",
-                prev,
-                byte as char,
-                state,
-                self.is_dead(state),
-            );
+            if self.logging {
+                wprintln!(
+                    "lex: {:?} -{:?}-> {:?} d={}",
+                    prev,
+                    byte as char,
+                    state,
+                    self.is_dead(state),
+                );
+            }
             if self.is_dead(state) {
                 let final_state = dfa.next_eoi_state(prev);
                 // if final_state is a match state, find the token that matched
@@ -198,7 +208,9 @@ impl Lexer {
                     None
                 } else {
                     let state = dfa.next_state(self.initial, byte);
-                    wprintln!("lex0: {:?} -{:?}-> {:?}", self.initial, byte as char, state);
+                    if self.logging {
+                        wprintln!("lex0: {:?} -{:?}-> {:?}", self.initial, byte as char, state);
+                    }
                     Some((state, tok))
                 }
             } else {
@@ -610,9 +622,11 @@ pub fn cfg_test() -> Result<()> {
         let r = cfg.try_push_byte(*b);
         if !r {
             ok = false;
+
             wprintln!(
-                "reject at {:?}",
-                String::from_utf8_lossy(&sample[idx.saturating_sub(100)..idx])
+                "reject at\n{:?}\n{:?}",
+                String::from_utf8_lossy(&sample[idx.saturating_sub(50)..idx]),
+                String::from_utf8_lossy(&sample[idx..std::cmp::min(idx + 30, sample.len())])
             );
             break;
         }

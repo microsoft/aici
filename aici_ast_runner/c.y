@@ -7,7 +7,7 @@ SKIP
     : "//\*[^*]*\*+([^/*][^*]*\*+)*//" 	// block comment
 	| "///.*/" 							// line comment
 	| "/\n[ \t\v\f]*#(.*\\\n)*.*/" 		// pre-processor
-    | "/[ \t\v\n\f]+/"					// white-space
+    | "/\n?[ \t\v\f]*/"					// white-space
     ;
 
 IDENTIFIER: "/[a-zA-Z_][0-9a-zA-Z_]*/" ;
@@ -345,6 +345,8 @@ direct_abstract_declarator
 
 initializer
 	: assignment_expression
+	| "." IDENTIFIER "=" assignment_expression
+	| "[" assignment_expression "]" "=" assignment_expression
 	| "{" initializer_list "}"
 	| "{" initializer_list "," "}"
 	;
@@ -394,6 +396,11 @@ expression_statement
 	| expression ";"
 	;
 
+for_decl
+	: expression_statement
+	| declaration
+	;
+
 selection_statement
 	: "if" "(" expression ")" statement
 	| "if" "(" expression ")" statement "else" statement
@@ -403,8 +410,8 @@ selection_statement
 iteration_statement
 	: "while" "(" expression ")" statement
 	| "do" statement "while" "(" expression ")" ";"
-	| "for" "(" expression_statement expression_statement ")" statement
-	| "for" "(" expression_statement expression_statement expression ")" statement
+	| "for" "(" for_decl expression_statement ")" statement
+	| "for" "(" for_decl expression_statement expression ")" statement
 	;
 
 jump_statement

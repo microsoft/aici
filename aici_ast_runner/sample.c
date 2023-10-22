@@ -1,1178 +1,1246 @@
 #include "devs_internal.h"
+#include "devs_objects.h"
 
-// based on https://github.com/microsoft/pxt-common-packages/blob/master/libs/screen/image.cpp
-// (mostly used in MakeCode Arcade https://arcade.makecode.com)
+// #define LOG_TAG "obj"
+#include "devs_logging.h"
 
-devs_gimage_t *devs_to_gimage(devs_ctx_t *ctx, value_t s) {
-    devs_gimage_t *r = devs_handle_ptr_value(ctx, s);
+void devs_map_clear(devs_ctx_t *ctx, devs_map_t *map) {
+    if (map->data) {
+        devs_free(ctx, map->data);
+        map->data = NULL;
+        map->capacity = 0;
+        map->length = 0;
+    }
+}
 
-    if (devs_gc_tag(r) == DEVS_GC_TAG_IMAGE)
-        return r;
+static inline uint16_t *short_keys(devs_short_map_t *map) {
+    return (uint16_t *)(map->short_data + map->capacity);
+}
 
-    devs_throw_expecting_error(ctx, DEVS_BUILTIN_STRING_IMAGE, s);
+static value_t *lookup_short(devs_ctx_t *ctx, devs_short_map_t *map, uint16_t key) {
+    unsigned len = map->length;
+    uint16_t *keys = short_keys(map);
+    for (unsigned i = 0; i < len; i++) {
+        if (keys[i] == key) {
+            return &map->short_data[i];
+        }
+    }
     return NULL;
 }
 
-static inline int y_off(unsigned bpp, int y) {
-    if (bpp == 4)
-        return y >> 1;
-    else if (bpp == 1)
-        return y >> 3;
-    else
-        JD_PANIC();
-}
+static value_t *lookup(devs_ctx_t *ctx, devs_map_t *map, value_t key) {
+    if (!devs_is_string(ctx, key))
+        return NULL;
 
-static inline unsigned img_stride(unsigned bpp, unsigned height) {
-    if (bpp == 1)
-        return (height + 7) >> 3;
-    else if (bpp == 4)
-        return ((height * 4 + 31) >> 5) << 2;
-    else
-        JD_PANIC();
-}
+    value_t *data = map->data;
+    uint32_t kh = devs_handle_value(key);
+    unsigned len2 = map->length * 2;
 
-static inline bool img_has_padding(devs_gimage_t *r) {
-    return (r->height & 7) != 0;
-}
-
-static devs_gimage_t *make_writable_image(devs_ctx_t *ctx, devs_gimage_t *r) {
-    if (r && r->read_only) {
-        r->buffer = devs_buffer_try_alloc(ctx, r->stride * r->width);
-        if (r->buffer == NULL)
-            return NULL;
-        r->read_only = 0;
-        uint8_t *pix = r->pix;
-        r->pix = r->buffer->data;
-        if (pix)
-            memcpy(r->pix, pix, r->stride * r->width);
+    // do a quick reference-only check
+    for (unsigned i = 0; i < len2; i += 2) {
+        // check the low bits first, since they are more likely to be different
+        if (devs_handle_value(data[i]) == kh && data[i].u64 == key.u64) {
+            return &data[i + 1];
+        }
     }
-    return r;
+
+    // slow path - compare strings
+    unsigned ksz, csz;
+    const char *cp, *kp = devs_string_get_utf8(ctx, key, &ksz);
+    for (unsigned i = 0; i < len2; i += 2) {
+        cp = devs_string_get_utf8(ctx, data[i], &csz);
+        if (csz == ksz && memcmp(kp, cp, ksz) == 0)
+            return &data[i + 1];
+    }
+
+    // nothing found...
+    return NULL;
 }
 
-static uint8_t *pix_ptr(devs_gimage_t *r, int x, int y) {
-    return r->pix + x * r->stride + y_off(r->bpp, y);
+static value_t proto_value(devs_ctx_t *ctx, const devs_builtin_proto_entry_t *p) {
+    unsigned idx = p->builtin_idx;
+    if (idx <= DEVS_BUILTIN_OBJECT___MAX)
+        return devs_builtin_object_value(ctx, idx);
+    JD_ASSERT(idx >= DEVS_FIRST_BUILTIN_FUNCTION);
+    return devs_value_from_handle(DEVS_HANDLE_TYPE_STATIC_FUNCTION, idx);
 }
 
-static devs_gimage_t *devs_to_writable_image(devs_ctx_t *ctx, value_t s) {
-    return make_writable_image(ctx, devs_to_gimage(ctx, s));
+unsigned devs_maplike_iter(devs_ctx_t *ctx, devs_maplike_t *src, void *userdata,
+                           devs_map_iter_cb_t cb) {
+    if (devs_is_service_spec(ctx, src)) {
+        // Object.keys() etc or debugger inspection on compiled spec
+        // return empty for now, do not crash
+        return 0;
+    } else if (devs_is_builtin_proto(src)) {
+        const devs_builtin_proto_t *proto = (const devs_builtin_proto_t *)src;
+        const devs_builtin_proto_entry_t *p = proto->entries;
+        while (p->builtin_string_id) {
+            if (cb)
+                cb(ctx, userdata, devs_builtin_string(p->builtin_string_id), proto_value(ctx, p));
+            p++;
+        }
+        return p - proto->entries;
+    } else {
+        JD_ASSERT(devs_is_map(src));
+        devs_map_t *srcmap = (devs_map_t *)src;
+        unsigned len = srcmap->length;
+
+        if (cb != NULL) {
+            unsigned len2 = srcmap->length * 2;
+            value_t *data = srcmap->data;
+            for (unsigned i = 0; i < len2; i += 2) {
+                cb(ctx, userdata, data[i], data[i + 1]);
+            }
+        }
+
+        if (devs_gc_tag(srcmap) == DEVS_GC_TAG_HALF_STATIC_MAP)
+            len += devs_maplike_iter(ctx, srcmap->proto, userdata, cb);
+
+        return len;
+    }
 }
 
-value_t prop_Image_width(devs_ctx_t *ctx, value_t self) {
-    devs_gimage_t *r = devs_to_gimage(ctx, self);
-    return devs_value_from_int(r ? r->width : 0);
+void devs_map_copy_into(devs_ctx_t *ctx, devs_map_t *dst, devs_maplike_t *src) {
+    devs_maplike_iter(ctx, src, dst, (devs_map_iter_cb_t)devs_map_set);
 }
 
-value_t prop_Image_height(devs_ctx_t *ctx, value_t self) {
-    devs_gimage_t *r = devs_to_gimage(ctx, self);
-    return devs_value_from_int(r ? r->height : 0);
+struct kv_ctx {
+    unsigned dp;
+    bool keys;
+    devs_array_t *arr;
+};
+
+static void kv_add(devs_ctx_t *ctx, void *userdata, value_t k, value_t v) {
+    struct kv_ctx *acc = userdata;
+    acc->arr->data[acc->dp++] = acc->keys ? k : v;
 }
 
-value_t prop_Image_bpp(devs_ctx_t *ctx, value_t self) {
-    devs_gimage_t *r = devs_to_gimage(ctx, self);
-    return devs_value_from_int(r ? r->bpp : 0);
+bool devs_maplike_is_map(devs_ctx_t *ctx, devs_maplike_t *src) {
+    if (src == NULL || devs_is_builtin_proto(src) || devs_is_service_spec(ctx, src))
+        return false;
+    JD_ASSERT(devs_is_map(src));
+    return true;
 }
 
-value_t prop_Image_buffer(devs_ctx_t *ctx, value_t self) {
-    devs_gimage_t *r = devs_to_writable_image(ctx, self);
-    return devs_value_from_gc_obj(ctx, r ? r->buffer : NULL);
+void devs_maplike_keys_or_values(devs_ctx_t *ctx, devs_maplike_t *src, devs_array_t *arr,
+                                 bool keys) {
+    struct kv_ctx acc = {
+        .dp = arr->length,
+        .arr = arr,
+        .keys = keys,
+    };
+
+    unsigned len = devs_maplike_iter(ctx, src, NULL, NULL);
+
+    if (devs_array_insert(ctx, arr, acc.dp, len) != 0)
+        return;
+
+    devs_maplike_iter(ctx, src, &acc, kv_add);
 }
 
-static devs_gimage_t *devs_arg_self_image(devs_ctx_t *ctx) {
-    return devs_to_gimage(ctx, devs_arg_self(ctx));
+static int grow_len(int capacity) {
+    int newlen = capacity * 10 / 8;
+    if (newlen < 4)
+        newlen = 4;
+    return newlen;
 }
 
-static devs_gimage_t *devs_arg_self_writable_image(devs_ctx_t *ctx) {
-    return devs_to_writable_image(ctx, devs_arg_self(ctx));
-}
-
-static void img_clamp(devs_gimage_t *r, int *x, int *y) {
-    if (*x < 0)
-        *x = 0;
-    if (*x >= r->width)
-        *x = r->width - 1;
-    if (*y < 0)
-        *y = 0;
-    if (*y >= r->height)
-        *y = r->height - 1;
-}
-
-static bool img_in_range(devs_gimage_t *r, int x, int y) {
-    return (0 <= x && x < r->width) && (0 <= y && y < r->height);
-}
-
-void fun5_Image_alloc(devs_ctx_t *ctx) {
-    int width = devs_arg_int(ctx, 0);
-    int height = devs_arg_int(ctx, 1);
-    int bpp = devs_arg_int(ctx, 2);
-    value_t init = devs_arg(ctx, 3);
-    int offset = devs_arg_int(ctx, 4);
-    uint8_t *pix = NULL;
-
-    int x = 'a';
-
-    if (width <= 0 || height <= 0 || (bpp != 1 && bpp != 4) ||
-        bpp * width * height > 8 * DEVS_MAX_ALLOC) {
-        devs_throw_range_error(ctx, "invalid dimensions %dx%dx%d", width, height, bpp);
+void devs_map_set(devs_ctx_t *ctx, devs_map_t *map, value_t key, value_t v) {
+    value_t *tmp = lookup(ctx, map, key);
+    if (tmp != NULL) {
+        *tmp = v;
         return;
     }
 
-    unsigned stride = img_stride(bpp, height);
-    unsigned size = stride * width;
-    devs_buffer_t *buf = NULL;
-
-    if (!devs_is_null_or_undefined(init)) {
-        if (!devs_is_buffer(ctx, init)) {
-            devs_throw_expecting_error(ctx, DEVS_BUILTIN_STRING_BUFFER, init);
-            return;
-        }
-        unsigned bsz;
-        pix = devs_buffer_data(ctx, init, &bsz);
-        if (offset < 0 || offset + size > bsz) {
-            devs_throw_range_error(ctx, "invalid offset %d", offset);
-            return;
-        }
-        pix += offset;
-        if (devs_buffer_is_writable(ctx, init))
-            buf = devs_value_to_gc_obj(ctx, init);
-    }
-
-    devs_gimage_t *r = devs_any_try_alloc(ctx, DEVS_GC_TAG_IMAGE, sizeof(devs_gimage_t));
-    if (!r)
+    if (!devs_is_string(ctx, key)) {
+        devs_throw_expecting_error(ctx, DEVS_BUILTIN_STRING_STRING, key);
         return;
-    devs_ret_gc_ptr(ctx, r);
+    }
 
-    if (pix == NULL) {
-        buf = devs_buffer_try_alloc(ctx, size);
-        if (buf == NULL) {
-            devs_ret(ctx, devs_undefined);
+    JD_ASSERT(map->capacity >= map->length);
+
+    if (map->capacity == map->length) {
+        int newlen = grow_len(map->capacity);
+        tmp = devs_try_alloc(ctx, newlen * (2 * sizeof(value_t)));
+        if (!tmp)
             return;
+        map->capacity = newlen;
+        if (map->length) {
+            memcpy(tmp, map->data, map->length * sizeof(value_t) * 2);
         }
-        pix = buf->data;
+        map->data = tmp;
+        jd_gc_unpin(ctx->gc, tmp);
     }
 
-    r->width = width;
-    r->height = height;
-    r->stride = stride;
-    r->bpp = bpp;
-    r->read_only = buf == NULL;
-    r->pix = pix;
-    r->buffer = buf;
+    map->data[map->length * 2] = key;
+    map->data[map->length * 2 + 1] = v;
+    map->length++;
 }
 
-static void setCore(devs_gimage_t *img, int x, int y, int c) {
-    uint8_t *ptr = pix_ptr(img, x, y);
-    if (img->bpp == 4) {
-        if (y & 1)
-            *ptr = (*ptr & 0x0f) | (c << 4);
-        else
-            *ptr = (*ptr & 0xf0) | (c & 0xf);
-    } else if (img->bpp == 1) {
-        uint8_t mask = 0x01 << (y & 7);
-        if (c)
-            *ptr |= mask;
-        else
-            *ptr &= ~mask;
+void devs_short_map_set(devs_ctx_t *ctx, devs_short_map_t *map, uint16_t key, value_t v) {
+    value_t *tmp = lookup_short(ctx, map, key);
+    if (tmp != NULL) {
+        *tmp = v;
+        return;
     }
+
+    JD_ASSERT(map->capacity >= map->length);
+
+    if (map->capacity == map->length) {
+        int newlen = grow_len(map->capacity);
+        tmp = devs_try_alloc(ctx, newlen * (sizeof(value_t) + sizeof(uint16_t)));
+        if (!tmp)
+            return;
+        uint16_t *srckeys = short_keys(map);
+        map->capacity = newlen;
+        if (map->length) {
+            memcpy(tmp, map->short_data, map->length * sizeof(value_t));
+            memcpy(tmp + newlen, srckeys, map->length * sizeof(uint16_t));
+        }
+        map->short_data = tmp;
+        jd_gc_unpin(ctx->gc, tmp);
+    }
+
+    map->short_data[map->length] = v;
+    short_keys(map)[map->length] = key;
+    map->length++;
 }
 
-static int getCore(devs_gimage_t *img, int x, int y) {
-    uint8_t *ptr = pix_ptr(img, x, y);
-    if (img->bpp == 4) {
-        if (y & 1)
-            return *ptr >> 4;
-        else
-            return *ptr & 0x0f;
-    } else if (img->bpp == 1) {
-        uint8_t mask = 0x01 << (y & 7);
-        return (*ptr & mask) ? 1 : 0;
+int devs_map_delete(devs_ctx_t *ctx, devs_map_t *map, value_t key) {
+    value_t *tmp = lookup(ctx, map, key);
+    if (tmp == NULL) {
+        return -1;
     }
+
+    tmp--;
+    unsigned off = tmp - map->data;
+    unsigned trailing = map->length - off / 2 - 1;
+    map->length--;
+    if (trailing)
+        memmove(tmp, tmp + 2, trailing * 2 * sizeof(value_t));
     return 0;
 }
 
-typedef struct {
-    devs_gimage_t *img;
-    int x, y;
-    int w, h;
-    int c;
-    bool in_range;
-} img_args_t;
-
-static void devs_arg_img(devs_ctx_t *ctx, img_args_t *args, int cnt) {
-    int wr = 1;
-    if (cnt < 0) {
-        wr = 0;
-        cnt = -cnt;
-    }
-    devs_gimage_t *img = devs_arg_self_image(ctx);
-    if (wr)
-        img = make_writable_image(ctx, img);
-    args->img = img;
-
-    if (cnt > 0)
-        args->x = devs_arg_int(ctx, 0);
-    if (cnt > 1)
-        args->y = devs_arg_int(ctx, 1);
-    if (cnt > 2)
-        args->w = devs_arg_int(ctx, 2);
-    if (cnt > 3)
-        args->h = devs_arg_int(ctx, 3);
-    if (cnt > 4)
-        args->c = devs_arg_int(ctx, 4);
-
-    args->in_range = cnt >= 1 && img && img_in_range(img, args->x, args->y);
+bool devs_is_service_spec(devs_ctx_t *ctx, const void *ptr) {
+    return (uintptr_t)((const uint8_t *)ptr -
+                       (const uint8_t *)devs_img_get_service_spec(ctx->img, 0)) <
+           (sizeof(devs_service_spec_t) * ctx->img.header->num_service_specs);
 }
 
-#define DEVS_ARGS(n)                                                                               \
-    img_args_t args;                                                                               \
-    devs_arg_img(ctx, &args, n);                                                                   \
-    devs_gimage_t *img = args.img
-
-typedef struct {
-    devs_gimage_t *img;
-    devs_gimage_t *simg;
-    int x, y;
-} img2_args_t;
-
-#define DEVS_ARGS_COPY(n)                                                                          \
-    img2_args_t args;                                                                              \
-    devs_arg_img2(ctx, &args, n);                                                                  \
-    devs_gimage_t *img = args.img;                                                                 \
-    devs_gimage_t *from = args.simg;                                                               \
-    int x = args.x;                                                                                \
-    int y = args.y
-
-static void devs_arg_img2(devs_ctx_t *ctx, img2_args_t *args, int cnt) {
-    JD_ASSERT(cnt == 3 || cnt == -3);
-    devs_gimage_t *img = cnt < 0 ? devs_arg_self_image(ctx) : devs_arg_self_writable_image(ctx);
-    args->img = img;
-    args->simg = devs_to_gimage(ctx, devs_arg(ctx, 0));
-    args->x = devs_arg_int(ctx, 1);
-    args->y = devs_arg_int(ctx, 2);
+value_t devs_map_get(devs_ctx_t *ctx, devs_map_t *map, value_t key) {
+    value_t *tmp = lookup(ctx, map, key);
+    if (tmp == NULL)
+        return devs_undefined;
+    return *tmp;
 }
 
-void meth3_Image_set(devs_ctx_t *ctx) {
-    DEVS_ARGS(3);
-    if (args.in_range)
-        setCore(img, args.x, args.y, args.w);
+value_t devs_short_map_get(devs_ctx_t *ctx, devs_short_map_t *map, uint16_t key) {
+    value_t *tmp = lookup_short(ctx, map, key);
+    if (tmp == NULL)
+        return devs_undefined;
+    return *tmp;
 }
 
-void meth2_Image_get(devs_ctx_t *ctx) {
-    DEVS_ARGS(-2);
-    int c = args.in_range ? getCore(img, args.x, args.y) : 0;
-    devs_ret_int(ctx, c);
+static const devs_builtin_proto_t *get_static_built_in_proto(devs_ctx_t *ctx, unsigned idx) {
+    JD_ASSERT(idx <= DEVS_BUILTIN_OBJECT___MAX);
+    if (devs_builtin_protos[idx].entries == NULL)
+        return NULL; // not there?
+    return &devs_builtin_protos[idx];
 }
 
-static void fill_rect(devs_ctx_t *ctx, devs_gimage_t *img, int x, int y, int w, int h, int c) {
-    if (img == NULL)
-        return;
+static const uint8_t builtin_proto_idx[] = {
+    [DEVS_BUILTIN_OBJECT_MATH] = 1,
+    [DEVS_BUILTIN_OBJECT_BUFFER_PROTOTYPE] = 2,
+    [DEVS_BUILTIN_OBJECT_ARRAY_PROTOTYPE] = 3,
+    [DEVS_BUILTIN_OBJECT_STRING_PROTOTYPE] = 4,
+    [DEVS_BUILTIN_OBJECT_DSREGISTER_PROTOTYPE] = 5,
+    [DEVS_BUILTIN_OBJECT_DSROLE_PROTOTYPE] = 6,
+    [DEVS_BUILTIN_OBJECT_DSEVENT_PROTOTYPE] = 7,
+    [DEVS_BUILTIN_OBJECT_DEVICESCRIPT] = 8,
+    [DEVS_BUILTIN_OBJECT_IMAGE_PROTOTYPE] = 9,
+    [DEVS_BUILTIN_OBJECT_BUFFER] = 10,
+    [DEVS_BUILTIN_OBJECT_GPIO_PROTOTYPE] = 11,
+    [DEVS_BUILTIN_OBJECT_GPIO] = 12,
+};
+#define MAX_PROTO 12
 
-    if (w == 0 || h == 0 || x >= img->width || y >= img->height)
-        return;
-
-    int x2 = x + w - 1;
-    int y2 = y + h - 1;
-
-    if (x2 < 0 || y2 < 0)
-        return;
-
-    img_clamp(img, &x2, &y2);
-    img_clamp(img, &x, &y);
-    w = x2 - x + 1;
-    h = y2 - y + 1;
-
-    uint8_t f = img->bpp == 1 ? (c & 1) * 0xff : 0x11 * (c & 0xf);
-    int bh = img->stride;
-
-    img = make_writable_image(ctx, img);
-
-    if (img == NULL)
-        return;
-
-    if (!img_has_padding(img) && x == 0 && y == 0 && w == img->width && h == img->height) {
-        memset(img->pix, f, bh * img->width);
-        return;
-    }
-
-    uint8_t *p = pix_ptr(img, x, y);
-    while (w-- > 0) {
-        if (img->bpp == 1) {
-            uint8_t *ptr = p;
-            unsigned mask = 0x01 << (y & 7);
-
-            for (int i = 0; i < h; ++i) {
-                if (mask == 0x100) {
-                    if (h - i >= 8) {
-                        *++ptr = f;
-                        i += 7;
-                        continue;
-                    } else {
-                        mask = 0x01;
-                        ++ptr;
-                    }
-                }
-                if (c)
-                    *ptr |= mask;
-                else
-                    *ptr &= ~mask;
-                mask <<= 1;
+devs_maplike_t *devs_get_builtin_object(devs_ctx_t *ctx, unsigned idx) {
+    if (idx < sizeof(builtin_proto_idx)) {
+        unsigned midx = builtin_proto_idx[idx];
+        if (midx > 0) {
+            midx--;
+            if (ctx->_builtin_protos == NULL) {
+                ctx->_builtin_protos = devs_try_alloc(ctx, sizeof(void *) * MAX_PROTO);
+                ctx->_num_builtin_protos = MAX_PROTO;
+                if (ctx->_builtin_protos == NULL)
+                    return NULL; // whoops
             }
-
-        } else if (img->bpp == 4) {
-            uint8_t *ptr = p;
-            unsigned mask = 0x0f;
-            if (y & 1)
-                mask <<= 4;
-
-            for (int i = 0; i < h; ++i) {
-                if (mask == 0xf00) {
-                    if (h - i >= 2) {
-                        *++ptr = f;
-                        i++;
-                        continue;
-                    } else {
-                        mask = 0x0f;
-                        ptr++;
-                    }
+            JD_ASSERT(midx < MAX_PROTO);
+            devs_map_t *m = ctx->_builtin_protos[midx];
+            if (m == NULL) {
+                m = devs_any_try_alloc(ctx, DEVS_GC_TAG_HALF_STATIC_MAP, sizeof(devs_map_t));
+                if (m != NULL) {
+                    ctx->_builtin_protos[midx] = m;
+                    m->proto = (devs_maplike_t *)get_static_built_in_proto(ctx, idx);
                 }
-                *ptr = (*ptr & ~mask) | (f & mask);
-                mask <<= 4;
             }
+            return (devs_maplike_t *)m;
         }
-        p += bh;
-    }
-}
-
-void meth1_Image_fill(devs_ctx_t *ctx) {
-    DEVS_ARGS(1);
-    fill_rect(ctx, img, 0, 0, img->width, img->height, args.x);
-}
-
-void meth5_Image_fillRect(devs_ctx_t *ctx) {
-    DEVS_ARGS(5);
-    fill_rect(ctx, img, args.x, args.y, args.w, args.h, args.c);
-}
-
-void meth1_Image_equals(devs_ctx_t *ctx) {
-    devs_gimage_t *img = devs_to_gimage(ctx, devs_arg_self(ctx));
-    devs_gimage_t *other = devs_to_gimage(ctx, devs_arg(ctx, 0));
-
-    bool eq = false;
-    if (img && other) {
-        eq = img->width == other->width && img->height == other->height &&
-             0 == memcmp(img->pix, other->pix, img->stride * img->width);
     }
 
-    devs_ret_bool(ctx, eq);
+    return (devs_maplike_t *)get_static_built_in_proto(ctx, idx);
 }
 
-static devs_gimage_t *alloc_img_ret(devs_ctx_t *ctx, int width, int height, int bpp) {
-    devs_gimage_t *r = devs_any_try_alloc(ctx, DEVS_GC_TAG_IMAGE, sizeof(devs_gimage_t));
+bool devs_static_streq(devs_ctx_t *ctx, unsigned stridx, const char *other, unsigned other_len) {
+    unsigned size;
+    const char *r = devs_img_get_utf8(ctx->img, stridx, &size);
+    if (other_len != size)
+        return false;
+    return memcmp(r, other, size) == 0;
+}
+
+#define MAX_OFF_BITS (DEVS_PACK_SHIFT - DEVS_ROLE_BITS)
+
+value_t devs_value_from_service_spec_idx(devs_ctx_t *ctx, unsigned idx) {
+    return devs_value_from_handle(DEVS_HANDLE_TYPE_ROLE_MEMBER,
+                                  DEVS_ROLE_INVALID | (idx << DEVS_ROLE_BITS));
+}
+
+value_t devs_value_from_service_spec(devs_ctx_t *ctx, const devs_service_spec_t *spec) {
+    unsigned idx = spec - devs_img_get_service_spec(ctx->img, 0);
+    JD_ASSERT(idx < ctx->img.header->num_service_specs);
+    return devs_value_from_service_spec_idx(ctx, idx);
+}
+
+value_t devs_value_from_packet_spec(devs_ctx_t *ctx, const devs_packet_spec_t *pkt) {
+    if (pkt == NULL)
+        return devs_undefined;
+    const uint32_t *baseoff = (const void *)devs_img_get_service_spec(ctx->img, 0);
+    uintptr_t off = (const uint32_t *)pkt - baseoff;
+    JD_ASSERT(off < (1 << MAX_OFF_BITS));
+    return devs_value_from_handle(DEVS_HANDLE_TYPE_ROLE_MEMBER,
+                                  DEVS_ROLE_INVALID | (off << DEVS_ROLE_BITS));
+}
+
+int devs_value_to_service_spec_idx(devs_ctx_t *ctx, value_t v) {
+    if (devs_handle_type(v) != DEVS_HANDLE_TYPE_ROLE_MEMBER)
+        return -1;
+    unsigned off = devs_handle_value(v) >> DEVS_ROLE_BITS;
+    if (off < ctx->img.header->num_service_specs)
+        return off;
+    return -1;
+}
+
+const devs_service_spec_t *devs_value_to_service_spec(devs_ctx_t *ctx, value_t v) {
+    int off = devs_value_to_service_spec_idx(ctx, v);
+    if (off < 0)
+        return NULL;
+    return devs_img_get_service_spec(ctx->img, off);
+}
+
+const devs_packet_spec_t *devs_decode_role_packet(devs_ctx_t *ctx, value_t v, unsigned *roleidx) {
+    if (roleidx)
+        *roleidx = DEVS_ROLE_INVALID;
+    if (devs_handle_type(v) != DEVS_HANDLE_TYPE_ROLE_MEMBER)
+        return NULL;
+    if (devs_value_to_service_spec(ctx, v))
+        return NULL;
+    uint32_t h = devs_handle_value(v);
+    if (roleidx)
+        *roleidx = h & DEVS_ROLE_MASK;
+    return devs_img_get_packet_spec(ctx->img, h >> DEVS_ROLE_BITS);
+}
+
+int devs_spec_idx(devs_ctx_t *ctx, const devs_service_spec_t *spec) {
+    if (spec == NULL)
+        return -1;
+    unsigned idx = spec - devs_img_get_service_spec(ctx->img, 0);
+    JD_ASSERT(idx < ctx->img.header->num_service_specs);
+    return idx;
+}
+
+const devs_service_spec_t *devs_role_spec_for_class(devs_ctx_t *ctx, uint32_t cls) {
+    for (unsigned i = 0; i < ctx->img.header->num_service_specs; ++i) {
+        const devs_service_spec_t *spec = devs_img_get_service_spec(ctx->img, i);
+        if (spec->service_class == cls)
+            return spec;
+    }
+    return NULL;
+}
+
+int devs_packet_spec_parent(devs_ctx_t *ctx, const devs_packet_spec_t *pspec) {
+    int off = (uint8_t *)pspec - ctx->img.data - ctx->img.header->service_specs.start;
+    for (unsigned i = 0; i < ctx->img.header->num_service_specs; ++i) {
+        const devs_service_spec_t *spec = devs_img_get_service_spec(ctx->img, i);
+        int idx = off - 4 * spec->packets_offset;
+        if (0 <= idx && idx < (int)(spec->num_packets * sizeof(devs_packet_spec_t)))
+            return i;
+    }
+    JD_PANIC();
+    return -1;
+}
+
+const devs_service_spec_t *devs_role_spec(devs_ctx_t *ctx, unsigned roleidx) {
+    if (roleidx >= DEVS_ROLE_FIRST_SPEC) {
+        unsigned specidx = roleidx - DEVS_ROLE_FIRST_SPEC;
+        if (specidx >= ctx->img.header->num_service_specs)
+            return NULL;
+        return devs_img_get_service_spec(ctx->img, specidx);
+    }
+
+    devs_role_t *r = devs_role(ctx, roleidx);
+
     if (!r)
         return NULL;
-    devs_ret_gc_ptr(ctx, r);
 
-    r->width = width;
-    r->height = height;
-    r->bpp = bpp;
-    r->stride = img_stride(bpp, height);
+    return devs_role_spec_for_class(ctx, r->jdrole->service_class);
+}
 
-    unsigned size = r->width * r->stride;
-
-    r->buffer = devs_buffer_try_alloc(ctx, size);
-    if (r->buffer == NULL) {
-        devs_ret(ctx, devs_undefined);
-        return NULL;
-    }
-
-    r->pix = r->buffer->data;
-
+devs_role_t *devs_role_or_fail(devs_ctx_t *ctx, unsigned roleidx) {
+    devs_role_t *r = devs_role(ctx, roleidx);
+    if (r == NULL)
+        devs_invalid_program(ctx, 60130);
     return r;
 }
 
-void meth0_Image_clone(devs_ctx_t *ctx) {
-    devs_gimage_t *img = devs_to_gimage(ctx, devs_arg_self(ctx));
-    if (!img)
-        return;
-    devs_gimage_t *r = alloc_img_ret(ctx, img->width, img->height, img->bpp);
-    if (r)
-        memcpy(r->pix, img->pix, r->buffer->length);
+jd_device_service_t *devs_role_service(devs_ctx_t *ctx, unsigned roleidx) {
+    devs_role_t *r = devs_role(ctx, roleidx);
+    if (r == NULL)
+        return NULL;
+    return r->jdrole->service;
 }
 
-void meth0_Image_flipX(devs_ctx_t *ctx) {
-    devs_gimage_t *img = devs_arg_self_writable_image(ctx);
-    if (!img)
-        return;
+const char *devs_role_name(devs_ctx_t *ctx, unsigned idx) {
+    devs_role_t *r = devs_role(ctx, idx);
+    if (r == NULL)
+        return "???";
+    return r->jdrole->name;
+}
 
-    int bh = img->stride;
-    uint8_t *a = pix_ptr(img, 0, 0);
-    uint8_t *b = pix_ptr(img, img->width - 1, 0);
+const devs_service_spec_t *devs_get_base_spec(devs_ctx_t *ctx, const devs_service_spec_t *spec) {
+    if (spec->service_class == JD_SERVICE_CLASS_BASE)
+        return NULL;
+    int idx = spec->flags & DEVS_SERVICESPEC_FLAG_DERIVE_MASK;
+    JD_ASSERT(idx <= DEVS_SERVICESPEC_FLAG_DERIVE_LAST);
+    return devs_img_get_service_spec(ctx->img, idx);
+}
 
-    uint8_t tmp[bh];
+value_t devs_spec_lookup(devs_ctx_t *ctx, const devs_service_spec_t *spec, value_t key) {
+    while (spec) {
+        JD_ASSERT(devs_is_service_spec(ctx, spec));
+        const devs_packet_spec_t *pkts = devs_img_get_packet_spec(ctx->img, spec->packets_offset);
+        unsigned num_packets = spec->num_packets;
 
-    while (a < b) {
-        memcpy(tmp, a, bh);
-        memcpy(a, b, bh);
-        memcpy(b, tmp, bh);
-        a += bh;
-        b -= bh;
+        if (devs_handle_type(key) == DEVS_HANDLE_TYPE_IMG_BUFFERISH) {
+            unsigned kidx = devs_handle_value(key);
+            for (unsigned i = 0; i < num_packets; ++i) {
+                if (pkts[i].name_idx == kidx)
+                    return devs_value_from_packet_spec(ctx, &pkts[i]);
+            }
+        }
+
+        unsigned ksz;
+        const char *kptr = devs_string_get_utf8(ctx, key, &ksz);
+        if (ksz == 0)
+            return devs_undefined;
+
+        for (unsigned i = 0; i < num_packets; ++i) {
+            if (devs_static_streq(ctx, pkts[i].name_idx, kptr, ksz))
+                return devs_value_from_packet_spec(ctx, &pkts[i]);
+        }
+
+        spec = devs_get_base_spec(ctx, spec);
     }
+
+    return devs_undefined;
 }
 
-void meth0_Image_flipY(devs_ctx_t *ctx) {
-    devs_gimage_t *img = devs_arg_self_writable_image(ctx);
-    if (!img)
-        return;
+static value_t devs_proto_lookup(devs_ctx_t *ctx, const devs_builtin_proto_t *proto, value_t key) {
+    JD_ASSERT(devs_is_proto(proto));
 
-    // this is quite slow - for small 16x16 sprite it will take in the order of 1ms
-    // something faster requires quite a bit of bit tweaking, especially for mono images
-    for (int i = 0; i < img->width; ++i) {
-        int a = 0;
-        int b = img->height - 1;
-        while (a < b) {
-            int tmp = getCore(img, i, a);
-            setCore(img, i, a, getCore(img, i, b));
-            setCore(img, i, b, tmp);
-            a++;
-            b--;
+    while (proto) {
+        const devs_builtin_proto_entry_t *p = proto->entries;
+
+        if (devs_handle_type(key) == DEVS_HANDLE_TYPE_IMG_BUFFERISH &&
+            (devs_handle_value(key) >> DEVS_STRIDX__SHIFT) == DEVS_STRIDX_BUILTIN) {
+            unsigned kidx = devs_handle_value(key) & ((1 << DEVS_STRIDX__SHIFT) - 1);
+            while (p->builtin_string_id) {
+                if (p->builtin_string_id == kidx)
+                    return proto_value(ctx, p);
+                p++;
+            }
+        } else {
+            unsigned ksz;
+            const char *kptr = devs_string_get_utf8(ctx, key, &ksz);
+            if (ksz != strlen(kptr))
+                return devs_undefined;
+            while (p->builtin_string_id) {
+                if (strcmp(devs_builtin_string_by_idx(p->builtin_string_id), kptr) == 0)
+                    return proto_value(ctx, p);
+                p++;
+            }
+        }
+
+        proto = proto->parent;
+    }
+
+    return devs_undefined;
+}
+
+static value_t devs_function_bind_alloc(devs_ctx_t *ctx, value_t obj, value_t fn) {
+    devs_bound_function_t *res =
+        devs_any_try_alloc(ctx, DEVS_GC_TAG_BOUND_FUNCTION, sizeof(devs_bound_function_t));
+    if (res == NULL)
+        return devs_undefined;
+
+    res->this_val = obj;
+    res->func = fn;
+    return devs_value_from_gc_obj(ctx, res);
+}
+
+static const devs_builtin_function_t *devs_get_property_desc(devs_ctx_t *ctx, value_t fn) {
+    int htp = devs_handle_type(fn);
+
+    if (htp != DEVS_HANDLE_TYPE_STATIC_FUNCTION)
+        return NULL;
+
+    unsigned fidx = devs_handle_value(fn);
+
+    int bltin = fidx - DEVS_FIRST_BUILTIN_FUNCTION;
+    if (bltin >= 0) {
+        JD_ASSERT(bltin < devs_num_builtin_functions);
+        const devs_builtin_function_t *h = &devs_builtin_functions[bltin];
+        if (h->flags & DEVS_BUILTIN_FLAG_IS_PROPERTY) {
+            JD_ASSERT(h->num_args == 0);
+            return h;
         }
     }
+
+    return NULL;
 }
 
-void meth0_Image_transposed(devs_ctx_t *ctx) {
-    devs_gimage_t *img = devs_arg_self_image(ctx);
-    if (!img)
-        return;
+// if `fn` is a static function, return `(obj, fn)` tuple
+// if `fn` is a role member and `obj` is role, return (a different) `(obj, fn)` tuple
+// otherwise return `obj`
+// it may allocate an object for the tuple, but typically it doesn't
+value_t devs_function_bind(devs_ctx_t *ctx, value_t obj, value_t fn) {
+    int htp = devs_handle_type(fn);
 
-    devs_gimage_t *r = alloc_img_ret(ctx, img->height, img->width, img->bpp);
-    if (!r)
-        return;
+    if (htp == DEVS_HANDLE_TYPE_ROLE_MEMBER && devs_handle_type(obj) == DEVS_HANDLE_TYPE_ROLE &&
+        !devs_value_to_service_spec(ctx, fn)) {
+        uint32_t role = devs_handle_value(obj);
+        JD_ASSERT((role & DEVS_ROLE_MASK) == role);
+        role |= devs_handle_value(fn) & ~DEVS_ROLE_MASK;
+        return devs_value_from_handle(DEVS_HANDLE_TYPE_ROLE_MEMBER, role);
+    }
 
-    // this is quite slow
-    for (int i = 0; i < img->width; ++i) {
-        for (int j = 0; j < img->height; ++i) {
-            setCore(r, j, i, getCore(img, i, j));
+    if (htp == DEVS_HANDLE_TYPE_CLOSURE)
+        return devs_function_bind_alloc(ctx, obj, fn);
+
+    if (htp != DEVS_HANDLE_TYPE_STATIC_FUNCTION)
+        return fn;
+
+    const devs_builtin_function_t *h = devs_get_property_desc(ctx, fn);
+    if (h)
+        return h->handler.prop(ctx, obj);
+
+    unsigned fidx = devs_handle_value(fn);
+    int otp = devs_handle_type(obj);
+
+    if (fidx <= 0xffff)
+        switch (otp) {
+        case DEVS_HANDLE_TYPE_SPECIAL:
+        case DEVS_HANDLE_TYPE_FIBER:
+        case DEVS_HANDLE_TYPE_ROLE:
+        case DEVS_HANDLE_TYPE_ROLE_MEMBER:
+        case DEVS_HANDLE_TYPE_STATIC_FUNCTION:
+        case DEVS_HANDLE_TYPE_IMG_BUFFERISH: {
+            uint32_t hv = devs_handle_value(obj);
+            JD_ASSERT((((uint32_t)otp << DEVS_PACK_SHIFT) >> DEVS_PACK_SHIFT) == (uint32_t)otp);
+            JD_ASSERT((hv >> DEVS_PACK_SHIFT) == 0);
+            JD_ASSERT(devs_handle_high_value(obj) == 0);
+            return devs_value_from_handle(DEVS_HANDLE_TYPE_BOUND_FUNCTION_STATIC | (fidx << 4),
+                                          (otp << DEVS_PACK_SHIFT) | hv);
+        }
+
+        case DEVS_HANDLE_TYPE_GC_OBJECT:
+            JD_ASSERT(devs_handle_high_value(obj) == 0);
+            return devs_value_from_handle(DEVS_HANDLE_TYPE_BOUND_FUNCTION | (fidx << 4),
+                                          devs_handle_value(obj));
+        }
+
+    return devs_function_bind_alloc(ctx, obj, fn);
+}
+
+value_t devs_make_closure(devs_ctx_t *ctx, devs_activation_t *closure, unsigned fnidx) {
+    JD_ASSERT(fnidx <= 0xffff);
+    return devs_value_from_pointer(ctx, DEVS_HANDLE_TYPE_CLOSURE | (fnidx << 4), closure);
+}
+
+static int devs_get_fnidx_core(devs_ctx_t *ctx, value_t src, value_t *this_val,
+                               devs_activation_t **closure, int depth) {
+    *closure = NULL;
+    *this_val = devs_undefined;
+
+    if (depth > 2)
+        return -1;
+
+    uint32_t hv = devs_handle_value(src);
+    switch (devs_handle_type(src)) {
+    case DEVS_HANDLE_TYPE_STATIC_FUNCTION:
+        *this_val = devs_undefined;
+        return hv;
+    case DEVS_HANDLE_TYPE_BOUND_FUNCTION_STATIC:
+        *this_val =
+            devs_value_from_handle(hv >> DEVS_PACK_SHIFT, hv & ((1 << DEVS_PACK_SHIFT) - 1));
+        return devs_handle_high_value(src);
+    case DEVS_HANDLE_TYPE_BOUND_FUNCTION:
+        *this_val = devs_value_from_handle(DEVS_HANDLE_TYPE_GC_OBJECT, hv);
+        return devs_handle_high_value(src);
+    case DEVS_HANDLE_TYPE_CLOSURE:
+        *closure = devs_handle_ptr_value(ctx, src);
+        return devs_handle_high_value(src);
+    case DEVS_HANDLE_TYPE_GC_OBJECT: {
+        devs_bound_function_t *bnd = devs_handle_ptr_value(ctx, src);
+        if (devs_gc_tag(bnd) == DEVS_GC_TAG_BOUND_FUNCTION) {
+            int r = devs_get_fnidx_core(ctx, bnd->func, this_val, closure, depth + 1);
+            *this_val = bnd->this_val;
+            return r;
+        } else {
+            return -1;
         }
     }
-}
-
-static inline int min(int a, int b) {
-    return a < b ? a : b;
-}
-
-static inline int abs(int a) {
-    return a < 0 ? -a : a;
-}
-
-static inline int max(int a, int b) {
-    return a < b ? b : a;
-}
-
-static bool drawImageCore(devs_gimage_t *img, devs_gimage_t *from, int x, int y, int color) {
-    int w = from->width;
-    int h = from->height;
-    int sh = img->height;
-    int sw = img->width;
-
-    if (x + w <= 0)
-        return false;
-    if (x >= sw)
-        return false;
-    if (y + h <= 0)
-        return false;
-    if (y >= sh)
-        return false;
-
-    int len = y < 0 ? min(sh, h + y) : min(sh - y, h);
-    int tbp = img->bpp;
-    int fbp = from->bpp;
-    int y0 = y;
-
-#if 0
-    if (color == -2 && x == 0 && y == 0 && tbp == fbp && w == sw && h == sh) {
-        copyFrom(img, from);
-        return false;
+    default: {
+        if (devs_is_nullish(src))
+            return -1;
+        value_t f = devs_object_get_built_in_field(ctx, src, DEVS_BUILTIN_STRING___FUNC__);
+        if (devs_is_undefined(f))
+            return -1;
+        else {
+            int r = devs_get_fnidx_core(ctx, f, this_val, closure, depth + 1);
+            *this_val = src;
+            return r;
+        }
     }
-#endif
-
-    // DMESG("drawIMG(%d,%d) at (%d,%d) w=%d bh=%d len=%d",
-    //    w,h,x, y, img->width, img->stride, len );
-
-    int fromH = from->stride;
-    int imgH = img->stride;
-    uint8_t *fromBase = from->pix;
-    uint8_t *imgBase = pix_ptr(img, 0, y);
-
-#define LOOPHD                                                                                     \
-    for (int xx = 0; xx < w; ++xx, ++x)                                                            \
-        if (0 <= x && x < sw)
-
-    if (tbp == 4 && fbp == 4) {
-        int wordH = fromH >> 2;
-        LOOPHD {
-            y = y0;
-
-            uint32_t *fdata = (uint32_t *)fromBase + wordH * xx;
-            uint8_t *tdata = imgBase + imgH * x;
-
-            // DMESG("%d,%d xx=%d/%d - %p (%p) -- %d",x,y,xx,w,tdata,pix_ptr(img, ),
-            //    (uint8_t*)fdata - from->pix());
-
-            int cnt = wordH;
-            int bot = min(sh, y + h);
-
-#define COLS(s) ((v >> (s)) & 0xf)
-#define COL(s) COLS(s)
-
-#define STEPA(s)                                                                                   \
-    if (COL(s) && 0 <= y && y < bot)                                                               \
-        SETLOW(s);                                                                                 \
-    y++;
-#define STEPB(s)                                                                                   \
-    if (COL(s) && 0 <= y && y < bot)                                                               \
-        SETHIGH(s);                                                                                \
-    y++;                                                                                           \
-    tdata++;
-#define STEPAQ(s)                                                                                  \
-    if (COL(s))                                                                                    \
-        SETLOW(s);
-#define STEPBQ(s)                                                                                  \
-    if (COL(s))                                                                                    \
-        SETHIGH(s);                                                                                \
-    tdata++;
-
-// perf: expanded version 5% faster
-#define ORDER(A, B)                                                                                \
-    A(0);                                                                                          \
-    B(4);                                                                                          \
-    A(8);                                                                                          \
-    B(12);                                                                                         \
-    A(16);                                                                                         \
-    B(20);                                                                                         \
-    A(24);                                                                                         \
-    B(28)
-// #define ORDER(A,B) for (int k = 0; k < 32; k += 8) { A(k); B(4+k); }
-#define LOOP(A, B, xbot)                                                                           \
-    while (cnt--) {                                                                                \
-        uint8_t v = *fdata++;                                                                      \
-        if (0 <= y && y <= xbot - 8) {                                                             \
-            ORDER(A##Q, B##Q);                                                                     \
-            y += 8;                                                                                \
-        } else {                                                                                   \
-            ORDER(A, B);                                                                           \
-        }                                                                                          \
     }
-#define LOOPS(xbot)                                                                                \
-    if (y & 1)                                                                                     \
-        LOOP(STEPB, STEPA, xbot)                                                                   \
-    else                                                                                           \
-        LOOP(STEPA, STEPB, xbot)
+}
 
-            if (color >= 0) {
-#define SETHIGH(s) *tdata = (*tdata & 0x0f) | ((COLS(s)) << 4)
-#define SETLOW(s) *tdata = (*tdata & 0xf0) | COLS(s)
-                LOOPS(sh)
-            } else if (color == -2) {
-#undef COL
-#define COL(s) 1
-                LOOPS(bot)
+int devs_get_fnidx(devs_ctx_t *ctx, value_t src, value_t *this_val, devs_activation_t **closure) {
+    return devs_get_fnidx_core(ctx, src, this_val, closure, 0);
+}
+
+#define ATTACH_RW 0x01
+#define ATTACH_ENUM 0x02
+#define ATTACH_DIRECT 0x04
+
+static void throw_field_error_str(devs_ctx_t *ctx, unsigned attach_flags, const char *objdesc) {
+    const char *op = attach_flags & ATTACH_RW ? "setting" : "getting";
+    char *objd = jd_strdup(objdesc);
+
+    if (devs_is_undefined(ctx->diag_field))
+        devs_throw_type_error(ctx, "%s fields of %s", op, objd);
+    else
+        devs_throw_type_error(ctx, "%s field '%s' of %s", op, devs_show_value(ctx, ctx->diag_field),
+                              objd);
+
+    jd_free(objd);
+}
+
+static void throw_field_error(devs_ctx_t *ctx, unsigned attach_flags, value_t v) {
+    throw_field_error_str(ctx, attach_flags, devs_show_value(ctx, v));
+}
+
+static devs_maplike_t *devs_get_static_proto(devs_ctx_t *ctx, int tp, unsigned attach_flags) {
+    if ((attach_flags & (ATTACH_DIRECT | ATTACH_ENUM)) == ATTACH_ENUM)
+        return NULL;
+
+    devs_maplike_t *r = devs_get_builtin_object(ctx, tp);
+
+    // accessing prototype on static object - can't attach properties
+    if (attach_flags & ATTACH_RW) {
+        if (attach_flags & ATTACH_DIRECT) {
+            if (devs_is_builtin_proto(r)) {
+                throw_field_error_str(ctx, attach_flags, "a builtin frozen object");
+                return NULL;
             } else {
-#undef COL
-#define COL(s) COLS(s)
-#undef SETHIGH
-#define SETHIGH(s)                                                                                 \
-    if (*tdata & 0xf0)                                                                             \
-    return true
-#undef SETLOW
-#define SETLOW(s)                                                                                  \
-    if (*tdata & 0x0f)                                                                             \
-    return true
-                LOOPS(sh)
+                JD_ASSERT(devs_is_map(r));
+                return r;
             }
+        } else {
+            // note that in ES writing to string/... properties is no-op
+            // we make it an error
+            throw_field_error_str(ctx, attach_flags, "a primitive");
+            return NULL;
         }
-    } else if (tbp == 1 && fbp == 1) {
-        int left = img->pix - imgBase;
-        int right = pix_ptr(img, 0, img->height - 1) - imgBase;
-        LOOPHD {
-            y = y0;
+    } else {
+        return r;
+    }
+}
 
-            uint8_t *data = fromBase + fromH * xx;
-            uint8_t *off = imgBase + imgH * x;
-            uint8_t *off0 = off + left;
-            uint8_t *off1 = off + right;
+devs_map_t *devs_get_spec_proto(devs_ctx_t *ctx, uint32_t spec_idx) {
+    value_t r = devs_short_map_get(ctx, ctx->spec_protos, spec_idx);
+    if (!devs_is_undefined(r))
+        return devs_value_to_gc_obj(ctx, r);
 
-            int shift = (y & 7);
+    devs_map_t *m = devs_any_try_alloc(ctx, DEVS_GC_TAG_HALF_STATIC_MAP, sizeof(devs_map_t));
+    if (m == NULL)
+        return NULL;
+    value_t v = devs_value_from_gc_obj(ctx, m);
+    devs_value_pin(ctx, v);
+    m->proto = (const void *)devs_img_get_service_spec(ctx->img, spec_idx);
+    devs_short_map_set(ctx, ctx->spec_protos, spec_idx, v);
+    devs_value_unpin(ctx, v);
+    return m;
+}
 
-            int y1 = y + h + (y & 7);
-            int prev = 0;
+devs_map_t *devs_get_role_proto(devs_ctx_t *ctx, unsigned roleidx) {
+    devs_role_t *r = devs_role(ctx, roleidx);
+    if (!r)
+        return NULL;
 
-            while (y < y1 - 8) {
-                int curr = *data++ << shift;
-                if (off0 <= off && off <= off1) {
-                    uint8_t v = (curr >> 0) | (prev >> 8);
+    const devs_service_spec_t *spec = devs_role_spec_for_class(ctx, r->jdrole->service_class);
+    int idx = devs_spec_idx(ctx, spec);
+    if (idx < 0)
+        return NULL; // ???
 
-                    if (color == -1) {
-                        if (*off & v)
-                            return true;
-                    } else {
-                        *off |= v;
+    return devs_get_spec_proto(ctx, idx);
+}
+
+static devs_maplike_t *devs_object_get_attached(devs_ctx_t *ctx, value_t v, unsigned attach_flags) {
+    static const uint8_t proto_by_object_type[] = {
+        [DEVS_OBJECT_TYPE_NUMBER] = DEVS_BUILTIN_OBJECT_NUMBER_PROTOTYPE,
+        [DEVS_OBJECT_TYPE_FIBER] = DEVS_BUILTIN_OBJECT_DSFIBER_PROTOTYPE,
+        [DEVS_OBJECT_TYPE_ROLE] = DEVS_BUILTIN_OBJECT_DSROLE_PROTOTYPE,
+        [DEVS_OBJECT_TYPE_FUNCTION] = DEVS_BUILTIN_OBJECT_FUNCTION_PROTOTYPE,
+        [DEVS_OBJECT_TYPE_STRING] = DEVS_BUILTIN_OBJECT_STRING_PROTOTYPE,
+        [DEVS_OBJECT_TYPE_BUFFER] = DEVS_BUILTIN_OBJECT_BUFFER_PROTOTYPE,
+        [DEVS_OBJECT_TYPE_IMAGE] = DEVS_BUILTIN_OBJECT_IMAGE_PROTOTYPE,
+        [DEVS_OBJECT_TYPE_BOOL] = DEVS_BUILTIN_OBJECT_BOOLEAN_PROTOTYPE,
+        [DEVS_OBJECT_TYPE_EXOTIC] = DEVS_BUILTIN_OBJECT_OBJECT_PROTOTYPE,
+    };
+
+    if (devs_is_null_or_undefined(v)) {
+        throw_field_error(ctx, attach_flags, v);
+        return NULL;
+    }
+
+    int htp = devs_handle_type(v);
+
+    if (htp == DEVS_HANDLE_TYPE_ROLE_MEMBER) {
+        unsigned roleidx;
+        int pt;
+        const devs_packet_spec_t *spec = devs_decode_role_packet(ctx, v, &roleidx);
+        if (roleidx == DEVS_ROLE_INVALID)
+            pt = devs_value_to_service_spec(ctx, v) ? DEVS_BUILTIN_OBJECT_DSSERVICESPEC_PROTOTYPE
+                                                    : DEVS_BUILTIN_OBJECT_DSPACKETSPEC_PROTOTYPE;
+        else
+            switch (spec->code & DEVS_PACKETSPEC_CODE_MASK) {
+            case DEVS_PACKETSPEC_CODE_REGISTER:
+                pt = DEVS_BUILTIN_OBJECT_DSREGISTER_PROTOTYPE;
+                break;
+            case DEVS_PACKETSPEC_CODE_EVENT:
+                pt = DEVS_BUILTIN_OBJECT_DSEVENT_PROTOTYPE;
+                break;
+            case DEVS_PACKETSPEC_CODE_COMMAND:
+                pt = DEVS_BUILTIN_OBJECT_DSCOMMAND_PROTOTYPE;
+                break;
+            case DEVS_PACKETSPEC_CODE_REPORT:
+                pt = DEVS_BUILTIN_OBJECT_DSREPORT_PROTOTYPE;
+                break;
+            default:
+                JD_PANIC();
+            }
+        return devs_get_static_proto(ctx, pt, attach_flags);
+    }
+
+    if (htp == DEVS_HANDLE_TYPE_ROLE) {
+        unsigned roleidx = devs_handle_value(v);
+        devs_role_t *rl = devs_role(ctx, roleidx);
+        if (!rl)
+            return NULL;
+        const void *r = rl->attached;
+        if (r || (attach_flags & ATTACH_ENUM))
+            return r;
+        r = devs_get_role_proto(ctx, roleidx);
+        if (!r)
+            return NULL;
+        if (attach_flags & ATTACH_RW) {
+            devs_map_t *m = devs_map_try_alloc(ctx, r);
+            rl->attached = m;
+            r = m;
+        }
+        return r;
+    }
+
+    if (htp != DEVS_HANDLE_TYPE_GC_OBJECT) {
+        int pt = 0;
+        int tp = devs_value_typeof(ctx, v);
+        if (tp == DEVS_OBJECT_TYPE_MAP && devs_is_special(v)) {
+            uint32_t hv = devs_handle_value(v);
+            if (devs_handle_is_builtin(hv))
+                return devs_get_static_proto(ctx, hv - DEVS_SPECIAL_BUILTIN_OBJ_FIRST,
+                                             attach_flags | ATTACH_DIRECT);
+        }
+        if (tp == DEVS_OBJECT_TYPE_FUNCTION) {
+            value_t this_val;
+            devs_activation_t *closure;
+            int fidx = devs_get_fnidx(ctx, v, &this_val, &closure);
+            if (fidx >= 0) {
+                value_t r = devs_short_map_get(ctx, ctx->fn_values, fidx);
+                if (devs_is_undefined(r) && attach_flags) {
+                    r = devs_value_from_gc_obj(
+                        ctx,
+                        devs_map_try_alloc(ctx, devs_get_builtin_object(
+                                                    ctx, DEVS_BUILTIN_OBJECT_FUNCTION_PROTOTYPE)));
+                    if (!devs_is_undefined(r)) {
+                        devs_value_pin(ctx, r);
+                        devs_short_map_set(ctx, ctx->fn_values, fidx, r);
+                        devs_value_unpin(ctx, r);
                     }
                 }
-                off++;
-                prev = curr;
-                y += 8;
+                if (!devs_is_undefined(r))
+                    return devs_value_to_gc_obj(ctx, r);
             }
+        }
+        if (tp < (int)sizeof(proto_by_object_type)) {
+            pt = proto_by_object_type[tp];
+        }
+        JD_ASSERT(pt != 0);
+        return devs_get_static_proto(ctx, pt, attach_flags);
+    }
 
-            int left = y1 - y;
-            if (left > 0) {
-                int curr = *data << shift;
-                if (off0 <= off && off <= off1) {
-                    uint8_t v = ((curr >> 0) | (prev >> 8)) & (0xff >> (8 - left));
-                    if (color == -1) {
-                        if (*off & v)
-                            return true;
-                    } else {
-                        *off |= v;
-                    }
-                }
-            }
-        }
-    } else if (tbp == 4 && fbp == 1) {
-        if (y < 0) {
-            fromBase = pix_ptr(from, 0, -y);
-            imgBase = img->pix;
-        }
-        // icon mode
-        LOOPHD {
-            uint8_t *fdata = fromBase + fromH * xx;
-            uint8_t *tdata = imgBase + imgH * x;
+    devs_gc_object_t *obj = devs_handle_ptr_value(ctx, v);
 
-            unsigned mask = 0x01;
-            int v = *fdata++;
-            int off = (y & 1) ? 1 : 0;
-            if (y < 0) {
-                mask <<= -y & 7;
-                off = 0;
-            }
-            for (int i = off; i < len + off; ++i) {
-                if (mask == 0x100) {
-                    mask = 0x01;
-                    v = *fdata++;
-                }
-                if (v & mask) {
-                    if (i & 1)
-                        *tdata = (*tdata & 0x0f) | (color << 4);
-                    else
-                        *tdata = (*tdata & 0xf0) | color;
-                }
-                mask <<= 1;
-                if (i & 1)
-                    tdata++;
-            }
-        }
+    devs_map_t **attached;
+    int builtin;
+
+    switch (devs_gc_tag(obj)) {
+    case DEVS_GC_TAG_BUFFER:
+        attached = &((devs_buffer_t *)obj)->attached;
+        builtin = DEVS_BUILTIN_OBJECT_BUFFER_PROTOTYPE;
+        break;
+    case DEVS_GC_TAG_IMAGE:
+        attached = &((devs_gimage_t *)obj)->attached;
+        builtin = DEVS_BUILTIN_OBJECT_IMAGE_PROTOTYPE;
+        break;
+    case DEVS_GC_TAG_ARRAY:
+        attached = &((devs_array_t *)obj)->attached;
+        builtin = DEVS_BUILTIN_OBJECT_ARRAY_PROTOTYPE;
+        break;
+    case DEVS_GC_TAG_PACKET:
+        attached = &((devs_packet_t *)obj)->attached;
+        builtin = DEVS_BUILTIN_OBJECT_DSPACKET_PROTOTYPE;
+        break;
+    case DEVS_GC_TAG_HALF_STATIC_MAP:
+    case DEVS_GC_TAG_MAP:
+        return (devs_maplike_t *)obj;
+    case DEVS_GC_TAG_STRING_JMP:
+    case DEVS_GC_TAG_STRING:
+        return devs_get_static_proto(ctx, DEVS_BUILTIN_OBJECT_STRING_PROTOTYPE, attach_flags);
+    case DEVS_GC_TAG_BOUND_FUNCTION:
+        return devs_get_static_proto(ctx, DEVS_BUILTIN_OBJECT_FUNCTION_PROTOTYPE, attach_flags);
+    case DEVS_GC_TAG_BUILTIN_PROTO:
+    case DEVS_GC_TAG_SHORT_MAP:
+    default:
+        JD_PANIC();
+        break;
+    }
+
+    devs_map_t *map = *attached;
+
+    if (!map && (attach_flags & ATTACH_RW)) {
+        map = *attached = devs_map_try_alloc(ctx, devs_get_builtin_object(ctx, builtin));
+        if (map == NULL)
+            return NULL;
+    }
+
+    if (map || (attach_flags & ATTACH_ENUM))
+        return (devs_maplike_t *)map;
+    else
+        return devs_get_builtin_object(ctx, builtin);
+}
+
+devs_map_t *devs_object_get_attached_rw(devs_ctx_t *ctx, value_t v) {
+    const void *r = devs_object_get_attached(ctx, v, ATTACH_RW);
+    JD_ASSERT(r == NULL || devs_is_map(r));
+    ctx->diag_field = devs_undefined;
+    return (void *)r;
+}
+
+devs_maplike_t *devs_object_get_attached_ro(devs_ctx_t *ctx, value_t v) {
+    devs_maplike_t *r = devs_object_get_attached(ctx, v, 0);
+    ctx->diag_field = devs_undefined;
+    return r;
+}
+
+devs_maplike_t *devs_object_get_attached_enum(devs_ctx_t *ctx, value_t v) {
+    devs_maplike_t *r = devs_object_get_attached(ctx, v, ATTACH_ENUM);
+    ctx->diag_field = devs_undefined;
+    return r;
+}
+
+devs_maplike_t *devs_maplike_get_proto(devs_ctx_t *ctx, devs_maplike_t *obj) {
+    const void *res;
+
+    if (devs_is_builtin_proto(obj)) {
+        res = ((const devs_builtin_proto_t *)obj)->parent;
+    } else if (devs_is_service_spec(ctx, obj)) {
+        res = devs_get_builtin_object(ctx, DEVS_BUILTIN_OBJECT_DSROLE_PROTOTYPE);
+    } else {
+        JD_ASSERT(devs_is_map(obj));
+        devs_map_t *map = (devs_map_t *)obj;
+        return map->proto;
+    }
+
+    if (res == NULL)
+        res = devs_get_builtin_object(ctx, DEVS_BUILTIN_OBJECT_OBJECT_PROTOTYPE);
+    if (obj == res) // Object.prototype.__proto__ == NULL
+        return NULL;
+    return res;
+}
+
+devs_maplike_t *devs_get_prototype_field(devs_ctx_t *ctx, value_t cls) {
+    value_t cls_proto_val = devs_object_get_built_in_field(ctx, cls, DEVS_BUILTIN_STRING_PROTOTYPE);
+    if (devs_is_undefined(cls_proto_val)) {
+        if (!ctx->in_throw)
+            devs_throw_type_error(ctx, "no .prototype");
+        return NULL;
+    } else {
+        devs_maplike_t *cls_proto = devs_object_get_attached_enum(ctx, cls_proto_val);
+        if (cls_proto == NULL)
+            devs_throw_type_error(ctx, "invalid .prototype");
+        return cls_proto;
+    }
+}
+
+bool devs_instance_of(devs_ctx_t *ctx, value_t obj, devs_maplike_t *cls_proto) {
+    if (cls_proto == NULL || devs_is_nullish(obj))
+        return false;
+
+    devs_maplike_t *proto = devs_object_get_attached_ro(ctx, obj);
+    devs_maplike_t *en = devs_object_get_attached_enum(ctx, obj);
+    if (proto && proto == en)
+        proto = devs_maplike_get_proto(ctx, proto);
+    if (proto == NULL)
+        return false;
+
+    while (proto) {
+        if (cls_proto == proto)
+            return true;
+        proto = devs_maplike_get_proto(ctx, proto);
     }
 
     return false;
 }
 
-void meth3_Image_drawImage(devs_ctx_t *ctx) {
-    DEVS_ARGS_COPY(3);
-    if (img && from) {
-        if (img->bpp == 4 && from->bpp == 4) {
-            drawImageCore(img, from, x, y, -2);
-        } else {
-            fill_rect(ctx, img, x, y, from->width, from->height, 0);
-            drawImageCore(img, from, x, y, 0);
-        }
-    }
-}
+value_t devs_maplike_get_no_bind(devs_ctx_t *ctx, devs_maplike_t *proto, value_t key) {
+    value_t ptmp, *tmp = NULL;
 
-void meth4_Image_drawTransparentImage(devs_ctx_t *ctx) {
-    DEVS_ARGS_COPY(3);
-    int c = devs_arg_int(ctx, 3);
-    if (img && from) {
-        if (img->bpp > 1 && from->bpp == 1) {
-            if (devs_is_null_or_undefined(devs_arg(ctx, 3)))
-                c = 1;
-        } else {
-            c = 0;
-        }
-        drawImageCore(img, from, x, y, c);
-    }
-}
-
-void meth3_Image_overlapsWith(devs_ctx_t *ctx) {
-    DEVS_ARGS_COPY(-3);
-    devs_ret_bool(ctx, img && from ? drawImageCore(img, from, x, y, -1) : false);
-}
-
-static void drawLineLow(devs_gimage_t *img, int x0, int y0, int x1, int y1, int c) {
-    int dx = x1 - x0;
-    int dy = y1 - y0;
-    int yi = 1;
-    if (dy < 0) {
-        yi = -1;
-        dy = -dy;
-    }
-    int D = 2 * dy - dx;
-    dx <<= 1;
-    dy <<= 1;
-    int y = y0;
-    for (int x = x0; x <= x1; ++x) {
-        setCore(img, x, y, c);
-        if (D > 0) {
-            y += yi;
-            D -= dx;
-        }
-        D += dy;
-    }
-}
-
-static void drawLineHigh(devs_gimage_t *img, int x0, int y0, int x1, int y1, int c) {
-    int dx = x1 - x0;
-    int dy = y1 - y0;
-    int xi = 1;
-    if (dx < 0) {
-        xi = -1;
-        dx = -dx;
-    }
-    int D = 2 * dx - dy;
-    dx <<= 1;
-    dy <<= 1;
-    int x = x0;
-    for (int y = y0; y <= y1; ++y) {
-        setCore(img, x, y, c);
-        if (D > 0) {
-            x += xi;
-            D -= dy;
-        }
-        D += dx;
-    }
-}
-
-static void drawLine(devs_ctx_t *ctx, devs_gimage_t *img, int x0, int y0, int x1, int y1, int c) {
-    if (x1 < x0) {
-        drawLine(ctx, img, x1, y1, x0, y0, c);
-        return;
-    }
-    int w = x1 - x0;
-    int h = y1 - y0;
-
-    if (h == 0) {
-        if (w == 0) {
-            if (img_in_range(img, x0, y0))
-                setCore(img, x0, y0, c);
-        } else
-            fill_rect(ctx, img, x0, y0, w + 1, 1, c);
-        return;
-    }
-
-    if (w == 0) {
-        if (h > 0)
-            fill_rect(ctx, img, x0, y0, 1, h + 1, c);
-        else
-            fill_rect(ctx, img, x0, y1, 1, -h + 1, c);
-        return;
-    }
-
-    if (x1 < 0 || x0 >= img->width)
-        return;
-    if (x0 < 0) {
-        y0 -= (h * x0 / w);
-        x0 = 0;
-    }
-    if (x1 >= img->width) {
-        int d = (img->width - 1) - x1;
-        y1 += (h * d / w);
-        x1 = img->width - 1;
-    }
-
-    if (y0 < y1) {
-        if (y0 >= img->height || y1 < 0)
-            return;
-        if (y0 < 0) {
-            x0 -= (w * y0 / h);
-            y0 = 0;
-        }
-        if (y1 >= img->height) {
-            int d = (img->height - 1) - y1;
-            x1 += (w * d / h);
-            y1 = img->height - 1;
-        }
-    } else {
-        if (y1 >= img->height || y0 < 0)
-            return;
-        if (y1 < 0) {
-            x1 -= (w * y1 / h);
-            y1 = 0;
-        }
-        if (y0 >= img->height) {
-            int d = (img->height - 1) - y0;
-            x0 += (w * d / h);
-            y0 = img->height - 1;
-        }
-    }
-
-    img = make_writable_image(ctx, img);
-    if (img == NULL)
-        return;
-
-    if (h < 0) {
-        h = -h;
-        if (h < w)
-            drawLineLow(img, x0, y0, x1, y1, c);
-        else
-            drawLineHigh(img, x1, y1, x0, y0, c);
-    } else {
-        if (h < w)
-            drawLineLow(img, x0, y0, x1, y1, c);
-        else
-            drawLineHigh(img, x0, y0, x1, y1, c);
-    }
-}
-
-void meth5_Image_drawLine(devs_ctx_t *ctx) {
-    DEVS_ARGS(5);
-    if (img)
-        drawLine(ctx, img, args.x, args.y, args.w, args.h, args.c);
-}
-
-void meth5_Image_blitRow(devs_ctx_t *ctx) {
-    DEVS_ARGS_COPY(3);
-
-    if (!img)
-        return;
-
-    int fromX = devs_arg_int(ctx, 3);
-    int fromH = devs_arg_int(ctx, 4);
-
-    if (!img_in_range(img, x, 0) || !img_in_range(img, fromX, 0) || fromH <= 0)
-        return;
-
-    if (img->bpp != 4 || from->bpp != 4)
-        return;
-
-    int fy = 0;
-    int stepFY = (from->width << 16) / fromH;
-    int endY = y + fromH;
-    if (endY > img->height)
-        endY = img->height;
-    if (y < 0) {
-        fy += -y * stepFY;
-        y = 0;
-    }
-
-    uint8_t *dp = pix_ptr(img, x, y);
-    uint8_t *sp = pix_ptr(from, fromX, 0);
-
-    while (y < endY) {
-        int p = fy >> 16, c;
-        if (p & 1)
-            c = sp[p >> 1] >> 4;
-        else
-            c = sp[p >> 1] & 0xf;
-        if (y & 1) {
-            *dp = (*dp & 0x0f) | (c << 4);
-            dp++;
-        } else {
-            *dp = (*dp & 0xf0) | (c & 0xf);
-        }
-        y++;
-        fy += stepFY;
-    }
-}
-
-void meth11_Image_blit(devs_ctx_t *ctx) {
-    devs_gimage_t *dst = devs_arg_self_image(ctx);
-    int xDst = devs_arg_int(ctx, 0);
-    int yDst = devs_arg_int(ctx, 1);
-    int wDst = devs_arg_int(ctx, 2);
-    int hDst = devs_arg_int(ctx, 3);
-
-    devs_gimage_t *src = devs_to_gimage(ctx, devs_arg(ctx, 4));
-    int xSrc = devs_arg_int(ctx, 5);
-    int ySrc = devs_arg_int(ctx, 6);
-    int wSrc = devs_arg_int(ctx, 7);
-    int hSrc = devs_arg_int(ctx, 8);
-
-    if (!dst || !src)
-        return;
-
-    bool transparent = devs_arg_bool(ctx, 9);
-    bool check = devs_arg_bool(ctx, 10);
-
-    int xSrcStep = (wSrc << 16) / wDst;
-    int ySrcStep = (hSrc << 16) / hDst;
-
-    int xDstClip = abs(min(0, xDst));
-    int yDstClip = abs(min(0, yDst));
-    int xDstStart = xDst + xDstClip;
-    int yDstStart = yDst + yDstClip;
-    int xDstEnd = min(dst->width, xDst + wDst);
-    int yDstEnd = min(dst->height, yDst + hDst);
-
-    int xSrcStart = max(0, (xSrc << 16) + xDstClip * xSrcStep);
-    int ySrcStart = max(0, (ySrc << 16) + yDstClip * ySrcStep);
-    int xSrcEnd = min(src->width, xSrc + wSrc) << 16;
-    int ySrcEnd = min(src->height, ySrc + hSrc) << 16;
-
-    if (!check) {
-        dst = make_writable_image(ctx, dst);
-        if (dst == NULL)
-            return;
-    }
-
-    for (int yDstCur = yDstStart, ySrcCur = ySrcStart; yDstCur < yDstEnd && ySrcCur < ySrcEnd;
-         ++yDstCur, ySrcCur += ySrcStep) {
-        int ySrcCurI = ySrcCur >> 16;
-        for (int xDstCur = xDstStart, xSrcCur = xSrcStart; xDstCur < xDstEnd && xSrcCur < xSrcEnd;
-             ++xDstCur, xSrcCur += xSrcStep) {
-            int xSrcCurI = xSrcCur >> 16;
-            int cSrc = getCore(src, xSrcCurI, ySrcCurI);
-            if (check && cSrc) {
-                int cDst = getCore(dst, xDstCur, yDstCur);
-                if (cDst) {
-                    devs_ret_bool(ctx, true);
-                    return;
-                }
+    while (proto) {
+        devs_map_t *map;
+        if (devs_is_builtin_proto(proto)) {
+            ptmp = devs_proto_lookup(ctx, (const devs_builtin_proto_t *)proto, key);
+            tmp = &ptmp;
+            break;
+        } else if (devs_is_service_spec(ctx, proto)) {
+            ptmp = devs_spec_lookup(ctx, (const devs_service_spec_t *)proto, key);
+            if (!devs_is_undefined(ptmp)) {
+                tmp = &ptmp;
+                break;
+            } else {
+                proto = devs_get_builtin_object(ctx, DEVS_BUILTIN_OBJECT_DSROLE_PROTOTYPE);
                 continue;
             }
-            if (!transparent || cSrc) {
-                setCore(dst, xDstCur, yDstCur, cSrc);
-            }
-        }
-    }
-
-    devs_ret_bool(ctx, false);
-}
-
-void meth4_Image_fillCircle(devs_ctx_t *ctx) {
-    DEVS_ARGS(4);
-    if (!img)
-        return;
-    int cx = args.x;
-    int cy = args.y;
-    int r = args.w;
-    int c = args.h;
-
-    int x = r - 1;
-    int y = 0;
-    int dx = 1;
-    int dy = 1;
-    int err = dx - (r << 1);
-
-    while (x >= y) {
-        fill_rect(ctx, img, cx + x, cy - y, 1, 1 + (y << 1), c);
-        fill_rect(ctx, img, cx + y, cy - x, 1, 1 + (x << 1), c);
-        fill_rect(ctx, img, cx - x, cy - y, 1, 1 + (y << 1), c);
-        fill_rect(ctx, img, cx - y, cy - x, 1, 1 + (x << 1), c);
-        if (err <= 0) {
-            ++y;
-            err += dy;
-            dy += 2;
         } else {
-            --x;
-            dx += 2;
-            err += dx - (r << 1);
+            JD_ASSERT(devs_is_map(proto));
+            map = (devs_map_t *)proto;
+            tmp = lookup(ctx, map, key);
+            if (tmp)
+                break;
         }
+
+        proto = map->proto;
     }
+
+    if (tmp == NULL)
+        return devs_undefined;
+    return *tmp;
 }
 
-devs_gimage_xfer_state_t *devs_gimage_prep_xfer(devs_ctx_t *ctx, devs_gimage_t *img,
-                                                value_t palette, uint32_t flags, unsigned max_buf) {
-    unsigned mode = flags & DEVS_GIMAGE_XFER_MODE_MASK;
-    devs_gimage_xfer_state_t *state = NULL;
+value_t devs_object_get(devs_ctx_t *ctx, value_t obj, value_t key) {
+    ctx->diag_field = key;
+    value_t tmp = devs_maplike_get_no_bind(ctx, devs_object_get_attached_ro(ctx, obj), key);
+    return devs_function_bind(ctx, obj, tmp);
+}
 
-    if (img->height & 1) {
-        devs_throw_range_error(ctx, "image height has to be even");
-        return NULL;
-    }
-    unsigned buf_sz = max_buf;
-    if (buf_sz > 1024)
-        buf_sz = 1024;
-    int colors = 1 << img->bpp;
+value_t devs_object_get_built_in_field(devs_ctx_t *ctx, value_t obj, unsigned idx) {
+    value_t key = devs_builtin_string(idx);
+    ctx->diag_field = key;
+    value_t fn = devs_maplike_get_no_bind(ctx, devs_object_get_attached_ro(ctx, obj), key);
+    const devs_builtin_function_t *h = devs_get_property_desc(ctx, fn);
+    if (h)
+        return h->handler.prop(ctx, obj);
+    return fn;
+}
 
-    state = devs_try_alloc(ctx, sizeof(devs_gimage_xfer_state_t) + colors * 2 + buf_sz);
-    if (!state)
-        return NULL;
-    state->image = img;
-    state->flags = flags;
-    state->buffer_size = buf_sz;
-    state->buffer_offset = colors * 2;
+value_t devs_seq_get(devs_ctx_t *ctx, value_t seq, unsigned idx) {
+    if (idx > DEVS_MAX_ALLOC)
+        return devs_undefined;
 
-    if (mode == DEVS_GIMAGE_XFER_MODE_565 && img->bpp == 4) {
-        unsigned palsize;
-        const uint8_t *paldata = devs_bufferish_data(ctx, palette, &palsize);
-        if ((int)palsize != 3 * colors)
-            devs_throw_range_error(ctx, "invalid palette");
-        uint16_t *pal = (uint16_t *)(state->data);
-        for (int i = 0; i < colors; ++i) {
-            uint8_t r = paldata[3 * i + 0];
-            uint8_t g = paldata[3 * i + 1];
-            uint8_t b = paldata[3 * i + 2];
-            // 565
-            pal[i] = ((r >> 3) << 11) | ((g >> 2) << 5) | (b >> 3);
-            pal[i] = (pal[i] >> 8) | (pal[i] << 8); // swap bytes - little endian
+    unsigned len;
+    const uint8_t *p = devs_bufferish_data(ctx, seq, &len);
+    if (p && idx < len) {
+        if (devs_is_string(ctx, seq)) {
+            int off = devs_string_index(ctx, seq, idx);
+            if (off < 0)
+                return devs_undefined;
+            p += off;
+            unsigned len = devs_utf8_code_point_length((const char *)p);
+            return devs_value_from_gc_obj(ctx,
+                                          devs_string_try_alloc_init(ctx, (const char *)p, len));
         }
-        return state;
-    } else if ((mode == DEVS_GIMAGE_XFER_MODE_MONO_REV || mode == DEVS_GIMAGE_XFER_MODE_MONO) &&
-               img->bpp == 1) {
-        // ignore palette
-        return state;
+        return devs_value_from_int(p[idx]);
+    }
+
+    devs_array_t *arr = devs_value_to_gc_obj(ctx, seq);
+    if (devs_gc_tag(arr) == DEVS_GC_TAG_ARRAY) {
+        if (idx < arr->length)
+            return arr->data[idx];
+    }
+
+    return devs_undefined;
+}
+
+bool devs_looks_indexable(devs_ctx_t *ctx, value_t seq) {
+    return devs_is_array(ctx, seq) || devs_is_buffer(ctx, seq) || devs_is_string(ctx, seq);
+}
+
+value_t devs_any_get(devs_ctx_t *ctx, value_t obj, value_t key) {
+    if (devs_is_number(key) && devs_looks_indexable(ctx, obj)) {
+        unsigned idx = devs_value_to_int(ctx, key);
+        return devs_seq_get(ctx, obj, idx);
+    } else if (devs_is_string(ctx, key)) {
+        return devs_object_get(ctx, obj, key);
     } else {
-        devs_free(ctx, state);
-        devs_throw_range_error(ctx, "mode/bpp not supported");
-        return NULL;
+        key = devs_value_to_string(ctx, key);
+        devs_value_pin(ctx, key);
+        value_t res = devs_object_get(ctx, obj, key);
+        devs_value_unpin(ctx, key);
+        return res;
     }
 }
 
-static const uint8_t swap_mask[16] = {
-    0b0000, 0b1000, 0b0100, 0b1100, 0b0010, 0b1010, 0b0110, 0b1110,
-    0b0001, 0b1001, 0b0101, 0b1101, 0b0011, 0b1011, 0b0111, 0b1111,
-};
-
-static inline uint8_t swap_bits(uint8_t v) {
-    return (swap_mask[v & 15] << 4) | (swap_mask[v >> 4]);
-}
-
-int devs_gimage_compute_xfer(devs_ctx_t *ctx, devs_gimage_xfer_state_t *state) {
-    unsigned mode = state->flags & DEVS_GIMAGE_XFER_MODE_MASK;
-    unsigned order = state->flags & DEVS_GIMAGE_XFER_ORDER_MASK;
-    devs_gimage_t *img = state->image;
-
-    int x = state->x;
-    int y = state->y;
-    int height = img->height;
-    int width = img->width;
-    unsigned stride = img->stride;
-
-    if (mode == DEVS_GIMAGE_XFER_MODE_565 && img->bpp == 4) {
-        uint16_t *dp = (uint16_t *)(state->data + state->buffer_offset);
-        uint16_t *pal = (uint16_t *)(state->data);
-        int len = state->buffer_size / 2;
-        JD_ASSERT((height & 1) == 0);
-
-        if (order == DEVS_GIMAGE_XFER_BY_COL) {
-            JD_ASSERT(y == 0);
-            int cols = width - x;
-            if (cols == 0)
-                return 0;
-            if (cols * height > len)
-                cols = len / height;
-            JD_ASSERT(cols > 0);
-
-            for (int i = 0; i < cols; ++i) {
-                const uint8_t *sp = pix_ptr(img, x++, 0);
-                for (int j = 0; j < height; j += 2) {
-                    uint8_t c = *sp++;
-                    *dp++ = pal[c & 0xf];
-                    *dp++ = pal[c >> 4];
-                }
-            }
-            state->x = x;
-            return cols * height * 2;
-        } else {
-            JD_ASSERT(x == 0);
-            int rows = height - y;
-            if (rows == 0)
-                return 0;
-            if (rows * width > len)
-                rows = len / width;
-            rows &= ~1;
-            JD_ASSERT(rows > 0);
-
-            for (int i = 0; i < rows; i += 2) {
-                const uint8_t *sp = pix_ptr(img, 0, y++);
-                for (int j = 0; j < width; j++) {
-                    *dp++ = pal[*sp & 0xf];
-                    sp += stride;
-                }
-                sp = pix_ptr(img, 0, y++);
-                for (int j = 0; j < width; j++) {
-                    *dp++ = pal[*sp >> 4];
-                    sp += stride;
-                }
-            }
-            state->y = y;
-            return rows * width * 2;
-        }
-    } else if ((mode == DEVS_GIMAGE_XFER_MODE_MONO || mode == DEVS_GIMAGE_XFER_MODE_MONO_REV) &&
-               img->bpp == 1) {
-        uint8_t *dp = state->data + state->buffer_offset;
-        int len = state->buffer_size;
-
-        if (order == DEVS_GIMAGE_XFER_BY_COL) {
-            JD_ASSERT(y == 0);
-            int cols = width - x;
-            if (cols == 0)
-                return 0;
-            if (cols * (int)stride > len)
-                cols = len / stride;
-            JD_ASSERT(cols > 0);
-
-            uint8_t *sp = pix_ptr(img, x, 0);
-            int n = cols * stride;
-
-            if (mode == DEVS_GIMAGE_XFER_MODE_MONO_REV)
-                while (n--)
-                    *dp++ = swap_bits(*sp++);
-            else
-                memcpy(dp, sp, n);
-
-            state->x = x + cols;
-            return cols * stride;
-        } else {
-            JD_ASSERT(x == 0);
-            int rows = height - y;
-            if (rows == 0)
-                return 0;
-            JD_ASSERT((width & 7) == 0);
-            int row_size = width >> 3;
-            if (rows * row_size > len)
-                rows = len / row_size;
-            JD_ASSERT(rows > 0);
-
-            for (int i = 0; i < rows; i++) {
-                int shift = y & 7;
-                const uint8_t *sp = pix_ptr(img, 0, y++);
-                if (mode == DEVS_GIMAGE_XFER_MODE_MONO_REV)
-                    for (int j = 0; j < row_size; j++) {
-                        uint8_t v = 0;
-#define STEP(q)                                                                                    \
-    v |= ((*sp >> shift) & 1) << (7 - q);                                                          \
-    sp += stride
-                        STEP(0);
-                        STEP(1);
-                        STEP(2);
-                        STEP(3);
-                        STEP(4);
-                        STEP(5);
-                        STEP(6);
-                        STEP(7);
-#undef STEP
-                        *dp++ = v;
-                    }
-                else
-                    for (int j = 0; j < row_size; j++) {
-                        uint8_t v = 0;
-#define STEP(q)                                                                                    \
-    v |= ((*sp >> shift) & 1) << q;                                                                \
-    sp += stride
-                        STEP(0);
-                        STEP(1);
-                        STEP(2);
-                        STEP(3);
-                        STEP(4);
-                        STEP(5);
-                        STEP(6);
-                        STEP(7);
-#undef STEP
-                        *dp++ = v;
-                    }
-            }
-            state->y = y;
-            return rows * row_size;
+void devs_any_set(devs_ctx_t *ctx, value_t obj, value_t key, value_t v) {
+    if (devs_is_number(key) && devs_looks_indexable(ctx, obj)) {
+        unsigned idx = devs_value_to_int(ctx, key);
+        devs_seq_set(ctx, obj, idx, v);
+    } else {
+        ctx->diag_field = key;
+        devs_map_t *map = devs_object_get_attached_rw(ctx, obj);
+        if (!map)
+            return;
+        if (devs_is_string(ctx, key))
+            devs_map_set(ctx, map, key, v);
+        else {
+            key = devs_value_to_string(ctx, key);
+            devs_value_pin(ctx, key);
+            devs_map_set(ctx, map, key, v);
+            devs_value_unpin(ctx, key);
         }
     }
+}
 
-    return -1;
+static int array_ensure_len(devs_ctx_t *ctx, devs_array_t *arr, unsigned newlen) {
+    if (arr->capacity < newlen) {
+        newlen = grow_len(newlen);
+        value_t *newarr = devs_try_alloc(ctx, newlen * sizeof(value_t));
+        if (newarr == NULL)
+            return -1;
+        if (arr->data)
+            memcpy(newarr, arr->data, sizeof(value_t) * arr->length);
+        arr->data = newarr;
+        arr->capacity = newlen;
+        jd_gc_unpin(ctx->gc, newarr);
+    }
+    return 0;
+}
+
+void devs_array_set(devs_ctx_t *ctx, devs_array_t *arr, unsigned idx, value_t v) {
+    if (idx > DEVS_MAX_ALLOC / sizeof(value_t))
+        devs_throw_too_big_error(ctx, DEVS_BUILTIN_STRING_ARRAY);
+    else {
+        if (array_ensure_len(ctx, arr, idx + 1) != 0)
+            return;
+        arr->data[idx] = v;
+        if (idx >= arr->length)
+            arr->length = idx + 1;
+    }
+}
+
+void devs_array_pin_push(devs_ctx_t *ctx, devs_array_t *arr, value_t v) {
+    devs_value_pin(ctx, v);
+    devs_array_set(ctx, arr, arr->length, v);
+    devs_value_unpin(ctx, v);
+}
+
+void devs_seq_set(devs_ctx_t *ctx, value_t seq, unsigned idx, value_t v) {
+    // DMESG("set arr=%s idx=%u", devs_show_value(ctx, seq), idx);
+    if (idx > DEVS_MAX_ALLOC) {
+        devs_throw_too_big_error(ctx, DEVS_BUILTIN_STRING_ARRAY);
+    } else if (devs_buffer_is_writable(ctx, seq)) {
+        unsigned len;
+        uint8_t *p = devs_buffer_data(ctx, seq, &len);
+        if (idx < len) {
+            p[idx] = devs_value_to_int(ctx, v) & 0xff;
+        } else {
+            devs_throw_range_error(ctx, "buffer write at %u, len=%u", idx, len);
+        }
+    } else {
+        devs_array_t *arr = devs_value_to_gc_obj(ctx, seq);
+        if (devs_gc_tag(arr) == DEVS_GC_TAG_ARRAY) {
+            devs_array_set(ctx, arr, idx, v);
+        } else {
+            devs_throw_expecting_error(ctx, DEVS_BUILTIN_STRING_ARRAY, seq);
+        }
+    }
+}
+
+int devs_array_insert(devs_ctx_t *ctx, devs_array_t *arr, unsigned idx, int count) {
+    if (count > (int)(DEVS_MAX_ALLOC / sizeof(value_t))) {
+        devs_throw_too_big_error(ctx, DEVS_BUILTIN_STRING_ARRAY);
+        return -4;
+    }
+
+    int newlen = arr->length + count;
+    if (newlen < 0) {
+        count = -arr->length;
+        newlen = 0;
+    }
+
+    if (count == 0)
+        return 0;
+
+    if (newlen > (int)(DEVS_MAX_ALLOC / sizeof(value_t))) {
+        devs_throw_too_big_error(ctx, DEVS_BUILTIN_STRING_ARRAY);
+        return -6;
+    }
+
+    if (idx > arr->length)
+        idx = arr->length;
+
+    if (array_ensure_len(ctx, arr, newlen))
+        return -5;
+
+    unsigned trailing = arr->length - idx;
+
+    if (count < 0) {
+        count = -count;
+        memmove(arr->data + idx, arr->data + idx + count, sizeof(value_t) * (trailing - count));
+    } else {
+        memmove(arr->data + idx + count, arr->data + idx, sizeof(value_t) * trailing);
+        memset(arr->data + idx, 0, count * sizeof(value_t));
+    }
+    arr->length = newlen;
+
+    return 0;
+}
+
+int32_t devs_arg_int_defl(devs_ctx_t *ctx, unsigned idx, int32_t defl) {
+    value_t arg = devs_arg(ctx, idx);
+    if (devs_is_null_or_undefined(arg))
+        return defl;
+    return devs_value_to_int(ctx, arg);
+}
+
+int32_t devs_arg_int(devs_ctx_t *ctx, unsigned idx) {
+    return devs_value_to_int(ctx, devs_arg(ctx, idx));
+}
+
+bool devs_arg_bool(devs_ctx_t *ctx, unsigned idx) {
+    return devs_value_to_bool(ctx, devs_arg(ctx, idx));
+}
+
+double devs_arg_double(devs_ctx_t *ctx, unsigned idx) {
+    return devs_value_to_double(ctx, devs_arg(ctx, idx));
+}
+
+const char *devs_arg_utf8_with_conv(devs_ctx_t *ctx, unsigned idx, unsigned *sz) {
+    // store it on the stack, so it doesn't get GCed
+    ctx->the_stack[idx + 1] = devs_value_to_string(ctx, devs_arg(ctx, idx));
+    return devs_string_get_utf8(ctx, devs_arg(ctx, idx), sz);
+}
+
+void devs_ret_double(devs_ctx_t *ctx, double v) {
+    devs_ret(ctx, devs_value_from_double(v));
+}
+
+void devs_ret_int(devs_ctx_t *ctx, int v) {
+    devs_ret(ctx, devs_value_from_int(v));
+}
+
+void devs_ret_bool(devs_ctx_t *ctx, bool v) {
+    devs_ret(ctx, devs_value_from_bool(v));
+}
+
+void devs_ret_gc_ptr(devs_ctx_t *ctx, void *v) {
+    devs_ret(ctx, devs_value_from_gc_obj(ctx, v));
+}
+
+devs_map_t *devs_arg_self_map(devs_ctx_t *ctx) {
+    value_t s = devs_arg_self(ctx);
+    void *p = devs_value_to_gc_obj(ctx, s);
+    if (devs_is_map(p))
+        return p;
+    devs_throw_type_error(ctx, "object expected");
+    return NULL;
+}
+
+void devs_setup_resume(devs_fiber_t *f, devs_resume_cb_t cb, void *userdata) {
+    if (devs_did_yield(f->ctx)) {
+        f->resume_cb = cb;
+        f->resume_data = userdata;
+    } else {
+        cb(f->ctx, userdata);
+    }
+}
+
+bool devs_can_attach(devs_ctx_t *ctx, value_t v) {
+    switch (devs_value_typeof(ctx, v)) {
+    case DEVS_OBJECT_TYPE_MAP:
+    case DEVS_OBJECT_TYPE_ROLE:
+    case DEVS_OBJECT_TYPE_ARRAY:
+    case DEVS_OBJECT_TYPE_BUFFER:
+    case DEVS_OBJECT_TYPE_IMAGE:
+        return true;
+    default:
+        return false;
+    }
+}
+
+value_t devs_builtin_object_value(devs_ctx_t *ctx, unsigned idx) {
+    if (idx > DEVS_BUILTIN_OBJECT___MAX)
+        return devs_undefined;
+
+    devs_maplike_t *p = devs_get_builtin_object(ctx, idx);
+    if (devs_is_builtin_proto(p))
+        return devs_value_from_handle(DEVS_HANDLE_TYPE_SPECIAL,
+                                      DEVS_SPECIAL_BUILTIN_OBJ_FIRST + idx);
+    else
+        return devs_value_from_gc_obj(ctx, (void *)p);
+}
+
+value_t devs_maplike_to_value(devs_ctx_t *ctx, devs_maplike_t *obj) {
+    if (devs_is_builtin_proto(obj)) {
+        return devs_builtin_object_value(ctx,
+                                         (const devs_builtin_proto_t *)obj - devs_builtin_protos);
+    } else if (devs_is_service_spec(ctx, obj)) {
+        // this shouldn't happen
+        return devs_undefined;
+    } else {
+        JD_ASSERT(devs_is_map(obj));
+        devs_map_t *map = (devs_map_t *)obj;
+        if (devs_gc_tag(map) == DEVS_GC_TAG_HALF_STATIC_MAP && devs_is_builtin_proto(map->proto))
+            return devs_maplike_to_value(ctx, map->proto);
+        return devs_value_from_gc_obj(ctx, map);
+    }
 }
