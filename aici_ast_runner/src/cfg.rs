@@ -68,7 +68,7 @@ fn quote_rx(name: &str) -> String {
 }
 
 impl CfgParser {
-    pub fn from(yacc: &str) -> Self {
+    pub fn from_yacc(yacc: &str) -> Self {
         let grmkind = YaccKind::Original(cfgrammar::yacc::YaccOriginalActionKind::NoAction);
         let grm = YaccGrammar::new(grmkind, yacc).unwrap();
 
@@ -370,7 +370,6 @@ impl CfgParser {
             let mut s = self.stats.borrow_mut();
             s.states_pushed += 1;
         }
-        // let lextoks = self.lexer.possible_tokens(state);
         if self.vobset.and_is_zero(viable, ls.reachable) {
             None
         } else {
@@ -436,9 +435,10 @@ impl Recognizer for CfgParser {
     }
 }
 
+#[allow(dead_code)]
 pub fn cfg_test() -> Result<()> {
     let yacc_bytes = include_bytes!("../c.y");
-    let mut cfg = CfgParser::from(&String::from_utf8_lossy(yacc_bytes));
+    let mut cfg = CfgParser::from_yacc(&String::from_utf8_lossy(yacc_bytes));
     let sample = include_bytes!("../sample.c");
 
     if true {

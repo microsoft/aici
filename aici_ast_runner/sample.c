@@ -1084,7 +1084,6 @@ void devs_array_pin_push(devs_ctx_t *ctx, devs_array_t *arr, value_t v) {
 }
 
 void devs_seq_set(devs_ctx_t *ctx, value_t seq, unsigned idx, value_t v) {
-    // DMESG("set arr=%s idx=%u", devs_show_value(ctx, seq), idx);
     if (idx > DEVS_MAX_ALLOC) {
         devs_throw_too_big_error(ctx, DEVS_BUILTIN_STRING_ARRAY);
     } else if (devs_buffer_is_writable(ctx, seq)) {

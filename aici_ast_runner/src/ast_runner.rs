@@ -15,6 +15,7 @@ mod rx;
 
 use std::fmt::Debug;
 
+use cfg::CfgParser;
 use rx::RxStackRecognizer;
 use serde::{Deserialize, Serialize};
 
@@ -42,12 +43,20 @@ pub enum Step {
     // The length can be constrained in several ways.
     Gen {
         rx: Option<String>,
-        // yacc: Option<String>,
+        yacc: Option<String>,
         stop_at: Option<String>,
         max_tokens: Option<usize>,
         max_words: Option<usize>,
         max_bytes: Option<usize>,
     },
+}
+
+fn limit_len(s: &str, max: usize) -> String {
+    if s.len() > max {
+        format!("{}...", String::from_utf8_lossy(&s.as_bytes()[0..max]))
+    } else {
+        s.to_string()
+    }
 }
 
 impl Debug for Step {
@@ -57,6 +66,7 @@ impl Debug for Step {
             Step::Choose { options } => write!(f, "Choose({:?})", options),
             Step::Gen {
                 rx,
+                yacc,
                 stop_at,
                 max_tokens,
                 max_words,
@@ -65,19 +75,22 @@ impl Debug for Step {
                 write!(f, "Gen(")?;
                 if let Some(rx) = rx {
                     write!(f, "/{:?}/ ", rx)?;
-                };
+                }
+                if let Some(yacc) = yacc {
+                    write!(f, "yacc:{:?} ", limit_len(yacc, 200))?;
+                }
                 if let Some(stop_at) = stop_at {
                     write!(f, "stop_at:{:?}, ", stop_at)?;
-                };
+                }
                 if let Some(max_tokens) = max_tokens {
                     write!(f, "max_tokens:{:?}, ", max_tokens)?;
-                };
+                }
                 if let Some(max_words) = max_words {
                     write!(f, "max_words:{:?}, ", max_words)?;
-                };
+                }
                 if let Some(max_bytes) = max_bytes {
                     write!(f, "max_bytes:{:?}, ", max_bytes)?;
-                };
+                }
                 write!(f, ")")
             }
         }
@@ -92,6 +105,7 @@ pub struct Program {
 enum StepSpecific {
     Options { tokens: Vec<Vec<TokenId>> },
     Gen { rx: RxStackRecognizer },
+    Cfg { cfg: CfgParser },
     Stop,
 }
 struct StepState {
@@ -175,21 +189,28 @@ impl StepState {
 
             Step::Gen {
                 rx,
+                yacc,
                 stop_at,
                 max_tokens,
                 max_bytes,
                 max_words,
             } => {
-                let rx = match rx {
-                    Some(rx) => &rx,
-                    None => ".*",
-                };
-                let mut r = Self::from_specific(
-                    s,
-                    StepSpecific::Gen {
-                        rx: RecRx::from_rx(&rx).to_stack_recognizer(),
+                let spec = match (yacc, rx) {
+                    (Some(_), Some(_)) => {
+                        panic!("can't have both yacc= and rx=")
+                    }
+                    (Some(yacc), None) => StepSpecific::Cfg {
+                        cfg: CfgParser::from_yacc(yacc),
                     },
-                );
+                    _ => {
+                        let defl = ".*".to_string();
+                        let rx = rx.as_deref().unwrap_or(&defl);
+                        StepSpecific::Gen {
+                            rx: RecRx::from_rx(&rx).to_stack_recognizer(),
+                        }
+                    }
+                };
+                let mut r = Self::from_specific(s, spec);
                 r.max_bytes = max_bytes.unwrap_or(usize::MAX);
                 r.max_words = max_words.unwrap_or(usize::MAX);
                 r.max_tokens = max_tokens.unwrap_or(usize::MAX);
@@ -212,6 +233,10 @@ impl StepState {
                     } else {
                         tokens.iter().all(|t| self.tokens.len() >= t.len())
                     }
+                }
+                StepSpecific::Cfg { cfg } => {
+                    cfg.special_allowed(SpecialToken::EndOfSentence)
+                        && (optional || (0..=255).all(|byte| !cfg.byte_allowed(byte)))
                 }
                 StepSpecific::Gen { rx } => {
                     rx.special_allowed(SpecialToken::EndOfSentence)
@@ -258,6 +283,7 @@ impl StepState {
             StepSpecific::Options { tokens } => {
                 tokens.retain(has_token_at(token, self.tokens.len() - 1))
             }
+            StepSpecific::Cfg { cfg } => helper.trie.append_token(cfg, token),
             StepSpecific::Gen { rx } => helper.trie.append_token(rx, token),
         }
 
@@ -279,6 +305,7 @@ impl StepState {
             StepSpecific::Options { tokens } => {
                 tokens.iter().any(has_token_at(token, self.tokens.len()))
             }
+            StepSpecific::Cfg { cfg } => helper.trie.token_allowed(cfg, token),
             StepSpecific::Gen { rx } => helper.trie.token_allowed(rx, token),
         }
     }
@@ -297,6 +324,9 @@ impl StepState {
             }
             StepSpecific::Gen { rx } => {
                 helper.trie.add_bias(rx, &mut helper.logit_biases);
+            }
+            StepSpecific::Cfg { cfg } => {
+                helper.trie.add_bias(cfg, &mut helper.logit_biases);
             }
         }
     }
@@ -416,7 +446,7 @@ impl AiciVm for Runner {
 }
 
 fn main() {
-    cfg::cfg_test().unwrap();
+    // cfg::cfg_test().unwrap();
     //    let _run = sample_prog();
 }
 

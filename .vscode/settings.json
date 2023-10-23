@@ -57,7 +57,14 @@
     ],
     "cSpell.words": [
         "aici",
+        "aicirt",
         "logit",
+        "POSIX",
+        "pyaici",
+        "struct",
+        "subword",
+        "usize",
+        "vllm",
         "wprintln"
     ]
 }

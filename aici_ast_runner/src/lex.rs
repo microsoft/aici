@@ -107,7 +107,7 @@ impl VobSet {
                 }
             }
             wprintln!(
-                "vobset: {} vobs, {} nonempty",
+                "vob set: {} VOBs, {} nonempty",
                 self.vobs.len(),
                 self.non_empty.len()
             );
