@@ -10,11 +10,10 @@ use cfgrammar::{
     Symbol, TIdx,
 };
 use lrtable::{from_yacc, Action, Minimiser, StIdx, StateTable};
-use regex_automata::util::primitives::StateID;
 use rustc_hash::FxHashMap;
 use vob::{vob, Vob};
 
-use crate::lex::{Lexer, VobIdx, VobSet};
+use crate::lex::{Lexer, LexerState, StateID, VobIdx, VobSet};
 
 type StorageT = u32;
 type PStack<StorageT> = Vec<StIdx<StorageT>>; // Parse stack
@@ -151,7 +150,7 @@ impl CfgParser {
         let parse_stacks = vec![vec![stable.start_state()]];
 
         let byte_state = ByteState {
-            lexer_state: dfa.file_start,
+            lexer_state: dfa.file_start_state(),
             parse_stack_idx: PStackIdx(0),
             viable: all1,
         };
@@ -297,12 +296,12 @@ impl CfgParser {
             // Error?
             None => ("lex-err", None),
             // Just new state, no token - the hot path
-            Some((state, v, None)) => (
+            Some((ls, None)) => (
                 "lex",
-                self.mk_byte_state(state, v, top.parse_stack_idx, top.viable),
+                self.mk_byte_state(ls, top.parse_stack_idx, top.viable),
             ),
             // New state and token generated
-            Some((state, v, Some(pat_idx))) => ("parse", self.run_parser(pat_idx, &top, state, v)),
+            Some((ls, Some(pat_idx))) => ("parse", self.run_parser(pat_idx, &top, ls)),
         };
         if LOG_PARSER {
             wprintln!(
@@ -327,13 +326,7 @@ impl CfgParser {
         new_idx
     }
 
-    fn run_parser(
-        &mut self,
-        pat_idx: usize,
-        top: &ByteState,
-        state: StateID,
-        v: VobIdx,
-    ) -> Option<ByteState> {
+    fn run_parser(&mut self, pat_idx: usize, top: &ByteState, ls: LexerState) -> Option<ByteState> {
         {
             let mut s = self.stats.borrow_mut();
             s.yacc_actions += 1;
@@ -350,7 +343,7 @@ impl CfgParser {
                 wprintln!("parse: {:?} skip", pstack);
             }
             // reset viable states - they have been narrowed down to SKIP
-            self.mk_byte_state(state, v, top.parse_stack_idx, viable)
+            self.mk_byte_state(ls, top.parse_stack_idx, viable)
         } else {
             let tidx = self.pat_idx_to_tidx[pat_idx];
             let mut pstack = pstack.clone();
@@ -360,7 +353,7 @@ impl CfgParser {
                     let stidx = *pstack.last().unwrap();
                     let viable = self.viable_vobidx(stidx);
                     let new_idx = self.push_pstack(top, pstack);
-                    self.mk_byte_state(state, v, new_idx, viable)
+                    self.mk_byte_state(ls, new_idx, viable)
                 }
                 ParseResult::Error => None,
             }
@@ -377,8 +370,7 @@ impl CfgParser {
 
     fn mk_byte_state(
         &self,
-        state: StateID,
-        lextoks: VobIdx,
+        ls: LexerState,
         pstack: PStackIdx,
         viable: VobIdx,
     ) -> Option<ByteState> {
@@ -387,11 +379,11 @@ impl CfgParser {
             s.states_pushed += 1;
         }
         // let lextoks = self.lexer.possible_tokens(state);
-        if self.vobset.and_is_zero(viable, lextoks) {
+        if self.vobset.and_is_zero(viable, ls.possible) {
             None
         } else {
             Some(ByteState {
-                lexer_state: state,
+                lexer_state: ls.state,
                 parse_stack_idx: pstack,
                 viable,
             })

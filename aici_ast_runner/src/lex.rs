@@ -1,13 +1,14 @@
 use aici_abi::wprintln;
 use regex_automata::{
     dfa::{dense, Automaton},
-    util::{primitives::StateID, syntax},
+    util::syntax,
 };
 use rustc_hash::FxHashMap;
 use std::{hash::Hash, vec};
 use vob::{vob, Vob};
 
 type PatIdx = usize;
+pub type StateID = regex_automata::util::primitives::StateID;
 
 const LOG_LEXER: bool = false;
 
@@ -15,11 +16,40 @@ const LOG_LEXER: bool = false;
 const PRECOMPUTE_AND: bool = false;
 
 #[derive(Debug, Clone, Hash, PartialEq, Eq, Copy)]
-pub struct VobIdx(usize);
+pub struct LexerState {
+    pub state: StateID,
+    pub possible: VobIdx,
+}
+
+impl LexerState {
+    fn fake() -> Self {
+        LexerState {
+            state: StateID::default(),
+            possible: VobIdx::all_zero(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Hash, PartialEq, Eq, Copy)]
+pub struct VobIdx {
+    v: u32,
+}
 
 impl VobIdx {
+    pub fn new(v: usize) -> Self {
+        VobIdx { v: v as u32 }
+    }
+
+    pub fn all_zero() -> Self {
+        VobIdx { v: 0 }
+    }
+
+    pub fn as_usize(&self) -> usize {
+        self.v as usize
+    }
+
     pub fn is_zero(&self) -> bool {
-        self.0 == 0
+        self.v == 0
     }
 }
 
@@ -46,7 +76,7 @@ impl VobSet {
         if len == 0 && !vob_is_zero(vob) {
             panic!("first vob must be empty");
         }
-        let idx = VobIdx(len);
+        let idx = VobIdx::new(len);
         self.vobs.push(vob.clone());
         self.by_vob.insert(vob.clone(), idx);
         idx
@@ -54,9 +84,9 @@ impl VobSet {
 
     pub fn and_is_zero(&self, a: VobIdx, b: VobIdx) -> bool {
         if PRECOMPUTE_AND {
-            !self.non_empty[a.0 * self.vobs.len() + b.0]
+            !self.non_empty[a.as_usize() * self.vobs.len() + b.as_usize()]
         } else {
-            vob_and_is_zero(&self.vobs[a.0], &self.vobs[b.0])
+            vob_and_is_zero(&self.vobs[a.as_usize()], &self.vobs[b.as_usize()])
         }
     }
 
@@ -83,8 +113,7 @@ impl VobSet {
 
 pub struct Lexer {
     dfa: dense::DFA<Vec<u32>>,
-    initial: StateID,
-    pub file_start: StateID,
+    initial: LexerState,
     vobidx_by_state_off: Vec<VobIdx>,
 }
 
@@ -176,27 +205,20 @@ impl Lexer {
 
         let shift = dfa.stride2();
         let mut vobidx_by_state_off =
-            vec![VobIdx(0); 1 + (states_idx.iter().max().unwrap() >> shift)];
+            vec![VobIdx::all_zero(); 1 + (states_idx.iter().max().unwrap() >> shift)];
         for (k, v) in tokenset_by_state.iter() {
             vobidx_by_state_off[k.as_usize() >> shift] = vobset.get(v);
         }
 
-        // pretend we've just seen a newline at the beginning of the file
-        // TODO: this should be configurable
-        let file_start = dfa.next_state(initial, b'\n');
-        wprintln!(
-            "initial: {:?} {:?}; {} states",
-            initial,
-            file_start,
-            states.len()
-        );
+        wprintln!("initial: {:?}; {} states", initial, states.len());
 
-        let lex = Lexer {
+        let mut lex = Lexer {
             dfa,
             vobidx_by_state_off,
-            initial,
-            file_start,
+            initial: LexerState::fake(),
         };
+
+        lex.initial = lex.mk_state(initial);
 
         if LOG_LEXER {
             for s in &states {
@@ -209,6 +231,19 @@ impl Lexer {
         }
 
         lex
+    }
+
+    pub fn file_start_state(&self) -> StateID {
+        // pretend we've just seen a newline at the beginning of the file
+        // TODO: this should be configurable
+        self.dfa.next_state(self.initial.state, b'\n')
+    }
+
+    fn mk_state(&self, state: StateID) -> LexerState {
+        LexerState {
+            state,
+            possible: self.possible_tokens(state),
+        }
     }
 
     fn is_dead(&self, state: StateID) -> bool {
@@ -239,11 +274,7 @@ impl Lexer {
     }
 
     #[inline(always)]
-    pub fn advance(
-        &self,
-        prev: StateID,
-        byte: Option<u8>,
-    ) -> Option<(StateID, VobIdx, Option<PatIdx>)> {
+    pub fn advance(&self, prev: StateID, byte: Option<u8>) -> Option<(LexerState, Option<PatIdx>)> {
         let dfa = &self.dfa;
         if let Some(byte) = byte {
             let state = dfa.next_state(prev, byte);
@@ -264,14 +295,14 @@ impl Lexer {
                 if tok.is_none() {
                     None
                 } else {
-                    let state = dfa.next_state(self.initial, byte);
+                    let state = dfa.next_state(self.initial.state, byte);
                     if LOG_LEXER {
                         wprintln!("lex0: {:?} -{:?}-> {:?}", self.initial, byte as char, state);
                     }
-                    Some((state, self.possible_tokens(state), tok))
+                    Some((self.mk_state(state), tok))
                 }
             } else {
-                Some((state, v, None))
+                Some((LexerState { state, possible: v }, None))
             }
         } else {
             let final_state = dfa.next_eoi_state(prev);
@@ -279,7 +310,7 @@ impl Lexer {
             if tok.is_none() {
                 None
             } else {
-                Some((self.initial, self.possible_tokens(self.initial), tok))
+                Some((self.initial, tok))
             }
         }
     }
