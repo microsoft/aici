@@ -14,7 +14,7 @@ use regex_automata::{
     dfa::{dense, Automaton},
     util::{primitives::StateID, syntax},
 };
-use rustc_hash::{FxHashMap, FxHashSet};
+use rustc_hash::FxHashMap;
 use vob::{vob, Vob};
 
 type StorageT = u32;
@@ -40,7 +40,7 @@ impl VobIdx {
 struct VobSet {
     vobs: Vec<Vob>,
     by_vob: FxHashMap<Vob, VobIdx>,
-    non_empty: FxHashSet<(usize, usize)>,
+    non_empty: Vob,
 }
 
 impl VobSet {
@@ -48,7 +48,7 @@ impl VobSet {
         VobSet {
             vobs: Vec::new(),
             by_vob: FxHashMap::default(),
-            non_empty: FxHashSet::default(),
+            non_empty: Vob::new(),
         }
     }
 
@@ -67,16 +67,18 @@ impl VobSet {
     }
 
     pub fn and_is_zero(&self, a: VobIdx, b: VobIdx) -> bool {
-        vob_and_is_zero(&self.vobs[a.0], &self.vobs[b.0])
-        // !self.non_empty.contains(&(a.0, b.0))
+        // vob_and_is_zero(&self.vobs[a.0], &self.vobs[b.0])
+        !self.non_empty[a.0 * self.vobs.len() + b.0]
     }
 
     pub fn pre_compute(&mut self) {
+        let l = self.vobs.len();
+        self.non_empty.resize(l * l, false);
         for x in 0..self.vobs.len() {
             for y in 0..=x {
                 if !vob_and_is_zero(&self.vobs[x], &self.vobs[y]) {
-                    self.non_empty.insert((y, x));
-                    self.non_empty.insert((x, y));
+                    self.non_empty.set(x * l + y, true);
+                    self.non_empty.set(y * l + x, true);
                 }
             }
         }
@@ -90,14 +92,12 @@ impl VobSet {
 
 struct Lexer {
     dfa: dense::DFA<Vec<u32>>,
-    patterns: Vec<String>,
     skip_patterns: Vob,
     friendly_pattern_names: Vec<String>,
     possible_by_state: FxHashMap<StateID, VobIdx>,
     initial: StateID,
     file_start: StateID,
     logging: bool,
-    divider: usize,
     vobidx_by_state_off: Vec<VobIdx>,
 }
 
@@ -193,23 +193,12 @@ impl Lexer {
         let mut states_idx = states.iter().map(|x| x.as_usize()).collect::<Vec<_>>();
         states_idx.sort();
 
-        let divider = (1..states_idx.len())
-            .map(|idx| states_idx[idx] - states_idx[idx - 1])
-            .min()
-            .unwrap();
-        assert!(divider == 128);
         let shift = dfa.stride2();
         let mut vobidx_by_state_off =
             vec![VobIdx(0); 1 + (states_idx.iter().max().unwrap() >> shift)];
         for (k, v) in tokenset_by_state.iter() {
             vobidx_by_state_off[k.as_usize() >> shift] = vobset.get(v);
         }
-        wprintln!(
-            "states: {} {} {}",
-            divider,
-            vobidx_by_state_off.len(),
-            states_idx.len()
-        );
 
         // pretend we've just seen a newline at the beginning of the file
         // TODO: this should be configurable
@@ -223,10 +212,8 @@ impl Lexer {
 
         let lex = Lexer {
             dfa,
-            patterns,
             skip_patterns,
             friendly_pattern_names,
-            divider,
             vobidx_by_state_off,
             possible_by_state: tokenset_by_state
                 .iter()
@@ -777,7 +764,7 @@ pub fn cfg_test() -> Result<()> {
     let mut logits = trie.alloc_logits();
     let t0 = Instant::now();
 
-    for tok in &toks[0..100] {
+    for tok in &toks[0..300] {
         let tok = *tok;
         trie.compute_bias(&mut cfg, &mut logits);
         if false {
