@@ -1,4 +1,4 @@
-use std::{cell::RefCell, hash::Hash, rc::Rc, vec};
+use std::{cell::RefCell, rc::Rc, vec};
 
 use aici_abi::{
     toktree::{Recognizer, SpecialToken, TokTrie},
@@ -28,20 +28,6 @@ enum ParseResult {
     Continue,
 }
 
-#[allow(dead_code)]
-fn to_index<I, T>(iter: I) -> FxHashMap<T, usize>
-where
-    I: IntoIterator<Item = T>,
-    T: Eq + Hash,
-{
-    let mut map = FxHashMap::default();
-    for item in iter {
-        let idx = map.len();
-        map.entry(item).or_insert(idx);
-    }
-    map
-}
-
 struct CfgStats {
     yacc_actions: usize,
     states_pushed: usize,
@@ -59,6 +45,8 @@ pub struct CfgParser {
     stats: RefCell<CfgStats>,
     tidx_to_pat_idx: FxHashMap<TIdx<u32>, usize>,
     parse_stacks: Vec<Vec<StIdx<u32>>>,
+    skip_patterns: Vob,
+    friendly_pattern_names: Vec<String>,
 }
 
 fn is_rx(name: &str) -> bool {
@@ -158,7 +146,7 @@ impl CfgParser {
         let _all0 = vobset.get(&vob![false; patterns.len()]);
         let all1 = vobset.get(&vob![true; patterns.len()]);
 
-        let dfa = Lexer::from(patterns, skip_patterns, friendly_pattern_names, &mut vobset);
+        let dfa = Lexer::from(patterns, &mut vobset);
 
         let parse_stacks = vec![vec![stable.start_state()]];
 
@@ -176,6 +164,8 @@ impl CfgParser {
             tidx_to_pat_idx,
             possible_tokens_by_state: RefCell::new(FxHashMap::default()),
             possible_vob_idx_by_state: FxHashMap::default(),
+            skip_patterns,
+            friendly_pattern_names,
             parse_stacks,
             vobset,
             stats: RefCell::new(CfgStats {
@@ -213,7 +203,7 @@ impl CfgParser {
         }
 
         // skip patterns (whitespace) are always viable
-        let mut r = self.lexer.skip_patterns.clone();
+        let mut r = self.skip_patterns.clone();
         for tidx in self.stable.state_actions(stidx) {
             match self.stable.action(stidx, tidx) {
                 Action::Error => {}
@@ -235,7 +225,7 @@ impl CfgParser {
     #[allow(dead_code)]
     fn friendly_token_name(&self, lexeme: TIdx<StorageT>) -> &str {
         if let Some(pidx) = self.tidx_to_pat_idx.get(&lexeme) {
-            &self.lexer.friendly_pattern_names[*pidx]
+            &self.friendly_pattern_names[*pidx]
         } else if self.grm.eof_token_idx() == lexeme {
             return "<EOF>";
         } else {
@@ -286,7 +276,7 @@ impl CfgParser {
         wprintln!("viable tokens {}:", lbl);
         for (idx, b) in vob.iter().enumerate() {
             if b {
-                wprintln!("  {}: {}", idx, self.lexer.friendly_pattern_names[idx]);
+                wprintln!("  {}: {}", idx, self.friendly_pattern_names[idx]);
             }
         }
     }
@@ -352,7 +342,7 @@ impl CfgParser {
             wprintln!();
         }
         let pstack = self.pstack_for(top);
-        if self.lexer.skip_patterns[pat_idx] {
+        if self.skip_patterns[pat_idx] {
             let stidx = *pstack.last().unwrap();
             let viable = self.viable_vobidx(stidx);
             //self.print_viable("reset", &viable);

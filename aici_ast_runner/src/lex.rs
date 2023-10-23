@@ -75,21 +75,13 @@ impl VobSet {
 
 pub struct Lexer {
     dfa: dense::DFA<Vec<u32>>,
-    pub skip_patterns: Vob,
-    pub friendly_pattern_names: Vec<String>,
-    possible_by_state: FxHashMap<StateID, VobIdx>,
     initial: StateID,
     pub file_start: StateID,
     vobidx_by_state_off: Vec<VobIdx>,
 }
 
 impl Lexer {
-    pub fn from(
-        patterns: Vec<String>,
-        skip_patterns: Vob,
-        friendly_pattern_names: Vec<String>,
-        vobset: &mut VobSet,
-    ) -> Self {
+    pub fn from(patterns: Vec<String>, vobset: &mut VobSet) -> Self {
         let dfa = dense::Builder::new()
             .configure(
                 dense::Config::new()
@@ -193,13 +185,7 @@ impl Lexer {
 
         let lex = Lexer {
             dfa,
-            skip_patterns,
-            friendly_pattern_names,
             vobidx_by_state_off,
-            possible_by_state: tokenset_by_state
-                .iter()
-                .map(|(k, v)| (k.clone(), vobset.get(v)))
-                .collect(),
             initial,
             file_start,
         };
@@ -211,7 +197,7 @@ impl Lexer {
                 }
             }
 
-            wprintln!("possible_tokens: {:#?}", lex.possible_by_state);
+            wprintln!("possible_tokens: {:#?}", tokenset_by_state);
         }
 
         lex
@@ -223,7 +209,6 @@ impl Lexer {
 
     fn possible_tokens(&self, state: StateID) -> VobIdx {
         self.vobidx_by_state_off[state.as_usize() >> self.dfa.stride2()]
-        // *self.possible_by_state.get(&state).unwrap()
     }
 
     fn get_token(&self, state: StateID) -> Option<PatIdx> {
@@ -239,7 +224,7 @@ impl Lexer {
             .unwrap();
 
         if LOG_LEXER {
-            wprintln!("token: {}", self.friendly_pattern_names[pat_idx]);
+            wprintln!("token: {}", pat_idx);
         }
 
         Some(pat_idx)
