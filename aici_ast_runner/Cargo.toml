@@ -22,3 +22,6 @@ aici_abi = { path = "../aici_abi" }
 [[bin]]
 name = "aici_ast_runner"
 path = "src/ast_runner.rs"
+
+[profile.release]
+debug = 1

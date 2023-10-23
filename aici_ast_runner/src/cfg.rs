@@ -21,6 +21,9 @@ type StorageT = u32;
 type PatIdx = usize;
 type PStack<StorageT> = Vec<StIdx<StorageT>>; // Parse stack
 
+const LOG_LEXER: bool = false;
+const LOG_PARSER: bool = false;
+
 #[derive(Debug, Clone, Copy)]
 enum ParseResult {
     Accept,
@@ -97,7 +100,6 @@ struct Lexer {
     possible_by_state: FxHashMap<StateID, VobIdx>,
     initial: StateID,
     file_start: StateID,
-    logging: bool,
     vobidx_by_state_off: Vec<VobIdx>,
 }
 
@@ -108,7 +110,6 @@ impl Lexer {
         friendly_pattern_names: Vec<String>,
         vobset: &mut VobSet,
     ) -> Self {
-        let logging = false;
         let dfa = dense::Builder::new()
             .configure(
                 dense::Config::new()
@@ -158,7 +159,7 @@ impl Lexer {
                 for idx in 0..dfa.match_len(s2) {
                     let idx = dfa.match_pattern(s2, idx).as_usize();
                     v.set(idx, true);
-                    if logging {
+                    if LOG_LEXER {
                         wprintln!("  match: {:?} {}", *s, patterns[idx])
                     }
                 }
@@ -182,7 +183,7 @@ impl Lexer {
                 }
             }
 
-            if logging {
+            if LOG_LEXER {
                 wprintln!("iter {} {}", num_set, states.len());
             }
             if num_set == 0 {
@@ -221,10 +222,9 @@ impl Lexer {
                 .collect(),
             initial,
             file_start,
-            logging,
         };
 
-        if logging {
+        if LOG_LEXER {
             for s in &states {
                 if lex.is_dead(*s) {
                     wprintln!("dead: {:?} {}", s, lex.dfa.is_dead_state(*s));
@@ -258,7 +258,7 @@ impl Lexer {
             .min()
             .unwrap();
 
-        if self.logging {
+        if LOG_LEXER {
             wprintln!("token: {}", self.friendly_pattern_names[pat_idx]);
         }
 
@@ -273,7 +273,7 @@ impl Lexer {
         let dfa = &self.dfa;
         if let Some(byte) = byte {
             let state = dfa.next_state(prev, byte);
-            if self.logging {
+            if LOG_LEXER {
                 wprintln!(
                     "lex: {:?} -{:?}-> {:?} d={}",
                     prev,
@@ -291,7 +291,7 @@ impl Lexer {
                     None
                 } else {
                     let state = dfa.next_state(self.initial, byte);
-                    if self.logging {
+                    if LOG_LEXER {
                         wprintln!("lex0: {:?} -{:?}-> {:?}", self.initial, byte as char, state);
                     }
                     Some((state, self.possible_tokens(state), tok))
@@ -341,7 +341,6 @@ pub struct CfgParser {
     vobset: VobSet,
     stats: RefCell<CfgStats>,
     tidx_to_pat_idx: FxHashMap<TIdx<u32>, usize>,
-    logging: bool,
     parse_stacks: Vec<Vec<StIdx<u32>>>,
 }
 
@@ -466,7 +465,6 @@ impl CfgParser {
                 yacc_actions: 0,
                 states_pushed: 0,
             }),
-            logging: false,
         };
 
         cfg.possible_vob_idx_by_state = sgraph
@@ -534,7 +532,7 @@ impl CfgParser {
 
             let act = self.stable.action(stidx, lexeme);
 
-            if self.logging {
+            if LOG_PARSER {
                 wprintln!(
                     "parse: {:?} {:?} -> {:?}",
                     pstack,
@@ -577,9 +575,10 @@ impl CfgParser {
     }
 
     // None means EOF
+    #[inline(always)]
     fn try_push(&mut self, byte: Option<u8>) -> Option<ByteState> {
         let top = self.byte_states.last().unwrap().clone();
-        if self.logging {
+        if LOG_PARSER {
             wprint!("try_push: ");
             if let Some(b) = byte {
                 wprint!("{:?}", b as char)
@@ -598,7 +597,7 @@ impl CfgParser {
             // New state and token generated
             Some((state, v, Some(pat_idx))) => ("parse", self.run_parser(pat_idx, &top, state, v)),
         };
-        if self.logging {
+        if LOG_PARSER {
             wprintln!(
                 " -> {} {}",
                 info,
@@ -632,7 +631,7 @@ impl CfgParser {
             let mut s = self.stats.borrow_mut();
             s.yacc_actions += 1;
         }
-        if self.logging {
+        if LOG_PARSER {
             wprintln!();
         }
         let pstack = self.pstack_for(top);
@@ -640,7 +639,7 @@ impl CfgParser {
             let stidx = *pstack.last().unwrap();
             let viable = self.viable_vobidx(stidx);
             //self.print_viable("reset", &viable);
-            if self.logging {
+            if LOG_PARSER {
                 wprintln!("parse: {:?} skip", pstack);
             }
             // reset viable states - they have been narrowed down to SKIP
@@ -714,7 +713,6 @@ fn vob_is_zero(v: &Vob) -> bool {
 
 #[derive(Clone, Copy)]
 struct PStackIdx(usize);
-
 
 #[derive(Clone)]
 struct ByteState {
