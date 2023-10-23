@@ -1,4 +1,4 @@
-use std::{cell::RefCell, hash::Hash, rc::Rc, time::Instant, vec};
+use std::{cell::RefCell, hash::Hash, rc::Rc, vec};
 
 use aici_abi::{
     toktree::{Recognizer, SpecialToken, TokTrie},
@@ -70,8 +70,8 @@ impl VobSet {
     }
 
     pub fn and_is_zero(&self, a: VobIdx, b: VobIdx) -> bool {
-        // vob_and_is_zero(&self.vobs[a.0], &self.vobs[b.0])
-        !self.non_empty[a.0 * self.vobs.len() + b.0]
+        vob_and_is_zero(&self.vobs[a.0], &self.vobs[b.0])
+        // !self.non_empty[a.0 * self.vobs.len() + b.0]
     }
 
     pub fn pre_compute(&mut self) {
@@ -693,7 +693,7 @@ impl CfgParser {
 }
 
 fn vob_and_is_zero(a: &Vob, b: &Vob) -> bool {
-    assert!(a.len() == b.len());
+    debug_assert!(a.len() == b.len());
     for (a, b) in a.iter_storage().zip(b.iter_storage()) {
         if a & b != 0 {
             return false;
@@ -774,7 +774,9 @@ pub fn cfg_test() -> Result<()> {
     let toks = trie.greedy_tokenize(sample);
 
     let mut logits = trie.alloc_logits();
-    let t0 = Instant::now();
+
+    #[cfg(not(target_arch = "wasm32"))]
+    let t0 = std::time::Instant::now();
 
     for tok in &toks[0..1000] {
         let tok = *tok;
@@ -790,7 +792,10 @@ pub fn cfg_test() -> Result<()> {
         trie.append_token(&mut cfg, tok);
     }
 
-    wprintln!("time: {:?} {}", t0.elapsed(), cfg.get_stats());
+    #[cfg(not(target_arch = "wasm32"))]
+    wprintln!("time: {:?} ", t0.elapsed());
+
+    wprintln!("stats:  {}", cfg.get_stats());
 
     if false {
         let mut ok = true;
