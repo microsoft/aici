@@ -18,14 +18,14 @@ const PRECOMPUTE_AND: bool = false;
 #[derive(Debug, Clone, Hash, PartialEq, Eq, Copy)]
 pub struct LexerState {
     pub state: StateID,
-    pub possible: VobIdx,
+    pub reachable: VobIdx,
 }
 
 impl LexerState {
     fn fake() -> Self {
         LexerState {
             state: StateID::default(),
-            possible: VobIdx::all_zero(),
+            reachable: VobIdx::all_zero(),
         }
     }
 }
@@ -166,7 +166,7 @@ impl Lexer {
         }
 
         let states = incoming.keys().map(|x| *x).collect::<Vec<_>>();
-        let mut tokenset_by_state = FxHashMap::default();
+        let mut reachable_patterns = FxHashMap::default();
 
         for s in &states {
             let mut v = vob![false; patterns.len()];
@@ -180,7 +180,7 @@ impl Lexer {
                     }
                 }
             }
-            tokenset_by_state.insert(*s, v);
+            reachable_patterns.insert(*s, v);
         }
 
         // TIME: 20ms
@@ -188,14 +188,14 @@ impl Lexer {
             let mut num_set = 0;
 
             for s in &states {
-                let ours = tokenset_by_state.get(s).unwrap().clone();
+                let ours = reachable_patterns.get(s).unwrap().clone();
                 for o in &incoming[s] {
-                    let theirs = tokenset_by_state.get(o).unwrap();
+                    let theirs = reachable_patterns.get(o).unwrap();
                     let mut tmp = ours.clone();
                     tmp |= theirs;
                     if tmp != *theirs {
                         num_set += 1;
-                        tokenset_by_state.insert(*o, tmp);
+                        reachable_patterns.insert(*o, tmp);
                     }
                 }
             }
@@ -214,7 +214,7 @@ impl Lexer {
         let shift = dfa.stride2();
         let mut vobidx_by_state_off =
             vec![VobIdx::all_zero(); 1 + (states_idx.iter().max().unwrap() >> shift)];
-        for (k, v) in tokenset_by_state.iter() {
+        for (k, v) in reachable_patterns.iter() {
             vobidx_by_state_off[k.as_usize() >> shift] = vobset.get(v);
         }
 
@@ -235,7 +235,7 @@ impl Lexer {
                 }
             }
 
-            wprintln!("possible_tokens: {:#?}", tokenset_by_state);
+            wprintln!("reachable: {:#?}", reachable_patterns);
         }
 
         lex
@@ -250,15 +250,15 @@ impl Lexer {
     fn mk_state(&self, state: StateID) -> LexerState {
         LexerState {
             state,
-            possible: self.possible_tokens(state),
+            reachable: self.reachable_tokens(state),
         }
     }
 
     fn is_dead(&self, state: StateID) -> bool {
-        self.possible_tokens(state).is_zero()
+        self.reachable_tokens(state).is_zero()
     }
 
-    fn possible_tokens(&self, state: StateID) -> VobIdx {
+    fn reachable_tokens(&self, state: StateID) -> VobIdx {
         self.vobidx_by_state_off[state.as_usize() >> self.dfa.stride2()]
     }
 
@@ -295,7 +295,7 @@ impl Lexer {
                     self.is_dead(state),
                 );
             }
-            let v = self.possible_tokens(state);
+            let v = self.reachable_tokens(state);
             if v.is_zero() {
                 let final_state = dfa.next_eoi_state(prev);
                 // if final_state is a match state, find the token that matched
@@ -310,7 +310,7 @@ impl Lexer {
                     Some((self.mk_state(state), tok))
                 }
             } else {
-                Some((LexerState { state, possible: v }, None))
+                Some((LexerState { state, reachable: v }, None))
             }
         } else {
             let final_state = dfa.next_eoi_state(prev);

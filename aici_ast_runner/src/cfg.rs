@@ -371,7 +371,7 @@ impl CfgParser {
             s.states_pushed += 1;
         }
         // let lextoks = self.lexer.possible_tokens(state);
-        if self.vobset.and_is_zero(viable, ls.possible) {
+        if self.vobset.and_is_zero(viable, ls.reachable) {
             None
         } else {
             Some(ByteState {
