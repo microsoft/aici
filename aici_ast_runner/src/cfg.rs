@@ -1,4 +1,4 @@
-use std::{cell::RefCell, rc::Rc, time::Instant, vec};
+use std::{cell::RefCell, hash::Hash, rc::Rc, time::Instant, vec};
 
 use aici_abi::{
     toktree::{Recognizer, SpecialToken, TokTrie},
@@ -14,7 +14,7 @@ use regex_automata::{
     dfa::{dense, Automaton},
     util::{primitives::StateID, syntax},
 };
-use rustc_hash::FxHashMap;
+use rustc_hash::{FxHashMap, FxHashSet};
 use vob::{vob, Vob};
 
 type StorageT = u32;
@@ -28,12 +28,72 @@ enum ParseResult {
     Continue,
 }
 
+#[derive(Debug, Clone, Hash, PartialEq, Eq, Copy)]
+struct VobIdx(usize);
+
+impl VobIdx {
+    pub fn is_zero(&self) -> bool {
+        self.0 == 0
+    }
+}
+
+struct VobSet {
+    vobs: Vec<Vob>,
+    by_vob: FxHashMap<Vob, VobIdx>,
+    non_empty: FxHashSet<(usize, usize)>,
+}
+
+impl VobSet {
+    pub fn new() -> Self {
+        VobSet {
+            vobs: Vec::new(),
+            by_vob: FxHashMap::default(),
+            non_empty: FxHashSet::default(),
+        }
+    }
+
+    pub fn get(&mut self, vob: &Vob) -> VobIdx {
+        if let Some(idx) = self.by_vob.get(vob) {
+            return *idx;
+        }
+        let len = self.vobs.len();
+        if len == 0 && !vob_is_zero(vob) {
+            panic!("first vob must be empty");
+        }
+        let idx = VobIdx(len);
+        self.vobs.push(vob.clone());
+        self.by_vob.insert(vob.clone(), idx);
+        idx
+    }
+
+    pub fn and_is_zero(&self, a: VobIdx, b: VobIdx) -> bool {
+        vob_and_is_zero(&self.vobs[a.0], &self.vobs[b.0])
+        // !self.non_empty.contains(&(a.0, b.0))
+    }
+
+    pub fn pre_compute(&mut self) {
+        for x in 0..self.vobs.len() {
+            for y in 0..=x {
+                if !vob_and_is_zero(&self.vobs[x], &self.vobs[y]) {
+                    self.non_empty.insert((y, x));
+                    self.non_empty.insert((x, y));
+                }
+            }
+        }
+        wprintln!(
+            "vobset: {} vobs, {} nonempty",
+            self.vobs.len(),
+            self.non_empty.len()
+        );
+    }
+}
+
 struct Lexer {
     dfa: dense::DFA<Vec<u32>>,
     patterns: Vec<String>,
     skip_patterns: Vob,
     friendly_pattern_names: Vec<String>,
-    possible_by_state: FxHashMap<StateID, vob::Vob>,
+    possible_by_state: FxHashMap<StateID, VobIdx>,
     initial: StateID,
     file_start: StateID,
     logging: bool,
@@ -44,6 +104,7 @@ impl Lexer {
         patterns: Vec<String>,
         skip_patterns: Vob,
         friendly_pattern_names: Vec<String>,
+        vobset: &mut VobSet,
     ) -> Self {
         let logging = false;
         let dfa = dense::Builder::new()
@@ -142,7 +203,10 @@ impl Lexer {
             patterns,
             skip_patterns,
             friendly_pattern_names,
-            possible_by_state: tokenset_by_state,
+            possible_by_state: tokenset_by_state
+                .iter()
+                .map(|(k, v)| (k.clone(), vobset.get(v)))
+                .collect(),
             initial,
             file_start,
             logging,
@@ -162,11 +226,11 @@ impl Lexer {
     }
 
     fn is_dead(&self, state: StateID) -> bool {
-        vob_is_zero(self.possible_tokens(state))
+        self.possible_tokens(state).is_zero()
     }
 
-    fn possible_tokens(&self, state: StateID) -> &Vob {
-        self.possible_by_state.get(&state).unwrap()
+    fn possible_tokens(&self, state: StateID) -> VobIdx {
+        *self.possible_by_state.get(&state).unwrap()
     }
 
     fn get_token(&self, state: StateID) -> Option<PatIdx> {
@@ -188,7 +252,11 @@ impl Lexer {
         Some(pat_idx)
     }
 
-    fn advance(&self, prev: StateID, byte: Option<u8>) -> Option<(StateID, Option<PatIdx>)> {
+    fn advance(
+        &self,
+        prev: StateID,
+        byte: Option<u8>,
+    ) -> Option<(StateID, VobIdx, Option<PatIdx>)> {
         let dfa = &self.dfa;
         if let Some(byte) = byte {
             let state = dfa.next_state(prev, byte);
@@ -201,7 +269,8 @@ impl Lexer {
                     self.is_dead(state),
                 );
             }
-            if self.is_dead(state) {
+            let v = self.possible_tokens(state);
+            if v.is_zero() {
                 let final_state = dfa.next_eoi_state(prev);
                 // if final_state is a match state, find the token that matched
                 let tok = self.get_token(final_state);
@@ -212,10 +281,10 @@ impl Lexer {
                     if self.logging {
                         wprintln!("lex0: {:?} -{:?}-> {:?}", self.initial, byte as char, state);
                     }
-                    Some((state, tok))
+                    Some((state, self.possible_tokens(state), tok))
                 }
             } else {
-                Some((state, None))
+                Some((state, v, None))
             }
         } else {
             let final_state = dfa.next_eoi_state(prev);
@@ -223,10 +292,24 @@ impl Lexer {
             if tok.is_none() {
                 None
             } else {
-                Some((self.initial, tok))
+                Some((self.initial, self.possible_tokens(self.initial), tok))
             }
         }
     }
+}
+
+#[allow(dead_code)]
+fn to_index<I, T>(iter: I) -> FxHashMap<T, usize>
+where
+    I: IntoIterator<Item = T>,
+    T: Eq + Hash,
+{
+    let mut map = FxHashMap::default();
+    for item in iter {
+        let idx = map.len();
+        map.entry(item).or_insert(idx);
+    }
+    map
 }
 
 struct CfgStats {
@@ -241,6 +324,8 @@ pub struct CfgParser {
     byte_states: Vec<ByteState>,
     pat_idx_to_tidx: Vec<TIdx<u32>>,
     possible_tokens_by_state: RefCell<FxHashMap<StIdx<u32>, Rc<Vob>>>,
+    possible_vob_idx_by_state: FxHashMap<StIdx<u32>, VobIdx>,
+    vobset: VobSet,
     stats: RefCell<CfgStats>,
     tidx_to_pat_idx: FxHashMap<TIdx<u32>, usize>,
     logging: bool,
@@ -338,13 +423,19 @@ impl CfgParser {
 
         wprintln!("patterns: {:?}", friendly_pattern_names);
 
-        let dfa = Lexer::from(patterns, skip_patterns, friendly_pattern_names);
+        let mut vobset = VobSet::new();
+        // all-zero has to be inserted first
+        let _all0 = vobset.get(&vob![false; patterns.len()]);
+        let all1 = vobset.get(&vob![true; patterns.len()]);
+
+        let dfa = Lexer::from(patterns, skip_patterns, friendly_pattern_names, &mut vobset);
+
         let byte_state = ByteState {
             lexer_state: dfa.file_start,
             parse_stack: Rc::new(vec![stable.start_state()]),
-            viable: Rc::new(vob![true; dfa.patterns.len()]),
+            viable: all1,
         };
-        CfgParser {
+        let mut cfg = CfgParser {
             grm,
             stable,
             lexer: dfa,
@@ -352,12 +443,32 @@ impl CfgParser {
             pat_idx_to_tidx,
             tidx_to_pat_idx,
             possible_tokens_by_state: RefCell::new(FxHashMap::default()),
+            possible_vob_idx_by_state: FxHashMap::default(),
+            vobset,
             stats: RefCell::new(CfgStats {
                 yacc_actions: 0,
                 states_pushed: 0,
             }),
             logging: false,
-        }
+        };
+
+        cfg.possible_vob_idx_by_state = sgraph
+            .iter_stidxs()
+            .map(|stidx| {
+                (
+                    stidx.clone(),
+                    cfg.vobset.get(&(*cfg.viable_tokens(stidx)).clone()),
+                )
+            })
+            .collect();
+
+        cfg.vobset.pre_compute();
+
+        cfg
+    }
+
+    fn viable_vobidx(&self, stidx: StIdx<StorageT>) -> VobIdx {
+        *self.possible_vob_idx_by_state.get(&stidx).unwrap()
     }
 
     fn viable_tokens(&self, stidx: StIdx<StorageT>) -> Rc<Vob> {
@@ -463,12 +574,12 @@ impl CfgParser {
             // Error?
             None => ("lex-err", None),
             // Just new state, no token - the hot path
-            Some((state, None)) => (
+            Some((state, v, None)) => (
                 "lex",
-                self.mk_byte_state(state, top.parse_stack.clone(), top.viable.clone()),
+                self.mk_byte_state(state, v, &top.parse_stack, top.viable),
             ),
             // New state and token generated
-            Some((state, Some(pat_idx))) => ("parse", self.run_parser(pat_idx, top, state)),
+            Some((state, v, Some(pat_idx))) => ("parse", self.run_parser(pat_idx, top, state, v)),
         };
         if self.logging {
             wprintln!(
@@ -480,7 +591,13 @@ impl CfgParser {
         res
     }
 
-    fn run_parser(&self, pat_idx: usize, top: &ByteState, state: StateID) -> Option<ByteState> {
+    fn run_parser(
+        &self,
+        pat_idx: usize,
+        top: &ByteState,
+        state: StateID,
+        v: VobIdx,
+    ) -> Option<ByteState> {
         {
             let mut s = self.stats.borrow_mut();
             s.yacc_actions += 1;
@@ -490,13 +607,13 @@ impl CfgParser {
         }
         if self.lexer.skip_patterns[pat_idx] {
             let stidx = *top.parse_stack.last().unwrap();
-            let viable = self.viable_tokens(stidx);
+            let viable = self.viable_vobidx(stidx);
             //self.print_viable("reset", &viable);
             if self.logging {
                 wprintln!("parse: {:?} skip", top.parse_stack);
             }
             // reset viable states - they have been narrowed down to SKIP
-            self.mk_byte_state(state, top.parse_stack.clone(), viable)
+            self.mk_byte_state(state, v, &top.parse_stack, viable)
         } else {
             let tidx = self.pat_idx_to_tidx[pat_idx];
             let mut pstack = (*top.parse_stack).clone();
@@ -504,8 +621,8 @@ impl CfgParser {
                 ParseResult::Accept => panic!("accept non EOF?"),
                 ParseResult::Continue => {
                     let stidx = *pstack.last().unwrap();
-                    let viable = self.viable_tokens(stidx);
-                    self.mk_byte_state(state, Rc::new(pstack), viable)
+                    let viable = self.viable_vobidx(stidx);
+                    self.mk_byte_state(state, v, &Rc::new(pstack), viable)
                 }
                 ParseResult::Error => None,
             }
@@ -523,24 +640,21 @@ impl CfgParser {
     fn mk_byte_state(
         &self,
         state: StateID,
-        pstack: Rc<PStack<StorageT>>,
-        viable: Rc<Vob>,
+        lextoks: VobIdx,
+        pstack: &Rc<PStack<StorageT>>,
+        viable: VobIdx,
     ) -> Option<ByteState> {
         {
             let mut s = self.stats.borrow_mut();
             s.states_pushed += 1;
         }
-        let lextoks = self.lexer.possible_tokens(state);
-        if false {
-            self.print_viable("v", &viable);
-            self.print_viable("lex", lextoks);
-        }
-        if vob_and_is_zero(&viable, &lextoks) {
+        // let lextoks = self.lexer.possible_tokens(state);
+        if self.vobset.and_is_zero(viable, lextoks) {
             None
         } else {
             Some(ByteState {
                 lexer_state: state,
-                parse_stack: pstack,
+                parse_stack: pstack.clone(),
                 viable,
             })
         }
@@ -569,7 +683,7 @@ fn vob_is_zero(v: &Vob) -> bool {
 struct ByteState {
     lexer_state: StateID,
     parse_stack: Rc<PStack<StorageT>>,
-    viable: Rc<Vob>,
+    viable: VobIdx,
 }
 
 impl Recognizer for CfgParser {
@@ -651,7 +765,7 @@ pub fn cfg_test() -> Result<()> {
         trie.append_token(&mut cfg, tok);
     }
 
-    wprintln!("time: {:?}", t0.elapsed());
+    wprintln!("time: {:?} {}", t0.elapsed(), cfg.get_stats());
 
     if false {
         let mut ok = true;
