@@ -82,6 +82,10 @@ impl VobSet {
         idx
     }
 
+    pub fn resolve(&self, idx: VobIdx) -> &Vob {
+        &self.vobs[idx.as_usize()]
+    }
+
     pub fn and_is_zero(&self, a: VobIdx, b: VobIdx) -> bool {
         if PRECOMPUTE_AND {
             !self.non_empty[a.as_usize() * self.vobs.len() + b.as_usize()]

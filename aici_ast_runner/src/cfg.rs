@@ -346,6 +346,12 @@ impl CfgParser {
         }
     }
 
+    #[allow(dead_code)]
+    pub fn viable_now(&self) {
+        let v = self.byte_states.last().unwrap().viable;
+        self.print_viable("now", self.vobset.resolve(v))
+    }
+
     pub fn get_stats(&self) -> String {
         let mut s = self.stats.borrow_mut();
         let r = format!("yacc: {}/{}", s.yacc_actions, s.states_pushed);
@@ -435,7 +441,7 @@ pub fn cfg_test() -> Result<()> {
     let mut cfg = CfgParser::from(&String::from_utf8_lossy(yacc_bytes));
     let sample = include_bytes!("../sample.c");
 
-    if false {
+    if true {
         let trie = TokTrie::from_host();
         let toks = trie.greedy_tokenize(sample);
 
@@ -454,6 +460,7 @@ pub fn cfg_test() -> Result<()> {
                     logits[tok as usize],
                     cfg.get_stats()
                 );
+                cfg.viable_now();
             }
             trie.append_token(&mut cfg, tok);
         }
