@@ -97,6 +97,8 @@ struct Lexer {
     initial: StateID,
     file_start: StateID,
     logging: bool,
+    divider: usize,
+    vobidx_by_state_off: Vec<VobIdx>,
 }
 
 impl Lexer {
@@ -188,6 +190,27 @@ impl Lexer {
             }
         }
 
+        let mut states_idx = states.iter().map(|x| x.as_usize()).collect::<Vec<_>>();
+        states_idx.sort();
+
+        let divider = (1..states_idx.len())
+            .map(|idx| states_idx[idx] - states_idx[idx - 1])
+            .min()
+            .unwrap();
+        assert!(divider == 128);
+        let shift = dfa.stride2();
+        let mut vobidx_by_state_off =
+            vec![VobIdx(0); 1 + (states_idx.iter().max().unwrap() >> shift)];
+        for (k, v) in tokenset_by_state.iter() {
+            vobidx_by_state_off[k.as_usize() >> shift] = vobset.get(v);
+        }
+        wprintln!(
+            "states: {} {} {}",
+            divider,
+            vobidx_by_state_off.len(),
+            states_idx.len()
+        );
+
         // pretend we've just seen a newline at the beginning of the file
         // TODO: this should be configurable
         let file_start = dfa.next_state(initial, b'\n');
@@ -203,6 +226,8 @@ impl Lexer {
             patterns,
             skip_patterns,
             friendly_pattern_names,
+            divider,
+            vobidx_by_state_off,
             possible_by_state: tokenset_by_state
                 .iter()
                 .map(|(k, v)| (k.clone(), vobset.get(v)))
@@ -230,7 +255,8 @@ impl Lexer {
     }
 
     fn possible_tokens(&self, state: StateID) -> VobIdx {
-        *self.possible_by_state.get(&state).unwrap()
+        self.vobidx_by_state_off[state.as_usize() >> self.dfa.stride2()]
+        // *self.possible_by_state.get(&state).unwrap()
     }
 
     fn get_token(&self, state: StateID) -> Option<PatIdx> {
