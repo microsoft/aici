@@ -11,6 +11,9 @@ type PatIdx = usize;
 
 const LOG_LEXER: bool = false;
 
+// enabling this is slightly faster, but it requires ~ |lexer_states|*|parser_states| bits
+const PRECOMPUTE_AND: bool = false;
+
 #[derive(Debug, Clone, Hash, PartialEq, Eq, Copy)]
 pub struct VobIdx(usize);
 
@@ -50,26 +53,31 @@ impl VobSet {
     }
 
     pub fn and_is_zero(&self, a: VobIdx, b: VobIdx) -> bool {
-        vob_and_is_zero(&self.vobs[a.0], &self.vobs[b.0])
-        // !self.non_empty[a.0 * self.vobs.len() + b.0]
+        if PRECOMPUTE_AND {
+            !self.non_empty[a.0 * self.vobs.len() + b.0]
+        } else {
+            vob_and_is_zero(&self.vobs[a.0], &self.vobs[b.0])
+        }
     }
 
     pub fn pre_compute(&mut self) {
-        let l = self.vobs.len();
-        self.non_empty.resize(l * l, false);
-        for x in 0..self.vobs.len() {
-            for y in 0..=x {
-                if !vob_and_is_zero(&self.vobs[x], &self.vobs[y]) {
-                    self.non_empty.set(x * l + y, true);
-                    self.non_empty.set(y * l + x, true);
+        if PRECOMPUTE_AND {
+            let l = self.vobs.len();
+            self.non_empty.resize(l * l, false);
+            for x in 0..self.vobs.len() {
+                for y in 0..=x {
+                    if !vob_and_is_zero(&self.vobs[x], &self.vobs[y]) {
+                        self.non_empty.set(x * l + y, true);
+                        self.non_empty.set(y * l + x, true);
+                    }
                 }
             }
+            wprintln!(
+                "vobset: {} vobs, {} nonempty",
+                self.vobs.len(),
+                self.non_empty.len()
+            );
         }
-        wprintln!(
-            "vobset: {} vobs, {} nonempty",
-            self.vobs.len(),
-            self.non_empty.len()
-        );
     }
 }
 
