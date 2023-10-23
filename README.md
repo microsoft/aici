@@ -1,5 +1,16 @@
 # Artificial Intelligence Controller Interface (AICI)
 
+The Artificial Intelligence Controller Interface (AICI) can be used to constrain output of an LLM in real time.
+While the GPU is working on the next token of the output, the AICI VM can use the CPU to
+compute a user-provided constraint on the next token.
+This adds minimal latency to the LLM generation.
+
+The AICI VM itself is built on top of [Wasmtime](https://wasmtime.dev/).
+It takes [WebAssembly](https://webassembly.org/) (WASM) modules with a specific interface
+(see below) and executes them in parallel while the LLM inference engine is working on the next token.
+
+The WASM module can be generated in any language that can compile to WASM, but this project focuses on 
+Rust for constraints (plus a Python package for interfacing with LLM runtime).
 
 
 ## Getting started
@@ -18,18 +29,8 @@ Then run the server (after installing vllm):
 
 ## Architecture
 
-The Artificial Intelligence Controller Interface (AICI) can be used to constrain output of an LLM in real time.
-While the GPU is working on the next token of the output, the AICI VM can use the CPU to
-compute a user-provided constraint on the next token.
-This adds minimal latency to the LLM generation.
-
-The AICI VM itself is built on top of [Wasmtime](https://wasmtime.dev/).
-It takes [WebAssembly](https://webassembly.org/) (WASM) modules with a specific interface
-(see below) and executes them in parallel while the LLM inference engine is working on the next token.
-This runtime is implemented in the [aicirt](aicirt) crate, while the interface 
+This AICI runtime is implemented in the [aicirt](aicirt) crate, while the binary AICI interface 
 is specified in the [aici_abi](aici_abi) crate.
-
-The WASM module can be generated in any language that can compile to WASM, but this project focuses on Rust.
 
 The LLM engines are often implemented in Python, and thus the [pyaici](pyaici) Python packages provides
 a class to spin up and communicate with `aicirt` process via POSIX shared memory and semaphores.
@@ -61,14 +62,13 @@ pub trait AiciVm {
 Tokens depend on the tokenizer used (eg., for Llama there 32000 tokens, and for GPT-4 there is ~100k).
 
 The actual binary interface is a bit more complicated - it asks for the memory to be allocated
-for prompt, has a type to represent constraint, way to allocate and free it, as well as clone it
-(eg., when a beam search branch is split or cut),
-see the [AiciVm Rust trait](aici_abi/src/lib.rs) as well as the 
+for prompt, has a type to represent constraint, and a way to allocate it.
+A WASM module instance is created for each token sequence, so
+there is no need to deallocate the constraint type.
+Also, when the sequence forks (as in beam search), the module instance is cloned.
+See the [AiciVm Rust trait](aici_abi/src/lib.rs) as well as the 
 [C header file](aici_abi/src/aici_iface.h) for details
 (the C header is currently not used other than for documentation).
-
-As for cloning, it may be more efficient to clone the whole VM state, rather than just the constraint
-(since the different branches can be then executed in parallel).
 
 This interface may need to be extended in the future to allow for say scoring different
 beam search branches or backtracking.
