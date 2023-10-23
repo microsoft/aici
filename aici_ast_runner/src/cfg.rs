@@ -437,9 +437,9 @@ impl Recognizer for CfgParser {
 
 #[allow(dead_code)]
 pub fn cfg_test() -> Result<()> {
-    let yacc_bytes = include_bytes!("../c.y");
+    let yacc_bytes = include_bytes!("../../grammars/c.y");
     let mut cfg = CfgParser::from_yacc(&String::from_utf8_lossy(yacc_bytes));
-    let sample = include_bytes!("../sample.c");
+    let sample = include_bytes!("../../grammars/sample.c");
 
     if true {
         let trie = TokTrie::from_host();
