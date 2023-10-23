@@ -342,6 +342,7 @@ pub struct CfgParser {
     stats: RefCell<CfgStats>,
     tidx_to_pat_idx: FxHashMap<TIdx<u32>, usize>,
     logging: bool,
+    parse_stacks: Vec<Vec<StIdx<u32>>>,
 }
 
 fn is_rx(name: &str) -> bool {
@@ -443,9 +444,11 @@ impl CfgParser {
 
         let dfa = Lexer::from(patterns, skip_patterns, friendly_pattern_names, &mut vobset);
 
+        let parse_stacks = vec![vec![stable.start_state()]];
+
         let byte_state = ByteState {
             lexer_state: dfa.file_start,
-            parse_stack: Rc::new(vec![stable.start_state()]),
+            parse_stack_idx: PStackIdx(0),
             viable: all1,
         };
         let mut cfg = CfgParser {
@@ -457,6 +460,7 @@ impl CfgParser {
             tidx_to_pat_idx,
             possible_tokens_by_state: RefCell::new(FxHashMap::default()),
             possible_vob_idx_by_state: FxHashMap::default(),
+            parse_stacks,
             vobset,
             stats: RefCell::new(CfgStats {
                 yacc_actions: 0,
@@ -573,8 +577,8 @@ impl CfgParser {
     }
 
     // None means EOF
-    fn try_push(&self, byte: Option<u8>) -> Option<ByteState> {
-        let top = self.byte_states.last().unwrap();
+    fn try_push(&mut self, byte: Option<u8>) -> Option<ByteState> {
+        let top = self.byte_states.last().unwrap().clone();
         if self.logging {
             wprint!("try_push: ");
             if let Some(b) = byte {
@@ -589,10 +593,10 @@ impl CfgParser {
             // Just new state, no token - the hot path
             Some((state, v, None)) => (
                 "lex",
-                self.mk_byte_state(state, v, &top.parse_stack, top.viable),
+                self.mk_byte_state(state, v, top.parse_stack_idx, top.viable),
             ),
             // New state and token generated
-            Some((state, v, Some(pat_idx))) => ("parse", self.run_parser(pat_idx, top, state, v)),
+            Some((state, v, Some(pat_idx))) => ("parse", self.run_parser(pat_idx, &top, state, v)),
         };
         if self.logging {
             wprintln!(
@@ -604,8 +608,21 @@ impl CfgParser {
         res
     }
 
+    fn pstack_for(&self, top: &ByteState) -> &PStack<StorageT> {
+        &self.parse_stacks[top.parse_stack_idx.0]
+    }
+
+    fn push_pstack(&mut self, top: &ByteState, pstack: Vec<StIdx<u32>>) -> PStackIdx {
+        let new_idx = PStackIdx(top.parse_stack_idx.0 + 1);
+        if self.parse_stacks.len() <= new_idx.0 {
+            self.parse_stacks.push(Vec::new());
+        }
+        self.parse_stacks[new_idx.0] = pstack;
+        new_idx
+    }
+
     fn run_parser(
-        &self,
+        &mut self,
         pat_idx: usize,
         top: &ByteState,
         state: StateID,
@@ -618,24 +635,26 @@ impl CfgParser {
         if self.logging {
             wprintln!();
         }
+        let pstack = self.pstack_for(top);
         if self.lexer.skip_patterns[pat_idx] {
-            let stidx = *top.parse_stack.last().unwrap();
+            let stidx = *pstack.last().unwrap();
             let viable = self.viable_vobidx(stidx);
             //self.print_viable("reset", &viable);
             if self.logging {
-                wprintln!("parse: {:?} skip", top.parse_stack);
+                wprintln!("parse: {:?} skip", pstack);
             }
             // reset viable states - they have been narrowed down to SKIP
-            self.mk_byte_state(state, v, &top.parse_stack, viable)
+            self.mk_byte_state(state, v, top.parse_stack_idx, viable)
         } else {
             let tidx = self.pat_idx_to_tidx[pat_idx];
-            let mut pstack = (*top.parse_stack).clone();
+            let mut pstack = pstack.clone();
             match self.parse_lexeme(tidx, &mut pstack) {
                 ParseResult::Accept => panic!("accept non EOF?"),
                 ParseResult::Continue => {
                     let stidx = *pstack.last().unwrap();
                     let viable = self.viable_vobidx(stidx);
-                    self.mk_byte_state(state, v, &Rc::new(pstack), viable)
+                    let new_idx = self.push_pstack(top, pstack);
+                    self.mk_byte_state(state, v, new_idx, viable)
                 }
                 ParseResult::Error => None,
             }
@@ -654,7 +673,7 @@ impl CfgParser {
         &self,
         state: StateID,
         lextoks: VobIdx,
-        pstack: &Rc<PStack<StorageT>>,
+        pstack: PStackIdx,
         viable: VobIdx,
     ) -> Option<ByteState> {
         {
@@ -667,7 +686,7 @@ impl CfgParser {
         } else {
             Some(ByteState {
                 lexer_state: state,
-                parse_stack: pstack.clone(),
+                parse_stack_idx: pstack,
                 viable,
             })
         }
@@ -693,18 +712,18 @@ fn vob_is_zero(v: &Vob) -> bool {
     true
 }
 
+#[derive(Clone, Copy)]
+struct PStackIdx(usize);
+
+
+#[derive(Clone)]
 struct ByteState {
     lexer_state: StateID,
-    parse_stack: Rc<PStack<StorageT>>,
+    parse_stack_idx: PStackIdx,
     viable: VobIdx,
 }
 
 impl Recognizer for CfgParser {
-    fn push_byte(&mut self, byte: u8) {
-        let st = self.try_push(Some(byte)).unwrap();
-        self.byte_states.push(st)
-    }
-
     fn pop_bytes(&mut self, num: usize) {
         self.byte_states.truncate(self.byte_states.len() - num);
     }
@@ -715,17 +734,12 @@ impl Recognizer for CfgParser {
         self.byte_states.push(final_state);
     }
 
-    fn byte_allowed(&self, byte: u8) -> bool {
-        let st = self.try_push(Some(byte));
-        st.is_some()
-    }
-
-    fn special_allowed(&self, tok: SpecialToken) -> bool {
+    fn special_allowed(&mut self, tok: SpecialToken) -> bool {
         match tok {
             SpecialToken::EndOfSentence => {
                 if let Some(st) = self.try_push(None) {
                     let tidx = self.grm.eof_token_idx();
-                    let mut pstack = (*st.parse_stack).clone();
+                    let mut pstack = self.pstack_for(&st).clone();
                     match self.parse_lexeme(tidx, &mut pstack) {
                         ParseResult::Accept => true,
                         _ => false,

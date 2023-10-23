@@ -197,12 +197,12 @@ impl StepState {
         }
     }
 
-    fn check_eos(&self, optional: bool) -> bool {
+    fn check_eos(&mut self, optional: bool) -> bool {
         self.tokens.len() >= self.max_tokens
             || self.bytes.len() >= self.max_bytes
             || self.word_idx >= self.max_words
             || (self.stop_at.is_some() && self.stop_at.as_ref().unwrap().is_empty())
-            || match &self.specific {
+            || match &mut self.specific {
                 StepSpecific::Stop => false,
                 StepSpecific::Options { tokens } => {
                     if optional {
@@ -218,11 +218,11 @@ impl StepState {
             }
     }
 
-    fn allows_eos(&self) -> bool {
+    fn allows_eos(&mut self) -> bool {
         self.check_eos(true)
     }
 
-    fn forces_eos(&self) -> bool {
+    fn forces_eos(&mut self) -> bool {
         self.check_eos(false)
     }
 

@@ -19,27 +19,31 @@ pub enum SpecialToken {
 
 pub trait Recognizer {
     /// If `stack.top()` transitions via `byte` to `X`, execute `stack.push(X)`.
-    fn push_byte(&mut self, byte: u8);
+    fn push_byte(&mut self, byte: u8) {
+        if !self.try_push_byte(byte) {
+            panic!("byte {:?} not allowed", byte as char)
+        }
+    }
     /// for _ in 0..num { stack.pop() }
     fn pop_bytes(&mut self, num: usize);
     /// X = stack.top(); stack.empty(); stack.push(X)
     fn collapse(&mut self);
     /// check if stack.top() transitions via byte to a viable state
-    fn byte_allowed(&self, byte: u8) -> bool;
-    /// check if stack.top() transitions via tok to a viable state
-    fn special_allowed(&self, tok: SpecialToken) -> bool;
-    /// Called when iteration over the trie is finished
-    /// Stack has exactly one element then.
-    fn trie_finished(&mut self);
-
-    fn try_push_byte(&mut self, byte: u8) -> bool {
-        if self.byte_allowed(byte) {
-            self.push_byte(byte);
+    fn byte_allowed(&mut self, byte: u8) -> bool {
+        if self.try_push_byte(byte) {
+            self.pop_bytes(1);
             true
         } else {
             false
         }
     }
+    /// check if stack.top() transitions via tok to a viable state
+    fn special_allowed(&mut self, tok: SpecialToken) -> bool;
+    /// Called when iteration over the trie is finished
+    /// Stack has exactly one element then.
+    fn trie_finished(&mut self);
+
+    fn try_push_byte(&mut self, byte: u8) -> bool;
 }
 
 pub struct TokTrie {
