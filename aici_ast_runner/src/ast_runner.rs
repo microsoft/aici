@@ -10,6 +10,7 @@
 */
 
 mod cfg;
+mod lex;
 mod rx;
 
 use std::fmt::Debug;
