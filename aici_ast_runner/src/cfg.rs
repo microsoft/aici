@@ -1,5 +1,3 @@
-use std::{cell::RefCell, rc::Rc, vec};
-
 use aici_abi::{
     toktree::{Recognizer, SpecialToken, TokTrie},
     wprint, wprintln,
@@ -11,6 +9,7 @@ use cfgrammar::{
 };
 use lrtable::{from_yacc, Action, Minimiser, StIdx, StateTable};
 use rustc_hash::FxHashMap;
+use std::{cell::RefCell, vec};
 use vob::{vob, Vob};
 
 use crate::lex::{Lexer, LexerState, StateID, VobIdx, VobSet};
@@ -38,14 +37,13 @@ pub struct CfgParser {
     lexer: Lexer,
     byte_states: Vec<ByteState>,
     pat_idx_to_tidx: Vec<TIdx<u32>>,
-    possible_tokens_by_state: RefCell<FxHashMap<StIdx<u32>, Rc<Vob>>>,
-    possible_vob_idx_by_state: FxHashMap<StIdx<u32>, VobIdx>,
     vobset: VobSet,
     stats: RefCell<CfgStats>,
     tidx_to_pat_idx: FxHashMap<TIdx<u32>, usize>,
     parse_stacks: Vec<Vec<StIdx<u32>>>,
     skip_patterns: Vob,
     friendly_pattern_names: Vec<String>,
+    viable_vobidx_by_state: Vec<VobIdx>,
 }
 
 fn is_rx(name: &str) -> bool {
@@ -154,6 +152,30 @@ impl CfgParser {
             parse_stack_idx: PStackIdx(0),
             viable: all1,
         };
+
+        let viable_vobidx_by_state = sgraph
+            .iter_stidxs()
+            .enumerate()
+            .map(|(idx, stidx)| {
+                assert!(idx == stidx.as_storaget() as usize);
+
+                // skip patterns (whitespace) are always viable
+                let mut r = skip_patterns.clone();
+                for tidx in stable.state_actions(stidx) {
+                    match stable.action(stidx, tidx) {
+                        Action::Error => {}
+                        _ => {
+                            if let Some(pat_idx) = tidx_to_pat_idx.get(&tidx) {
+                                r.set(*pat_idx, true);
+                            }
+                        }
+                    }
+                }
+
+                vobset.get(&r)
+            })
+            .collect::<Vec<_>>();
+
         let mut cfg = CfgParser {
             grm,
             stable,
@@ -161,8 +183,7 @@ impl CfgParser {
             byte_states: vec![byte_state],
             pat_idx_to_tidx,
             tidx_to_pat_idx,
-            possible_tokens_by_state: RefCell::new(FxHashMap::default()),
-            possible_vob_idx_by_state: FxHashMap::default(),
+            viable_vobidx_by_state,
             skip_patterns,
             friendly_pattern_names,
             parse_stacks,
@@ -173,52 +194,13 @@ impl CfgParser {
             }),
         };
 
-        cfg.possible_vob_idx_by_state = sgraph
-            .iter_stidxs()
-            .map(|stidx| {
-                (
-                    stidx.clone(),
-                    cfg.vobset.get(&(*cfg.viable_tokens(stidx)).clone()),
-                )
-            })
-            .collect();
-
         cfg.vobset.pre_compute();
 
         cfg
     }
 
     fn viable_vobidx(&self, stidx: StIdx<StorageT>) -> VobIdx {
-        *self.possible_vob_idx_by_state.get(&stidx).unwrap()
-    }
-
-    fn viable_tokens(&self, stidx: StIdx<StorageT>) -> Rc<Vob> {
-        {
-            let tmp = self.possible_tokens_by_state.borrow();
-            let r = tmp.get(&stidx);
-            if let Some(r) = r {
-                return r.clone();
-            }
-        }
-
-        // skip patterns (whitespace) are always viable
-        let mut r = self.skip_patterns.clone();
-        for tidx in self.stable.state_actions(stidx) {
-            match self.stable.action(stidx, tidx) {
-                Action::Error => {}
-                _ => {
-                    if let Some(pat_idx) = self.tidx_to_pat_idx.get(&tidx) {
-                        r.set(*pat_idx, true);
-                    }
-                }
-            }
-        }
-
-        let rr = Rc::new(r);
-        self.possible_tokens_by_state
-            .borrow_mut()
-            .insert(stidx, rr.clone());
-        rr
+        self.viable_vobidx_by_state[stidx.as_storaget() as usize]
     }
 
     #[allow(dead_code)]
