@@ -778,7 +778,7 @@ pub fn cfg_test() -> Result<()> {
     let mut logits = trie.alloc_logits();
     let t0 = Instant::now();
 
-    for tok in &toks[0..300] {
+    for tok in &toks[0..1000] {
         let tok = *tok;
         trie.compute_bias(&mut cfg, &mut logits);
         if false {
