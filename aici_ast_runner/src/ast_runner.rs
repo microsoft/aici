@@ -38,10 +38,11 @@ pub enum Step {
     Choose {
         options: Vec<String>,
     },
-    // Generate text. It can be constrained with a regex.
+    // Generate text. It can be constrained with a regex or a yacc grammar.
     // The length can be constrained in several ways.
     Gen {
         rx: Option<String>,
+        // yacc: Option<String>,
         stop_at: Option<String>,
         max_tokens: Option<usize>,
         max_words: Option<usize>,
@@ -419,28 +420,10 @@ fn main() {
     //    let _run = sample_prog();
 }
 
-fn sample_prog() -> Runner {
+fn runner_from_env() -> Runner {
     let a = host::arg_bytes();
     let p: Program = serde_json::from_slice(&a).unwrap();
     Runner::new(p)
-    // Runner::new(Program {
-    //     steps: vec![
-    //         Step::Fixed {
-    //             text: "I am about ".to_string(),
-    //         },
-    //         Step::Gen {
-    //             max_tokens: 5,
-    //             rx: Some(r#"\d\d"#.to_string()),
-    //         },
-    //         Step::Fixed {
-    //             text: " years and ".to_string(),
-    //         },
-    //         Step::Gen {
-    //             max_tokens: 5,
-    //             rx: Some(r#"\d+"#.to_string()),
-    //         },
-    //     ],
-    // })
 }
 
-aici_expose_all!(Runner, sample_prog());
+aici_expose_all!(Runner, runner_from_env());

@@ -42,7 +42,7 @@ pub trait Recognizer {
     /// Called when iteration over the trie is finished
     /// Stack has exactly one element then.
     fn trie_finished(&mut self);
-
+    /// This combines `push_byte` and `byte_allowed` into one function for performance.
     fn try_push_byte(&mut self, byte: u8) -> bool;
 }
 

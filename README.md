@@ -97,6 +97,8 @@ pub trait Recognizer {
     /// Called when iteration over the trie is finished
     /// Stack has exactly one element then.
     fn trie_finished(&mut self);
+    /// This combines `push_byte` and `byte_allowed` into one function for performance.
+    fn try_push_byte(&mut self, byte: u8) -> bool;
 }
 ```
 
@@ -153,7 +155,90 @@ It's unclear if this will be needed.
 
 ### LR(1) grammars
 
-Work is ongoing, using [grmtools](https://github.com/softdevteam/grmtools).
+The `Recognizer` interface is implemented for LR(1) grammars and DFA-based lexers.
+
+The grammar uses inline syntax for the lexer:
+- `"keyword"` or `'keyword'` for keywords; any string works, eg. `"+="`, `"while"`, ...
+- `"/.../"` or `'/.../'` for regular expressions; you cannot have both `'` and `"` in the regex
+Special `SKIP` rule is used to indicate tokens that need to be skipped by the LR(1) parser (eg., whitespace and comments)
+
+The lexer has a DFA which recognizes all regexps and keywords
+(a big disjunction, but with additional machinery to disambiguate between different branches).
+It goes byte by byte, until the DFA gets to a dead state (from which no match is possible).
+Then it goes back one byte and checks for match.
+It prefers keywords over regexps.
+If no match is found, an error is reported, which requires careful design of the lexical part of the grammar
+(eg., see how the `white-space` rule below is prefix of the `pre-processor` rule).
+
+For example, this is fragment of [grammar for C](./aici_ast_runner/c.y):
+
+```yacc
+%start translation_unit
+%%
+
+SKIP
+    : "//\*[^*]*\*+([^/*][^*]*\*+)*//" 	// block comment
+	| "///.*/" 							// line comment
+	| "/\n[ \t\v\f]*#(.*\\\n)*.*/" 		// pre-processor
+    | "/\n?[ \t\v\f]*/"					// white-space
+    ;
+
+IDENTIFIER: "/[a-zA-Z_][0-9a-zA-Z_]*/" ;
+
+CONSTANT
+        : "/0[xX][0-9a-fA-F]+[uUlL]*?/"
+        | "/0[0-9]+[uUlL]*?/"
+        ;
+
+STRING_LITERAL: '/"(\\.|[^\\"])*"/' ;
+
+primary_expression
+	: IDENTIFIER
+	| CONSTANT
+	| STRING_LITERAL
+	| "(" expression ")"
+	;
+
+// ...
+
+enum_specifier
+	: "enum" "{" enumerator_list "}"
+	| "enum" IDENTIFIER "{" enumerator_list "}"
+	| "enum" IDENTIFIER
+	;
+
+// ...
+
+translation_unit
+	: external_declaration
+	| translation_unit external_declaration
+	;
+```
+
+#### Early error detection
+
+Consider the following invalid C program:
+
+```c
+int 123456;
+```
+
+The lexer would produce `int` keyword, whitespace, `123456` constant and `;` keyword.
+The parser would reject `123456`, however only after all six characters of it have been read.
+This is too late for the LLM.
+
+To detect such errors early, we compute a set of reachable tokens for each DFA state.
+For example, the initial DFA state has a full set of tokens, while a state after `'e'` would only
+have `extern`, `enum`, `else` and `IDENTIFIER`,
+and a state after `'1'` includes only `CONSTANT`.
+
+For each LR(1) automaton state we compute a set of viable tokens, i.e., ones that do
+not immediately lead to an error.
+
+While parsing input, if the intersection of viable and reachable tokens is empty, we report an error.
+
+In the example above, the viable tokens after `int` do not include `CONSTANT`,
+and thus the parser fails immediately at `1`.
 
 ## Contributing
 
