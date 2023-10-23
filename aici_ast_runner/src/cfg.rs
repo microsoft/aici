@@ -71,6 +71,9 @@ impl CfgParser {
     pub fn from(yacc: &str) -> Self {
         let grmkind = YaccKind::Original(cfgrammar::yacc::YaccOriginalActionKind::NoAction);
         let grm = YaccGrammar::new(grmkind, yacc).unwrap();
+
+        // TIME: all these annotation are for native release x86 build for C grammar
+        // TIME: 27ms
         let (sgraph, stable) = from_yacc(&grm, Minimiser::Pager).unwrap();
 
         if false {
@@ -143,6 +146,7 @@ impl CfgParser {
         let _all0 = vobset.get(&vob![false; patterns.len()]);
         let all1 = vobset.get(&vob![true; patterns.len()]);
 
+        // TIME: 27ms
         let dfa = Lexer::from(patterns, &mut vobset);
 
         let parse_stacks = vec![vec![stable.start_state()]];
@@ -429,37 +433,39 @@ impl Recognizer for CfgParser {
 pub fn cfg_test() -> Result<()> {
     let yacc_bytes = include_bytes!("../c.y");
     let mut cfg = CfgParser::from(&String::from_utf8_lossy(yacc_bytes));
-    let mut rng = aici_abi::rng::Rng::new(0);
-
-    let trie = TokTrie::from_host();
     let sample = include_bytes!("../sample.c");
-    let toks = trie.greedy_tokenize(sample);
-
-    let mut logits = trie.alloc_logits();
-
-    #[cfg(not(target_arch = "wasm32"))]
-    let t0 = std::time::Instant::now();
-
-    for tok in &toks[0..1000] {
-        let tok = *tok;
-        trie.compute_bias(&mut cfg, &mut logits);
-        if false {
-            wprintln!(
-                "tok: {:?} {}; {}",
-                trie.token_str(tok),
-                logits[tok as usize],
-                cfg.get_stats()
-            );
-        }
-        trie.append_token(&mut cfg, tok);
-    }
-
-    #[cfg(not(target_arch = "wasm32"))]
-    wprintln!("time: {:?} ", t0.elapsed());
-
-    wprintln!("stats:  {}", cfg.get_stats());
 
     if false {
+        let trie = TokTrie::from_host();
+        let toks = trie.greedy_tokenize(sample);
+
+        let mut logits = trie.alloc_logits();
+
+        #[cfg(not(target_arch = "wasm32"))]
+        let t0 = std::time::Instant::now();
+
+        for tok in &toks[0..1000] {
+            let tok = *tok;
+            trie.compute_bias(&mut cfg, &mut logits);
+            if false {
+                wprintln!(
+                    "tok: {:?} {}; {}",
+                    trie.token_str(tok),
+                    logits[tok as usize],
+                    cfg.get_stats()
+                );
+            }
+            trie.append_token(&mut cfg, tok);
+        }
+
+        #[cfg(not(target_arch = "wasm32"))]
+        wprintln!("time: {:?} ", t0.elapsed());
+
+        wprintln!("stats:  {}", cfg.get_stats());
+    }
+
+    if false {
+        let mut rng = aici_abi::rng::Rng::new(0);
         let mut ok = true;
         let mut idx = 0;
         while idx < sample.len() {

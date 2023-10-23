@@ -119,6 +119,7 @@ pub struct Lexer {
 
 impl Lexer {
     pub fn from(patterns: Vec<String>, vobset: &mut VobSet) -> Self {
+        // TIME: 4ms
         let dfa = dense::Builder::new()
             .configure(
                 dense::Config::new()
@@ -146,6 +147,8 @@ impl Lexer {
         let initial = dfa.universal_start_state(anch).unwrap();
         let mut todo = vec![initial];
         incoming.insert(initial, Vec::new());
+
+        // TIME: 1.5ms
         while todo.len() > 0 {
             let s = todo.pop().unwrap();
             for b in 0..=255 {
@@ -176,6 +179,7 @@ impl Lexer {
             tokenset_by_state.insert(*s, v);
         }
 
+        // TIME: 20ms
         loop {
             let mut num_set = 0;
 
