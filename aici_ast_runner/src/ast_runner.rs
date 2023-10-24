@@ -203,7 +203,7 @@ impl StepState {
                         cfg: CfgParser::from_yacc(yacc),
                     },
                     _ => {
-                        let defl = ".*".to_string();
+                        let defl = "(.|\n)+".to_string();
                         let rx = rx.as_deref().unwrap_or(&defl);
                         StepSpecific::Gen {
                             rx: RecRx::from_rx(&rx).to_stack_recognizer(),

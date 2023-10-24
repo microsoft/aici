@@ -10,9 +10,9 @@ SKIP
     | "/\n?[ \t\v\f]*/"					// white-space
     ;
 
-IDENTIFIER: "/[a-zA-Z_][0-9a-zA-Z_]*/" ;
+IDENTIFIER: "/[a-zA-Z_][0-9a-zA-Z_]{0,40}/" ;
 
-TYPE_NAME: "/[a-zA-Z_][0-9a-zA-Z_]*_t/" ;
+TYPE_NAME: "/[a-zA-Z_][0-9a-zA-Z_]{0,40}_t/" ;
 
 CONSTANT
         : "/0[xX][0-9a-fA-F]+[uUlL]*?/"
