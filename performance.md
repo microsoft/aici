@@ -11,7 +11,7 @@ A bogus `token_id` is used for nodes that do not have a corresponding token.
 
 ```mermaid
 graph TD
-  root[&epsilon;, 0] -- a --> a((a, 1))
+  root[ε, 0] -- a --> a((a, 1))
   root -- b --> b((b, 1))
   root -- c --> c((c, 1))
   a -- x --> ax((ax, 1))
