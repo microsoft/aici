@@ -58,10 +58,12 @@ fn traverse(mut p) {
         if byte_allowed(n.byte) {
             push_byte(n.byte);
             logits[n.token_id] = 0.0;
-            traverse(p);
+            // p is moved by n.subtree_size
+            p = traverse(p);
             pop_bytes(1);
+        } else {
+            p += n.subtree_size;
         }
-        p += n.subtree_size;
     }
 }
 ```
