@@ -7,7 +7,7 @@ use rustc_hash::FxHashMap;
 use std::{hash::Hash, vec};
 use vob::{vob, Vob};
 
-type PatIdx = usize;
+pub type PatIdx = usize;
 pub type StateID = regex_automata::util::primitives::StateID;
 
 const LOG_LEXER: bool = false;
