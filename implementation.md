@@ -1,4 +1,4 @@
-# Performance notes
+# Implementation notes
 
 ## Token trie
 
