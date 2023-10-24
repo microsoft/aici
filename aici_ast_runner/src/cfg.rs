@@ -441,7 +441,7 @@ pub fn cfg_test() -> Result<()> {
     let mut cfg = CfgParser::from_yacc(&String::from_utf8_lossy(yacc_bytes));
     let sample = include_bytes!("../../grammars/sample.c");
 
-    if true {
+    if false {
         let trie = TokTrie::from_host();
         let toks = trie.greedy_tokenize(sample);
 
@@ -450,9 +450,20 @@ pub fn cfg_test() -> Result<()> {
         #[cfg(not(target_arch = "wasm32"))]
         let t0 = std::time::Instant::now();
 
+        let mut line = 1;
+
         for tok in &toks[0..1000] {
             let tok = *tok;
             trie.compute_bias(&mut cfg, &mut logits);
+            if logits[tok as usize] < -50.0 {
+                wprintln!("reject, line={}, tok={:?}", line, trie.token_str(tok));
+                panic!();
+            }
+            for b in trie.token(tok) {
+                if *b == b'\n' {
+                    line += 1;
+                }
+            }
             if false {
                 wprintln!(
                     "tok: {:?} {}; {}",
@@ -471,7 +482,7 @@ pub fn cfg_test() -> Result<()> {
         wprintln!("stats:  {}", cfg.get_stats());
     }
 
-    if false {
+    if true {
         let mut rng = aici_abi::rng::Rng::new(0);
         let mut ok = true;
         let mut idx = 0;
@@ -490,17 +501,19 @@ pub fn cfg_test() -> Result<()> {
             }
             idx += 1;
 
-            let max_pop = cfg.byte_states.len() - 1;
-            if max_pop > 0 && rng.gen_up_to(4) == 0 {
-                let num = rng.gen_up_to(max_pop - 1) + 1;
-                // wprintln!("pop {} {}", num, cfg.byte_states.len());
-                cfg.pop_bytes(num);
-                idx -= num;
-            }
+            if false {
+                let max_pop = cfg.byte_states.len() - 1;
+                if max_pop > 0 && rng.gen_up_to(4) == 0 {
+                    let num = rng.gen_up_to(max_pop - 1) + 1;
+                    // wprintln!("pop {} {}", num, cfg.byte_states.len());
+                    cfg.pop_bytes(num);
+                    idx -= num;
+                }
 
-            if rng.gen_up_to(10) == 0 {
-                // wprintln!("collapse");
-                cfg.collapse();
+                if rng.gen_up_to(10) == 0 {
+                    // wprintln!("collapse");
+                    cfg.collapse();
+                }
             }
         }
 

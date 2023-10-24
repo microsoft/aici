@@ -232,11 +232,11 @@ def main():
     }
     mod = upload_wasm()
     ask_completion(
-        prompt=codellama_prompt("Write fib function in C, respond in code only"),
+        prompt=codellama_prompt("Write fib function in C"),
         #prompt=llama_prompt("Write fib function in C, respond in code only"),
         aici_module=mod,
         aici_arg=ast,
-        n=1,
+        n=10,
         temperature=0.5,
         log=True,
         max_tokens=1000,
