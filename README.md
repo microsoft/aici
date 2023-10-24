@@ -59,14 +59,15 @@ graph TD
 
 ```mermaid
 sequenceDiagram
-    participant User
+    actor User
     participant GPU
     participant vLLM
     participant aicirt
     vLLM -->> GPU: Model
     User -->> vLLM: Request (Prompt + WASM)
-    vLLM -->> GPU: Prompt
     vLLM -->> aicirt: WASM
+    aicirt -->> vLLM: WASM Init done
+    vLLM -->> GPU: Prompt
     vLLM -->> aicirt: Prompt
     aicirt -->> vLLM: logit bias 1
     vLLM -->> GPU: logit bias 1
