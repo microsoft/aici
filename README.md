@@ -64,8 +64,9 @@ sequenceDiagram
     participant vLLM
     participant aicirt
     vLLM -->> GPU: Model
-    User -->> vLLM: Request
+    User -->> vLLM: Request (Prompt + WASM)
     vLLM -->> GPU: Prompt
+    vLLM -->> aicirt: WASM
     vLLM -->> aicirt: Prompt
     aicirt -->> vLLM: logit bias 1
     vLLM -->> GPU: logit bias 1
