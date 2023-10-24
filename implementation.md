@@ -92,3 +92,29 @@ while p < nodes.len() {
 
 Note that the only branch that gets mis-predicted here is the `if byte_allowed(n.byte)`.
 The `if` in argument to `pop_bytes` is compiled to bit operations, so it is branchless.
+
+## Early error detection in LR(1)
+
+Consider the following invalid C program:
+
+```c
+int 123456;
+```
+
+The lexer would produce `int` keyword, whitespace, `123456` constant and `;` keyword.
+The parser would reject `123456`, however only after all six characters of it have been read.
+This is too late for the LLM.
+
+To detect such errors early, we compute a set of reachable tokens for each DFA state.
+For example, the initial DFA state has a full set of tokens, while a state after `'e'` would only
+have `extern`, `enum`, `else` and `IDENTIFIER`,
+and a state after `'1'` includes only `CONSTANT`.
+
+For each LR(1) automaton state we compute a set of viable tokens, i.e., ones that do
+not immediately lead to an error.
+
+While parsing input, if the intersection of viable and reachable tokens is empty, we report an error.
+
+In the example above, the viable tokens after `int` do not include `CONSTANT`,
+and thus the parser fails immediately at `1`.
+
