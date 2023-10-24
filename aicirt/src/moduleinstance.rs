@@ -1,6 +1,6 @@
 use aici_abi::bytes::{clone_vec_as_bytes, TokRxInfo};
 use anyhow::{anyhow, ensure, Result};
-use log::debug;
+use log::{debug, info};
 use serde_json::{json, Value};
 use std::sync::{Arc, RwLock};
 use std::time::Instant;
@@ -225,7 +225,9 @@ impl ModuleInstance {
         })
     }
 
+    #[inline(never)]
     pub fn fork(&mut self, id: Id) -> Result<Self> {
+        let t0 = Instant::now();
         let mut fork = Self::new(
             id,
             self.store.data().module.clone(),
@@ -239,8 +241,14 @@ impl ModuleInstance {
         let dst = fork.memory;
         let missing_size = src.data_size(&self.store) - dst.data_size(&fork.store);
         dst.grow(&mut fork.store, (missing_size >> 16) as u64)?;
+        // TIME: 1-2ms at ~4MB
         dst.data_mut(&mut fork.store)
             .copy_from_slice(src.data(&self.store));
+        info!(
+            "fork time: {:?}, mem={}kB",
+            t0.elapsed(),
+            dst.data_size(&fork.store) / 1024
+        );
         Ok(fork)
     }
 
