@@ -18,19 +18,32 @@ pub enum SpecialToken {
 }
 
 pub trait Recognizer {
-    /// If `stack.top()` trasitions via `byte` to `X`, execute `stack.push(X)`.
-    fn push_byte(&mut self, byte: u8);
+    /// If `stack.top()` transitions via `byte` to `X`, execute `stack.push(X)`.
+    fn push_byte(&mut self, byte: u8) {
+        if !self.try_push_byte(byte) {
+            panic!("byte {:?} not allowed", byte as char)
+        }
+    }
     /// for _ in 0..num { stack.pop() }
     fn pop_bytes(&mut self, num: usize);
     /// X = stack.top(); stack.empty(); stack.push(X)
     fn collapse(&mut self);
     /// check if stack.top() transitions via byte to a viable state
-    fn byte_allowed(&self, byte: u8) -> bool;
+    fn byte_allowed(&mut self, byte: u8) -> bool {
+        if self.try_push_byte(byte) {
+            self.pop_bytes(1);
+            true
+        } else {
+            false
+        }
+    }
     /// check if stack.top() transitions via tok to a viable state
-    fn special_allowed(&self, tok: SpecialToken) -> bool;
+    fn special_allowed(&mut self, tok: SpecialToken) -> bool;
     /// Called when iteration over the trie is finished
     /// Stack has exactly one element then.
     fn trie_finished(&mut self);
+    /// This combines `push_byte` and `byte_allowed` into one function for performance.
+    fn try_push_byte(&mut self, byte: u8) -> bool;
 }
 
 pub struct TokTrie {
@@ -158,11 +171,50 @@ impl TokTrie {
         self.info.vocab_size as usize
     }
 
+    pub fn alloc_logits(&self) -> Vec<f32> {
+        vec![0.0; self.vocab_size() + 1]
+    }
+
+    pub fn token_str(&self, idx: u32) -> String {
+        String::from_utf8_lossy(self.token(idx)).to_string()
+    }
+
     pub fn token(&self, idx: u32) -> &[u8] {
         let off = self.token_offsets[idx as usize];
         let len = off & 0xff;
         let off = (off >> 8) as usize;
         &self.token_data[off..(off + len as usize)]
+    }
+
+    pub fn greedy_tokenize(&self, bytes: &[u8]) -> Vec<TokenId> {
+        let mut r = Vec::new();
+        if bytes.len() == 0 {
+            return r;
+        }
+
+        let mut n = self.root();
+        let mut last_tok = None;
+        let mut last_idx = 0;
+        let mut idx = 0;
+        while idx < bytes.len() {
+            match self.child_at_byte(n, bytes[idx]) {
+                Some(c) => {
+                    if let Some(tok) = c.token_id() {
+                        last_tok = Some(tok);
+                        last_idx = idx;
+                    }
+                    n = c;
+                }
+                None => {
+                    r.push(last_tok.unwrap());
+                    idx = last_idx;
+                    n = self.root();
+                }
+            }
+            idx = idx + 1;
+        }
+        r.push(last_tok.unwrap());
+        r
     }
 
     pub fn token_id(&self, bytes: &[u8]) -> Option<TokenId> {
@@ -333,8 +385,7 @@ impl TokTrie {
         let mut num = 0;
         let mut ok = true;
         for &byte in bytes {
-            if r.byte_allowed(byte) {
-                r.push_byte(byte);
+            if r.try_push_byte(byte) {
                 num += 1;
             } else {
                 ok = false;
@@ -354,17 +405,9 @@ impl TokTrie {
         while p < endp {
             let n = &self.nodes[p];
             let b = n.byte();
-            if r.byte_allowed(b) {
+            if r.try_push_byte(b) {
                 logits[n.token_id().unwrap_or(defl_tok) as usize] = 0.0;
 
-                // This is slower due to branch mis-prediction:
-                // if n.subtree_size() == 1 {
-                //     r.pop_bytes(n.num_parents() - 1)
-                // } else {
-                //     r.push_byte(b)
-                // }
-
-                r.push_byte(b);
                 r.pop_bytes(if n.subtree_size() == 1 {
                     n.num_parents()
                 } else {

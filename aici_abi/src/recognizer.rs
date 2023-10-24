@@ -5,32 +5,6 @@ use crate::{
     wprintln, AiciVm, AiciVmHelper,
 };
 
-pub struct LenExcluder {}
-
-impl FunctionalRecognizer<u32> for LenExcluder {
-    fn initial(&self) -> u32 {
-        0
-    }
-
-    #[inline(never)]
-    fn append(&self, state: u32, _byte: u8) -> u32 {
-        state + 1
-    }
-
-    #[inline(never)]
-    fn byte_allowed(&self, state: u32, byte: u8) -> bool {
-        byte != (('z' as u32 + state) & 0xff) as u8
-    }
-
-    #[inline(never)]
-    fn special_allowed(&self, state: u32, tok: SpecialToken) -> bool {
-        match tok {
-            SpecialToken::EndOfSentence => state < 10,
-            _ => false,
-        }
-    }
-}
-
 pub struct AiciRecognizer<R: Recognizer> {
     pub helper: AiciVmHelper,
     pub rec: R,
@@ -129,7 +103,7 @@ impl<S: Copy + Debug, R: FunctionalRecognizer<S>> Recognizer for StackRecognizer
     }
 
     #[inline(always)]
-    fn byte_allowed(&self, byte: u8) -> bool {
+    fn byte_allowed(&mut self, byte: u8) -> bool {
         self.rec.byte_allowed(self.stack[self.stack_ptr], byte)
     }
 
@@ -143,8 +117,18 @@ impl<S: Copy + Debug, R: FunctionalRecognizer<S>> Recognizer for StackRecognizer
         self.stack_ptr = 0;
     }
 
-    fn special_allowed(&self, tok: SpecialToken) -> bool {
+    fn special_allowed(&mut self, tok: SpecialToken) -> bool {
         self.rec.special_allowed(self.stack[self.stack_ptr], tok)
+    }
+
+    #[inline(always)]
+    fn try_push_byte(&mut self, byte: u8) -> bool {
+        if self.rec.byte_allowed(self.stack[self.stack_ptr], byte) {
+            self.push_byte(byte);
+            true
+        } else {
+            false
+        }
     }
 }
 

@@ -1,18 +1,21 @@
 /*
 - the tokenization algorithm is not simply the greedy longest prefix - it breaks string into "words", splits words
-  into single-byte tokens and then merges adjecnt pairs of tokens in order of token number, see
+  into single-byte tokens and then merges adjacent pairs of tokens in order of token number, see
   https://github.com/openai/tiktoken/blob/main/tiktoken/_educational.py
+- models are also trained on sub-optimal tokenizations, via "subword regularization": https://arxiv.org/abs/1804.10959
 - in all tokenizers (gpt4, llama, phi, ...), all tokens fit one of these 3 categories:
   - only whitespace (not only ' ', but also '\n', '\t' etc)
   - start with a ' '
   - have no ' '
 */
 
-mod rx;
 mod cfg;
+mod lex;
+mod rx;
 
 use std::fmt::Debug;
 
+use cfg::CfgParser;
 use rx::RxStackRecognizer;
 use serde::{Deserialize, Serialize};
 
@@ -36,15 +39,24 @@ pub enum Step {
     Choose {
         options: Vec<String>,
     },
-    // Generate text. It can be constrained with a regexp.
+    // Generate text. It can be constrained with a regex or a yacc grammar.
     // The length can be constrained in several ways.
     Gen {
         rx: Option<String>,
+        yacc: Option<String>,
         stop_at: Option<String>,
         max_tokens: Option<usize>,
         max_words: Option<usize>,
         max_bytes: Option<usize>,
     },
+}
+
+fn limit_len(s: &str, max: usize) -> String {
+    if s.len() > max {
+        format!("{}...", String::from_utf8_lossy(&s.as_bytes()[0..max]))
+    } else {
+        s.to_string()
+    }
 }
 
 impl Debug for Step {
@@ -54,6 +66,7 @@ impl Debug for Step {
             Step::Choose { options } => write!(f, "Choose({:?})", options),
             Step::Gen {
                 rx,
+                yacc,
                 stop_at,
                 max_tokens,
                 max_words,
@@ -62,19 +75,22 @@ impl Debug for Step {
                 write!(f, "Gen(")?;
                 if let Some(rx) = rx {
                     write!(f, "/{:?}/ ", rx)?;
-                };
+                }
+                if let Some(yacc) = yacc {
+                    write!(f, "yacc:{:?} ", limit_len(yacc, 200))?;
+                }
                 if let Some(stop_at) = stop_at {
                     write!(f, "stop_at:{:?}, ", stop_at)?;
-                };
+                }
                 if let Some(max_tokens) = max_tokens {
                     write!(f, "max_tokens:{:?}, ", max_tokens)?;
-                };
+                }
                 if let Some(max_words) = max_words {
                     write!(f, "max_words:{:?}, ", max_words)?;
-                };
+                }
                 if let Some(max_bytes) = max_bytes {
                     write!(f, "max_bytes:{:?}, ", max_bytes)?;
-                };
+                }
                 write!(f, ")")
             }
         }
@@ -89,6 +105,7 @@ pub struct Program {
 enum StepSpecific {
     Options { tokens: Vec<Vec<TokenId>> },
     Gen { rx: RxStackRecognizer },
+    Cfg { cfg: CfgParser },
     Stop,
 }
 struct StepState {
@@ -172,21 +189,28 @@ impl StepState {
 
             Step::Gen {
                 rx,
+                yacc,
                 stop_at,
                 max_tokens,
                 max_bytes,
                 max_words,
             } => {
-                let rx = match rx {
-                    Some(rx) => &rx,
-                    None => ".*",
-                };
-                let mut r = Self::from_specific(
-                    s,
-                    StepSpecific::Gen {
-                        rx: RecRx::from_rx(&rx).to_stack_recognizer(),
+                let spec = match (yacc, rx) {
+                    (Some(_), Some(_)) => {
+                        panic!("can't have both yacc= and rx=")
+                    }
+                    (Some(yacc), None) => StepSpecific::Cfg {
+                        cfg: CfgParser::from_yacc(yacc),
                     },
-                );
+                    _ => {
+                        let defl = "(.|\n)+".to_string();
+                        let rx = rx.as_deref().unwrap_or(&defl);
+                        StepSpecific::Gen {
+                            rx: RecRx::from_rx(&rx).to_stack_recognizer(),
+                        }
+                    }
+                };
+                let mut r = Self::from_specific(s, spec);
                 r.max_bytes = max_bytes.unwrap_or(usize::MAX);
                 r.max_words = max_words.unwrap_or(usize::MAX);
                 r.max_tokens = max_tokens.unwrap_or(usize::MAX);
@@ -196,12 +220,12 @@ impl StepState {
         }
     }
 
-    fn check_eos(&self, optional: bool) -> bool {
+    fn check_eos(&mut self, optional: bool) -> bool {
         self.tokens.len() >= self.max_tokens
             || self.bytes.len() >= self.max_bytes
             || self.word_idx >= self.max_words
             || (self.stop_at.is_some() && self.stop_at.as_ref().unwrap().is_empty())
-            || match &self.specific {
+            || match &mut self.specific {
                 StepSpecific::Stop => false,
                 StepSpecific::Options { tokens } => {
                     if optional {
@@ -210,6 +234,10 @@ impl StepState {
                         tokens.iter().all(|t| self.tokens.len() >= t.len())
                     }
                 }
+                StepSpecific::Cfg { cfg } => {
+                    cfg.special_allowed(SpecialToken::EndOfSentence)
+                        && (optional || (0..=255).all(|byte| !cfg.byte_allowed(byte)))
+                }
                 StepSpecific::Gen { rx } => {
                     rx.special_allowed(SpecialToken::EndOfSentence)
                         && (optional || (0..=255).all(|byte| !rx.byte_allowed(byte)))
@@ -217,11 +245,11 @@ impl StepState {
             }
     }
 
-    fn allows_eos(&self) -> bool {
+    fn allows_eos(&mut self) -> bool {
         self.check_eos(true)
     }
 
-    fn forces_eos(&self) -> bool {
+    fn forces_eos(&mut self) -> bool {
         self.check_eos(false)
     }
 
@@ -255,6 +283,7 @@ impl StepState {
             StepSpecific::Options { tokens } => {
                 tokens.retain(has_token_at(token, self.tokens.len() - 1))
             }
+            StepSpecific::Cfg { cfg } => helper.trie.append_token(cfg, token),
             StepSpecific::Gen { rx } => helper.trie.append_token(rx, token),
         }
 
@@ -263,7 +292,7 @@ impl StepState {
         }
     }
 
-    // the mut on self is bogus - the state of the 'rx' doesn't change
+    // the 'mut' on self is bogus - the state of the 'rx' doesn't change
     fn allows_token(&mut self, helper: &AiciVmHelper, token: TokenId) -> bool {
         if token == helper.trie.special_token(SpecialToken::EndOfSentence) {
             return self.allows_eos();
@@ -276,6 +305,7 @@ impl StepState {
             StepSpecific::Options { tokens } => {
                 tokens.iter().any(has_token_at(token, self.tokens.len()))
             }
+            StepSpecific::Cfg { cfg } => helper.trie.token_allowed(cfg, token),
             StepSpecific::Gen { rx } => helper.trie.token_allowed(rx, token),
         }
     }
@@ -294,6 +324,9 @@ impl StepState {
             }
             StepSpecific::Gen { rx } => {
                 helper.trie.add_bias(rx, &mut helper.logit_biases);
+            }
+            StepSpecific::Cfg { cfg } => {
+                helper.trie.add_bias(cfg, &mut helper.logit_biases);
             }
         }
     }
@@ -417,28 +450,10 @@ fn main() {
     //    let _run = sample_prog();
 }
 
-fn sample_prog() -> Runner {
+fn runner_from_env() -> Runner {
     let a = host::arg_bytes();
     let p: Program = serde_json::from_slice(&a).unwrap();
     Runner::new(p)
-    // Runner::new(Program {
-    //     steps: vec![
-    //         Step::Fixed {
-    //             text: "I am about ".to_string(),
-    //         },
-    //         Step::Gen {
-    //             max_tokens: 5,
-    //             rx: Some(r#"\d\d"#.to_string()),
-    //         },
-    //         Step::Fixed {
-    //             text: " years and ".to_string(),
-    //         },
-    //         Step::Gen {
-    //             max_tokens: 5,
-    //             rx: Some(r#"\d+"#.to_string()),
-    //         },
-    //     ],
-    // })
 }
 
-aici_expose_all!(Runner, sample_prog());
+aici_expose_all!(Runner, runner_from_env());

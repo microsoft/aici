@@ -13,6 +13,8 @@ lrlex = "0.13.3"
 lrpar = "0.13.3"
 lrtable = "0.13.3"
 anyhow = "1.0.75"
+vob = "3.0.3"
+rustc-hash = "1.1.0"
 
 [patch.crates-io]
 aici_abi = { path = "../aici_abi" }
@@ -20,3 +22,6 @@ aici_abi = { path = "../aici_abi" }
 [[bin]]
 name = "aici_ast_runner"
 path = "src/ast_runner.rs"
+
+[profile.release]
+debug = 1

@@ -2,7 +2,7 @@ use std::rc::Rc;
 
 use aici_abi::{
     aici_expose_all, aici_harness,
-    recognizer::{FunctionalRecognizer, AiciRecognizer, StackRecognizer},
+    recognizer::{AiciRecognizer, FunctionalRecognizer, StackRecognizer},
     toktree::{SpecialToken, TokTrie},
     wprintln, AiciVm,
 };
@@ -90,7 +90,7 @@ fn main() {
 
     if false {
         let mut rec = StackRecognizer::from(RecRx { dfa });
-        let mut logits = vec![0.0; trie.vocab_size() + 1];
+        let mut logits = trie.alloc_logits();
 
         for _ in 0..1000 {
             rec.reset();
@@ -102,8 +102,7 @@ fn main() {
         if count < 100 {
             for (idx, logit) in logits.iter().enumerate() {
                 if *logit > -50.0 {
-                    let bytes = trie.token(idx as u32);
-                    wprintln!("{}: {:?}", idx, String::from_utf8_lossy(bytes));
+                    wprintln!("{}: {:?}", idx, trie.token_str(idx as u32));
                 }
             }
         }

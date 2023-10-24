@@ -22,7 +22,9 @@ ast = {
 
 
 def gen(
-    rx: str,
+    *,
+    rx: Optional[str] = None,
+    yacc: Optional[str] = None,
     stop_at: Optional[str] = None,
     max_tokens=None,
     max_words=None,
@@ -31,6 +33,7 @@ def gen(
     return {
         "Gen": {
             "rx": rx,
+            "yacc": yacc,
             "stop_at": stop_at,
             "max_tokens": max_tokens,
             "max_words": max_words,
@@ -114,10 +117,10 @@ def json_to_steps(json_value):
 
 
 def upload_wasm():
-    r = subprocess.run(["sh", "wasm.sh"], cwd=prog)
+    r = subprocess.run(["sh", "wasm.sh", "build"], cwd=prog)
     if r.returncode != 0:
         sys.exit(1)
-    file_path = prog + "/target/opt.wasm"
+    file_path = prog + "/target/strip.wasm"
     print("upload module... ", end="")
     with open(file_path, "rb") as f:
         resp = requests.post(base_url + "aici_modules", data=f)
@@ -180,10 +183,9 @@ def ask_completion(
             else:
                 print(decoded_line)
 
-    if len(texts) == 1:
-        print(texts[0])
-    else:
-        print(texts)
+    for text in texts:
+        print("***")
+        print(text)
     os.makedirs("tmp", exist_ok=True)
     path = "tmp/response.json"
     with open(path, "w") as f:
@@ -193,8 +195,21 @@ def ask_completion(
     print(f"response saved to {path}")
 
 
+sys_prompt = """
+You are a helpful, respectful and honest assistant. Always answer as helpfully as possible. You are concise.
+"""
+
+
+def llama_prompt(prompt):
+    return f"[INST] <<SYS>>\n{sys_prompt}\n<</SYS>>\n\n [/INST]</s>\n<s>[INST] {prompt} [/INST]\n"
+
+
+def codellama_prompt(prompt):
+    return f"[INST] {prompt} [/INST]\n"
+
+
 def main():
-    #ast = {
+    # ast = {
     #    "steps": json_to_steps(
     #        {
     #            "name": "",
@@ -206,24 +221,34 @@ def main():
     #            "fraction": 1.5,
     #        }
     #    )
-    #}
+    # }
 
     ast = {
-    "steps": [
-        {"Fixed": {"text": "I am about "}},
-        {"Gen": {"max_tokens": 10, "rx": r"\d+"}},
-        {"Fixed": {"text": " years and "}},
-        {"Gen": {"max_tokens": 10, "rx": r"\d+"}},
-        {"Fixed": {"text": " months."}},
+        "steps": [
+            gen(
+                yacc=open("grammars/c.y").read(),
+                # rx="#include(.|\n)*",
+                stop_at="\n}",
+                max_tokens=100,
+            )
         ]
     }
-
+    ast = {
+        "steps": [
+            {"Fixed": {"text": "I am about "}},
+            {"Gen": {"max_tokens": 10, "rx": r"\d+"}},
+            {"Fixed": {"text": " years and "}},
+            {"Gen": {"max_tokens": 10, "rx": r"\d+"}},
+            {"Fixed": {"text": " months."}},
+        ]
+    }
     mod = upload_wasm()
     ask_completion(
-        prompt="Joe R. Hacker in Seattle\n",
+        prompt=codellama_prompt("Write fib function in C"),
+        # prompt=llama_prompt("Write fib function in C, respond in code only"),
         aici_module=mod,
         aici_arg=ast,
-        n=1,
+        n=10,
         temperature=0.5,
         log=True,
         max_tokens=1000,

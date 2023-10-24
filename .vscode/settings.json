@@ -45,5 +45,26 @@
     },
     "python.analysis.extraPaths": [
         "./vllm"
+    ],
+    "spellright.language": [
+        "en"
+    ],
+    "spellright.documentTypes": [
+        "markdown",
+        "latex",
+        "plaintext",
+        "rust"
+    ],
+    "cSpell.words": [
+        "aici",
+        "aicirt",
+        "logit",
+        "POSIX",
+        "pyaici",
+        "struct",
+        "subword",
+        "usize",
+        "vllm",
+        "wprintln"
     ]
 }
