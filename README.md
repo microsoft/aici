@@ -65,18 +65,18 @@ sequenceDiagram
     participant aicirt
     vLLM -->> GPU: Model
     User -->> vLLM: Request (Prompt + WASM)
-    vLLM -->> aicirt: WASM
-    aicirt -->> vLLM: WASM Init done
-    vLLM -->> GPU: Prompt
-    vLLM -->> aicirt: Prompt
-    aicirt -->> vLLM: logit bias 1
+    vLLM -->>+ aicirt: WASM
+    aicirt -->>- vLLM: WASM Init done
+    vLLM -->>+ aicirt: Prompt
+    vLLM -->>+ GPU: Prompt
+    aicirt -->>- vLLM: logit bias 1
     vLLM -->> GPU: logit bias 1
     GPU -->> vLLM: token 1
+    vLLM -->>+ aicirt: token 1
     vLLM -->> User: token 1
-    vLLM -->> aicirt: token 1
-    aicirt -->> vLLM: logit bias 2
+    aicirt -->>- vLLM: logit bias 2
     vLLM -->> GPU: logit bias 2
-    GPU -->> vLLM: token 2
+    GPU -->>- vLLM: token 2
     vLLM -->> User: token 2
 ```
 
