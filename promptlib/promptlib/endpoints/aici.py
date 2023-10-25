@@ -27,17 +27,17 @@ class AICI(Endpoint):
         _submit_program(self.base_url, self.wasm_runner_id, prompt_plan, log=True)
 
 
-def _compile_wasm(wasm_runner_buildsh):
+def _compile_wasm(wasm_runner_buildsh, scriptargs=["build"]):
     # separate wasm_runner_buildsh into the script filename and the directory
     # containing the script
     script_dir = os.path.dirname(wasm_runner_buildsh)
     script_name = os.path.basename(wasm_runner_buildsh)
     
-    r = subprocess.run(["sh", script_name], cwd=script_dir)
+    r = subprocess.run(["sh", script_name].extend(scriptargs), cwd=script_dir)
     if r.returncode != 0:
         raise RuntimeError(f"error compiling aici promptlib module")
     
-    file_path = script_dir + "/target/opt.wasm"
+    file_path = script_dir + "/target/strip.wasm"
     return file_path
 
 
