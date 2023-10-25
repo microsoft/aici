@@ -115,19 +115,19 @@ and the token for which it is a match (if any) is postfixed with `*`. We only us
 
 ```mermaid
 graph LR
- 0["{int,if,ID,INTLIT}"] -- [i] --> i(("{int,if,ID*}"))
- 0 -- [a-z] - [i] --> id(("{ID*}"))
- 0 -- [0-9] --> const(("{INTLIT*}"))
- const -- [0-9] --> const
- const -- [a-z] --> bot["{}"]
- i -- [a-z0-9] - [nf] --> id
- id -- [a-z0-9] --> id
- i -- [n] --> in(("{int,ID*}"))
- in -- [t] --> int(("{int*,ID}"))
- in -- [a-z0-9] - [t] --> id
- int -- [a-z0-9] --> id
- i -- [f] --> if(("{if*,ID}"))
- if -- [a-z0-9] --> id
+ 0["{int,if,ID,INTLIT}"] -- "[i]" --> i(("{int,if,ID*}"))
+ 0 -- "[a-z] - [i]" --> id(("{ID*}"))
+ 0 -- "[0-9]" --> const(("{INTLIT*}"))
+ const -- "[0-9]" --> const
+ const -- "[a-z]" --> bot["{}"]
+ i -- "[a-z0-9] - [nf]" --> id
+ id -- "[a-z0-9]" --> id
+ i -- "[n]" --> in(("{int,ID*}"))
+ in -- "[t]" --> int(("{int*,ID}"))
+ in -- "[a-z0-9] - [t]" --> id
+ int -- "[a-z0-9]" --> id
+ i -- "[f]" --> if(("{if*,ID}"))
+ if -- "[a-z0-9]" --> id
 ```
 
 For each LR(1) automaton state we compute a set of viable tokens, i.e., ones that do
