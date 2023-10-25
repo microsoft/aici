@@ -206,7 +206,7 @@ It prefers keywords over regexps.
 If no match is found, an error is reported, which requires careful design of the lexical part of the grammar
 (eg., see how the `white-space` rule below is prefix of the `pre-processor` rule).
 
-For example, this is fragment of [grammar for C](./aici_ast_runner/c.y):
+For example, this is fragment of [grammar for C](./grammars/c.y):
 
 ```yacc
 %start translation_unit
