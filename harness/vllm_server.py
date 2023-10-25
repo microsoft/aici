@@ -239,13 +239,12 @@ async def create_completion(request: AiciCompletionRequest, raw_request: Request
             use_beam_search=request.use_beam_search,
         )
         if request.aici_module is not None:
-            sampling_params.aici_module = request.aici_module
-        if isinstance(request.aici_arg, str):
-            sampling_params.aici_arg = request.aici_arg
-        elif request.aici_arg is None:
-            sampling_params.aici_arg = ""
-        else:
-            sampling_params.aici_arg = ujson.dumps(request.aici_arg)
+            if request.aici_arg is None:
+                aici_arg = ""
+            else:
+                aici_arg = request.aici_arg
+            # TODO make this async!
+            aici.instantiate(request_id, request.aici_module, aici_arg)
     except ValueError as e:
         return create_error_response(HTTPStatus.BAD_REQUEST, str(e))
 

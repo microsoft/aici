@@ -28,7 +28,9 @@ use crate::shm::Shm;
 
 const N_THREADS: usize = 10;
 
-#[derive(Parser)]
+const MEGABYTE: usize = 1024 * 1024;
+
+#[derive(Parser, Clone)]
 struct Cli {
     /// Path to .wasm module to install
     #[arg(short, long)]
@@ -64,19 +66,25 @@ struct Cli {
 }
 
 impl Cli {
-    pub fn with_prefix(&self, name: &str) -> String {
-        format!("{}{}", self.name, name)
+    pub fn prefixed_name(&self, name: &str, name2: &str) -> String {
+        format!("{}{}{}", self.name, name, name2)
     }
 }
 
-struct Executor {
+struct ModuleRegistry {
     cache_path: PathBuf,
     engine: wasmtime::Engine,
     linker: Arc<wasmtime::Linker<ModuleData>>,
     modules: HashMap<String, wasmtime::Module>,
+    req_instances: Arc<Mutex<HashMap<String, ModuleInstance>>>,
+    globals: Arc<RwLock<GlobalInfo>>,
+}
+
+struct Stepper {
+    req_instances: Arc<Mutex<HashMap<String, ModuleInstance>>>,
     instances: HashMap<Id, Arc<Mutex<ModuleInstance>>>,
     globals: Arc<RwLock<GlobalInfo>>,
-    bin_shm: Option<Shm>,
+    bin_shm: Shm,
 }
 
 fn is_hex_string(s: &str) -> bool {
@@ -95,8 +103,7 @@ pub enum AiciOp {
     Prompt {
         id: Id,
         prompt: Vec<Token>,
-        module_id: String,
-        module_arg: String,
+        req_id: String,
     },
     Gen {
         id: Id,
@@ -121,6 +128,14 @@ struct MkModuleReq {
     meta: Value,
 }
 
+#[derive(Serialize, Deserialize)]
+struct InstantiateReq {
+    req_id: String,
+    module_id: String,
+    #[serde(default = "mk_null")]
+    module_arg: Value,
+}
+
 fn mk_null() -> Value {
     Value::Null
 }
@@ -141,8 +156,8 @@ struct TokensReq {
     special: SpecialTokenIds,
 }
 
-impl Executor {
-    pub fn new(bin_shm: Option<Shm>, mut tokenizer: Tokenizer) -> Result<Self> {
+impl ModuleRegistry {
+    pub fn new(mut tokenizer: Tokenizer) -> Result<Self> {
         let engine = wasmtime::Engine::default();
         let linker = setup_linker(&engine)?;
 
@@ -171,9 +186,8 @@ impl Executor {
             engine,
             linker,
             modules: HashMap::new(),
-            instances: HashMap::new(),
+            req_instances: Arc::new(Mutex::new(HashMap::new())),
             globals: Arc::new(RwLock::new(globals)),
-            bin_shm,
         })
     }
 
@@ -222,11 +236,22 @@ impl Executor {
         self.create_module(wasm_bytes, meta_bytes)
     }
 
+    fn instantiate(&mut self, req: InstantiateReq) -> Result<Value> {
+        let arg = match req.module_arg.as_str() {
+            Some(a) => a.to_string(),
+            None => serde_json::to_string(&req.module_arg)?,
+        };
+        let modinst = self.new_instance(0x100000, req.module_id.as_str(), arg)?;
+        let mut req_instances = self.req_instances.lock().unwrap();
+        req_instances.insert(req.req_id, modinst);
+        Ok(json!({}))
+    }
+
     pub fn new_instance(
         &mut self,
         id: Id,
         module_id: &str,
-        module_arg: &str,
+        module_arg: String,
     ) -> Result<ModuleInstance> {
         ensure!(is_hex_string(module_id), "invalid module_id");
 
@@ -244,14 +269,26 @@ impl Executor {
         let modinst = ModuleInstance::new(
             id,
             module,
-            Arc::new(module_arg.to_string()),
+            Arc::new(module_arg),
             self.linker.clone(),
             self.globals.clone(),
         )?;
         Ok(modinst)
     }
+}
+
+impl Stepper {
+    pub fn new(reg: &ModuleRegistry, bin_shm: Shm) -> Result<Self> {
+        Ok(Self {
+            req_instances: reg.req_instances.clone(),
+            instances: HashMap::new(),
+            globals: reg.globals.clone(),
+            bin_shm,
+        })
+    }
 
     fn mk_instance(&mut self, op: &AiciOp) -> Result<()> {
+        // TODO the forks should be done in parallel, best in tree-like fashion
         match op {
             AiciOp::Gen { id, clone_id, .. } => {
                 if let Some(cid) = clone_id {
@@ -265,15 +302,12 @@ impl Executor {
                     self.instances.insert(*id, Arc::new(Mutex::new(copy)));
                 }
             }
-            AiciOp::Prompt {
-                id,
-                module_id,
-                module_arg,
-                ..
-            } => {
-                ensure!(!self.instances.contains_key(id));
-                let modinst = self.new_instance(*id, module_id, module_arg)?;
-                info!("new module {} ({})", id, module_id);
+            AiciOp::Prompt { id, req_id, .. } => {
+                let e = { self.req_instances.lock().unwrap().remove(req_id) };
+                ensure!(e.is_some(), format!("invalid req_id {}", req_id));
+                ensure!(!self.instances.contains_key(id), format!("duplicate id {}", id));
+                let modinst = e.unwrap();
+                info!("new module {} ({})", id, req_id);
                 self.instances.insert(*id, Arc::new(Mutex::new(modinst)));
             }
         };
@@ -294,8 +328,7 @@ impl Executor {
 
         let vocab_block_len = { self.globals.read().unwrap().tokrx_info.vocab_size * 4 } as usize;
 
-        let binresp_ch = self.bin_shm.as_ref().unwrap();
-        let mut slices = binresp_ch.split(vocab_block_len)?;
+        let mut slices = self.bin_shm.split(vocab_block_len)?;
         slices.reverse();
 
         let numops = req.ops.len();
@@ -337,27 +370,52 @@ impl Executor {
     }
 }
 
-struct Dispatcher {
-    cmd_ch: MessageChannel,
-    resp_ch: MessageChannel,
-    executor: Executor,
+impl Exec for Stepper {
+    fn exec(&mut self, json: Value) -> Result<Value> {
+        match json["op"].as_str() {
+            Some("tokens") => {
+                Ok(json!({ "vocab_size": self.globals.read().unwrap().tokrx_info.vocab_size }))
+            }
+            Some("step") => self.aici_step(serde_json::from_value(json)?),
+            _ => return Err(anyhow!("bad op")),
+        }
+    }
 }
 
-impl Dispatcher {
-    pub fn new(cli: &Cli) -> Result<Self> {
-        const M: usize = 1024 * 1024;
+impl Exec for ModuleRegistry {
+    fn exec(&mut self, json: Value) -> Result<Value> {
+        match json["op"].as_str() {
+            Some("tokens") => {
+                Ok(json!({ "vocab_size": self.globals.read().unwrap().tokrx_info.vocab_size }))
+            }
+            Some("mk_module") => self.mk_module(serde_json::from_value(json)?),
+            Some("instantiate") => self.instantiate(serde_json::from_value(json)?),
+            _ => return Err(anyhow!("bad op")),
+        }
+    }
+}
 
-        let cmd_ch = MessageChannel::new(&cli.with_prefix("cmd"), cli.json_size * M)?;
-        let resp_ch = MessageChannel::new(&cli.with_prefix("resp"), cli.json_size * M)?;
-        let bin_shm = Shm::new(
-            &MessageChannel::shm_name(&cli.with_prefix("bin")),
-            cli.bin_size * M,
-        )?;
+trait Exec {
+    fn exec(&mut self, json: Value) -> Result<Value>;
+}
+
+struct Dispatcher<T: Exec> {
+    cmd_ch: MessageChannel,
+    resp_ch: MessageChannel,
+    executor: T,
+}
+
+impl<T: Exec> Dispatcher<T> {
+    pub fn new(executor: T, suff: &str, cli: &Cli) -> Result<Self> {
+        let cmd_ch =
+            MessageChannel::new(&cli.prefixed_name("cmd", suff), cli.json_size * MEGABYTE)?;
+        let resp_ch =
+            MessageChannel::new(&cli.prefixed_name("resp", suff), cli.json_size * MEGABYTE)?;
 
         Ok(Self {
             cmd_ch,
             resp_ch,
-            executor: Executor::new(Some(bin_shm), find_tokenizer(&cli.tokenizer)?)?,
+            executor,
         })
     }
 
@@ -366,39 +424,33 @@ impl Dispatcher {
         Ok(())
     }
 
-    fn dispatch_one(&mut self, json: Value) -> Result<Value> {
-        match json["op"].as_str() {
-            Some("ping") => Ok(json!({ "pong": 1 })),
-            Some("tokens") => Ok(
-                json!({ "vocab_size": self.executor.globals.read().unwrap().tokrx_info.vocab_size }),
-            ),
-            Some("mk_module") => self.executor.mk_module(serde_json::from_value(json)?),
-            Some("step") => self.executor.aici_step(serde_json::from_value(json)?),
-            Some("stop") => std::process::exit(0),
-            _ => return Err(anyhow!("bad op")),
-        }
-    }
-
     pub fn dispatch_loop(&mut self) -> ! {
         loop {
             let msg = self.cmd_ch.recv().unwrap();
-            match serde_json::from_slice(msg.as_slice()) {
-                Ok(json) => match self.dispatch_one(json) {
-                    Ok(v) => self
-                        .respond(json!({
-                            "type": "ok",
-                            "data": v
-                        }))
-                        .unwrap(),
-                    Err(err) => {
-                        warn!("dispatch error: {}", err.to_string());
-                        self.respond(json!({
-                            "type": "error",
-                            "error": err.to_string()
-                        }))
-                        .unwrap()
+            match serde_json::from_slice::<Value>(msg.as_slice()) {
+                Ok(json) => {
+                    let val = match json["op"].as_str() {
+                        Some("ping") => Ok(json!({ "pong": 1 })),
+                        Some("stop") => std::process::exit(0),
+                        _ => self.executor.exec(json),
+                    };
+                    match val {
+                        Ok(v) => self
+                            .respond(json!({
+                                "type": "ok",
+                                "data": v
+                            }))
+                            .unwrap(),
+                        Err(err) => {
+                            warn!("dispatch error: {}", err.to_string());
+                            self.respond(json!({
+                                "type": "error",
+                                "error": err.to_string()
+                            }))
+                            .unwrap()
+                        }
                     }
-                },
+                }
                 Err(err) => self
                     .respond(json!({
                         "type": "json-error",
@@ -422,7 +474,7 @@ fn main() -> () {
 
     // You can check the value provided by positional arguments, or option arguments
     if let Some(name) = cli.module.as_deref() {
-        let mut exec = Executor::new(None, find_tokenizer(&cli.tokenizer).unwrap()).unwrap();
+        let mut reg = ModuleRegistry::new(find_tokenizer(&cli.tokenizer).unwrap()).unwrap();
         let module_id = if name.len() == 64 && name.chars().all(|c| c.is_digit(16)) {
             name.to_string()
         } else {
@@ -432,14 +484,14 @@ fn main() -> () {
                 None => serde_json::to_vec(&Value::Null).unwrap(),
             };
 
-            let json = exec.create_module(wasm_bytes, meta_bytes).unwrap();
+            let json = reg.create_module(wasm_bytes, meta_bytes).unwrap();
             json["module_id"].as_str().unwrap().to_string()
         };
 
         println!("{}", module_id);
 
         if cli.run {
-            let mut modinst = exec.new_instance(42, &module_id, "").unwrap();
+            let mut modinst = reg.new_instance(42, &module_id, "{}".to_string()).unwrap();
             modinst.run_main().unwrap();
         }
 
@@ -458,6 +510,19 @@ fn main() -> () {
         .build_global()
         .unwrap();
 
-    let mut dispatcher = Dispatcher::new(&cli).unwrap();
-    dispatcher.dispatch_loop();
+    let bin_shm = Shm::new(
+        &MessageChannel::shm_name(&cli.prefixed_name("bin", "")),
+        cli.bin_size * MEGABYTE,
+    )
+    .unwrap();
+    let reg = ModuleRegistry::new(find_tokenizer(&cli.tokenizer).unwrap()).unwrap();
+    let exec = Stepper::new(&reg, bin_shm).unwrap();
+    let cli2 = cli.clone();
+    std::thread::spawn(move || {
+        let mut reg_disp = Dispatcher::new(reg, "-side", &cli2).unwrap();
+        reg_disp.dispatch_loop();
+    });
+
+    let mut exec_disp = Dispatcher::new(exec, "", &cli).unwrap();
+    exec_disp.dispatch_loop();
 }

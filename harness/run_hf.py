@@ -32,9 +32,9 @@ class AsyncLogitProcessor(LogitsProcessor, BaseStreamer):
 
     def put(self, value: torch.LongTensor):
         if self._idx == 0:
-            self.runner.step_add_prompt(
-                self.wasm_id, value[0].tolist(), self.module_id, self.module_arg
-            )
+            req_id = f"r{self.wasm_id}"
+            self.runner.instantiate(req_id, self.module_id, self.module_arg)
+            self.runner.step_add_prompt(self.wasm_id, value[0].tolist(), req_id)
         else:
             self.runner.step_add_token(self.wasm_id, value[0].tolist())
         self.runner.step_finish()

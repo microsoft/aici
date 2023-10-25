@@ -44,13 +44,16 @@ def main(args: argparse.Namespace):
     if args.aici_module_arg:
         with open(args.aici_module_arg) as f:
             arg = f.read()
-    for prompt, params in test_prompts:
-        params.aici_module = args.aici_module
-        params.aici_arg = arg
+    
+    request_id = 0
+    for _prompt, _params in test_prompts:
+        aici.instantiate(str(request_id), args.aici_module, arg)
+        request_id += 1
 
     # Run the engine by calling `engine.step()` manually.
     request_id = 0
     step_no = 0
+
     while True:
         step_no += 1
         # To test continuous batching, we add one request at each step.

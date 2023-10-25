@@ -8,8 +8,10 @@ import numpy as np
 import base64
 import time
 import argparse
+import asyncio
+import concurrent.futures
 
-from typing import List
+from typing import List, Union, Dict, Any
 
 # macOS has 31 character name limit, so keep this short
 # (Linux has 255)
@@ -85,6 +87,66 @@ class MessageChannel:
         # self.read_sem.unlink()
 
 
+M = 1024 * 1024
+
+
+class CmdChannel:
+    def __init__(self, *, json_size: int, pref: str, suff: str, trace_file) -> None:
+        self.lock = asyncio.Lock()
+        self.executor = None
+        self.suff = suff
+        self.cmd_pending = False
+        self.last_cmd = {}
+        self.cmd_ch = MessageChannel(pref + "cmd" + suff, json_size * M)
+        self.resp_ch = MessageChannel(pref + "resp" + suff, json_size * M)
+        self.trace_file = trace_file
+
+    def send(self, data):
+        assert not self.cmd_pending
+        self.last_cmd = data
+        self.cmd_pending = True
+        self.cmd_ch.send_json(data)
+
+    async def exec_async(self, op: str, data={}):
+        async with self.lock:
+            if self.executor is None:
+                self.executor = concurrent.futures.ThreadPoolExecutor(max_workers=1)
+            data["op"] = op
+            def inner():
+                self.send(data)
+                return self.expect("cmd:" + op)
+            loop = asyncio.get_running_loop()
+            return await loop.run_in_executor(self.executor, inner)
+        
+    def exec(self, op: str, data={}):
+        data["op"] = op
+        self.send(data)
+        return self.expect("cmd:" + op)
+
+    def expect(self, ctx):
+        assert self.cmd_pending
+        resp = self.resp_ch.recv_json()
+        self.cmd_pending = False
+        if self.trace_file is not None:
+            self.trace_file.write(
+                ujson.dumps(
+                    {
+                        "timestamp": time.time() * 1000,
+                        "suff": self.suff,
+                        "cmd": self.last_cmd,
+                        "resp": resp,
+                    }
+                )
+                + "\n"
+            )
+            self.trace_file.flush()
+        if resp["type"] != "ok":
+            raise ChildProcessError(
+                f"Bad response ({ctx}): {ujson.dumps(resp)[0:1000]}"
+            )
+        return resp
+
+
 class AiciRunner:
     instance = None
 
@@ -117,8 +179,6 @@ class AiciRunner:
             pref (str, optional): Prefix for the shared memory and message channels. Defaults to "/aici0-".
         """
 
-        M = 1024 * 1024
-
         self.vocab_size = -1
         self.batch_size = -1
         self.last_response = {}
@@ -129,11 +189,14 @@ class AiciRunner:
             self.trace_file = None
 
         self.logit_pending = False
-        self.cmd_pending = False
-        self.last_cmd = {}
 
-        self.cmd_ch = MessageChannel(pref + "cmd", json_size * M)
-        self.resp_ch = MessageChannel(pref + "resp", json_size * M)
+        self.cmd = CmdChannel(
+            pref=pref, suff="", json_size=json_size, trace_file=self.trace_file
+        )
+        self.side_cmd = CmdChannel(
+            pref=pref, suff="-side", json_size=json_size, trace_file=self.trace_file
+        )
+
         self.bin_shm = mkshm(pref + "bin", bin_size * M)
 
         args = [
@@ -148,57 +211,47 @@ class AiciRunner:
         print("running: ", args)
         self.proc = subprocess.Popen(args)
 
-        self._cmd_and_resp("ping")
-        resp = self._cmd_and_resp("tokens")
+        self.cmd.exec("ping")
+        resp = self.cmd.exec("tokens")
         self.vocab_size = resp["data"]["vocab_size"]
 
         self.step_reset()
 
         AiciRunner.instance = self
 
-    def _send_cmd(self, data):
-        assert not self.cmd_pending
-        self.last_cmd = data
-        self.cmd_pending = True
-        self.cmd_ch.send_json(data)
-
-    def _cmd_and_resp(self, op: str, data={}):
-        data["op"] = op
-        self._send_cmd(data)
-        return self._expect_response("cmd:" + op)
-
-    def _expect_response(self, ctx):
-        assert self.cmd_pending
-        resp = self.resp_ch.recv_json()
-        self.cmd_pending = False
-        if self.trace_file is not None:
-            self.trace_file.write(
-                ujson.dumps(
-                    {
-                        "timestamp": time.time() * 1000,
-                        "cmd": self.last_cmd,
-                        "resp": resp,
-                    }
-                )
-                + "\n"
-            )
-            self.trace_file.flush()
-        if resp["type"] != "ok":
-            raise ChildProcessError(
-                f"Bad response ({ctx}): {ujson.dumps(resp)[0:1000]}"
-            )
-        return resp
-
     def replay(self, prev_trace: str):
         with open(prev_trace) as f:
             for line in f:
                 obj = ujson.loads(line)
-                self._send_cmd(obj["cmd"])
-                self._expect_response("replay")
+                ch = self.cmd
+                if obj["suff"] == "-side":
+                    ch = self.side_cmd
+                ch.send(obj["cmd"])
+                ch.expect("replay")
 
     def upload_module(self, wasm: bytes, meta={}):
         b64 = base64.b64encode(wasm).decode("utf-8")
-        return self._cmd_and_resp("mk_module", {"binary": b64, "meta": meta})
+        return self.side_cmd.exec("mk_module", {"binary": b64, "meta": meta})
+
+    def instantiate(
+        self, req_id: str, module_id: str, module_arg: Union[str, dict, None]
+    ):
+        """
+        Create a new instance of a given module.
+
+        Args:
+            req_id (str): The user-assigned ID of the instance - needs to be unique.
+            module_id (str): The ID of the WASM constraint module (SHA256 hash).
+            module_arg (str or dict): The argument for the module.
+        """
+        return self.side_cmd.exec(
+            "instantiate",
+            {
+                "req_id": req_id,
+                "module_id": module_id,
+                "module_arg": module_arg,
+            },
+        )
 
     def step_reset(self):
         """
@@ -208,24 +261,20 @@ class AiciRunner:
         self.gen_q = []
         self.freed_seq_ids = []
 
-    def step_add_prompt(
-        self, id: int, prompt: List[int], module_id: str, module_arg: str
-    ):
+    def step_add_prompt(self, id: int, prompt: List[int], req_id: str):
         """
         Add a batch entry to the step.
 
         Args:
             id (int): The user-assigned ID of the batch entry - needs to be unique.
             prompt (List[int]): The tokens in the prompt.
-            module_id (str): The ID of the WASM constraint module (SHA256 hash).
-            module_arg (str): The argument for the module (not used yet).
+            req_id (str): The ID used in instantiate() previously.
         """
         self.prompt_q.append(
             {
                 "id": id,
                 "prompt": prompt,
-                "module_id": module_id,
-                "module_arg": module_arg,
+                "req_id": req_id,
             }
         )
 
@@ -266,7 +315,7 @@ class AiciRunner:
             return
         assert not self.logit_pending
         self.logit_pending = True
-        self._send_cmd(cmd)
+        self.cmd.send(cmd)
         self.step_reset()
 
     def flush_logit_bias(self):
@@ -276,7 +325,7 @@ class AiciRunner:
         if self.logit_pending:
             print("Warning: unflushed AICI logit bias")
             self.logit_pending = False
-            self._expect_response("flush")
+            self.cmd.expect("flush")
 
     def recv_logit_bias(self):
         """
@@ -284,7 +333,7 @@ class AiciRunner:
         """
         assert self.logit_pending
         self.logit_pending = False
-        self.last_response = self._expect_response("recv")["data"]
+        self.last_response = self.cmd.expect("recv")["data"]
         n = self.batch_size
         arr = np.frombuffer(
             self.bin_shm, dtype=np.float32, offset=0, count=n * self.vocab_size
@@ -295,7 +344,7 @@ class AiciRunner:
         """
         Stops the aicirt process and waits for it to exit.
         """
-        self._send_cmd({"op": "stop"})
+        self.cmd.send({"op": "stop"})
         self.proc.wait()
 
     def response_by_seq_id(self, seq_id: int):
@@ -328,8 +377,7 @@ def install_in_vllm(runner: AiciRunner):
                 runner.step_add_prompt(
                     id,
                     prompt=s.seq_data[id].prompt_token_ids,
-                    module_id=s.sampling_params.aici_module,
-                    module_arg=s.sampling_params.aici_arg,
+                    req_id=s.request_id,
                 )
             else:
                 for id in ids:
@@ -384,4 +432,3 @@ def add_cli_args(parser: argparse.ArgumentParser, single=False):
             default="",
             help="arg passed to module (filename)",
         )
-
