@@ -106,15 +106,35 @@ The parser would reject `123456`, however only after all six characters of it ha
 This is too late for the LLM.
 
 To detect such errors early, we compute a set of reachable tokens for each DFA state.
-For example, the initial DFA state has a full set of tokens, while a state after `'e'` would only
-have `extern`, `enum`, `else` and `IDENTIFIER`,
-and a state after `'1'` includes only `CONSTANT`.
+For example, consider a DFA that recognizes `int`, `if`, `ID` (`/[a-z][a-z0-9]*/`) and `INTLIT` (`/[0-9]+/`).
+The initial DFA state has a full set of tokens, while a state after `'i'` 
+has only `int`, `if`, and `ID`,
+and a state after `'1'` includes only `INTLIT`.
+In the picture below, each state is labelled by its reachable set,
+and the token for which it is a match (if any) is postfixed with `*`. We only use lower-case letters and digits for simplicity.
+
+```mermaid
+graph LR
+ 0["{int,if,ID,INTLIT}"] -- [i] --> i(("{int,if,ID*}"))
+ 0 -- [a-z] - [i] --> id(("{ID*}"))
+ 0 -- [0-9] --> const(("{INTLIT*}"))
+ const -- [0-9] --> const
+ const -- [a-z] --> bot["{}"]
+ i -- [a-z0-9] - [nf] --> id
+ id -- [a-z0-9] --> id
+ i -- [n] --> in(("{int,ID*}"))
+ in -- [t] --> int(("{int*,ID}"))
+ in -- [a-z0-9] - [t] --> id
+ int -- [a-z0-9] --> id
+ i -- [f] --> if(("{if*,ID}"))
+ if -- [a-z0-9] --> id
+```
 
 For each LR(1) automaton state we compute a set of viable tokens, i.e., ones that do
 not immediately lead to an error.
 
 While parsing input, if the intersection of viable and reachable tokens is empty, we report an error.
 
-In the example above, the viable tokens after `int` do not include `CONSTANT`,
+In the example above, the viable tokens after `int` do not include `INTLIT`,
 and thus the parser fails immediately at `1`.
 
