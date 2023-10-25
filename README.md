@@ -214,8 +214,8 @@ For example, this is fragment of [grammar for C](./grammars/c.y):
 
 SKIP
     : "//\*[^*]*\*+([^/*][^*]*\*+)*//" 	// block comment
-	| "///.*/" 							// line comment
-	| "/\n[ \t\v\f]*#(.*\\\n)*.*/" 		// pre-processor
+    | "///.*/" 							// line comment
+    | "/\n[ \t\v\f]*#(.*\\\n)*.*/" 		// pre-processor
     | "/\n?[ \t\v\f]*/"					// white-space
     ;
 
@@ -229,26 +229,26 @@ CONSTANT
 STRING_LITERAL: '/"(\\.|[^\\"])*"/' ;
 
 primary_expression
-	: IDENTIFIER
-	| CONSTANT
-	| STRING_LITERAL
-	| "(" expression ")"
-	;
+    : IDENTIFIER
+    | CONSTANT
+    | STRING_LITERAL
+    | "(" expression ")"
+    ;
 
 // ...
 
 enum_specifier
-	: "enum" "{" enumerator_list "}"
-	| "enum" IDENTIFIER "{" enumerator_list "}"
-	| "enum" IDENTIFIER
-	;
+    : "enum" "{" enumerator_list "}"
+    | "enum" IDENTIFIER "{" enumerator_list "}"
+    | "enum" IDENTIFIER
+    ;
 
 // ...
 
 translation_unit
-	: external_declaration
-	| translation_unit external_declaration
-	;
+    : external_declaration
+    | translation_unit external_declaration
+    ;
 ```
 
 ## Contributing
