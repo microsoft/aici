@@ -6,6 +6,12 @@ use tokenizers::Tokenizer;
 
 pub type ModuleInstId = usize;
 
+#[derive(Debug, Clone)]
+pub struct AiciLimits {
+    pub max_memory_bytes: usize,
+    pub max_time_us: usize,
+}
+
 // this is available to functions called from wasm
 pub struct ModuleData {
     id: ModuleInstId,
@@ -18,19 +24,29 @@ pub struct ModuleData {
     pub memory: Option<wasmtime::Memory>,
     pub module: wasmtime::Module,
     tokenizer: Option<Tokenizer>,
+    pub store_limits: wasmtime::StoreLimits,
 }
 
-const MAXLINE: usize = 512;
-const MAXLOG: usize = 2048;
+const MAXLINE: usize = 8 * 1024;
+const MAXLOG: usize = 32 * 1024;
 
 impl ModuleData {
     pub fn new(
         id: ModuleInstId,
+        limits: &AiciLimits,
         module: &wasmtime::Module,
         module_arg: Arc<String>,
         linker: &Arc<wasmtime::Linker<ModuleData>>,
         globals: &Arc<RwLock<GlobalInfo>>,
     ) -> Self {
+        let store_limits = wasmtime::StoreLimitsBuilder::new()
+            .memories(1)
+            .memory_size(limits.max_memory_bytes)
+            .tables(2)
+            .table_elements(100000)
+            .instances(1)
+            .trap_on_grow_failure(true)
+            .build();
         ModuleData {
             id,
             log: Vec::new(),
@@ -42,6 +58,7 @@ impl ModuleData {
             instance: None,
             memory: None,
             tokenizer: None,
+            store_limits,
         }
     }
     pub fn append_line(&mut self, s: &str) {

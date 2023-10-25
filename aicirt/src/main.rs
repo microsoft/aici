@@ -1,8 +1,8 @@
+mod hostimpl;
 mod moduleinstance;
 mod msgchannel;
 mod semaphore;
 mod shm;
-mod hostimpl;
 
 use aici_abi::toktree::TokTrie;
 use aici_tokenizers::{find_tokenizer, Tokenizer};
@@ -11,7 +11,7 @@ use base64;
 use base64::Engine as _;
 use clap::Parser;
 use hex;
-use hostimpl::{ModuleData, GlobalInfo};
+use hostimpl::{GlobalInfo, ModuleData};
 use log::{info, warn};
 use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
@@ -22,7 +22,7 @@ use std::fs;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex, RwLock};
 use std::time::Instant;
-use wasmtime;
+use wasmtime::{self, Config};
 
 use crate::hostimpl::*;
 use crate::moduleinstance::*;
@@ -63,6 +63,14 @@ struct Cli {
     #[arg(long, default_value = "16")]
     bin_size: usize,
 
+    /// Maximum size of WASM module memory in megabytes
+    #[arg(long, default_value = "64")]
+    wasm_max_memory: usize,
+
+    /// Maximum time WASM module can execute step in milliseconds
+    #[arg(long, default_value = "50.0")]
+    wasm_max_time: f64,
+
     /// Shm/semaphore name prefix
     #[arg(long, short, default_value = "/aici0-")]
     name: String,
@@ -81,6 +89,7 @@ struct ModuleRegistry {
     modules: HashMap<String, wasmtime::Module>,
     req_instances: Arc<Mutex<HashMap<String, ModuleInstance>>>,
     globals: Arc<RwLock<GlobalInfo>>,
+    limits: AiciLimits,
 }
 
 struct Stepper {
@@ -160,8 +169,35 @@ struct TokensReq {
 }
 
 impl ModuleRegistry {
-    pub fn new(mut tokenizer: Tokenizer) -> Result<Self> {
-        let engine = wasmtime::Engine::default();
+    pub fn new(limits: AiciLimits, mut tokenizer: Tokenizer) -> Result<Self> {
+        let mut cfg = Config::default();
+        // these are defaults as of 13.0.0, but we specify them anyways for stability
+        cfg.debug_info(false)
+            .wasm_backtrace(true)
+            .native_unwind_info(true)
+            .consume_fuel(false)
+            .max_wasm_stack(512 * 1024)
+            .wasm_tail_call(false)
+            .wasm_threads(false)
+            .wasm_simd(true)
+            .wasm_relaxed_simd(false)
+            .wasm_bulk_memory(true)
+            .wasm_multi_value(true)
+            .wasm_memory64(false)
+            .strategy(wasmtime::Strategy::Auto)
+            .cranelift_nan_canonicalization(false)
+            .parallel_compilation(true);
+
+        // disable stuff we don't need
+        cfg.wasm_backtrace_details(wasmtime::WasmBacktraceDetails::Disable)
+            .wasm_reference_types(false);
+
+        // compilation in Speed mode seems to be ~10% slower but the generated code is 20-30% faster
+        cfg.cranelift_opt_level(wasmtime::OptLevel::Speed);
+
+        // cfg.epoch_interruption(true);
+
+        let engine = wasmtime::Engine::new(&cfg)?;
         let linker = setup_linker(&engine)?;
 
         tokenizer.load();
@@ -191,6 +227,7 @@ impl ModuleRegistry {
             modules: HashMap::new(),
             req_instances: Arc::new(Mutex::new(HashMap::new())),
             globals: Arc::new(RwLock::new(globals)),
+            limits,
         })
     }
 
@@ -283,6 +320,7 @@ impl ModuleRegistry {
 
         let modinst = ModuleInstance::new(
             id,
+            &self.limits,
             module,
             Arc::new(module_arg),
             self.linker.clone(),
@@ -490,9 +528,14 @@ fn main() -> () {
         std::process::exit(1);
     }
 
+    let limits = AiciLimits {
+        max_memory_bytes: cli.wasm_max_memory * MEGABYTE,
+        max_time_us: (cli.wasm_max_time * 1000.0).round() as usize,
+    };
+
     // You can check the value provided by positional arguments, or option arguments
     if let Some(name) = cli.module.as_deref() {
-        let mut reg = ModuleRegistry::new(find_tokenizer(&cli.tokenizer).unwrap()).unwrap();
+        let mut reg = ModuleRegistry::new(limits, find_tokenizer(&cli.tokenizer).unwrap()).unwrap();
         let module_id = if name.len() == 64 && name.chars().all(|c| c.is_digit(16)) {
             name.to_string()
         } else {
@@ -533,7 +576,7 @@ fn main() -> () {
         cli.bin_size * MEGABYTE,
     )
     .unwrap();
-    let reg = ModuleRegistry::new(find_tokenizer(&cli.tokenizer).unwrap()).unwrap();
+    let reg = ModuleRegistry::new(limits, find_tokenizer(&cli.tokenizer).unwrap()).unwrap();
     let exec = Stepper::new(&reg, bin_shm).unwrap();
     let cli2 = cli.clone();
     std::thread::spawn(move || {

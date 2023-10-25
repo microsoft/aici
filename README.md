@@ -80,11 +80,15 @@ sequenceDiagram
     vLLM -->> User: token 2
 ```
 
-### Security
+## Security
 
-There is two security boundaries of interest:
 - `aicirt` runs in a separate process, and can run under a different user than the LLM engine
-- WASM modules are sandboxed by Wasmtime and only have access to [`aici_host_*` functions](aici_abi/src/host.rs)
+- WASM modules are [sandboxed by Wasmtime](https://docs.wasmtime.dev/security.html)
+- WASM only have access to [`aici_host_*` functions](aici_abi/src/host.rs),
+  implemented in [hostimpl.rs](aicirt/src/hostimpl.rs)
+
+In particular, WASM modules cannot access the filesystem, network, or any other resources.
+They also cannot spin threads or access any timers (this is relevant for Spectre/Meltdown attacks).
 
 ## Interfaces
 

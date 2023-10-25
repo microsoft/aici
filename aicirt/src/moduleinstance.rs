@@ -5,7 +5,7 @@ use std::sync::{Arc, RwLock};
 use std::time::Instant;
 use wasmtime;
 
-use crate::hostimpl::{GlobalInfo, ModuleData, ModuleInstId};
+use crate::hostimpl::{AiciLimits, GlobalInfo, ModuleData, ModuleInstId};
 
 pub struct ModuleInstance {
     store: wasmtime::Store<ModuleData>,
@@ -16,6 +16,7 @@ pub struct ModuleInstance {
     globals: Arc<RwLock<GlobalInfo>>,
     op: Option<IdxOp>,
     had_error: bool,
+    limits: AiciLimits,
 }
 pub struct IdxOp {
     dst_slice: &'static mut [u8],
@@ -94,6 +95,7 @@ impl ModuleInstance {
 impl ModuleInstance {
     pub fn new(
         id: ModuleInstId,
+        limits: &AiciLimits,
         module: wasmtime::Module,
         module_arg: Arc<String>,
         linker: Arc<wasmtime::Linker<ModuleData>>,
@@ -103,8 +105,10 @@ impl ModuleInstance {
 
         let mut store = wasmtime::Store::new(
             engine,
-            ModuleData::new(id, &module, module_arg, &linker, &globals),
+            ModuleData::new(id, limits, &module, module_arg, &linker, &globals),
         );
+        store.limiter(|state| &mut state.store_limits);
+
         let instance = linker.instantiate(&mut store, &module)?;
         let memory = instance
             .get_memory(&mut store, "memory")
@@ -121,6 +125,7 @@ impl ModuleInstance {
             instance,
             globals,
             had_error: false,
+            limits: limits.clone(),
         })
     }
 
@@ -129,6 +134,7 @@ impl ModuleInstance {
         let t0 = Instant::now();
         let mut fork = Self::new(
             id,
+            &self.limits,
             self.store.data().module.clone(),
             self.store.data().module_arg.clone(),
             self.store.data().linker.clone(),

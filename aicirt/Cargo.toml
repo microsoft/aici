@@ -17,7 +17,7 @@ rayon = "1.7.0"
 serde = { version = "1.0.188", features = ["derive"] }
 serde_json = { version = "1.0.107", features = ["preserve_order"] }
 sha2 = "0.10.7"
-wasmtime = "13.0.0"
+wasmtime = { version = "13.0.0", default-features = false, features = ["cranelift", "parallel-compilation", "pooling-allocator", "vtune"] }
 aici_abi = "0.1.0"
 aici_tokenizers = "0.1.0"
 tokenizers = "0.14.1"

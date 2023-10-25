@@ -441,7 +441,7 @@ pub fn cfg_test() -> Result<()> {
     let mut cfg = CfgParser::from_yacc(&String::from_utf8_lossy(yacc_bytes));
     let sample = include_bytes!("../../grammars/sample.c");
 
-    if false {
+    if true {
         let trie = TokTrie::from_host();
         let toks = trie.greedy_tokenize(sample);
 
@@ -482,7 +482,7 @@ pub fn cfg_test() -> Result<()> {
         wprintln!("stats:  {}", cfg.get_stats());
     }
 
-    if true {
+    if false {
         let mut rng = aici_abi::rng::Rng::new(0);
         let mut ok = true;
         let mut idx = 0;
