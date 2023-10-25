@@ -105,7 +105,7 @@ async def check_length(
 @app.post("/v1/aici_modules")
 async def upload_aici_module(request: Request):
     contents = await request.body()
-    return aici.upload_module(contents, {})
+    return await aici.upload_module_async(contents, {})
 
 
 @app.get("/v1/models")
@@ -243,8 +243,7 @@ async def create_completion(request: AiciCompletionRequest, raw_request: Request
                 aici_arg = ""
             else:
                 aici_arg = request.aici_arg
-            # TODO make this async!
-            aici.instantiate(request_id, request.aici_module, aici_arg)
+            await aici.instantiate_async(request_id, request.aici_module, aici_arg)
     except ValueError as e:
         return create_error_response(HTTPStatus.BAD_REQUEST, str(e))
 

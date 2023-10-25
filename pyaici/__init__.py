@@ -116,7 +116,8 @@ class CmdChannel:
                 self.send(data)
                 return self.expect("cmd:" + op)
             loop = asyncio.get_running_loop()
-            return await loop.run_in_executor(self.executor, inner)
+            res = await loop.run_in_executor(self.executor, inner)
+            return res
         
     def exec(self, op: str, data={}):
         data["op"] = op
@@ -229,9 +230,29 @@ class AiciRunner:
                 ch.send(obj["cmd"])
                 ch.expect("replay")
 
-    def upload_module(self, wasm: bytes, meta={}):
+    async def upload_module_async(self, wasm: bytes, meta={}):
         b64 = base64.b64encode(wasm).decode("utf-8")
-        return self.side_cmd.exec("mk_module", {"binary": b64, "meta": meta})
+        return await self.side_cmd.exec_async("mk_module", {"binary": b64, "meta": meta})
+
+    async def instantiate_async(
+        self, req_id: str, module_id: str, module_arg: Union[str, dict, None]
+    ):
+        """
+        Create a new instance of a given module.
+
+        Args:
+            req_id (str): The user-assigned ID of the instance - needs to be unique.
+            module_id (str): The ID of the WASM constraint module (SHA256 hash).
+            module_arg (str or dict): The argument for the module.
+        """
+        return await self.side_cmd.exec_async(
+            "instantiate",
+            {
+                "req_id": req_id,
+                "module_id": module_id,
+                "module_arg": module_arg,
+            },
+        )
 
     def instantiate(
         self, req_id: str, module_id: str, module_arg: Union[str, dict, None]
