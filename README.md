@@ -213,10 +213,10 @@ For example, this is fragment of [grammar for C](./grammars/c.y):
 %%
 
 SKIP
-    : "//\*[^*]*\*+([^/*][^*]*\*+)*//" 	// block comment
-    | "///.*/" 							// line comment
-    | "/\n[ \t\v\f]*#(.*\\\n)*.*/" 		// pre-processor
-    | "/\n?[ \t\v\f]*/"					// white-space
+    : "//\*[^*]*\*+([^/*][^*]*\*+)*//"  // block comment
+    | "///.*/"                          // line comment
+    | "/\n[ \t\v\f]*#(.*\\\n)*.*/"      // pre-processor
+    | "/\n?[ \t\v\f]*/"                 // white-space
     ;
 
 IDENTIFIER: "/[a-zA-Z_][0-9a-zA-Z_]*/" ;
