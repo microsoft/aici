@@ -80,6 +80,12 @@ sequenceDiagram
     vLLM -->> User: token 2
 ```
 
+### Security
+
+There is two security boundaries of interest:
+- `aicirt` runs in a separate process, and can run under a different user than the LLM engine
+- WASM modules are sandboxed by Wasmtime and only have access to [`aici_host_*` functions](aici_abi/src/host.rs)
+
 ## Interfaces
 
 ### Low-level interface

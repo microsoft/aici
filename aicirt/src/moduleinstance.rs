@@ -1,25 +1,11 @@
-use aici_abi::bytes::TokRxInfo;
 use anyhow::{anyhow, ensure, Result};
-use log::{debug, info};
+use log::info;
 use serde_json::{json, Value};
 use std::sync::{Arc, RwLock};
 use std::time::Instant;
-use tokenizers::Tokenizer;
 use wasmtime;
 
-// this is available to functions called from wasm
-pub struct ModuleData {
-    pub id: Id,
-    pub log: Vec<u8>,
-    pub printed_log: usize,
-    pub globals: Arc<RwLock<GlobalInfo>>,
-    pub module_arg: Arc<String>,
-    pub linker: Arc<wasmtime::Linker<ModuleData>>,
-    pub instance: Option<wasmtime::Instance>,
-    pub memory: Option<wasmtime::Memory>,
-    pub module: wasmtime::Module,
-    pub tokenizer: Option<Tokenizer>,
-}
+use crate::hostimpl::{GlobalInfo, ModuleData, ModuleInstId};
 
 pub struct ModuleInstance {
     store: wasmtime::Store<ModuleData>,
@@ -31,67 +17,11 @@ pub struct ModuleInstance {
     op: Option<IdxOp>,
     had_error: bool,
 }
-
-const MAXLINE: usize = 512;
-const MAXLOG: usize = 2048;
-
-impl ModuleData {
-    pub fn append_line(&mut self, s: &str) {
-        let bytes = s.as_bytes();
-        if bytes.len() > MAXLINE {
-            self.log.extend_from_slice(&bytes[..MAXLINE]);
-            self.log.push(46);
-            self.log.push(46);
-            self.log.push(46);
-        } else {
-            self.log.extend_from_slice(bytes);
-        }
-        self.log.push(10);
-        if self.log.len() > MAXLOG {
-            let drop = MAXLINE + 64;
-            self.printed_log = std::cmp::max(0, self.printed_log as isize - drop as isize) as usize;
-            self.log.drain(0..drop);
-        }
-    }
-
-    pub fn string_log(&mut self) -> String {
-        self.printed_log = 0;
-        let logs = String::from_utf8_lossy(&self.log).to_string();
-        self.log.clear();
-        logs
-    }
-
-    pub fn flush_logs(&mut self, name: &str) {
-        if !log::log_enabled!(log::Level::Debug) {
-            return;
-        }
-
-        let data = &self.log[self.printed_log..];
-        if data.len() == 0 {
-            return;
-        }
-
-        let logs = String::from_utf8_lossy(data).to_string();
-        self.printed_log = self.log.len();
-
-        for line in logs.lines() {
-            debug!("{}:{}> {}", self.id, name, line);
-        }
-    }
-}
-
-pub struct GlobalInfo {
-    pub tokrx_info: TokRxInfo,
-    pub trie_bytes: Vec<u8>,
-    pub hf_tokenizer_bytes: &'static [u8],
-}
-
 pub struct IdxOp {
     dst_slice: &'static mut [u8],
     op: ThreadOp,
 }
 
-pub type Id = usize;
 pub type Token = u32;
 
 pub enum ThreadOp {
@@ -163,7 +93,7 @@ impl ModuleInstance {
 
 impl ModuleInstance {
     pub fn new(
-        id: Id,
+        id: ModuleInstId,
         module: wasmtime::Module,
         module_arg: Arc<String>,
         linker: Arc<wasmtime::Linker<ModuleData>>,
@@ -173,18 +103,7 @@ impl ModuleInstance {
 
         let mut store = wasmtime::Store::new(
             engine,
-            ModuleData {
-                id,
-                log: Vec::new(),
-                printed_log: 0,
-                globals: globals.clone(),
-                module_arg,
-                module: module.clone(),
-                linker: linker.clone(),
-                instance: None,
-                memory: None,
-                tokenizer: None,
-            },
+            ModuleData::new(id, &module, module_arg, &linker, &globals),
         );
         let instance = linker.instantiate(&mut store, &module)?;
         let memory = instance
@@ -206,7 +125,7 @@ impl ModuleInstance {
     }
 
     #[inline(never)]
-    pub fn fork(&mut self, id: Id) -> Result<Self> {
+    pub fn fork(&mut self, id: ModuleInstId) -> Result<Self> {
         let t0 = Instant::now();
         let mut fork = Self::new(
             id,

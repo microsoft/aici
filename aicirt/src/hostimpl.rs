@@ -1,9 +1,98 @@
-use aici_abi::bytes::clone_vec_as_bytes;
+use aici_abi::bytes::{clone_vec_as_bytes, TokRxInfo};
 use anyhow::Result;
-use std::sync::Arc;
+use log::debug;
+use std::sync::{Arc, RwLock};
 use tokenizers::Tokenizer;
 
-use crate::moduleinstance::ModuleData;
+pub type ModuleInstId = usize;
+
+// this is available to functions called from wasm
+pub struct ModuleData {
+    id: ModuleInstId,
+    log: Vec<u8>,
+    printed_log: usize,
+    globals: Arc<RwLock<GlobalInfo>>,
+    pub module_arg: Arc<String>,
+    pub linker: Arc<wasmtime::Linker<ModuleData>>,
+    pub instance: Option<wasmtime::Instance>,
+    pub memory: Option<wasmtime::Memory>,
+    pub module: wasmtime::Module,
+    tokenizer: Option<Tokenizer>,
+}
+
+const MAXLINE: usize = 512;
+const MAXLOG: usize = 2048;
+
+impl ModuleData {
+    pub fn new(
+        id: ModuleInstId,
+        module: &wasmtime::Module,
+        module_arg: Arc<String>,
+        linker: &Arc<wasmtime::Linker<ModuleData>>,
+        globals: &Arc<RwLock<GlobalInfo>>,
+    ) -> Self {
+        ModuleData {
+            id,
+            log: Vec::new(),
+            printed_log: 0,
+            globals: globals.clone(),
+            module_arg,
+            module: module.clone(),
+            linker: linker.clone(),
+            instance: None,
+            memory: None,
+            tokenizer: None,
+        }
+    }
+    pub fn append_line(&mut self, s: &str) {
+        let bytes = s.as_bytes();
+        if bytes.len() > MAXLINE {
+            self.log.extend_from_slice(&bytes[..MAXLINE]);
+            self.log.push(46);
+            self.log.push(46);
+            self.log.push(46);
+        } else {
+            self.log.extend_from_slice(bytes);
+        }
+        self.log.push(10);
+        if self.log.len() > MAXLOG {
+            let drop = MAXLINE + 64;
+            self.printed_log = std::cmp::max(0, self.printed_log as isize - drop as isize) as usize;
+            self.log.drain(0..drop);
+        }
+    }
+
+    pub fn string_log(&mut self) -> String {
+        self.printed_log = 0;
+        let logs = String::from_utf8_lossy(&self.log).to_string();
+        self.log.clear();
+        logs
+    }
+
+    pub fn flush_logs(&mut self, name: &str) {
+        if !log::log_enabled!(log::Level::Debug) {
+            return;
+        }
+
+        let data = &self.log[self.printed_log..];
+        if data.len() == 0 {
+            return;
+        }
+
+        let logs = String::from_utf8_lossy(data).to_string();
+        self.printed_log = self.log.len();
+
+        for line in logs.lines() {
+            debug!("{}:{}> {}", self.id, name, line);
+        }
+    }
+}
+
+pub struct GlobalInfo {
+    pub tokrx_info: TokRxInfo,
+    pub trie_bytes: Vec<u8>,
+    pub hf_tokenizer_bytes: &'static [u8],
+}
 
 fn read_caller_mem(caller: &wasmtime::Caller<'_, ModuleData>, ptr: u32, len: u32) -> Vec<u8> {
     let mem = caller.data().memory.unwrap();

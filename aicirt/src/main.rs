@@ -11,6 +11,7 @@ use base64;
 use base64::Engine as _;
 use clap::Parser;
 use hex;
+use hostimpl::{ModuleData, GlobalInfo};
 use log::{info, warn};
 use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
@@ -23,7 +24,7 @@ use std::sync::{Arc, Mutex, RwLock};
 use std::time::Instant;
 use wasmtime;
 
-use crate::hostimpl::setup_linker;
+use crate::hostimpl::*;
 use crate::moduleinstance::*;
 use crate::msgchannel::MessageChannel;
 use crate::shm::Shm;
@@ -84,7 +85,7 @@ struct ModuleRegistry {
 
 struct Stepper {
     req_instances: Arc<Mutex<HashMap<String, ModuleInstance>>>,
-    instances: HashMap<Id, Arc<Mutex<ModuleInstance>>>,
+    instances: HashMap<ModuleInstId, Arc<Mutex<ModuleInstance>>>,
     globals: Arc<RwLock<GlobalInfo>>,
     bin_shm: Shm,
 }
@@ -95,7 +96,7 @@ fn is_hex_string(s: &str) -> bool {
 
 #[derive(Serialize, Deserialize)]
 struct AiciStepReq {
-    freed: Vec<Id>,
+    freed: Vec<ModuleInstId>,
     ops: Vec<AiciOp>,
 }
 
@@ -103,14 +104,14 @@ struct AiciStepReq {
 #[serde(untagged)]
 pub enum AiciOp {
     Prompt {
-        id: Id,
+        id: ModuleInstId,
         prompt: Vec<Token>,
         req_id: String,
     },
     Gen {
-        id: Id,
+        id: ModuleInstId,
         gen: Token,
-        clone_id: Option<Id>,
+        clone_id: Option<ModuleInstId>,
     },
 }
 
@@ -263,7 +264,7 @@ impl ModuleRegistry {
 
     pub fn new_instance(
         &mut self,
-        id: Id,
+        id: ModuleInstId,
         module_id: &str,
         module_arg: String,
     ) -> Result<ModuleInstance> {
