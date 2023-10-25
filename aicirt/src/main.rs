@@ -216,10 +216,21 @@ impl ModuleRegistry {
                 let jsonpath = self.cache_path.join(format!("{}.json", id));
                 fs::write(jsonpath, &meta_bytes)?;
 
+                let wasmpath = self.cache_path.join(format!("{}.wasm", id));
+                fs::write(wasmpath, &wasm_bytes)?;
+
                 time = timer.elapsed().as_millis();
                 clen
             }
         };
+
+        info!(
+            "module {}: {}kB -> {}kB; {}ms",
+            id,
+            wasm_bytes.len() / 1024,
+            compiled_size / 1024,
+            time
+        );
 
         Ok(json!({
             "module_id": id,
@@ -243,6 +254,7 @@ impl ModuleRegistry {
         };
         let modinst = self.new_instance(0x100000, req.module_id.as_str(), arg)?;
         let mut req_instances = self.req_instances.lock().unwrap();
+        info!("instance {} -> {}", req.module_id, req.req_id);
         req_instances.insert(req.req_id, modinst);
         Ok(json!({}))
     }
@@ -305,9 +317,12 @@ impl Stepper {
             AiciOp::Prompt { id, req_id, .. } => {
                 let e = { self.req_instances.lock().unwrap().remove(req_id) };
                 ensure!(e.is_some(), format!("invalid req_id {}", req_id));
-                ensure!(!self.instances.contains_key(id), format!("duplicate id {}", id));
+                ensure!(
+                    !self.instances.contains_key(id),
+                    format!("duplicate id {}", id)
+                );
                 let modinst = e.unwrap();
-                info!("new module {} ({})", id, req_id);
+                info!("prompt {} ({})", id, req_id);
                 self.instances.insert(*id, Arc::new(Mutex::new(modinst)));
             }
         };
