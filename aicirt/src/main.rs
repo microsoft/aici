@@ -2,6 +2,7 @@ mod moduleinstance;
 mod msgchannel;
 mod semaphore;
 mod shm;
+mod hostimpl;
 
 use aici_abi::toktree::TokTrie;
 use aici_tokenizers::{find_tokenizer, Tokenizer};
@@ -22,6 +23,7 @@ use std::sync::{Arc, Mutex, RwLock};
 use std::time::Instant;
 use wasmtime;
 
+use crate::hostimpl::setup_linker;
 use crate::moduleinstance::*;
 use crate::msgchannel::MessageChannel;
 use crate::shm::Shm;
