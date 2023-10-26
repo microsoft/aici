@@ -31,6 +31,9 @@ use crate::shm::Shm;
 
 const N_THREADS: usize = 10;
 
+/// How often to check for timeout of WASM; should be between 1 and 10
+const WASMTIME_EPOCH_MS: u64 = 1;
+
 const MEGABYTE: usize = 1024 * 1024;
 
 #[derive(Parser, Clone)]
@@ -68,8 +71,12 @@ struct Cli {
     wasm_max_memory: usize,
 
     /// Maximum time WASM module can execute step in milliseconds
-    #[arg(long, default_value = "50.0")]
-    wasm_max_time: f64,
+    #[arg(long, default_value = "50")]
+    wasm_max_step_time: u64,
+
+    /// Maximum time WASM module can execute initialization code in milliseconds
+    #[arg(long, default_value = "1000")]
+    wasm_max_init_time: u64,
 
     /// Shm/semaphore name prefix
     #[arg(long, short, default_value = "/aici0-")]
@@ -195,7 +202,7 @@ impl ModuleRegistry {
         // compilation in Speed mode seems to be ~10% slower but the generated code is 20-30% faster
         cfg.cranelift_opt_level(wasmtime::OptLevel::Speed);
 
-        // cfg.epoch_interruption(true);
+        cfg.epoch_interruption(true);
 
         let engine = wasmtime::Engine::new(&cfg)?;
         let linker = setup_linker(&engine)?;
@@ -219,6 +226,17 @@ impl ModuleRegistry {
             trie_bytes: bytes,
             hf_tokenizer_bytes: tokenizer.hf_bytes,
         };
+
+        {
+            let engine = engine.clone();
+            std::thread::spawn(move || {
+                let period = std::time::Duration::from_millis(WASMTIME_EPOCH_MS);
+                loop {
+                    std::thread::sleep(period);
+                    engine.increment_epoch();
+                }
+            });
+        }
 
         Ok(Self {
             cache_path: PathBuf::from("./cache"),
@@ -530,7 +548,8 @@ fn main() -> () {
 
     let limits = AiciLimits {
         max_memory_bytes: cli.wasm_max_memory * MEGABYTE,
-        max_time_us: (cli.wasm_max_time * 1000.0).round() as usize,
+        max_init_epochs: (cli.wasm_max_init_time / WASMTIME_EPOCH_MS) + 1,
+        max_step_epochs: (cli.wasm_max_step_time / WASMTIME_EPOCH_MS) + 1,
     };
 
     // You can check the value provided by positional arguments, or option arguments

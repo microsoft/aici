@@ -1,5 +1,5 @@
 use anyhow::{anyhow, ensure, Result};
-use log::info;
+use log::{info, warn};
 use serde_json::{json, Value};
 use std::sync::{Arc, RwLock};
 use std::time::Instant;
@@ -47,12 +47,8 @@ impl ModuleInstance {
             .get_typed_func::<Params, Results>(&mut self.store, name)?;
         let r = f.call(&mut self.store, params);
         let ctx = self.store.data_mut();
-        match &r {
-            Err(e) => {
-                self.had_error = true;
-                ctx.append_line(&format!("WASM Error: {}", e.to_string()))
-            }
-            _ => {}
+        if r.is_err() {
+            self.had_error = true;
         }
         ctx.flush_logs(name);
         r
@@ -108,6 +104,7 @@ impl ModuleInstance {
             ModuleData::new(id, limits, &module, module_arg, &linker, &globals),
         );
         store.limiter(|state| &mut state.store_limits);
+        store.epoch_deadline_trap();
 
         let instance = linker.instantiate(&mut store, &module)?;
         let memory = instance
@@ -163,6 +160,7 @@ impl ModuleInstance {
     }
 
     pub fn run_main(&mut self) -> Result<()> {
+        self.store.set_epoch_deadline(1_000_000_000);
         self.run_init()?;
         let t0 = Instant::now();
         let _ = self.call_func::<(i32, i32), i32>("main", (0, 0))?;
@@ -198,7 +196,8 @@ impl ModuleInstance {
             Ok(_) => {}
             Err(e) => {
                 json_type = "error";
-                suffix = format!("\nError: {}", e.to_string());
+                suffix = format!("\nError: {:?}", e);
+                warn!("exec error:{}", suffix);
             }
         };
 
@@ -215,6 +214,7 @@ impl ModuleInstance {
 
         match opidx.op {
             ThreadOp::Prompt { prompt, .. } => {
+                self.store.set_epoch_deadline(self.limits.max_init_epochs);
                 self.run_init()?;
 
                 let handle = self.call_func::<(), WasmAici>("aici_create", ())?;
@@ -231,6 +231,7 @@ impl ModuleInstance {
             }
 
             ThreadOp::Gen { gen, .. } => {
+                self.store.set_epoch_deadline(self.limits.max_step_epochs);
                 self.call_func::<(WasmAici, Token), ()>("aici_append_token", (self.handle, gen))?;
                 self.read_mem(self.logit_ptr, opidx.dst_slice)?;
             }

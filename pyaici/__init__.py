@@ -157,6 +157,7 @@ class AiciRunner:
             rtpath=args.aici_rt,
             tokenizer=args.aici_tokenizer,
             trace_file=args.aici_trace,
+            rtargs=args.aici_rtarg,
         )
         return aici
 
@@ -168,6 +169,7 @@ class AiciRunner:
         bin_size=16,
         pref=DEFAULT_SHM_PREF,
         trace_file=None,
+        rtargs=[],
     ) -> None:
         """
         Start a new aicirt process and initialize comms channels.
@@ -178,6 +180,8 @@ class AiciRunner:
             json_size (int, optional): Size of the JSON message channel in MB. Defaults to 8.
             bin_size (int, optional): Size of the binary shared memory in MB. Defaults to 16.
             pref (str, optional): Prefix for the shared memory and message channels. Defaults to "/aici0-".
+            trace_file (str, optional): If set, save a trace of the interaction to this file.
+            rtagrs (list, optional): Extra arguments to pass to the aicirt process.
         """
 
         self.vocab_size = -1
@@ -207,7 +211,7 @@ class AiciRunner:
             "--bin-size=" + str(bin_size),
             "--name=" + pref,
             "--server",
-        ]
+        ] + rtargs
 
         print("running: ", args)
         self.proc = subprocess.Popen(args)
@@ -438,6 +442,14 @@ def add_cli_args(parser: argparse.ArgumentParser, single=False):
         "--aici-trace",
         type=str,
         help="save trace of aicirt interaction to a JSONL file",
+    )
+    parser.add_argument(
+        "--aici-rtarg",
+        "-A",
+        type=str,
+        default=[],
+        action='append',
+        help="pass argument to aicirt process",
     )
 
     if single:

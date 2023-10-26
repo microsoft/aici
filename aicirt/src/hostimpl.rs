@@ -9,7 +9,8 @@ pub type ModuleInstId = usize;
 #[derive(Debug, Clone)]
 pub struct AiciLimits {
     pub max_memory_bytes: usize,
-    pub max_time_us: usize,
+    pub max_step_epochs: u64,
+    pub max_init_epochs: u64,
 }
 
 // this is available to functions called from wasm
@@ -27,7 +28,6 @@ pub struct ModuleData {
     pub store_limits: wasmtime::StoreLimits,
 }
 
-const MAXLINE: usize = 8 * 1024;
 const MAXLOG: usize = 32 * 1024;
 
 impl ModuleData {
@@ -61,20 +61,12 @@ impl ModuleData {
             store_limits,
         }
     }
-    pub fn append_line(&mut self, s: &str) {
-        let bytes = s.as_bytes();
-        if bytes.len() > MAXLINE {
-            self.log.extend_from_slice(&bytes[..MAXLINE]);
-            self.log.push(46);
-            self.log.push(46);
-            self.log.push(46);
-        } else {
-            self.log.extend_from_slice(bytes);
-        }
-        self.log.push(10);
+
+    pub fn write_log(&mut self, bytes: &[u8]) {
+        self.log.extend_from_slice(bytes);
         if self.log.len() > MAXLOG {
-            let drop = MAXLINE + 64;
-            self.printed_log = std::cmp::max(0, self.printed_log as isize - drop as isize) as usize;
+            let drop = MAXLOG / 4;
+            self.printed_log = self.printed_log.saturating_sub(drop);
             self.log.drain(0..drop);
         }
     }
@@ -138,7 +130,7 @@ pub fn setup_linker(engine: &wasmtime::Engine) -> Result<Arc<wasmtime::Linker<Mo
         "aici_host_print",
         |mut caller: wasmtime::Caller<'_, ModuleData>, ptr: u32, len: u32| {
             let m = read_caller_mem(&caller, ptr, len);
-            caller.data_mut().log.extend_from_slice(&m);
+            caller.data_mut().write_log(&m);
         },
     )?;
 
