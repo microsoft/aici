@@ -22,6 +22,7 @@ use std::fs;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex, RwLock};
 use std::time::Instant;
+use thread_priority::*;
 use wasmtime::{self, Config};
 
 use crate::hostimpl::*;
@@ -664,19 +665,13 @@ fn main() -> () {
 
     rayon::ThreadPoolBuilder::new()
         .num_threads(num_bg_threads)
-        .start_handler(|_| {
-            thread_priority::set_current_thread_priority(thread_priority::ThreadPriority::Min)
-                .unwrap();
-        })
+        .start_handler(|_| set_priority(ThreadPriority::Min))
         .build_global()
         .unwrap();
 
     let step_pool = rayon::ThreadPoolBuilder::new()
         .num_threads(num_step_threads)
-        .start_handler(|_| {
-            thread_priority::set_current_thread_priority(thread_priority::ThreadPriority::Max)
-                .unwrap();
-        })
+        .start_handler(|_| set_priority(ThreadPriority::Max))
         .build()
         .unwrap();
 
@@ -693,8 +688,18 @@ fn main() -> () {
         reg.dispatch_loop(reg_disp);
     });
 
+    set_priority(ThreadPriority::Max);
     step_pool.install(|| {
         let exec_disp = CmdRespChannel::new("", &cli).unwrap();
         exec_disp.dispatch_loop(exec);
     })
+}
+
+fn set_priority(pri: ThreadPriority) {
+    set_thread_priority_and_policy(
+        thread_native_id(),
+        pri,
+        ThreadSchedulePolicy::Realtime(RealtimeThreadSchedulePolicy::RoundRobin),
+    )
+    .unwrap();
 }
