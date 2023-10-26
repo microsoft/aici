@@ -12,7 +12,7 @@ use base64::Engine as _;
 use clap::Parser;
 use hex;
 use hostimpl::{GlobalInfo, ModuleData};
-use log::{info, warn};
+use log::{debug, info, warn};
 use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
@@ -22,6 +22,7 @@ use std::fs;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex, RwLock};
 use std::time::Instant;
+use thread_priority::*;
 use wasmtime::{self, Config};
 
 use crate::hostimpl::*;
@@ -29,7 +30,9 @@ use crate::moduleinstance::*;
 use crate::msgchannel::MessageChannel;
 use crate::shm::Shm;
 
-const N_THREADS: usize = 10;
+// Both of these are percentage of available cores
+const BG_THREADS_FRACTION: usize = 50;
+const STEP_THREADS_FRACTION: usize = 90;
 
 /// How often to check for timeout of WASM; should be between 1 and 10
 const WASMTIME_EPOCH_MS: u64 = 1;
@@ -89,14 +92,16 @@ impl Cli {
     }
 }
 
+// this is cloned for every module-level request, so don't go overboard with fields
+#[derive(Clone)]
 struct ModuleRegistry {
     cache_path: PathBuf,
     engine: wasmtime::Engine,
     linker: Arc<wasmtime::Linker<ModuleData>>,
-    modules: HashMap<String, wasmtime::Module>,
+    modules: Arc<Mutex<HashMap<String, wasmtime::Module>>>,
     req_instances: Arc<Mutex<HashMap<String, ModuleInstance>>>,
     globals: Arc<RwLock<GlobalInfo>>,
-    limits: AiciLimits,
+    limits: Arc<AiciLimits>,
 }
 
 struct Stepper {
@@ -121,7 +126,9 @@ struct AiciStepReq {
 pub enum AiciOp {
     Prompt {
         id: ModuleInstId,
-        prompt: Vec<Token>,
+        // the prompt normally comes from InstantiateReq
+        // we currently ignore this one
+        prompt: Option<Vec<Token>>,
         req_id: String,
     },
     Gen {
@@ -134,7 +141,7 @@ pub enum AiciOp {
 impl AiciOp {
     pub fn to_thread_op(self) -> ThreadOp {
         match self {
-            AiciOp::Prompt { prompt, .. } => ThreadOp::Prompt { prompt },
+            AiciOp::Prompt { .. } => ThreadOp::Prompt {},
             AiciOp::Gen { gen, .. } => ThreadOp::Gen { gen },
         }
     }
@@ -150,6 +157,8 @@ struct MkModuleReq {
 #[derive(Serialize, Deserialize)]
 struct InstantiateReq {
     req_id: String,
+    // [TokenId] or str
+    prompt: Value,
     module_id: String,
     #[serde(default = "mk_null")]
     module_arg: Value,
@@ -242,10 +251,10 @@ impl ModuleRegistry {
             cache_path: PathBuf::from("./cache"),
             engine,
             linker,
-            modules: HashMap::new(),
+            modules: Arc::new(Mutex::new(HashMap::new())),
             req_instances: Arc::new(Mutex::new(HashMap::new())),
             globals: Arc::new(RwLock::new(globals)),
-            limits,
+            limits: Arc::new(limits),
         })
     }
 
@@ -310,9 +319,25 @@ impl ModuleRegistry {
             Some(a) => a.to_string(),
             None => serde_json::to_string(&req.module_arg)?,
         };
-        let modinst = self.new_instance(0x100000, req.module_id.as_str(), arg)?;
-        let mut req_instances = self.req_instances.lock().unwrap();
+        let mut modinst = self.new_instance(0x100000, req.module_id.as_str(), arg)?;
+        let prompt = if req.prompt.is_string() {
+            modinst.tokenize(req.prompt.as_str().unwrap())?
+        } else {
+            req.prompt
+                .as_array()
+                .ok_or(anyhow!("expecting string or int array as prompt"))?
+                .iter()
+                .map(|x| -> Result<u32> {
+                    x.as_u64()
+                        .ok_or(anyhow!("expecting number as token"))?
+                        .try_into()
+                        .map_err(|e: std::num::TryFromIntError| anyhow!(e))
+                })
+                .collect::<Result<Vec<u32>>>()?
+        };
+        modinst.setup(&prompt)?;
         info!("instance {} -> {}", req.module_id, req.req_id);
+        let mut req_instances = self.req_instances.lock().unwrap();
         req_instances.insert(req.req_id, modinst);
         Ok(json!({}))
     }
@@ -325,15 +350,25 @@ impl ModuleRegistry {
     ) -> Result<ModuleInstance> {
         ensure!(is_hex_string(module_id), "invalid module_id");
 
-        let module = match self.modules.get(module_id) {
-            None => {
-                let filepath = self.cache_path.join(format!("{}.bin", module_id));
-                ensure!(filepath.exists(), "{} not found", module_id);
-                let module = unsafe { wasmtime::Module::deserialize_file(&self.engine, filepath)? };
-                self.modules.insert(String::from(module_id), module.clone());
-                module
-            }
-            Some(v) => v.clone(),
+        let module = {
+            self.modules
+                .lock()
+                .unwrap()
+                .get(module_id)
+                .map(|m| m.clone())
+        };
+
+        let module = if let Some(m) = module {
+            m
+        } else {
+            let filepath = self.cache_path.join(format!("{}.bin", module_id));
+            ensure!(filepath.exists(), "{} not found", module_id);
+            let module = unsafe { wasmtime::Module::deserialize_file(&self.engine, filepath)? };
+            self.modules
+                .lock()
+                .unwrap()
+                .insert(String::from(module_id), module.clone());
+            module
         };
 
         let modinst = ModuleInstance::new(
@@ -345,6 +380,22 @@ impl ModuleRegistry {
             self.globals.clone(),
         )?;
         Ok(modinst)
+    }
+
+    pub fn dispatch_loop(&self, ch: CmdRespChannel) -> ! {
+        loop {
+            let msg = ch.recv();
+            let mut s2 = self.clone();
+            let resp_lck = ch.resp_ch.clone();
+            rayon::spawn(move || {
+                let r = s2.exec_wrapped(&msg);
+                resp_lck
+                    .lock()
+                    .unwrap()
+                    .send(serde_json::to_vec(&r).unwrap().as_slice())
+                    .unwrap();
+            });
+        }
     }
 }
 
@@ -471,67 +522,87 @@ impl Exec for ModuleRegistry {
 
 trait Exec {
     fn exec(&mut self, json: Value) -> Result<Value>;
+
+    fn exec_wrapped(&mut self, msg: &[u8]) -> Value {
+        match serde_json::from_slice::<Value>(msg) {
+            Ok(json) => {
+                let rid = json["$rid"].as_str().map(|v| v.to_string());
+                debug!("dispatch: rid={:?} op={:?}", rid, json["op"]);
+                let val = match json["op"].as_str() {
+                    Some("ping") => Ok(json!({ "pong": 1 })),
+                    Some("stop") => std::process::exit(0),
+                    _ => self.exec(json),
+                };
+                let mut resp = match val {
+                    Ok(v) => {
+                        debug!("dispatch ok: {:?}", v);
+                        json!({
+                            "type": "ok",
+                            "data": v
+                        })
+                    }
+                    Err(err) => {
+                        let err = format!("{:?}", err);
+                        warn!("dispatch error: {}", err);
+                        json!({
+                            "type": "error",
+                            "error": err
+                        })
+                    }
+                };
+                match rid {
+                    Some(rid) => {
+                        resp["$rid"] = Value::String(rid);
+                        resp
+                    }
+                    None => resp,
+                }
+            }
+            Err(err) => {
+                let err = format!("{:?}", err);
+                json!({
+                    "type": "json-error",
+                    "error": err,
+                })
+            }
+        }
+    }
 }
 
-struct Dispatcher<T: Exec> {
+struct CmdRespChannel {
     cmd_ch: MessageChannel,
-    resp_ch: MessageChannel,
-    executor: T,
+    resp_ch: Arc<Mutex<MessageChannel>>,
 }
 
-impl<T: Exec> Dispatcher<T> {
-    pub fn new(executor: T, suff: &str, cli: &Cli) -> Result<Self> {
+impl CmdRespChannel {
+    pub fn new(suff: &str, cli: &Cli) -> Result<Self> {
         let cmd_ch =
             MessageChannel::new(&cli.prefixed_name("cmd", suff), cli.json_size * MEGABYTE)?;
-        let resp_ch =
-            MessageChannel::new(&cli.prefixed_name("resp", suff), cli.json_size * MEGABYTE)?;
+        let resp_ch = Arc::new(Mutex::new(MessageChannel::new(
+            &cli.prefixed_name("resp", suff),
+            cli.json_size * MEGABYTE,
+        )?));
 
-        Ok(Self {
-            cmd_ch,
-            resp_ch,
-            executor,
-        })
+        Ok(Self { cmd_ch, resp_ch })
     }
 
-    fn respond(&self, json: Value) -> Result<()> {
-        self.resp_ch.send(serde_json::to_vec(&json)?.as_slice())?;
-        Ok(())
+    pub fn respond(&self, json: Value) {
+        self.resp_ch
+            .lock()
+            .unwrap()
+            .send(serde_json::to_vec(&json).unwrap().as_slice())
+            .unwrap();
     }
 
-    pub fn dispatch_loop(&mut self) -> ! {
+    pub fn recv(&self) -> Vec<u8> {
+        self.cmd_ch.recv().unwrap()
+    }
+
+    pub fn dispatch_loop(&self, mut exec: impl Exec) -> ! {
         loop {
-            let msg = self.cmd_ch.recv().unwrap();
-            match serde_json::from_slice::<Value>(msg.as_slice()) {
-                Ok(json) => {
-                    let val = match json["op"].as_str() {
-                        Some("ping") => Ok(json!({ "pong": 1 })),
-                        Some("stop") => std::process::exit(0),
-                        _ => self.executor.exec(json),
-                    };
-                    match val {
-                        Ok(v) => self
-                            .respond(json!({
-                                "type": "ok",
-                                "data": v
-                            }))
-                            .unwrap(),
-                        Err(err) => {
-                            warn!("dispatch error: {}", err.to_string());
-                            self.respond(json!({
-                                "type": "error",
-                                "error": err.to_string()
-                            }))
-                            .unwrap()
-                        }
-                    }
-                }
-                Err(err) => self
-                    .respond(json!({
-                        "type": "json-error",
-                        "error": err.to_string(),
-                    }))
-                    .unwrap(),
-            }
+            let msg = self.recv();
+            let val = exec.exec_wrapped(&msg);
+            self.respond(val)
         }
     }
 }
@@ -583,11 +654,25 @@ fn main() -> () {
         std::process::exit(1);
     }
 
-    info!("rayon with {} workers", N_THREADS);
+    let num_cores: usize = std::thread::available_parallelism().unwrap().into();
+    let num_bg_threads = BG_THREADS_FRACTION * num_cores / 100;
+    let num_step_threads = STEP_THREADS_FRACTION * num_cores / 100;
+
+    info!(
+        "rayon with {} bg and {} step workers ({} cores)",
+        num_bg_threads, num_step_threads, num_cores
+    );
 
     rayon::ThreadPoolBuilder::new()
-        .num_threads(N_THREADS)
+        .num_threads(num_bg_threads)
+        .start_handler(|_| set_priority(ThreadPriority::Min))
         .build_global()
+        .unwrap();
+
+    let step_pool = rayon::ThreadPoolBuilder::new()
+        .num_threads(num_step_threads)
+        .start_handler(|_| set_priority(ThreadPriority::Max))
+        .build()
         .unwrap();
 
     let bin_shm = Shm::new(
@@ -598,11 +683,23 @@ fn main() -> () {
     let reg = ModuleRegistry::new(limits, find_tokenizer(&cli.tokenizer).unwrap()).unwrap();
     let exec = Stepper::new(&reg, bin_shm).unwrap();
     let cli2 = cli.clone();
-    std::thread::spawn(move || {
-        let mut reg_disp = Dispatcher::new(reg, "-side", &cli2).unwrap();
-        reg_disp.dispatch_loop();
+    rayon::spawn(move || {
+        let reg_disp = CmdRespChannel::new("-side", &cli2).unwrap();
+        reg.dispatch_loop(reg_disp);
     });
 
-    let mut exec_disp = Dispatcher::new(exec, "", &cli).unwrap();
-    exec_disp.dispatch_loop();
+    set_priority(ThreadPriority::Max);
+    step_pool.install(|| {
+        let exec_disp = CmdRespChannel::new("", &cli).unwrap();
+        exec_disp.dispatch_loop(exec);
+    })
+}
+
+fn set_priority(pri: ThreadPriority) {
+    set_thread_priority_and_policy(
+        thread_native_id(),
+        pri,
+        ThreadSchedulePolicy::Realtime(RealtimeThreadSchedulePolicy::RoundRobin),
+    )
+    .unwrap();
 }

@@ -26,7 +26,7 @@ pub struct IdxOp {
 pub type Token = u32;
 
 pub enum ThreadOp {
-    Prompt { prompt: Vec<Token> },
+    Prompt {},
     Gen { gen: Token },
 }
 
@@ -209,33 +209,40 @@ impl ModuleInstance {
         })
     }
 
+    pub fn tokenize(&mut self, s: &str) -> Result<Vec<u32>> {
+        self.store.data_mut().tokenize(s)
+    }
+
+    pub fn setup(&mut self, prompt: &[u32]) -> Result<()> {
+        self.store.set_epoch_deadline(self.limits.max_init_epochs);
+        self.run_init()?;
+
+        let handle = self.call_func::<(), WasmAici>("aici_create", ())?;
+        let _logit_ptr = self.setup_logit_bias(handle)?;
+
+        let prompt_ptr = self.call_func::<(WasmAici, u32), WasmPtr>(
+            "aici_get_prompt_buffer",
+            (handle, prompt.len().try_into().unwrap()),
+        )?;
+
+        self.write_mem(&prompt, prompt_ptr)?;
+        self.call_func::<WasmAici, ()>("aici_process_prompt", handle)?;
+
+        Ok(())
+    }
+
     fn exec_inner(&mut self) -> Result<()> {
         let opidx = std::mem::replace(&mut self.op, None).unwrap();
 
         match opidx.op {
-            ThreadOp::Prompt { prompt, .. } => {
-                self.store.set_epoch_deadline(self.limits.max_init_epochs);
-                self.run_init()?;
-
-                let handle = self.call_func::<(), WasmAici>("aici_create", ())?;
-                let logit_ptr = self.setup_logit_bias(handle)?;
-
-                let prompt_ptr = self.call_func::<(WasmAici, u32), WasmPtr>(
-                    "aici_get_prompt_buffer",
-                    (handle, prompt.len().try_into().unwrap()),
-                )?;
-
-                self.write_mem(&prompt, prompt_ptr)?;
-                self.call_func::<WasmAici, ()>("aici_process_prompt", handle)?;
-                self.read_mem(logit_ptr, opidx.dst_slice)?;
-            }
-
+            ThreadOp::Prompt { .. } => {}
             ThreadOp::Gen { gen, .. } => {
                 self.store.set_epoch_deadline(self.limits.max_step_epochs);
                 self.call_func::<(WasmAici, Token), ()>("aici_append_token", (self.handle, gen))?;
-                self.read_mem(self.logit_ptr, opidx.dst_slice)?;
             }
         }
+
+        self.read_mem(self.logit_ptr, opidx.dst_slice)?;
 
         Ok(())
     }

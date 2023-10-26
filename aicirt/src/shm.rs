@@ -10,6 +10,8 @@ pub struct Shm {
     size: usize,
 }
 
+unsafe impl Send for Shm {}
+
 impl Shm {
     pub fn new(name: &str, size: usize) -> Result<Self> {
         ensure!(size > 1024);

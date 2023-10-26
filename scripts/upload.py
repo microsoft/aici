@@ -209,21 +209,21 @@ def codellama_prompt(prompt):
 
 
 def main():
-    # ast = {
-    #    "steps": json_to_steps(
-    #        {
-    #            "name": "",
-    #            "valid": True,
-    #            "description": "",
-    #            "type": "foo|bar|baz|something|else",
-    #            "address": {"street": "", "city": "", "state": "[A-Z][A-Z]"},
-    #            "age": 1,
-    #            "fraction": 1.5,
-    #        }
-    #    )
-    # }
-
     ast = {
+       "steps": json_to_steps(
+           {
+               "name": "",
+               "valid": True,
+               "description": "",
+               "type": "foo|bar|baz|something|else",
+               "address": {"street": "", "city": "", "state": "[A-Z][A-Z]"},
+               "age": 1,
+               "fraction": 1.5,
+           }
+       )
+    }
+
+    Xast = {
         "steps": [
             gen(
                 yacc=open("grammars/c.y").read(),
@@ -233,7 +233,7 @@ def main():
             )
         ]
     }
-    ast = {
+    Xast = {
         "steps": [
             {"Fixed": {"text": "I am about "}},
             {"Gen": {"max_tokens": 10, "rx": r"\d+"}},
@@ -248,7 +248,7 @@ def main():
         # prompt=llama_prompt("Write fib function in C, respond in code only"),
         aici_module=mod,
         aici_arg=ast,
-        n=10,
+        n=2,
         temperature=0.5,
         log=True,
         max_tokens=1000,

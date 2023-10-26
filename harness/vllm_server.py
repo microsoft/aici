@@ -243,7 +243,7 @@ async def create_completion(request: AiciCompletionRequest, raw_request: Request
                 aici_arg = ""
             else:
                 aici_arg = request.aici_arg
-            await aici.instantiate_async(request_id, request.aici_module, aici_arg)
+            await aici.instantiate_async(request_id, prompt, request.aici_module, aici_arg)
     except ValueError as e:
         return create_error_response(HTTPStatus.BAD_REQUEST, str(e))
 

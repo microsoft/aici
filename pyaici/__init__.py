@@ -10,6 +10,7 @@ import time
 import argparse
 import asyncio
 import concurrent.futures
+import threading
 
 from typing import List, Union, Dict, Any
 
@@ -90,9 +91,16 @@ class MessageChannel:
 M = 1024 * 1024
 
 
+class PendingRequest:
+    def __init__(self, *, cmd: Dict[str, Any]) -> None:
+        self.cmd = cmd
+        self.resp = None
+        self.ev = asyncio.Event()
+
+
 class CmdChannel:
     def __init__(self, *, json_size: int, pref: str, suff: str, trace_file) -> None:
-        self.lock = asyncio.Lock()
+        self.pending_reqs: Dict[str, PendingRequest] = {}
         self.executor = None
         self.suff = suff
         self.cmd_pending = False
@@ -102,45 +110,81 @@ class CmdChannel:
         self.trace_file = trace_file
 
     def send(self, data):
+        assert self.executor is None
         assert not self.cmd_pending
         self.last_cmd = data
         self.cmd_pending = True
         self.cmd_ch.send_json(data)
 
     async def exec_async(self, op: str, data={}):
-        async with self.lock:
-            if self.executor is None:
-                self.executor = concurrent.futures.ThreadPoolExecutor(max_workers=1)
-            data["op"] = op
-            def inner():
-                self.send(data)
-                return self.expect("cmd:" + op)
-            loop = asyncio.get_running_loop()
-            res = await loop.run_in_executor(self.executor, inner)
-            return res
-        
+        loop = asyncio.get_running_loop()
+
+        if self.executor is None:
+            assert not self.cmd_pending
+            self.executor = concurrent.futures.ThreadPoolExecutor(max_workers=1)
+
+            def bg_reader():
+                while True:
+                    resp = self.resp_ch.recv_json()
+                    print("recv", resp)
+                    rid = resp["$rid"]
+                    req = self.pending_reqs[rid]
+                    del self.pending_reqs[rid]
+                    req.resp = resp
+                    self._trace_resp(req.cmd, req.resp)
+                    loop.call_soon_threadsafe(req.ev.set)
+
+            threading.Thread(target=bg_reader, daemon=True).start()
+
+        rid = os.urandom(8).hex()
+        data["op"] = op
+        data["$rid"] = rid
+        req = PendingRequest(cmd=data)
+        self.pending_reqs[rid] = req
+
+        def inner():
+            print("send", op)
+            self.cmd_ch.send_json(data)
+
+        await loop.run_in_executor(self.executor, inner)
+        await req.ev.wait()
+        resp = req.resp
+
+        if resp["type"] != "ok":
+            raise ChildProcessError(
+                f"Bad response to async {op}: {ujson.dumps(resp)[0:1000]}"
+            )
+
+        return resp
+
+    def _trace_resp(self, cmd, resp):
+        if self.trace_file is None:
+            return
+
+        self.trace_file.write(
+            ujson.dumps(
+                {
+                    "timestamp": time.time() * 1000,
+                    "suff": self.suff,
+                    "cmd": cmd,
+                    "resp": resp,
+                }
+            )
+            + "\n"
+        )
+        self.trace_file.flush()
+
     def exec(self, op: str, data={}):
         data["op"] = op
         self.send(data)
         return self.expect("cmd:" + op)
 
     def expect(self, ctx):
+        assert self.executor is None
         assert self.cmd_pending
         resp = self.resp_ch.recv_json()
         self.cmd_pending = False
-        if self.trace_file is not None:
-            self.trace_file.write(
-                ujson.dumps(
-                    {
-                        "timestamp": time.time() * 1000,
-                        "suff": self.suff,
-                        "cmd": self.last_cmd,
-                        "resp": resp,
-                    }
-                )
-                + "\n"
-            )
-            self.trace_file.flush()
+        self._trace_resp(self.last_cmd, resp)
         if resp["type"] != "ok":
             raise ChildProcessError(
                 f"Bad response ({ctx}): {ujson.dumps(resp)[0:1000]}"
@@ -236,16 +280,23 @@ class AiciRunner:
 
     async def upload_module_async(self, wasm: bytes, meta={}):
         b64 = base64.b64encode(wasm).decode("utf-8")
-        return await self.side_cmd.exec_async("mk_module", {"binary": b64, "meta": meta})
+        return await self.side_cmd.exec_async(
+            "mk_module", {"binary": b64, "meta": meta}
+        )
 
     async def instantiate_async(
-        self, req_id: str, module_id: str, module_arg: Union[str, dict, None]
+        self,
+        req_id: str,
+        prompt: Union[str, list],
+        module_id: str,
+        module_arg: Union[str, dict, None],
     ):
         """
         Create a new instance of a given module.
 
         Args:
             req_id (str): The user-assigned ID of the instance - needs to be unique.
+            prompt (str or list): The prompt to use.
             module_id (str): The ID of the WASM constraint module (SHA256 hash).
             module_arg (str or dict): The argument for the module.
         """
@@ -253,19 +304,25 @@ class AiciRunner:
             "instantiate",
             {
                 "req_id": req_id,
+                "prompt": prompt,
                 "module_id": module_id,
                 "module_arg": module_arg,
             },
         )
 
     def instantiate(
-        self, req_id: str, module_id: str, module_arg: Union[str, dict, None]
+        self,
+        req_id: str,
+        prompt: Union[str, list],
+        module_id: str,
+        module_arg: Union[str, dict, None],
     ):
         """
         Create a new instance of a given module.
 
         Args:
             req_id (str): The user-assigned ID of the instance - needs to be unique.
+            prompt (str or list): The prompt to use.
             module_id (str): The ID of the WASM constraint module (SHA256 hash).
             module_arg (str or dict): The argument for the module.
         """
@@ -273,6 +330,7 @@ class AiciRunner:
             "instantiate",
             {
                 "req_id": req_id,
+                "prompt": prompt,
                 "module_id": module_id,
                 "module_arg": module_arg,
             },
@@ -448,7 +506,7 @@ def add_cli_args(parser: argparse.ArgumentParser, single=False):
         "-A",
         type=str,
         default=[],
-        action='append',
+        action="append",
         help="pass argument to aicirt process",
     )
 

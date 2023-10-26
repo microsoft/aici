@@ -1,5 +1,5 @@
 use aici_abi::bytes::{clone_vec_as_bytes, TokRxInfo};
-use anyhow::Result;
+use anyhow::{anyhow, Result};
 use log::debug;
 use std::sync::{Arc, RwLock};
 use tokenizers::Tokenizer;
@@ -59,6 +59,20 @@ impl ModuleData {
             memory: None,
             tokenizer: None,
             store_limits,
+        }
+    }
+
+    pub fn tokenize(&mut self, s: &str) -> Result<Vec<u32>> {
+        if self.tokenizer.is_none() {
+            let lock = self.globals.clone();
+            let info = lock.read().unwrap();
+            let tok = Tokenizer::from_bytes(info.hf_tokenizer_bytes).unwrap();
+            self.tokenizer = Some(tok);
+        };
+        let tokens = self.tokenizer.as_ref().unwrap().encode(s, false);
+        match tokens {
+            Err(e) => Err(anyhow!(e)),
+            Ok(tokens) => Ok(Vec::from(tokens.get_ids())),
         }
     }
 
@@ -164,19 +178,13 @@ pub fn setup_linker(engine: &wasmtime::Engine) -> Result<Arc<wasmtime::Linker<Mo
          src_size: u32,
          dst: u32,
          dst_size: u32| {
-            if caller.data().tokenizer.is_none() {
-                let lock = caller.data().globals.clone();
-                let info = lock.read().unwrap();
-                let tok = Tokenizer::from_bytes(info.hf_tokenizer_bytes).unwrap();
-                caller.data_mut().tokenizer = Some(tok);
-            };
             let m = read_caller_mem(&caller, src, src_size);
             let s = String::from_utf8_lossy(&m);
-            let tokens = caller.data().tokenizer.as_ref().unwrap().encode(s, false);
+            let tokens = caller.data_mut().tokenize(&s);
             match tokens {
                 Err(_) => 0,
                 Ok(tokens) => {
-                    let bytes = clone_vec_as_bytes(&tokens.get_ids());
+                    let bytes = clone_vec_as_bytes(&tokens);
                     write_caller_mem(&mut caller, dst, 4 * dst_size, &bytes) / 4
                 }
             }
