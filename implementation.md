@@ -93,7 +93,20 @@ while p < nodes.len() {
 Note that the only branch that gets mis-predicted here is the `if byte_allowed(n.byte)`.
 The `if` in argument to `pop_bytes` is compiled to bit operations, so it is branchless.
 
-## Early error detection in LR(1)
+## LR(1) parsing
+
+The LR(1) parsing consists of DFA-based lexer and the actual LR(1) parser.
+DFA has a single number as the state, while the state of the LR(1) is a stack of numbers.
+The LR(1) action is determined based on the next token from the lexer and the top of the stack.
+
+The `Recognizer` interface also has a concept of stack, however every entry on that
+stack contains a DFA state and an LR(1) stack.
+
+Most of the time (~98.5% for the C grammar), pushing a byte involves only updating the DFA state,
+while the LR(1) stack is copied unchanged (the memory is shared).
+
+
+### Early error detection
 
 Consider the following invalid C program:
 
