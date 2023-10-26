@@ -29,7 +29,9 @@ use crate::moduleinstance::*;
 use crate::msgchannel::MessageChannel;
 use crate::shm::Shm;
 
-const N_THREADS: usize = 10;
+// Both of these are percentage of available cores
+const BG_THREADS_FRACTION: usize = 50;
+const STEP_THREADS_FRACTION: usize = 90;
 
 /// How often to check for timeout of WASM; should be between 1 and 10
 const WASMTIME_EPOCH_MS: u64 = 1;
@@ -377,7 +379,7 @@ impl ModuleRegistry {
             let msg = ch.recv();
             let mut s2 = self.clone();
             let resp_lck = ch.resp_ch.clone();
-            std::thread::spawn(move || {
+            rayon::spawn(move || {
                 let r = s2.exec_wrapped(&msg);
                 resp_lck
                     .lock()
@@ -640,11 +642,31 @@ fn main() -> () {
         std::process::exit(1);
     }
 
-    info!("rayon with {} workers", N_THREADS);
+    let num_cores: usize = std::thread::available_parallelism().unwrap().into();
+    let num_bg_threads = BG_THREADS_FRACTION * num_cores / 100;
+    let num_step_threads = STEP_THREADS_FRACTION * num_cores / 100;
+
+    info!(
+        "rayon with {} bg and {} step workers ({} cores)",
+        num_bg_threads, num_step_threads, num_cores
+    );
 
     rayon::ThreadPoolBuilder::new()
-        .num_threads(N_THREADS)
+        .num_threads(num_bg_threads)
+        .start_handler(|_| {
+            thread_priority::set_current_thread_priority(thread_priority::ThreadPriority::Min)
+                .unwrap();
+        })
         .build_global()
+        .unwrap();
+
+    let step_pool = rayon::ThreadPoolBuilder::new()
+        .num_threads(num_step_threads)
+        .start_handler(|_| {
+            thread_priority::set_current_thread_priority(thread_priority::ThreadPriority::Max)
+                .unwrap();
+        })
+        .build()
         .unwrap();
 
     let bin_shm = Shm::new(
@@ -655,11 +677,13 @@ fn main() -> () {
     let reg = ModuleRegistry::new(limits, find_tokenizer(&cli.tokenizer).unwrap()).unwrap();
     let exec = Stepper::new(&reg, bin_shm).unwrap();
     let cli2 = cli.clone();
-    std::thread::spawn(move || {
+    rayon::spawn(move || {
         let reg_disp = CmdRespChannel::new("-side", &cli2).unwrap();
         reg.dispatch_loop(reg_disp);
     });
 
-    let exec_disp = CmdRespChannel::new("", &cli).unwrap();
-    exec_disp.dispatch_loop(exec);
+    step_pool.install(|| {
+        let exec_disp = CmdRespChannel::new("", &cli).unwrap();
+        exec_disp.dispatch_loop(exec);
+    })
 }
