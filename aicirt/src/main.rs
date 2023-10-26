@@ -123,7 +123,9 @@ struct AiciStepReq {
 pub enum AiciOp {
     Prompt {
         id: ModuleInstId,
-        prompt: Vec<Token>,
+        // the prompt normally comes from InstantiateReq
+        // we currently ignore this one
+        prompt: Option<Vec<Token>>,
         req_id: String,
     },
     Gen {
@@ -136,7 +138,7 @@ pub enum AiciOp {
 impl AiciOp {
     pub fn to_thread_op(self) -> ThreadOp {
         match self {
-            AiciOp::Prompt { prompt, .. } => ThreadOp::Prompt { prompt },
+            AiciOp::Prompt { .. } => ThreadOp::Prompt {},
             AiciOp::Gen { gen, .. } => ThreadOp::Gen { gen },
         }
     }
@@ -314,7 +316,23 @@ impl ModuleRegistry {
             Some(a) => a.to_string(),
             None => serde_json::to_string(&req.module_arg)?,
         };
-        let modinst = self.new_instance(0x100000, req.module_id.as_str(), arg)?;
+        let mut modinst = self.new_instance(0x100000, req.module_id.as_str(), arg)?;
+        let prompt = if req.prompt.is_string() {
+            modinst.tokenize(req.prompt.as_str().unwrap())?
+        } else {
+            req.prompt
+                .as_array()
+                .ok_or(anyhow!("expecting string or int array as prompt"))?
+                .iter()
+                .map(|x| -> Result<u32> {
+                    x.as_u64()
+                        .ok_or(anyhow!("expecting number as token"))?
+                        .try_into()
+                        .map_err(|e: std::num::TryFromIntError| anyhow!(e))
+                })
+                .collect::<Result<Vec<u32>>>()?
+        };
+        modinst.setup(&prompt)?;
         let mut req_instances = self.req_instances.lock().unwrap();
         info!("instance {} -> {}", req.module_id, req.req_id);
         req_instances.insert(req.req_id, modinst);
