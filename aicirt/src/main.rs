@@ -12,7 +12,7 @@ use base64::Engine as _;
 use clap::Parser;
 use hex;
 use hostimpl::{GlobalInfo, ModuleData};
-use log::{info, warn};
+use log::{debug, info, warn};
 use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
@@ -335,8 +335,8 @@ impl ModuleRegistry {
                 .collect::<Result<Vec<u32>>>()?
         };
         modinst.setup(&prompt)?;
-        let mut req_instances = self.req_instances.lock().unwrap();
         info!("instance {} -> {}", req.module_id, req.req_id);
+        let mut req_instances = self.req_instances.lock().unwrap();
         req_instances.insert(req.req_id, modinst);
         Ok(json!({}))
     }
@@ -349,18 +349,25 @@ impl ModuleRegistry {
     ) -> Result<ModuleInstance> {
         ensure!(is_hex_string(module_id), "invalid module_id");
 
-        let module = match { self.modules.lock().unwrap().get(module_id) } {
-            None => {
-                let filepath = self.cache_path.join(format!("{}.bin", module_id));
-                ensure!(filepath.exists(), "{} not found", module_id);
-                let module = unsafe { wasmtime::Module::deserialize_file(&self.engine, filepath)? };
-                self.modules
-                    .lock()
-                    .unwrap()
-                    .insert(String::from(module_id), module.clone());
-                module
-            }
-            Some(v) => v.clone(),
+        let module = {
+            self.modules
+                .lock()
+                .unwrap()
+                .get(module_id)
+                .map(|m| m.clone())
+        };
+
+        let module = if let Some(m) = module {
+            m
+        } else {
+            let filepath = self.cache_path.join(format!("{}.bin", module_id));
+            ensure!(filepath.exists(), "{} not found", module_id);
+            let module = unsafe { wasmtime::Module::deserialize_file(&self.engine, filepath)? };
+            self.modules
+                .lock()
+                .unwrap()
+                .insert(String::from(module_id), module.clone());
+            module
         };
 
         let modinst = ModuleInstance::new(
@@ -519,16 +526,20 @@ trait Exec {
         match serde_json::from_slice::<Value>(msg) {
             Ok(json) => {
                 let rid = json["$rid"].as_str().map(|v| v.to_string());
+                debug!("dispatch: rid={:?} op={:?}", rid, json["op"]);
                 let val = match json["op"].as_str() {
                     Some("ping") => Ok(json!({ "pong": 1 })),
                     Some("stop") => std::process::exit(0),
                     _ => self.exec(json),
                 };
                 let mut resp = match val {
-                    Ok(v) => json!({
-                        "type": "ok",
-                        "data": v
-                    }),
+                    Ok(v) => {
+                        debug!("dispatch ok: {:?}", v);
+                        json!({
+                            "type": "ok",
+                            "data": v
+                        })
+                    }
                     Err(err) => {
                         let err = format!("{:?}", err);
                         warn!("dispatch error: {}", err);
