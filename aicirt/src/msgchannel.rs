@@ -9,6 +9,8 @@ pub struct MessageChannel {
     read_sem: Semaphore,
 }
 
+unsafe impl Send for MessageChannel {}
+
 impl MessageChannel {
     pub fn shm_name(name: &str) -> String {
         format!("{0}-shm", name)

@@ -89,14 +89,16 @@ impl Cli {
     }
 }
 
+// this is cloned for every module-level request, so don't go overboard with fields
+#[derive(Clone)]
 struct ModuleRegistry {
     cache_path: PathBuf,
     engine: wasmtime::Engine,
     linker: Arc<wasmtime::Linker<ModuleData>>,
-    modules: HashMap<String, wasmtime::Module>,
+    modules: Arc<Mutex<HashMap<String, wasmtime::Module>>>,
     req_instances: Arc<Mutex<HashMap<String, ModuleInstance>>>,
     globals: Arc<RwLock<GlobalInfo>>,
-    limits: AiciLimits,
+    limits: Arc<AiciLimits>,
 }
 
 struct Stepper {
@@ -244,10 +246,10 @@ impl ModuleRegistry {
             cache_path: PathBuf::from("./cache"),
             engine,
             linker,
-            modules: HashMap::new(),
+            modules: Arc::new(Mutex::new(HashMap::new())),
             req_instances: Arc::new(Mutex::new(HashMap::new())),
             globals: Arc::new(RwLock::new(globals)),
-            limits,
+            limits: Arc::new(limits),
         })
     }
 
@@ -327,12 +329,15 @@ impl ModuleRegistry {
     ) -> Result<ModuleInstance> {
         ensure!(is_hex_string(module_id), "invalid module_id");
 
-        let module = match self.modules.get(module_id) {
+        let module = match { self.modules.lock().unwrap().get(module_id) } {
             None => {
                 let filepath = self.cache_path.join(format!("{}.bin", module_id));
                 ensure!(filepath.exists(), "{} not found", module_id);
                 let module = unsafe { wasmtime::Module::deserialize_file(&self.engine, filepath)? };
-                self.modules.insert(String::from(module_id), module.clone());
+                self.modules
+                    .lock()
+                    .unwrap()
+                    .insert(String::from(module_id), module.clone());
                 module
             }
             Some(v) => v.clone(),
@@ -347,6 +352,22 @@ impl ModuleRegistry {
             self.globals.clone(),
         )?;
         Ok(modinst)
+    }
+
+    pub fn dispatch_loop(&self, ch: CmdRespChannel) -> ! {
+        loop {
+            let msg = ch.recv();
+            let mut s2 = self.clone();
+            let resp_lck = ch.resp_ch.clone();
+            std::thread::spawn(move || {
+                let r = s2.exec_wrapped(&msg);
+                resp_lck
+                    .lock()
+                    .unwrap()
+                    .send(serde_json::to_vec(&r).unwrap().as_slice())
+                    .unwrap();
+            });
+        }
     }
 }
 
@@ -471,58 +492,19 @@ impl Exec for ModuleRegistry {
     }
 }
 
-trait BgExec {
-    fn bg_exec(&mut self, json: Value) -> Result<Value>;
-    fn bg_exec_wrapped(&mut self, msg: &[u8], resp: Box<dyn Fn(&[u8]) -> ()>) {
-
-    }
-
-        fn outer_exec(&mut self, msg: &[u8], resp: Box<dyn Fn(&[u8]) -> ()>) {
-        match serde_json::from_slice::<Value>(msg) {
-            Ok(json) => {
-                let val = match json["op"].as_str() {
-                    Some("ping") => Ok(json!({ "pong": 1 })),
-                    Some("stop") => std::process::exit(0),
-                    _ => self.exec(json),
-                };
-                match val {
-                    Ok(v) => json!({
-                        "type": "ok",
-                        "data": v
-                    }),
-                    Err(err) => {
-                        let err = format!("{:?}", err);
-                        warn!("dispatch error: {}", err);
-                        json!({
-                            "type": "error",
-                            "error": err
-                        })
-                    }
-                }
-            }
-            Err(err) => {
-                let err = format!("{:?}", err);
-                json!({
-                    "type": "json-error",
-                    "error": err,
-                })
-            }
-        }
-    }
-}
-
 trait Exec {
     fn exec(&mut self, json: Value) -> Result<Value>;
 
     fn exec_wrapped(&mut self, msg: &[u8]) -> Value {
         match serde_json::from_slice::<Value>(msg) {
             Ok(json) => {
+                let rid = json["$rid"].as_str().map(|v| v.to_string());
                 let val = match json["op"].as_str() {
                     Some("ping") => Ok(json!({ "pong": 1 })),
                     Some("stop") => std::process::exit(0),
                     _ => self.exec(json),
                 };
-                match val {
+                let mut resp = match val {
                     Ok(v) => json!({
                         "type": "ok",
                         "data": v
@@ -535,6 +517,13 @@ trait Exec {
                             "error": err
                         })
                     }
+                };
+                match rid {
+                    Some(rid) => {
+                        resp["$rid"] = Value::String(rid);
+                        resp
+                    }
+                    None => resp,
                 }
             }
             Err(err) => {
@@ -548,48 +537,13 @@ trait Exec {
     }
 }
 
-struct Dispatcher<T: Exec> {
-    cmd_ch: MessageChannel,
-    resp_ch: MessageChannel,
-    executor: T,
-}
-
-impl<T: Exec> Dispatcher<T> {
-    pub fn new(executor: T, suff: &str, cli: &Cli) -> Result<Self> {
-        let cmd_ch =
-            MessageChannel::new(&cli.prefixed_name("cmd", suff), cli.json_size * MEGABYTE)?;
-        let resp_ch =
-            MessageChannel::new(&cli.prefixed_name("resp", suff), cli.json_size * MEGABYTE)?;
-
-        Ok(Self {
-            cmd_ch,
-            resp_ch,
-            executor,
-        })
-    }
-
-    fn respond(&self, json: Value) -> Result<()> {
-        self.resp_ch.send(serde_json::to_vec(&json)?.as_slice())?;
-        Ok(())
-    }
-
-    pub fn dispatch_loop(&mut self) -> ! {
-        loop {
-            let msg = self.cmd_ch.recv().unwrap();
-            let resp = self.executor.exec_wrapped(&msg);
-            self.respond(resp).unwrap();
-        }
-    }
-}
-
-struct BgDispatcher<T: BgExec> {
+struct CmdRespChannel {
     cmd_ch: MessageChannel,
     resp_ch: Arc<Mutex<MessageChannel>>,
-    executor: T,
 }
 
-impl<T: BgExec> BgDispatcher<T> {
-    pub fn new(executor: T, suff: &str, cli: &Cli) -> Result<Self> {
+impl CmdRespChannel {
+    pub fn new(suff: &str, cli: &Cli) -> Result<Self> {
         let cmd_ch =
             MessageChannel::new(&cli.prefixed_name("cmd", suff), cli.json_size * MEGABYTE)?;
         let resp_ch = Arc::new(Mutex::new(MessageChannel::new(
@@ -597,21 +551,26 @@ impl<T: BgExec> BgDispatcher<T> {
             cli.json_size * MEGABYTE,
         )?));
 
-        Ok(Self {
-            cmd_ch,
-            resp_ch,
-            executor,
-        })
+        Ok(Self { cmd_ch, resp_ch })
     }
 
-    pub fn dispatch_loop(&mut self) -> ! {
+    pub fn respond(&self, json: Value) {
+        self.resp_ch
+            .lock()
+            .unwrap()
+            .send(serde_json::to_vec(&json).unwrap().as_slice())
+            .unwrap();
+    }
+
+    pub fn recv(&self) -> Vec<u8> {
+        self.cmd_ch.recv().unwrap()
+    }
+
+    pub fn dispatch_loop(&self, mut exec: impl Exec) -> ! {
         loop {
-            let msg = self.cmd_ch.recv().unwrap();
-            let resp_lck = self.resp_ch.clone();
-            self.executor.outer_exec(
-                &msg,
-                Box::new(move |resp| resp_lck.lock().unwrap().send(resp).unwrap()),
-            )
+            let msg = self.recv();
+            let val = exec.exec_wrapped(&msg);
+            self.respond(val)
         }
     }
 }
@@ -679,10 +638,10 @@ fn main() -> () {
     let exec = Stepper::new(&reg, bin_shm).unwrap();
     let cli2 = cli.clone();
     std::thread::spawn(move || {
-        let mut reg_disp = Dispatcher::new(reg, "-side", &cli2).unwrap();
-        reg_disp.dispatch_loop();
+        let reg_disp = CmdRespChannel::new("-side", &cli2).unwrap();
+        reg.dispatch_loop(reg_disp);
     });
 
-    let mut exec_disp = Dispatcher::new(exec, "", &cli).unwrap();
-    exec_disp.dispatch_loop();
+    let exec_disp = CmdRespChannel::new("", &cli).unwrap();
+    exec_disp.dispatch_loop(exec);
 }
