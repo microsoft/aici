@@ -62,14 +62,12 @@ sequenceDiagram
     actor User
     participant GPU
     participant vLLM
-    participant aicirt
+    participant aicirt as AICI-runtime
     vLLM -->> GPU: Model
     User -->> vLLM: Request (Prompt + WASM)
-    vLLM -->>+ aicirt: WASM
-    aicirt -->>- vLLM: WASM Init done
-    vLLM -->>+ aicirt: Prompt
-    vLLM -->>+ GPU: Prompt
+    vLLM -->>+ aicirt: Prompt + WASM
     aicirt -->>- vLLM: logit bias 1
+    vLLM -->>+ GPU: Prompt
     vLLM -->> GPU: logit bias 1
     GPU -->> vLLM: token 1
     vLLM -->>+ aicirt: token 1
