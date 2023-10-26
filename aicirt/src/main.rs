@@ -150,6 +150,8 @@ struct MkModuleReq {
 #[derive(Serialize, Deserialize)]
 struct InstantiateReq {
     req_id: String,
+    // [TokenId] or str
+    prompt: Value,
     module_id: String,
     #[serde(default = "mk_null")]
     module_arg: Value,
@@ -469,8 +471,81 @@ impl Exec for ModuleRegistry {
     }
 }
 
+trait BgExec {
+    fn bg_exec(&mut self, json: Value) -> Result<Value>;
+    fn bg_exec_wrapped(&mut self, msg: &[u8], resp: Box<dyn Fn(&[u8]) -> ()>) {
+
+    }
+
+        fn outer_exec(&mut self, msg: &[u8], resp: Box<dyn Fn(&[u8]) -> ()>) {
+        match serde_json::from_slice::<Value>(msg) {
+            Ok(json) => {
+                let val = match json["op"].as_str() {
+                    Some("ping") => Ok(json!({ "pong": 1 })),
+                    Some("stop") => std::process::exit(0),
+                    _ => self.exec(json),
+                };
+                match val {
+                    Ok(v) => json!({
+                        "type": "ok",
+                        "data": v
+                    }),
+                    Err(err) => {
+                        let err = format!("{:?}", err);
+                        warn!("dispatch error: {}", err);
+                        json!({
+                            "type": "error",
+                            "error": err
+                        })
+                    }
+                }
+            }
+            Err(err) => {
+                let err = format!("{:?}", err);
+                json!({
+                    "type": "json-error",
+                    "error": err,
+                })
+            }
+        }
+    }
+}
+
 trait Exec {
     fn exec(&mut self, json: Value) -> Result<Value>;
+
+    fn exec_wrapped(&mut self, msg: &[u8]) -> Value {
+        match serde_json::from_slice::<Value>(msg) {
+            Ok(json) => {
+                let val = match json["op"].as_str() {
+                    Some("ping") => Ok(json!({ "pong": 1 })),
+                    Some("stop") => std::process::exit(0),
+                    _ => self.exec(json),
+                };
+                match val {
+                    Ok(v) => json!({
+                        "type": "ok",
+                        "data": v
+                    }),
+                    Err(err) => {
+                        let err = format!("{:?}", err);
+                        warn!("dispatch error: {}", err);
+                        json!({
+                            "type": "error",
+                            "error": err
+                        })
+                    }
+                }
+            }
+            Err(err) => {
+                let err = format!("{:?}", err);
+                json!({
+                    "type": "json-error",
+                    "error": err,
+                })
+            }
+        }
+    }
 }
 
 struct Dispatcher<T: Exec> {
@@ -501,37 +576,42 @@ impl<T: Exec> Dispatcher<T> {
     pub fn dispatch_loop(&mut self) -> ! {
         loop {
             let msg = self.cmd_ch.recv().unwrap();
-            match serde_json::from_slice::<Value>(msg.as_slice()) {
-                Ok(json) => {
-                    let val = match json["op"].as_str() {
-                        Some("ping") => Ok(json!({ "pong": 1 })),
-                        Some("stop") => std::process::exit(0),
-                        _ => self.executor.exec(json),
-                    };
-                    match val {
-                        Ok(v) => self
-                            .respond(json!({
-                                "type": "ok",
-                                "data": v
-                            }))
-                            .unwrap(),
-                        Err(err) => {
-                            warn!("dispatch error: {}", err.to_string());
-                            self.respond(json!({
-                                "type": "error",
-                                "error": err.to_string()
-                            }))
-                            .unwrap()
-                        }
-                    }
-                }
-                Err(err) => self
-                    .respond(json!({
-                        "type": "json-error",
-                        "error": err.to_string(),
-                    }))
-                    .unwrap(),
-            }
+            let resp = self.executor.exec_wrapped(&msg);
+            self.respond(resp).unwrap();
+        }
+    }
+}
+
+struct BgDispatcher<T: BgExec> {
+    cmd_ch: MessageChannel,
+    resp_ch: Arc<Mutex<MessageChannel>>,
+    executor: T,
+}
+
+impl<T: BgExec> BgDispatcher<T> {
+    pub fn new(executor: T, suff: &str, cli: &Cli) -> Result<Self> {
+        let cmd_ch =
+            MessageChannel::new(&cli.prefixed_name("cmd", suff), cli.json_size * MEGABYTE)?;
+        let resp_ch = Arc::new(Mutex::new(MessageChannel::new(
+            &cli.prefixed_name("resp", suff),
+            cli.json_size * MEGABYTE,
+        )?));
+
+        Ok(Self {
+            cmd_ch,
+            resp_ch,
+            executor,
+        })
+    }
+
+    pub fn dispatch_loop(&mut self) -> ! {
+        loop {
+            let msg = self.cmd_ch.recv().unwrap();
+            let resp_lck = self.resp_ch.clone();
+            self.executor.outer_exec(
+                &msg,
+                Box::new(move |resp| resp_lck.lock().unwrap().send(resp).unwrap()),
+            )
         }
     }
 }

@@ -239,13 +239,14 @@ class AiciRunner:
         return await self.side_cmd.exec_async("mk_module", {"binary": b64, "meta": meta})
 
     async def instantiate_async(
-        self, req_id: str, module_id: str, module_arg: Union[str, dict, None]
+        self, req_id: str, prompt: Union[str, list], module_id: str, module_arg: Union[str, dict, None]
     ):
         """
         Create a new instance of a given module.
 
         Args:
             req_id (str): The user-assigned ID of the instance - needs to be unique.
+            prompt (str or list): The prompt to use.
             module_id (str): The ID of the WASM constraint module (SHA256 hash).
             module_arg (str or dict): The argument for the module.
         """
@@ -253,19 +254,21 @@ class AiciRunner:
             "instantiate",
             {
                 "req_id": req_id,
+                "prompt": prompt,
                 "module_id": module_id,
                 "module_arg": module_arg,
             },
         )
 
     def instantiate(
-        self, req_id: str, module_id: str, module_arg: Union[str, dict, None]
+        self, req_id: str, prompt: Union[str, list], module_id: str, module_arg: Union[str, dict, None]
     ):
         """
         Create a new instance of a given module.
 
         Args:
             req_id (str): The user-assigned ID of the instance - needs to be unique.
+            prompt (str or list): The prompt to use.
             module_id (str): The ID of the WASM constraint module (SHA256 hash).
             module_arg (str or dict): The argument for the module.
         """
@@ -273,6 +276,7 @@ class AiciRunner:
             "instantiate",
             {
                 "req_id": req_id,
+                "prompt": prompt,
                 "module_id": module_id,
                 "module_arg": module_arg,
             },

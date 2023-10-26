@@ -46,8 +46,8 @@ def main(args: argparse.Namespace):
             arg = f.read()
     
     request_id = 0
-    for _prompt, _params in test_prompts:
-        aici.instantiate(str(request_id), args.aici_module, arg)
+    for prompt, _params in test_prompts:
+        aici.instantiate(str(request_id), prompt, args.aici_module, arg)
         request_id += 1
 
     # Run the engine by calling `engine.step()` manually.
