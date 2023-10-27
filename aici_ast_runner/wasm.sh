@@ -23,7 +23,11 @@ cd ../aicirt
 cargo build --release
 cd ..
 mkdir -p tmp
-RUST_LOG=info perf stat ./aicirt/target/release/aicirt --tokenizer gpt4 --module $p/target/opt.wasm
-RUST_LOG=info perf stat ./aicirt/target/release/aicirt \
+PERF=
+if [ `uname` = Linux ] ; then
+  PERF="perf stat"
+fi
+RUST_LOG=info $PERF ./aicirt/target/release/aicirt --tokenizer gpt4 --module $p/target/opt.wasm
+RUST_LOG=info $PERF ./aicirt/target/release/aicirt \
   --tokenizer gpt4 --module $p/target/opt.wasm --run | tee tmp/runlog.txt
 ls -l $p/target/opt.wasm $p/target/strip.wasm
