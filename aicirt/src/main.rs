@@ -102,7 +102,8 @@ struct ModuleRegistry {
     cache_path: PathBuf,
     engine: wasmtime::Engine,
     linker: Arc<wasmtime::Linker<ModuleData>>,
-    modules: Arc<Mutex<HashMap<String, wasmtime::Module>>>,
+    // maps module_id (sha256 string) to module; set to None while the module is being compiled
+    modules: Arc<Mutex<HashMap<String, Option<wasmtime::Module>>>>,
     req_instances: Arc<Mutex<HashMap<String, ModuleInstance>>>,
     globals: Arc<RwLock<GlobalInfo>>,
     limits: Arc<AiciLimits>,
@@ -262,7 +263,74 @@ impl ModuleRegistry {
         })
     }
 
+    fn lock_module(&self, module_id: &str) -> Option<wasmtime::Module> {
+        loop {
+            let mut lck = self.modules.lock().unwrap();
+            match lck.get(module_id) {
+                Some(Some(m)) => return Some(m.clone()),
+                Some(None) => {
+                    // currently locked
+                    std::thread::sleep(std::time::Duration::from_millis(50))
+                }
+                None => {
+                    // we lock it
+                    lck.insert(module_id.to_string(), None);
+                    return None;
+                }
+            }
+        }
+    }
+
+    fn wasm_path(&self, module_id: &str) -> PathBuf {
+        self.cache_path.join(format!("{}.wasm", module_id))
+    }
+
+    fn elf_path(&self, module_id: &str) -> PathBuf {
+        self.cache_path.join(format!("{}.elf", module_id))
+    }
+
+    fn compile_module(&self, module_id: &str, force: bool) -> Result<wasmtime::Module> {
+        let module = if force {
+            Err(anyhow!("force"))
+        } else {
+            unsafe { wasmtime::Module::deserialize_file(&self.engine, self.elf_path(module_id)) }
+        };
+        let module = match module {
+            Err(e) => {
+                let wasm_bytes = fs::read(self.wasm_path(module_id))?;
+                info!("compiling {}; {}", module_id, e);
+                let compiled = self.engine.precompile_module(&wasm_bytes)?;
+                fs::write(self.elf_path(module_id), compiled)?;
+                unsafe {
+                    wasmtime::Module::deserialize_file(&self.engine, self.elf_path(module_id))?
+                }
+            }
+            Ok(module) => module,
+        };
+
+        let r = module.clone();
+        let mut lck = self.modules.lock().unwrap();
+        lck.insert(module_id.to_string(), Some(module));
+        return Ok(r);
+    }
+
+    fn module_from_fs(&self, module_id: &str) -> Result<wasmtime::Module> {
+        match self.lock_module(module_id) {
+            Some(r) => Ok(r),
+            None => match self.compile_module(module_id, false) {
+                Ok(module) => Ok(module),
+                Err(e) => {
+                    let mut lck = self.modules.lock().unwrap();
+                    lck.remove(module_id);
+                    Err(e)
+                }
+            },
+        }
+    }
+
     fn create_module(&self, wasm_bytes: Vec<u8>, meta_bytes: Vec<u8>) -> Result<Value> {
+        let timer = Instant::now();
+
         // make sure meta_bytes is valid JSON
         let _: Value = serde_json::from_slice(&meta_bytes)?;
 
@@ -270,46 +338,55 @@ impl ModuleRegistry {
         hasher.update(&meta_bytes);
         hasher.update(&wasm_bytes);
 
-        let id = hex::encode(hasher.finalize());
+        let module_id = hex::encode(hasher.finalize());
+        let module_id = &module_id;
 
-        let filepath = self.cache_path.join(format!("{}.elf", id));
-        let mut time = 0;
-        let compiled_size = match fs::metadata(&filepath) {
-            Ok(m) => m.len() as usize,
-            Err(_) => {
-                let timer = Instant::now();
-
-                fs::create_dir_all(&self.cache_path)?;
-                let compiled = self.engine.precompile_module(&wasm_bytes)?;
-                let clen = compiled.len();
-                fs::write(filepath, compiled)?;
-
-                let jsonpath = self.cache_path.join(format!("{}.json", id));
-                fs::write(jsonpath, &meta_bytes)?;
-
-                let wasmpath = self.cache_path.join(format!("{}.wasm", id));
-                fs::write(wasmpath, &wasm_bytes)?;
-
-                time = timer.elapsed().as_millis();
-                clen
+        if self.lock_module(module_id).is_none() {
+            match self.write_and_compile(module_id, &meta_bytes, &wasm_bytes) {
+                Err(e) => {
+                    let mut lck = self.modules.lock().unwrap();
+                    lck.remove(module_id);
+                    return Err(e);
+                }
+                Ok(_) => {}
             }
-        };
+        }
+
+        let compiled_size = fs::metadata(self.elf_path(module_id))?.len() as usize;
+        let time = timer.elapsed().as_millis();
 
         info!(
             "module {}: {}kB -> {}kB; {}ms",
-            id,
+            module_id,
             wasm_bytes.len() / 1024,
             compiled_size / 1024,
             time
         );
 
         Ok(json!({
-            "module_id": id,
+            "module_id": module_id,
             "wasm_size": wasm_bytes.len(),
             "meta_size": meta_bytes.len(),
             "compiled_size": compiled_size,
             "time": time
         }))
+    }
+
+    fn write_and_compile(
+        &self,
+        module_id: &String,
+        meta_bytes: &Vec<u8>,
+        wasm_bytes: &Vec<u8>,
+    ) -> Result<wasmtime::Module> {
+        fs::create_dir_all(&self.cache_path)?;
+        Ok(if !self.wasm_path(module_id).exists() {
+            let jsonpath = self.cache_path.join(format!("{}.json", module_id));
+            fs::write(jsonpath, meta_bytes)?;
+            fs::write(self.wasm_path(module_id), wasm_bytes)?;
+            self.compile_module(module_id, true)?
+        } else {
+            self.compile_module(module_id, false)?
+        })
     }
 
     fn mk_module(&self, req: MkModuleReq) -> Result<Value> {
@@ -353,28 +430,7 @@ impl ModuleRegistry {
         module_arg: String,
     ) -> Result<ModuleInstance> {
         ensure!(is_hex_string(module_id), "invalid module_id");
-
-        let module = {
-            self.modules
-                .lock()
-                .unwrap()
-                .get(module_id)
-                .map(|m| m.clone())
-        };
-
-        let module = if let Some(m) = module {
-            m
-        } else {
-            let filepath = self.cache_path.join(format!("{}.elf", module_id));
-            ensure!(filepath.exists(), "{} not found", module_id);
-            let module = unsafe { wasmtime::Module::deserialize_file(&self.engine, filepath)? };
-            self.modules
-                .lock()
-                .unwrap()
-                .insert(String::from(module_id), module.clone());
-            module
-        };
-
+        let module = self.module_from_fs(module_id)?;
         let modinst = ModuleInstance::new(
             id,
             &self.limits,
@@ -514,9 +570,6 @@ impl Exec for Stepper {
 impl Exec for ModuleRegistry {
     fn exec(&mut self, json: Value) -> Result<Value> {
         match json["op"].as_str() {
-            Some("tokens") => {
-                Ok(json!({ "vocab_size": self.globals.read().unwrap().tokrx_info.vocab_size }))
-            }
             Some("mk_module") => self.mk_module(serde_json::from_value(json)?),
             Some("instantiate") => self.instantiate(serde_json::from_value(json)?),
             _ => return Err(anyhow!("bad op")),

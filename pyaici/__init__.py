@@ -126,7 +126,6 @@ class CmdChannel:
             def bg_reader():
                 while True:
                     resp = self.resp_ch.recv_json()
-                    print("recv", resp)
                     rid = resp["$rid"]
                     req = self.pending_reqs[rid]
                     del self.pending_reqs[rid]
@@ -143,7 +142,6 @@ class CmdChannel:
         self.pending_reqs[rid] = req
 
         def inner():
-            print("send", op)
             self.cmd_ch.send_json(data)
 
         await loop.run_in_executor(self.executor, inner)
