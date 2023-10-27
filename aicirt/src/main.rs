@@ -189,7 +189,7 @@ struct TokensReq {
 }
 
 impl ModuleRegistry {
-    pub fn new(limits: AiciLimits, mut tokenizer: Tokenizer) -> Result<Self> {
+    pub fn new(limits: AiciLimits, tokenizer: Tokenizer) -> Result<Self> {
         let mut cfg = Config::default();
         // these are defaults as of 13.0.0, but we specify them anyways for stability
         cfg.debug_info(false)
@@ -220,7 +220,6 @@ impl ModuleRegistry {
         let engine = wasmtime::Engine::new(&cfg)?;
         let linker = setup_linker(&engine)?;
 
-        tokenizer.load();
         let tokens = tokenizer.token_bytes();
         let trie = TokTrie::from(&tokenizer.tokrx_info(), &tokens);
         trie.check_against(&tokens);

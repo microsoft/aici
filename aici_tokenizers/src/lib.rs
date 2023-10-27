@@ -58,8 +58,9 @@ pub fn tokenizers() -> Vec<Tokenizer> {
 }
 
 pub fn find_tokenizer(name: &str) -> Result<Tokenizer> {
-    for t in tokenizers() {
+    for mut t in tokenizers() {
         if t.name == name {
+            t.load();
             return Ok(t);
         }
     }
@@ -81,7 +82,7 @@ fn from_hex(hex_str: &str) -> Result<Vec<u8>> {
 }
 
 impl Tokenizer {
-    pub fn load(&mut self) {
+    fn load(&mut self) {
         if self.info.is_none() {
             let mut info = serde_json::from_slice::<TokenInfo>(self.info_bytes).unwrap();
             let max = vec![
