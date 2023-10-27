@@ -4,13 +4,10 @@
     },
     "python.formatting.provider": "none",
     "rust-analyzer.linkedProjects": [
-        "regex_llm/Cargo.toml",
         "aicirt/Cargo.toml",
         "aici_abi/Cargo.toml",
         "aici_tokenizers/Cargo.toml",
-        "use_tok/Cargo.toml",
-        "aici_ast_runner/Cargo.toml",
-        "use_rx/Cargo.toml"
+        "aici_ast_runner/Cargo.toml"
     ],
     "files.associations": {
         "*.rasi": "css",

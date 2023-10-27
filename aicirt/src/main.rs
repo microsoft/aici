@@ -53,6 +53,10 @@ struct Cli {
     #[arg(short, long, default_value = "llama")]
     tokenizer: String,
 
+    /// Save the --tokenizer=... to specified file
+    #[arg(long)]
+    save_tokenizer: Option<String>,
+
     /// Run main() from the module just added
     #[arg(short, long)]
     run: bool,
@@ -646,6 +650,25 @@ fn main() -> () {
             modinst.run_main().unwrap();
         }
 
+        return ();
+    }
+
+    if let Some(filename) = cli.save_tokenizer {
+        let tokenizer = find_tokenizer(&cli.tokenizer).unwrap();
+        let tokens = tokenizer.token_bytes();
+
+        let trie = TokTrie::from(&tokenizer.tokrx_info(), &tokens);
+        trie.check_against(&tokens);
+
+        let bytes = trie.serialize();
+
+        // validate
+        let trie2 = TokTrie::from_bytes(&bytes);
+        assert!(trie.info() == trie2.info());
+        trie2.check_against(&tokens);
+
+        std::fs::write(filename.clone(), &bytes).unwrap();
+        println!("wrote {}, {} bytes", filename, bytes.len());
         return ();
     }
 

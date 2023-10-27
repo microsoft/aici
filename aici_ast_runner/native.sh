@@ -8,7 +8,7 @@ set -e
 if test -f tokenizer.bin ; then
   echo "Skipping tokenizer"
 else
-  (cd ../regex_llm && cargo run --release -- -t $T --save ../aici_ast_runner/tokenizer.bin)
+  (cd ../aicirt && cargo run --release -- --tokenizer $T --save-tokenizer ../aici_ast_runner/tokenizer.bin)
 fi
 cargo build --release
 if [ `uname` = Linux ] ; then

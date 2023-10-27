@@ -193,10 +193,6 @@ then `append()` and `byte_allowed()` are the standard DFA operations,
 while `special_allowed()` is only implemented for end-of-sequence token
 (which is allowed when the current state is accepting).
 
-The `regex_llm` crate implements a different interface for regular expressions,
-that pre-compiles the DFA with respect to tokens and goes directly down to `AiciVm`.
-It's unclear if this will be needed.
-
 ### LR(1) grammars
 
 The `Recognizer` interface is implemented for LR(1) grammars and DFA-based lexers.
