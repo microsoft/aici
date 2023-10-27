@@ -42,6 +42,7 @@ pub struct AiciVmHelper {
     pub prompt_length: usize,
     pub logit_biases: Vec<f32>,
     pub allowed_tokens: SimpleVob,
+    pub dynamic_attention_mask: Vec<f32>,
     pub trie: Rc<Box<TokTrie>>,
 }
 
@@ -53,6 +54,7 @@ impl AiciVmHelper {
             prompt_length: 0,
             logit_biases: Vec::new(),
             allowed_tokens: SimpleVob::new(),
+            dynamic_attention_mask: Vec::new(),
             trie: Rc::new(Box::new(TokTrie::from_host())),
         }
     }
@@ -67,6 +69,10 @@ impl AiciVmHelper {
         self.prompt_length = size as usize;
         self.tokens.resize(self.prompt_length, 0);
         self.tokens.as_mut_ptr()
+    }
+    pub fn aici_get_dynamic_attention_mask_buffer(&mut self, size: u32) -> *mut f32 {
+        self.dynamic_attention_mask.resize(size as usize, 1.0);
+        self.dynamic_attention_mask.as_mut_ptr()
     }
 
     pub fn all_disallowed(&mut self) {
@@ -103,6 +109,7 @@ macro_rules! aici_expose_all {
         $crate::expose!($struct_name::aici_process_prompt() -> ());
         $crate::expose!($struct_name::aici_append_token(token: u32) -> ());
         $crate::expose!($struct_name::helper::aici_get_logit_bias_buffer(size: u32) -> *mut f32);
+        $crate::expose!($struct_name::helper::aici_get_dynamic_attention_mask_buffer(size: u32) -> *mut f32);
         $crate::expose!($struct_name::helper::aici_get_prompt_buffer(size: u32) -> *mut u32);
 
         #[no_mangle]
@@ -156,6 +163,14 @@ pub fn aici_harness(aici: &mut impl AiciVm, vocab_size: usize, prompt: &[TokenId
             aici.get_helper()
                 .aici_get_logit_bias_buffer(vocab_size as u32),
             vocab_size,
+        )
+    };
+    // TODO-EMK - what do I need to do with dynamic_mask here?
+    let _dynamic_mask = unsafe {
+        std::slice::from_raw_parts_mut(
+            aici.get_helper()
+                .aici_get_dynamic_attention_mask_buffer(prompt.len() as u32),
+            prompt.len()
         )
     };
     let prompt_buf = unsafe {

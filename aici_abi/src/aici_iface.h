@@ -24,6 +24,16 @@ token_t *aici_get_prompt_buffer(Aici *aici, uint32_t size);
 // Size of number of biases (which equals size of the vocabulary).
 float *aici_get_logit_bias_buffer(Aici *aici, uint32_t size);
 
+// Return the buffer where the WASM code will write the dynamic mask after
+// aici_process_prompt() and aici_append_token()
+// Size of max number of tokens that might be generated. 
+// By default, values are 1.0 from 0..len(prompt), and undefined >len(prompt).
+// AICI will ignore anything >len(prompt).  
+// a value of 0 at a position i means the token at position i will be ignored
+// and a value of 1 means it will be used.  
+// we are experimenting with non 0/1 values, but treat that behavior now as undefined
+float *aici_get_dynamic_attention_mask_buffer(Aici *aici, uint32_t size);
+
 // This called once, when the AICI should process the prompt in its buffer.
 // It should set the values in logit bias buffer.
 void aici_process_prompt(Aici *aici);
@@ -32,6 +42,7 @@ void aici_process_prompt(Aici *aici);
 
 // This is called after a token is sampled.
 // It should set the values in logit bias buffer.
+// It should also update the dynamic mask buffer, if applicable.
 void aici_append_token(Aici *aici, token_t tok);
 // The logical type (if WASM would allow such things) of this function is:
 // float[vocab_size] aici_append_token(Aici *aici, token_t tok);

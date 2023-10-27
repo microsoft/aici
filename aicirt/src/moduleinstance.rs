@@ -13,6 +13,8 @@ pub struct ModuleInstance {
     instance: wasmtime::Instance,
     handle: WasmAici,
     logit_ptr: WasmPtr,
+    #[allow(dead_code)] // TODOEMK
+    mask_ptr: WasmPtr,
     globals: Arc<RwLock<GlobalInfo>>,
     op: Option<IdxOp>,
     had_error: bool,
@@ -116,6 +118,7 @@ impl ModuleInstance {
         Ok(ModuleInstance {
             handle: 0,
             logit_ptr: 0,
+            mask_ptr: 0,
             op: None,
             store,
             memory,
@@ -185,6 +188,18 @@ impl ModuleInstance {
         self.logit_ptr = logit_ptr;
 
         Ok(logit_ptr)
+    }
+
+    #[allow(dead_code)] // TODOEMK
+    fn setup_dynamic_attention_mask(&mut self, handle: WasmAici) -> Result<u32> {
+        let mask_len = { self.globals.read().unwrap().max_context_length };
+        let mask_ptr = self.call_func::<(WasmAici, u32), WasmPtr>(
+            "aici_get_dynamic_attention_mask_buffer",
+            (handle, mask_len),
+        )?;
+
+        self.mask_ptr = mask_ptr;
+        Ok(mask_ptr)
     }
 
     pub fn exec(&mut self) -> Value {

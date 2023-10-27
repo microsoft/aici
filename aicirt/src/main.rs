@@ -239,6 +239,7 @@ impl ModuleRegistry {
             tokrx_info: tokenizer.tokrx_info(),
             trie_bytes: bytes,
             hf_tokenizer_bytes: tokenizer.hf_bytes,
+            max_context_length: 4096 // TODOEMK this should be read from the current LLM model in vLLM
         };
 
         {

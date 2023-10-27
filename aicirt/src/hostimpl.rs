@@ -115,6 +115,7 @@ pub struct GlobalInfo {
     pub tokrx_info: TokRxInfo,
     pub trie_bytes: Vec<u8>,
     pub hf_tokenizer_bytes: &'static [u8],
+    pub max_context_length: u32
 }
 
 fn read_caller_mem(caller: &wasmtime::Caller<'_, ModuleData>, ptr: u32, len: u32) -> Vec<u8> {
