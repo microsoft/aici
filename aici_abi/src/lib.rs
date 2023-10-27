@@ -7,8 +7,6 @@ pub mod bytes;
 pub mod host;
 pub mod recognizer;
 pub mod rng;
-pub mod rx;
-pub mod rxvm;
 pub mod svob;
 pub mod toktree;
 
