@@ -262,7 +262,8 @@ impl Lexer {
         self.vobidx_by_state_off[state.as_usize() >> self.dfa.stride2()]
     }
 
-    fn get_token(&self, state: StateID) -> Option<PatIdx> {
+    fn get_token(&self, prev: StateID) -> Option<PatIdx> {
+        let state = self.dfa.next_eoi_state(prev);
         if !self.dfa.is_match_state(state) {
             return None;
         }
@@ -297,9 +298,8 @@ impl Lexer {
             }
             let v = self.reachable_tokens(state);
             if v.is_zero() {
-                let final_state = dfa.next_eoi_state(prev);
                 // if final_state is a match state, find the token that matched
-                let tok = self.get_token(final_state);
+                let tok = self.get_token(prev);
                 if tok.is_none() {
                     None
                 } else {
@@ -310,11 +310,16 @@ impl Lexer {
                     Some((self.mk_state(state), tok))
                 }
             } else {
-                Some((LexerState { state, reachable: v }, None))
+                Some((
+                    LexerState {
+                        state,
+                        reachable: v,
+                    },
+                    None,
+                ))
             }
         } else {
-            let final_state = dfa.next_eoi_state(prev);
-            let tok = self.get_token(final_state);
+            let tok = self.get_token(prev);
             if tok.is_none() {
                 None
             } else {

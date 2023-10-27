@@ -397,6 +397,7 @@ impl TokTrie {
         ok
     }
 
+    #[inline(never)]
     pub fn add_bias(&self, r: &mut impl Recognizer, toks: &mut SimpleVob) {
         let n = self.root();
         let defl_tok = self.vocab_size() as u32;

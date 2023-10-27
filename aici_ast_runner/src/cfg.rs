@@ -426,6 +426,7 @@ impl Recognizer for CfgParser {
         assert!(self.byte_states.len() == 1);
     }
 
+    #[inline(always)]
     fn try_push_byte(&mut self, byte: u8) -> bool {
         if let Some(st) = self.try_push(Some(byte)) {
             self.byte_states.push(st);

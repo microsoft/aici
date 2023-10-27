@@ -215,6 +215,7 @@ impl ModuleRegistry {
         // compilation in Speed mode seems to be ~10% slower but the generated code is 20-30% faster
         cfg.cranelift_opt_level(wasmtime::OptLevel::Speed);
 
+        // we need it but it causes 16% slow-down in the generated code...
         cfg.epoch_interruption(true);
 
         let engine = wasmtime::Engine::new(&cfg)?;
@@ -271,7 +272,7 @@ impl ModuleRegistry {
 
         let id = hex::encode(hasher.finalize());
 
-        let filepath = self.cache_path.join(format!("{}.bin", id));
+        let filepath = self.cache_path.join(format!("{}.elf", id));
         let mut time = 0;
         let compiled_size = match fs::metadata(&filepath) {
             Ok(m) => m.len() as usize,
@@ -364,7 +365,7 @@ impl ModuleRegistry {
         let module = if let Some(m) = module {
             m
         } else {
-            let filepath = self.cache_path.join(format!("{}.bin", module_id));
+            let filepath = self.cache_path.join(format!("{}.elf", module_id));
             ensure!(filepath.exists(), "{} not found", module_id);
             let module = unsafe { wasmtime::Module::deserialize_file(&self.engine, filepath)? };
             self.modules
