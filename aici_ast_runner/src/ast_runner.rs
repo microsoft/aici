@@ -24,7 +24,8 @@ use crate::rx::RecRx;
 use aici_abi::{
     aici_expose_all,
     host::{self, tokenize},
-    toktree::{AllowToken, Recognizer, SpecialToken, TokTrie},
+    svob::SimpleVob,
+    toktree::{Recognizer, SpecialToken, TokTrie},
     wprintln, AiciVm, AiciVmHelper, TokenId,
 };
 
@@ -125,7 +126,6 @@ struct StepState {
 }
 pub struct Runner {
     helper: AiciVmHelper,
-    vob_token_set: Vec<u8>,
     state_idx: usize,
     states: Vec<StepState>,
 }
@@ -311,7 +311,7 @@ impl StepState {
         }
     }
 
-    fn apply_to(&mut self, trie: Rc<Box<TokTrie>>, mut toks: &mut [u8]) {
+    fn apply_to(&mut self, trie: Rc<Box<TokTrie>>, toks: &mut SimpleVob) {
         match &mut self.specific {
             StepSpecific::Stop => {
                 toks.allow_token(trie.special_token(SpecialToken::EndOfSentence));
@@ -352,7 +352,6 @@ impl Runner {
         Self {
             helper: AiciVmHelper::new(),
             state_idx: 0,
-            vob_token_set: Vec::new(),
             states,
         }
     }
@@ -398,27 +397,17 @@ impl Runner {
 
     fn compute(&mut self) {
         self.helper.all_disallowed();
-        let v = &mut self.vob_token_set;
-        if v.len() == 0 {
-            v.resize(self.helper.logit_biases.len(), 0);
-        } else {
-            v.iter_mut().for_each(|v| *v = 0);
-        }
         for state in &mut self.states[self.state_idx..] {
             if state.forces_eos() {
                 continue;
             }
-            state.apply_to(self.helper.trie.clone(), self.vob_token_set.as_mut_slice());
+            state.apply_to(self.helper.trie.clone(), &mut self.helper.allowed_tokens);
             if !state.allows_eos() {
                 break;
             }
         }
 
-        self.vob_token_set.iter().enumerate().for_each(|(idx, v)| {
-            if *v != 0 {
-                self.helper.logit_biases[idx] = 0.0;
-            }
-        });
+        self.helper.compute_biases();
     }
 
     #[allow(dead_code)]

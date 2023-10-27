@@ -3,6 +3,7 @@ use std::rc::Rc;
 use aici_abi::{
     aici_expose_all, aici_harness,
     recognizer::{AiciRecognizer, FunctionalRecognizer, StackRecognizer},
+    svob::SimpleVob,
     toktree::{SpecialToken, TokTrie},
     wprintln, AiciVm,
 };
@@ -90,22 +91,23 @@ fn main() {
 
     if false {
         let mut rec = StackRecognizer::from(RecRx { dfa });
-        let mut logits = trie.alloc_logits();
+        let mut logits = SimpleVob::new();
+        logits.resize(trie.vocab_size() + 1);
 
         for _ in 0..1000 {
             rec.reset();
             trie.compute_bias(&mut rec, &mut logits);
         }
 
-        let count = logits.iter().filter(|x| **x > -50.0).count();
-        wprintln!("resx: {}", count);
-        if count < 100 {
-            for (idx, logit) in logits.iter().enumerate() {
-                if *logit > -50.0 {
-                    wprintln!("{}: {:?}", idx, trie.token_str(idx as u32));
-                }
-            }
-        }
+        // let count = logits.iter().filter(|x| **x > -50.0).count();
+        // wprintln!("resx: {}", count);
+        // if count < 100 {
+        //     for (idx, logit) in logits.iter().enumerate() {
+        //         if *logit > -50.0 {
+        //             wprintln!("{}: {:?}", idx, trie.token_str(idx as u32));
+        //         }
+        //     }
+        // }
     }
 }
 

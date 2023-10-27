@@ -1,14 +1,16 @@
 use std::rc::Rc;
 
+use svob::SimpleVob;
 use toktree::{SpecialToken, TokTrie};
 
 pub mod bytes;
 pub mod host;
 pub mod recognizer;
+pub mod rng;
 pub mod rx;
 pub mod rxvm;
+pub mod svob;
 pub mod toktree;
-pub mod rng;
 
 pub type TokenId = bytes::TokenId;
 
@@ -41,6 +43,7 @@ pub struct AiciVmHelper {
     pub tokens: Vec<u32>,
     pub prompt_length: usize,
     pub logit_biases: Vec<f32>,
+    pub allowed_tokens: SimpleVob,
     pub trie: Rc<Box<TokTrie>>,
 }
 
@@ -51,6 +54,7 @@ impl AiciVmHelper {
             tokens: Vec::new(),
             prompt_length: 0,
             logit_biases: Vec::new(),
+            allowed_tokens: SimpleVob::new(),
             trie: Rc::new(Box::new(TokTrie::from_host())),
         }
     }
@@ -58,6 +62,7 @@ impl AiciVmHelper {
         // we keep one more logit at the end as a placeholder to avoid branching in
         // the inner loop of append_bias
         self.logit_biases.resize((size + 1) as usize, 0.0);
+        self.allowed_tokens.resize(self.logit_biases.len());
         self.logit_biases.as_mut_ptr()
     }
     pub fn aici_get_prompt_buffer(&mut self, size: u32) -> *mut u32 {
@@ -67,15 +72,20 @@ impl AiciVmHelper {
     }
 
     pub fn all_disallowed(&mut self) {
-        self.logit_biases.iter_mut().for_each(|x| *x = -100.0);
+        self.allowed_tokens.set_all(false);
     }
 
     pub fn allow_one(&mut self, tok: TokenId) {
-        self.logit_biases[tok as usize] = 0.0;
+        self.allowed_tokens.allow_token(tok);
     }
 
     pub fn allow_eos(&mut self) {
         self.allow_one(self.trie.special_token(SpecialToken::EndOfSentence));
+    }
+
+    pub fn compute_biases(&mut self) {
+        self.logit_biases.iter_mut().for_each(|x| *x = -100.0);
+        self.allowed_tokens.apply_to(&mut self.logit_biases);
     }
 }
 

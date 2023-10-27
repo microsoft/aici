@@ -6,6 +6,7 @@ use crate::{
         box_from_bytes, clone_as_bytes, clone_vec_as_bytes, vec_from_bytes, TokRxInfo, TokenId,
     },
     host::trie_bytes,
+    svob::SimpleVob,
 };
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -362,11 +363,11 @@ impl TokTrie {
         Some(n)
     }
 
-    pub fn compute_bias(&self, r: &mut impl Recognizer, logits: &mut [f32]) {
-        logits.iter_mut().for_each(|x| *x = -100.0);
+    pub fn compute_bias(&self, r: &mut impl Recognizer, logits: &mut SimpleVob) {
+        logits.set_all(false);
         for tok in vec![SpecialToken::EndOfSentence] {
             if r.special_allowed(tok) {
-                logits[self.special_token(tok) as usize] = 0.0;
+                logits.allow_token(self.special_token(tok))
             }
         }
         self.add_bias(r, logits)
@@ -396,7 +397,7 @@ impl TokTrie {
         ok
     }
 
-    pub fn add_bias(&self, r: &mut impl Recognizer, mut logits: impl AllowToken) {
+    pub fn add_bias(&self, r: &mut impl Recognizer, toks: &mut SimpleVob) {
         let n = self.root();
         let defl_tok = self.vocab_size() as u32;
         let off = self.node_offset(n);
@@ -406,7 +407,7 @@ impl TokTrie {
             let n = &self.nodes[p];
             let b = n.byte();
             if r.try_push_byte(b) {
-                logits.allow_token(n.token_id().unwrap_or(defl_tok));
+                toks.allow_token(n.token_id().unwrap_or(defl_tok));
                 r.pop_bytes(if n.subtree_size() == 1 {
                     n.num_parents()
                 } else {
@@ -420,31 +421,6 @@ impl TokTrie {
             }
         }
         r.trie_finished();
-    }
-}
-
-pub trait AllowToken {
-    fn allow_token(&mut self, tok: TokenId);
-}
-
-impl AllowToken for &mut [f32] {
-    #[inline(always)]
-    fn allow_token(&mut self, tok: TokenId) {
-        self[tok as usize] = 0.0;
-    }
-}
-
-impl AllowToken for &mut Vec<f32> {
-    #[inline(always)]
-    fn allow_token(&mut self, tok: TokenId) {
-        self[tok as usize] = 0.0;
-    }
-}
-
-impl AllowToken for &mut [u8] {
-    #[inline(always)]
-    fn allow_token(&mut self, tok: TokenId) {
-        self[tok as usize] = 1;
     }
 }
 

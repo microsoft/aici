@@ -23,7 +23,8 @@ impl<R: Recognizer> AiciRecognizer<R> {
     fn compute(&mut self) {
         // wprintln!("compute");
         self.trie
-            .compute_bias(&mut self.rec, &mut self.helper.logit_biases);
+            .compute_bias(&mut self.rec, &mut self.helper.allowed_tokens);
+        self.helper.compute_biases();
     }
 }
 

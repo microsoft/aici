@@ -1,4 +1,5 @@
 use aici_abi::{
+    svob::SimpleVob,
     toktree::{Recognizer, SpecialToken, TokTrie},
     wprint, wprintln,
 };
@@ -445,17 +446,17 @@ pub fn cfg_test() -> Result<()> {
         let trie = TokTrie::from_host();
         let toks = trie.greedy_tokenize(sample);
 
-        let mut logits = trie.alloc_logits();
-
         #[cfg(not(target_arch = "wasm32"))]
         let t0 = std::time::Instant::now();
 
         let mut line = 1;
+        let mut vob = SimpleVob::new();
+        vob.resize(trie.vocab_size() + 1);
 
         for tok in &toks[0..1000] {
             let tok = *tok;
-            trie.compute_bias(&mut cfg, &mut logits);
-            if logits[tok as usize] < -50.0 {
+            trie.compute_bias(&mut cfg, &mut vob);
+            if !vob.is_allowed(tok) {
                 wprintln!("reject, line={}, tok={:?}", line, trie.token_str(tok));
                 panic!();
             }
@@ -468,7 +469,7 @@ pub fn cfg_test() -> Result<()> {
                 wprintln!(
                     "tok: {:?} {}; {}",
                     trie.token_str(tok),
-                    logits[tok as usize],
+                    vob.is_allowed(tok),
                     cfg.get_stats()
                 );
                 cfg.viable_now();
