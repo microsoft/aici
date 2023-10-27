@@ -396,7 +396,7 @@ impl TokTrie {
         ok
     }
 
-    pub fn add_bias(&self, r: &mut impl Recognizer, logits: &mut [f32]) {
+    pub fn add_bias(&self, r: &mut impl Recognizer, mut logits: impl AllowToken) {
         let n = self.root();
         let defl_tok = self.vocab_size() as u32;
         let off = self.node_offset(n);
@@ -406,8 +406,7 @@ impl TokTrie {
             let n = &self.nodes[p];
             let b = n.byte();
             if r.try_push_byte(b) {
-                logits[n.token_id().unwrap_or(defl_tok) as usize] = 0.0;
-
+                logits.allow_token(n.token_id().unwrap_or(defl_tok));
                 r.pop_bytes(if n.subtree_size() == 1 {
                     n.num_parents()
                 } else {
@@ -421,6 +420,24 @@ impl TokTrie {
             }
         }
         r.trie_finished();
+    }
+}
+
+pub trait AllowToken {
+    fn allow_token(&mut self, tok: TokenId);
+}
+
+impl AllowToken for &mut [f32] {
+    #[inline(always)]
+    fn allow_token(&mut self, tok: TokenId) {
+        self[tok as usize] = 0.0;
+    }
+}
+
+impl AllowToken for &mut Vec<f32> {
+    #[inline(always)]
+    fn allow_token(&mut self, tok: TokenId) {
+        self[tok as usize] = 0.0;
     }
 }
 
