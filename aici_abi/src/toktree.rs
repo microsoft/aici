@@ -441,6 +441,13 @@ impl AllowToken for &mut Vec<f32> {
     }
 }
 
+impl AllowToken for &mut [u8] {
+    #[inline(always)]
+    fn allow_token(&mut self, tok: TokenId) {
+        self[tok as usize] = 1;
+    }
+}
+
 pub struct NodeChildren<'a> {
     trie: &'a TokTrie,
     current_offset: usize,
