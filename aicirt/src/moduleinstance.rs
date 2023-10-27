@@ -190,7 +190,6 @@ impl ModuleInstance {
         Ok(logit_ptr)
     }
 
-    #[allow(dead_code)] // TODOEMK
     fn setup_dynamic_attention_mask(&mut self, handle: WasmAici) -> Result<u32> {
         let mask_len = { self.globals.read().unwrap().max_context_length };
         let mask_ptr = self.call_func::<(WasmAici, u32), WasmPtr>(
@@ -240,6 +239,8 @@ impl ModuleInstance {
             (handle, prompt.len().try_into().unwrap()),
         )?;
 
+        let _mask_ptr = self.setup_dynamic_attention_mask(handle)?;
+        
         self.write_mem(&prompt, prompt_ptr)?;
         self.call_func::<WasmAici, ()>("aici_process_prompt", handle)?;
 
@@ -258,6 +259,9 @@ impl ModuleInstance {
         }
 
         self.read_mem(self.logit_ptr, opidx.dst_slice)?;
+
+        // TODOEMK what do I do with the mask_ptr data
+        // self.read_mem(self.mask_ptr, *** )?;
 
         Ok(())
     }
