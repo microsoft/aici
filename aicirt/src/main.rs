@@ -215,7 +215,7 @@ impl ModuleRegistry {
         // compilation in Speed mode seems to be ~10% slower but the generated code is 20-30% faster
         cfg.cranelift_opt_level(wasmtime::OptLevel::Speed);
 
-        // we need it but it causes 16% slow-down in the generated code...
+        // we need it but it causes 28% slow-down in the generated code...
         cfg.epoch_interruption(true);
 
         let engine = wasmtime::Engine::new(&cfg)?;
