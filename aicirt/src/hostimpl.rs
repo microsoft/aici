@@ -1,4 +1,7 @@
-use aici_abi::bytes::{clone_vec_as_bytes, TokRxInfo};
+use aici_abi::{
+    bytes::{clone_vec_as_bytes, TokRxInfo},
+    TokenId,
+};
 use anyhow::{anyhow, Result};
 use log::debug;
 use std::sync::{Arc, RwLock};
@@ -19,6 +22,7 @@ pub struct ModuleData {
     log: Vec<u8>,
     printed_log: usize,
     globals: Arc<RwLock<GlobalInfo>>,
+    pub ff_tokens: Vec<TokenId>,
     pub module_arg: Arc<String>,
     pub linker: Arc<wasmtime::Linker<ModuleData>>,
     pub instance: Option<wasmtime::Instance>,
@@ -59,6 +63,7 @@ impl ModuleData {
             memory: None,
             tokenizer: None,
             store_limits,
+            ff_tokens: Vec::new(),
         }
     }
 
@@ -145,6 +150,14 @@ pub fn setup_linker(engine: &wasmtime::Engine) -> Result<Arc<wasmtime::Linker<Mo
         |mut caller: wasmtime::Caller<'_, ModuleData>, ptr: u32, len: u32| {
             let m = read_caller_mem(&caller, ptr, len);
             caller.data_mut().write_log(&m);
+        },
+    )?;
+
+    linker.func_wrap(
+        "env",
+        "aici_host_ff_token",
+        |mut caller: wasmtime::Caller<'_, ModuleData>, tok: u32| {
+            caller.data_mut().ff_tokens.push(tok);
         },
     )?;
 

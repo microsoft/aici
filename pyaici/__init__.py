@@ -428,7 +428,7 @@ class AiciRunner:
         self.cmd.send({"op": "stop"})
         self.proc.wait()
 
-    def response_by_seq_id(self, seq_id: int):
+    def response_by_seq_id(self, seq_id: int) -> Dict[str, Any]:
         """
         Get the response for a given batch entry ID.
         """
@@ -437,7 +437,7 @@ class AiciRunner:
 
 def install_in_vllm(runner: AiciRunner):
     from vllm.sampling_params import SamplingParams
-    from vllm.sequence import SequenceGroupMetadata
+    from vllm.sequence import SequenceGroupMetadata, SequenceGroup
     import torch
 
     def step(
@@ -477,8 +477,17 @@ def install_in_vllm(runner: AiciRunner):
         )
         logits += bias
 
+    def append_ff_tokens(seq_group: SequenceGroup):
+        for seq in seq_group.get_seqs():
+            resp = runner.response_by_seq_id(seq.seq_id)
+            ff = resp and resp.get("ff_tokens", None)
+            ff = None
+            if ff:
+                seq.pending_ff_tokens = ff
+
     SamplingParams.apply_dynamic_logit_bias = apply_bias
     SamplingParams.initiate_step = step
+    SamplingParams.append_ff_tokens = append_ff_tokens
 
 
 def add_cli_args(parser: argparse.ArgumentParser, single=False):

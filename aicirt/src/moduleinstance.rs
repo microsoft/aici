@@ -206,6 +206,7 @@ impl ModuleInstance {
             "type": json_type,
             "millis": t0.elapsed().as_millis() as u64,
             "logs": logs + &suffix,
+            "ff_tokens": self.store.data().ff_tokens.clone(),
         })
     }
 

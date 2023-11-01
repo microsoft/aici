@@ -16,6 +16,12 @@ extern "C" {
 
     // Tokenize given UTF8 string. `dst_size` is in elements, not bytes. Returns number of generated tokens.
     fn aici_host_tokenize(src: *const u8, src_size: u32, dst: *mut u32, dst_size: u32) -> u32;
+
+    // Append fast-forward (FF) token.
+    // First FF token has to be returned by setting logit bias appropriately.
+    // Next tokens are added using this interface.
+    // All FF tokens are then generated in one go.
+    fn aici_host_ff_token(token: u32);
 }
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -130,3 +136,10 @@ pub fn tokenize(s: &str) -> Vec<TokenId> {
     // trim size
     res.clone()
 }
+
+pub fn ff_token(token: TokenId) {
+    unsafe {
+        aici_host_ff_token(token);
+    }
+}
+

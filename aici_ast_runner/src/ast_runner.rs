@@ -23,7 +23,7 @@ use crate::rx::RecRx;
 
 use aici_abi::{
     aici_expose_all,
-    host::{self, tokenize},
+    host::{self, ff_token, tokenize},
     svob::SimpleVob,
     toktree::{Recognizer, SpecialToken, TokTrie},
     wprintln, AiciVm, AiciVmHelper, TokenId,
@@ -221,6 +221,23 @@ impl StepState {
         }
     }
 
+    pub fn ff_state_tokens(&self) -> Option<Vec<TokenId>> {
+        match &self.specific {
+            StepSpecific::Options { tokens } => {
+                let tt = tokens
+                    .iter()
+                    .filter(|t| self.tokens.len() + 2 >= t.len())
+                    .collect::<Vec<_>>();
+                if tt.len() == 1 {
+                    Some(tt[0][self.tokens.len() + 1..].to_vec())
+                } else {
+                    None
+                }
+            }
+            _ => None,
+        }
+    }
+
     fn check_eos(&mut self, optional: bool) -> bool {
         self.tokens.len() >= self.max_tokens
             || self.bytes.len() >= self.max_bytes
@@ -397,13 +414,27 @@ impl Runner {
 
     fn compute(&mut self) {
         self.helper.all_disallowed();
+        let mut ff_tokens = None;
+        let mut can_ff = true;
         for state in &mut self.states[self.state_idx..] {
             if state.forces_eos() {
                 continue;
             }
             state.apply_to(self.helper.trie.clone(), &mut self.helper.allowed_tokens);
+            if can_ff {
+                ff_tokens = state.ff_state_tokens();
+            } else {
+                ff_tokens = None;
+            }
+            can_ff = false;
             if !state.allows_eos() {
                 break;
+            }
+        }
+
+        if let Some(ff) = ff_tokens {
+            for t in ff {
+                ff_token(t);
             }
         }
 
