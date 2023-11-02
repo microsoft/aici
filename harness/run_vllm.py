@@ -3,6 +3,7 @@ from typing import List, Tuple
 
 from vllm import EngineArgs, LLMEngine, SamplingParams
 import pyaici
+import ujson
 
 
 def main(args: argparse.Namespace):
@@ -44,7 +45,19 @@ def main(args: argparse.Namespace):
     if args.aici_module_arg:
         with open(args.aici_module_arg) as f:
             arg = f.read()
-    
+            v = {}
+            try:
+                v = ujson.decode(arg)
+            except:
+                pass
+            prompt = v.get("prompt", test_prompts[0][0])
+            sampling_params = v.get("sampling_params", None)
+            if sampling_params:
+                sampling_params = SamplingParams(**sampling_params)
+            else:
+                sampling_params = test_prompts[0][1]
+            test_prompts = [(prompt, sampling_params)]
+
     request_id = 0
     for prompt, _params in test_prompts:
         aici.instantiate(str(request_id), prompt, args.aici_module, arg)

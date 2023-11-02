@@ -1,4 +1,10 @@
 {
+  "prompt": "Here is an example JSON about Joe Random Hacker in Seattle:\n",
+  "sampling_params": {
+    "temperature": 0.9,
+    "n": 1,
+    "max_tokens": 120
+  },
   "steps": [
     {
       "Fixed": {
