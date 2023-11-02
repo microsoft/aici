@@ -1,0 +1,25 @@
+{
+  "prompt": "7 + 7 is",
+  "sampling_params": {
+    "temperature": 0,
+    "n": 1,
+    "max_tokens": 120
+  },
+  "steps": [
+    {
+      "Gen": {
+        "max_tokens": 5
+      }
+    },
+    {
+      "Fixed": {
+        "text": "\nand now I'm going to tell you 3 + 8 is"
+      }
+    },
+    {
+      "Gen": {
+        "max_tokens": 5
+      }
+    }
+  ]
+}

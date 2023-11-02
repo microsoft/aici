@@ -23,6 +23,11 @@ cd ../aicirt
 cargo build --release
 cd ..
 mkdir -p tmp
+if [ "X$1" = "Xcache" ] ; then
+  ./aicirt/target/release/aicirt --module $p/target/opt.wasm | tee tmp/runlog.txt
+  exit
+fi
+
 PERF=
 if [ `uname` = Linux ] ; then
   PERF="perf stat"
