@@ -1,27 +1,53 @@
 use std::io;
 
-use crate::{bytes::TokenId, wprintln};
+use crate::{
+    bytes::{vec_from_bytes, TokenId},
+    wprintln,
+};
+
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct BlobId(u32);
 
 #[allow(dead_code)]
 extern "C" {
     // Log a string.
     fn aici_host_print(ptr: *const u8, len: u32);
 
-    // Read binary representation of TokTrie.
-    // Always returns the size of the trie, will write up to `size` bytes to `dst`.
-    fn aici_host_read_token_trie(ptr: *mut u8, len: u32) -> u32;
+    // Read binary blob.
+    // Always returns the size of the blob, will write up to `size` bytes to `dst`.
+    fn aici_host_read_blob(blob: BlobId, dst: *mut u8, size: u32) -> u32;
 
-    // Similar, for argument passed by the user (typically JSON).
-    fn aici_host_read_arg(ptr: *mut u8, len: u32) -> u32;
+    // Return the ID of TokTrie binary representation.
+    fn aici_host_token_trie() -> BlobId;
 
-    // Tokenize given UTF8 string. `dst_size` is in elements, not bytes. Returns number of generated tokens.
-    fn aici_host_tokenize(src: *const u8, src_size: u32, dst: *mut u32, dst_size: u32) -> u32;
+    // Return the ID of argument passed by the user.
+    fn aici_host_module_arg() -> BlobId;
+
+    // Return the ID of argument passed by the user.
+    fn aici_host_tokens() -> BlobId;
+
+    // Tokenize given UTF8 string. The result is only valid until next call to this function.
+    fn aici_host_tokenize(src: *const u8, src_size: u32) -> BlobId;
 
     // Append fast-forward (FF) token.
     // First FF token has to be returned by setting logit bias appropriately.
     // Next tokens are added using this interface.
     // All FF tokens are then generated in one go.
     fn aici_host_ff_token(token: u32);
+}
+
+// TODO: add <T>
+fn read_blob(blob: BlobId, prefetch_size: usize) -> Vec<u8> {
+    let mut buffer = vec![0u8; prefetch_size];
+    let prefetch_size = prefetch_size as u32;
+    let size = unsafe { aici_host_read_blob(blob, buffer.as_mut_ptr(), prefetch_size) };
+    buffer.resize(size as usize, 0);
+    if size > prefetch_size {
+        // didn't read everything; retry
+        unsafe { aici_host_read_blob(blob, buffer.as_mut_ptr(), size) };
+    }
+    buffer
 }
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -95,46 +121,31 @@ pub extern "C" fn aici_init() {
 
 pub fn arg_bytes() -> Vec<u8> {
     #[cfg(target_arch = "wasm32")]
-    unsafe {
-        let size = aici_host_read_arg(0 as _, 0);
-        let mut buffer = vec![0u8; size as usize];
-        aici_host_read_arg(buffer.as_mut_ptr(), size);
-        return buffer;
-    }
+    return read_blob(unsafe { aici_host_module_arg() }, 1024);
 
     #[cfg(not(target_arch = "wasm32"))]
-    std::fs::read("arg.json").unwrap()
+    return std::fs::read("arg.json").unwrap();
 }
 
 pub fn trie_bytes() -> Vec<u8> {
     #[cfg(target_arch = "wasm32")]
-    unsafe {
-        let size = aici_host_read_token_trie(0 as _, 0);
-        let mut buffer = vec![0u8; size as usize];
-        aici_host_read_token_trie(buffer.as_mut_ptr(), size);
-        buffer
-    }
+    return read_blob(unsafe { aici_host_token_trie() }, 0);
 
     #[cfg(not(target_arch = "wasm32"))]
-    std::fs::read("tokenizer.bin").unwrap()
+    return std::fs::read("tokenizer.bin").unwrap();
+}
+
+pub fn tokens_arg() -> Vec<TokenId> {
+    let r = read_blob(unsafe { aici_host_tokens() }, 256);
+    vec_from_bytes(&r)
 }
 
 pub fn tokenize(s: &str) -> Vec<TokenId> {
-    let slen = s.len() as u32;
-    let cap = slen / 3 + 10;
-    let mut res = Vec::with_capacity(cap as usize);
-    let len = unsafe { aici_host_tokenize(s.as_ptr(), slen, res.as_mut_ptr(), cap) };
-    if len > res.len() as u32 {
-        // unlikely...
-        res = Vec::with_capacity(len as usize);
-        unsafe { aici_host_tokenize(s.as_ptr(), slen, res.as_mut_ptr(), len) };
-    }
-    unsafe {
-        res.set_len(len as usize);
-    }
-    wprintln!("tokenize: '{}' -> {:?}", s, res);
-    // trim size
-    res.clone()
+    let id = unsafe { aici_host_tokenize(s.as_ptr(), s.len() as u32) };
+    let r = read_blob(id, 4 * (s.len() / 3 + 10));
+    let res = vec_from_bytes(&r);
+    wprintln!("tokenize: {:?} -> {:?}", s, res);
+    res
 }
 
 pub fn ff_token(token: TokenId) {
@@ -142,4 +153,3 @@ pub fn ff_token(token: TokenId) {
         aici_host_ff_token(token);
     }
 }
-

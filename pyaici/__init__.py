@@ -359,16 +359,16 @@ class AiciRunner:
             }
         )
 
-    def step_add_token(self, id: int, token: int, clone_id: int = None):
+    def step_add_tokens(self, id: int, tokens: List[int], clone_id: int = None):
         """
         Adds a generated token to the step.
 
         Args:
             id (int): The ID of the batch-entry - needs to match a previous ID from step_add_prompt(), unless clone_id is set.
-            token (int): The token that was sampled.
+            tokens (list[int]): The tokens to add.
             clone_id (int, optional): The ID of the batch entry to clone if any.
         """
-        obj = {"id": id, "gen": token}
+        obj = {"id": id, "tokens": tokens}
         if clone_id is not None:
             obj["clone_id"] = clone_id
         self.gen_q.append(obj)
@@ -452,7 +452,14 @@ def install_in_vllm(runner: AiciRunner):
 
         for s in seq_group_metadata_list:
             ids = list(s.seq_data.keys())
-            if s.is_prompt:
+            if s.is_ff:
+                for id in ids:
+                    seq = s.seq_data[id]
+                    if seq.num_pending_ff_tokens:
+                        runner.step_add_tokens(
+                            id, seq.get_token_ids()[-seq.num_pending_ff_tokens :]
+                        )
+            elif s.is_prompt:
                 assert len(ids) == 1
                 id = ids[0]
                 runner.step_add_prompt(
@@ -466,7 +473,7 @@ def install_in_vllm(runner: AiciRunner):
                     out = s.seq_data[id].output_token_ids
                     if len(out) == 1 and id != ids[0]:
                         clone_id = ids[0]
-                    runner.step_add_token(id, token=out[-1], clone_id=clone_id)
+                    runner.step_add_tokens(id, tokens=[out[-1]], clone_id=clone_id)
         runner.step_finish()
 
     def apply_bias(logits: torch.Tensor):
@@ -481,8 +488,9 @@ def install_in_vllm(runner: AiciRunner):
         for seq in seq_group.get_seqs():
             resp = runner.response_by_seq_id(seq.seq_id)
             ff = resp and resp.get("ff_tokens", None)
-            ff = None
+            ff = None # remove me
             if ff:
+                print("FF", seq.seq_id, ff, resp)
                 seq.pending_ff_tokens = ff
 
     SamplingParams.apply_dynamic_logit_bias = apply_bias

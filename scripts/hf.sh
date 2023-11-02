@@ -2,7 +2,7 @@
 
 set -e
 set -x
-(cd aici_ast_runner && ./wasm.sh)
+(cd aici_ast_runner && ./wasm.sh cache)
 mod=`cat tmp/runlog.txt |grep '^[a-f0-9]\{64\}$'`
 
 RUST_LOG=debug \

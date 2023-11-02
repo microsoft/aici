@@ -23,7 +23,8 @@ use crate::rx::RecRx;
 
 use aici_abi::{
     aici_expose_all,
-    host::{self, ff_token, tokenize},
+    bytes::limit_str,
+    host::{self, ff_token, tokenize, tokens_arg},
     svob::SimpleVob,
     toktree::{Recognizer, SpecialToken, TokTrie},
     wprintln, AiciVm, AiciVmHelper, TokenId,
@@ -52,14 +53,6 @@ pub enum Step {
     },
 }
 
-fn limit_len(s: &str, max: usize) -> String {
-    if s.len() > max {
-        format!("{}...", String::from_utf8_lossy(&s.as_bytes()[0..max]))
-    } else {
-        s.to_string()
-    }
-}
-
 impl Debug for Step {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
@@ -78,7 +71,7 @@ impl Debug for Step {
                     write!(f, "/{:?}/ ", rx)?;
                 }
                 if let Some(yacc) = yacc {
-                    write!(f, "yacc:{:?} ", limit_len(yacc, 200))?;
+                    write!(f, "yacc:{:?} ", limit_str(yacc, 200))?;
                 }
                 if let Some(stop_at) = stop_at {
                     write!(f, "stop_at:{:?}, ", stop_at)?;
@@ -110,6 +103,7 @@ enum StepSpecific {
     Stop,
 }
 struct StepState {
+    idx: usize,
     ast: Step,
     specific: StepSpecific,
 
@@ -128,11 +122,12 @@ pub struct Runner {
     helper: AiciVmHelper,
     state_idx: usize,
     states: Vec<StepState>,
+    is_prompt: bool,
 }
 
 impl Debug for StepState {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "tok:{}/", self.tokens.len())?;
+        write!(f, "[{}] tok:{}/", self.idx, self.tokens.len())?;
         if self.max_tokens > 10000 {
             write!(f, "inf")?;
         } else {
@@ -160,6 +155,7 @@ impl StepState {
 
     fn from_specific(ast: &Step, specific: StepSpecific) -> StepState {
         StepState {
+            idx: 0,
             ast: ast.clone(),
             specific,
             word_idx: 0,
@@ -226,7 +222,7 @@ impl StepState {
             StepSpecific::Options { tokens } => {
                 let tt = tokens
                     .iter()
-                    .filter(|t| self.tokens.len() + 2 >= t.len())
+                    .filter(|t| t.len() >= self.tokens.len() + 2)
                     .collect::<Vec<_>>();
                 if tt.len() == 1 {
                     Some(tt[0][self.tokens.len() + 1..].to_vec())
@@ -362,7 +358,8 @@ impl Runner {
         };
         states.push(StepState::from_specific(&stop_ast, StepSpecific::Stop));
 
-        for (idx, state) in states.iter().enumerate() {
+        for (idx, state) in states.iter_mut().enumerate() {
+            state.idx = idx;
             wprintln!("[{}] {} {:?}", idx, state.pp(), state);
         }
 
@@ -370,6 +367,7 @@ impl Runner {
             helper: AiciVmHelper::new(),
             state_idx: 0,
             states,
+            is_prompt: true,
         }
     }
 
@@ -381,10 +379,9 @@ impl Runner {
     fn advance(&mut self, token: TokenId) {
         let bytes = self.helper.trie.token(token);
         wprintln!(
-            "advance {} '{}' [{}] {:?}",
+            "advance {} {:?} {:?}",
             token,
             String::from_utf8_lossy(bytes),
-            self.state_idx,
             self.states[self.state_idx]
         );
 
@@ -409,7 +406,7 @@ impl Runner {
         }
 
         self.states[last_idx].advance(&mut self.helper, token);
-        wprintln!(" => [{}] {:?}", self.state_idx, self.states[self.state_idx]);
+        wprintln!(" => {:?}", self.states[self.state_idx]);
     }
 
     fn compute(&mut self) {
@@ -445,33 +442,31 @@ impl Runner {
     fn print_prob(&self, tok: &str) {
         if let Some(id) = self.helper.trie.token_id(tok.as_bytes()) {
             wprintln!(
-                "prob '{}' {} = {}",
+                "prob {:?} {} = {}",
                 tok,
                 id,
                 self.helper.logit_biases[id as usize]
             );
         } else {
-            wprintln!("prob '{}' -> no token", tok)
+            wprintln!("prob {:?} -> no token", tok)
         }
     }
 }
 
 impl AiciVm for Runner {
-    fn aici_process_prompt(&mut self) {
-        wprintln!("prompt, {} tokens", self.helper.prompt_length);
-        // ignore the prompt (for now)
-        self.compute();
-    }
+    fn aici_process(&mut self) {
+        let toks = tokens_arg();
+        if self.is_prompt {
+            // ignore the prompt (for now)
+            wprintln!("prompt, {} tokens", toks.len());
+            self.is_prompt = false;
+        } else {
+            for token in toks {
+                self.advance(token);
+            }
+        }
 
-    fn aici_append_token(&mut self, token: u32) {
-        // save the token, just in case
-        let toks = &mut self.helper.tokens;
-        toks.push(token);
-
-        self.advance(token);
         self.compute();
-        // self.print_prob(" a");
-        // self.print_prob(" about");
     }
 
     fn get_helper(&mut self) -> &mut AiciVmHelper {

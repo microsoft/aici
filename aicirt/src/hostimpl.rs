@@ -3,7 +3,7 @@ use aici_abi::{
     TokenId,
 };
 use anyhow::{anyhow, Result};
-use log::debug;
+use log::info;
 use std::sync::{Arc, RwLock};
 use tokenizers::Tokenizer;
 
@@ -18,12 +18,14 @@ pub struct AiciLimits {
 
 // this is available to functions called from wasm
 pub struct ModuleData {
-    id: ModuleInstId,
+    pub id: ModuleInstId,
     log: Vec<u8>,
     printed_log: usize,
     globals: Arc<RwLock<GlobalInfo>>,
     pub ff_tokens: Vec<TokenId>,
     pub module_arg: Arc<String>,
+    tokenize_out: Vec<TokenId>,
+    tokens_arg: Vec<TokenId>,
     pub linker: Arc<wasmtime::Linker<ModuleData>>,
     pub instance: Option<wasmtime::Instance>,
     pub memory: Option<wasmtime::Memory>,
@@ -34,7 +36,14 @@ pub struct ModuleData {
 
 const MAXLOG: usize = 32 * 1024;
 
+pub struct BlobId(u32);
+
 impl ModuleData {
+    pub const ARG_ID: BlobId = BlobId(1);
+    pub const TOKENIZE_ID: BlobId = BlobId(2);
+    pub const TRIE_ID: BlobId = BlobId(3);
+    pub const TOKENS_ID: BlobId = BlobId(4);
+
     pub fn new(
         id: ModuleInstId,
         limits: &AiciLimits,
@@ -64,7 +73,14 @@ impl ModuleData {
             tokenizer: None,
             store_limits,
             ff_tokens: Vec::new(),
+            tokenize_out: Vec::new(),
+            tokens_arg: Vec::new(),
         }
+    }
+
+    pub fn set_tokens(&mut self, tokens: &[u32]) {
+        self.tokens_arg.clear();
+        self.tokens_arg.extend_from_slice(tokens);
     }
 
     pub fn tokenize(&mut self, s: &str) -> Result<Vec<u32>> {
@@ -98,7 +114,7 @@ impl ModuleData {
     }
 
     pub fn flush_logs(&mut self, name: &str) {
-        if !log::log_enabled!(log::Level::Debug) {
+        if !log::log_enabled!(log::Level::Info) {
             return;
         }
 
@@ -111,7 +127,7 @@ impl ModuleData {
         self.printed_log = self.log.len();
 
         for line in logs.lines() {
-            debug!("{}:{}> {}", self.id, name, line);
+            info!("{}:{}> {}", self.id, name, line);
         }
     }
 }
@@ -161,46 +177,46 @@ pub fn setup_linker(engine: &wasmtime::Engine) -> Result<Arc<wasmtime::Linker<Mo
         },
     )?;
 
-    // uint32_t aici_host_read_token_trie(uint8_t *dst, uint32_t size);
     linker.func_wrap(
         "env",
-        "aici_host_read_token_trie",
-        |mut caller: wasmtime::Caller<'_, ModuleData>, ptr: u32, len: u32| {
-            let lock = caller.data().globals.clone();
-            let info = lock.read().unwrap();
-            write_caller_mem(&mut caller, ptr, len, &info.trie_bytes)
+        "aici_host_read_blob",
+        |mut caller: wasmtime::Caller<'_, ModuleData>, blob_id: u32, ptr: u32, len: u32| {
+            if blob_id == ModuleData::TRIE_ID.0 {
+                let lock = caller.data().globals.clone();
+                let info = lock.read().unwrap();
+                write_caller_mem(&mut caller, ptr, len, &info.trie_bytes)
+            } else if blob_id == ModuleData::ARG_ID.0 {
+                let arg = caller.data().module_arg.clone();
+                write_caller_mem(&mut caller, ptr, len, arg.as_bytes())
+            } else if blob_id == ModuleData::TOKENIZE_ID.0 {
+                let arg = clone_vec_as_bytes(&caller.data().tokenize_out);
+                write_caller_mem(&mut caller, ptr, len, &arg)
+            } else if blob_id == ModuleData::TOKENS_ID.0 {
+                let arg = clone_vec_as_bytes(&caller.data().tokens_arg);
+                write_caller_mem(&mut caller, ptr, len, &arg)
+            } else {
+                0
+            }
         },
     )?;
 
-    // uint32_t aici_host_read_arg(uint8_t *dst, uint32_t size);
-    linker.func_wrap(
-        "env",
-        "aici_host_read_arg",
-        |mut caller: wasmtime::Caller<'_, ModuleData>, ptr: u32, len: u32| {
-            let arg = caller.data().module_arg.clone();
-            write_caller_mem(&mut caller, ptr, len, arg.as_bytes())
-        },
-    )?;
+    linker.func_wrap("env", "aici_host_module_arg", || ModuleData::ARG_ID.0)?;
+    linker.func_wrap("env", "aici_host_token_trie", || ModuleData::TRIE_ID.0)?;
+    linker.func_wrap("env", "aici_host_tokens", || ModuleData::TOKENS_ID.0)?;
 
     // uint32_t aici_host_tokenize(const uint8_t *src, uint32_t src_size, uint32_t *dst, uint32_t dst_size);
     linker.func_wrap(
         "env",
         "aici_host_tokenize",
-        |mut caller: wasmtime::Caller<'_, ModuleData>,
-         src: u32,
-         src_size: u32,
-         dst: u32,
-         dst_size: u32| {
+        |mut caller: wasmtime::Caller<'_, ModuleData>, src: u32, src_size: u32| {
             let m = read_caller_mem(&caller, src, src_size);
             let s = String::from_utf8_lossy(&m);
             let tokens = caller.data_mut().tokenize(&s);
             match tokens {
-                Err(_) => 0,
-                Ok(tokens) => {
-                    let bytes = clone_vec_as_bytes(&tokens);
-                    write_caller_mem(&mut caller, dst, 4 * dst_size, &bytes) / 4
-                }
+                Err(_) => caller.data_mut().tokenize_out.clear(),
+                Ok(tokens) => caller.data_mut().tokenize_out = tokens,
             }
+            ModuleData::TOKENIZE_ID.0
         },
     )?;
 

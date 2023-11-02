@@ -1,14 +1,16 @@
 use std::{fmt::Debug, rc::Rc};
 
 use crate::{
+    host::tokens_arg,
     toktree::{Recognizer, SpecialToken, TokTrie},
-    wprintln, AiciVm, AiciVmHelper,
+    AiciVm, AiciVmHelper,
 };
 
 pub struct AiciRecognizer<R: Recognizer> {
     pub helper: AiciVmHelper,
     pub rec: R,
     pub trie: Rc<Box<TokTrie>>,
+    pub is_prompt: bool,
 }
 
 impl<R: Recognizer> AiciRecognizer<R> {
@@ -17,6 +19,7 @@ impl<R: Recognizer> AiciRecognizer<R> {
             helper: AiciVmHelper::new(),
             rec,
             trie,
+            is_prompt: true,
         }
     }
 
@@ -29,24 +32,20 @@ impl<R: Recognizer> AiciRecognizer<R> {
 }
 
 impl<R: Recognizer + Clone> AiciVm for AiciRecognizer<R> {
-    fn aici_process_prompt(&mut self) {
-        wprintln!("prompt, {} tokens", self.helper.prompt_length);
-        // the regex doesn't care about the prompt
-        self.compute();
-    }
-
-    fn aici_append_token(&mut self, token: u32) {
-        let bytes = self.trie.token(token);
-        // wprintln!("xapp {} {:?}", token, bytes);
-        for b in bytes {
-            self.rec.push_byte(*b)
+    fn aici_process(&mut self) {
+        if self.is_prompt {
+            // the regex doesn't care about the prompt
+            self.is_prompt = false;
+        } else {
+            for token in tokens_arg() {
+                let bytes = self.trie.token(token);
+                // wprintln!("xapp {} {:?}", token, bytes);
+                for b in bytes {
+                    self.rec.push_byte(*b)
+                }
+                self.rec.collapse();
+            }
         }
-        self.rec.collapse();
-
-        // save the token, just in case
-        let toks = &mut self.helper.tokens;
-        toks.push(token);
-
         self.compute();
     }
 

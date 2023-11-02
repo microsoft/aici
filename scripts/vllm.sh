@@ -5,7 +5,7 @@ set -x
 (cd aici_ast_runner && ./wasm.sh cache)
 mod=`cat tmp/runlog.txt |grep '^[a-f0-9]\{64\}$'`
 
-RUST_LOG=debug \
+RUST_LOG=info \
 PYTHONPATH=.:vllm \
 python harness/run_vllm.py \
     --aici-rt ./aicirt/target/release/aicirt \

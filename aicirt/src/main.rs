@@ -4,6 +4,7 @@ mod msgchannel;
 mod semaphore;
 mod shm;
 
+use aici_abi::bytes::limit_str;
 use aici_abi::toktree::TokTrie;
 use aici_tokenizers::{find_tokenizer, Tokenizer};
 use anyhow::{anyhow, ensure, Result};
@@ -138,7 +139,7 @@ pub enum AiciOp {
     },
     Gen {
         id: ModuleInstId,
-        gen: Token,
+        tokens: Vec<Token>,
         clone_id: Option<ModuleInstId>,
     },
 }
@@ -147,7 +148,7 @@ impl AiciOp {
     pub fn to_thread_op(self) -> ThreadOp {
         match self {
             AiciOp::Prompt { .. } => ThreadOp::Prompt {},
-            AiciOp::Gen { gen, .. } => ThreadOp::Gen { gen },
+            AiciOp::Gen { tokens, .. } => ThreadOp::Gen { tokens },
         }
     }
 }
@@ -400,7 +401,7 @@ impl ModuleRegistry {
             Some(a) => a.to_string(),
             None => serde_json::to_string(&req.module_arg)?,
         };
-        let mut modinst = self.new_instance(0x100000, req.module_id.as_str(), arg)?;
+        let mut modinst = self.new_instance(42424242, req.module_id.as_str(), arg)?;
         let prompt = if req.prompt.is_string() {
             modinst.tokenize(req.prompt.as_str().unwrap())?
         } else {
@@ -491,8 +492,9 @@ impl Stepper {
                     !self.instances.contains_key(id),
                     format!("duplicate id {}", id)
                 );
-                let modinst = e.unwrap();
+                let mut modinst = e.unwrap();
                 info!("prompt {} ({})", id, req_id);
+                modinst.set_id(*id);
                 self.instances.insert(*id, Arc::new(Mutex::new(modinst)));
             }
         };
@@ -592,13 +594,20 @@ trait Exec {
                 };
                 let mut resp = match val {
                     Ok(v) => {
-                        debug!("dispatch ok: {:?}", v);
+                        debug!(
+                            "dispatch ok: {}",
+                            limit_str(&serde_json::to_string(&v).unwrap(), 200)
+                        );
                         json!({
                             "type": "ok",
                             "data": v
                         })
                     }
                     Err(err) => {
+                        info!(
+                            "data: {}",
+                            String::from_utf8_lossy(&msg[0..std::cmp::min(100, msg.len())])
+                        );
                         let err = format!("{:?}", err);
                         warn!("dispatch error: {}", err);
                         json!({

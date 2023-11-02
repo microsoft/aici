@@ -9,7 +9,6 @@ pub struct TokRxInfo {
     pub tok_eos: TokenId,
 }
 
-
 pub fn clone_vec_as_bytes<T>(input: &[T]) -> Vec<u8> {
     unsafe {
         let byte_slice = from_raw_parts(input.as_ptr() as *const u8, input.len() * size_of::<T>());
@@ -50,4 +49,16 @@ pub fn vec_from_bytes<T>(bytes: &[u8]) -> Vec<T> {
         std::ptr::copy_nonoverlapping(bytes.as_ptr(), result.as_mut_ptr() as *mut u8, bytes.len());
     }
     result
+}
+
+pub fn limit_str(s: &str, max_len: usize) -> String {
+    limit_bytes(s.as_bytes(), max_len)
+}
+
+pub fn limit_bytes(s: &[u8], max_len: usize) -> String {
+    if s.len() > max_len {
+        format!("{}...", String::from_utf8_lossy(&s[0..max_len]))
+    } else {
+        String::from_utf8_lossy(s).to_string()
+    }
 }

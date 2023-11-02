@@ -37,7 +37,7 @@ class AsyncLogitProcessor(LogitsProcessor, BaseStreamer):
             self.runner.instantiate(req_id, prompt, self.module_id, self.module_arg)
             self.runner.step_add_prompt(self.wasm_id, prompt, req_id)
         else:
-            self.runner.step_add_token(self.wasm_id, value[0].tolist()[0])
+            self.runner.step_add_tokens(self.wasm_id, value.tolist())
         self.runner.step_finish()
         self._idx += 1
 
