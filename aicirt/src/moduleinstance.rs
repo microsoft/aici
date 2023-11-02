@@ -207,11 +207,13 @@ impl ModuleInstance {
         };
 
         let logs = self.store.data_mut().string_log();
+        let ff_tokens = self.store.data().ff_tokens.clone();
+        self.store.data_mut().ff_tokens.clear();
         json!({
             "type": json_type,
             "millis": t0.elapsed().as_millis() as u64,
             "logs": logs + &suffix,
-            "ff_tokens": self.store.data().ff_tokens.clone(),
+            "ff_tokens": ff_tokens,
         })
     }
 

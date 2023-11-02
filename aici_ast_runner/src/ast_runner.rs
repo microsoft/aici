@@ -461,8 +461,15 @@ impl AiciVm for Runner {
             wprintln!("prompt, {} tokens", toks.len());
             self.is_prompt = false;
         } else {
+            let ntok = toks.len();
+            if ntok > 1 {
+                wprintln!("<<< {} tokens", ntok);
+            }
             for token in toks {
                 self.advance(token);
+            }
+            if ntok > 1 {
+                wprintln!(">>>");
             }
         }
 
