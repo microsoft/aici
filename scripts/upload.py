@@ -183,6 +183,7 @@ def ask_completion(
             else:
                 print(decoded_line)
 
+    print(prompt)
     for text in texts:
         print("***")
         print(text)
@@ -210,17 +211,17 @@ def codellama_prompt(prompt):
 
 def main():
     ast = {
-       "steps": json_to_steps(
-           {
-               "name": "",
-               "valid": True,
-               "description": "",
-               "type": "foo|bar|baz|something|else",
-               "address": {"street": "", "city": "", "state": "[A-Z][A-Z]"},
-               "age": 1,
-               "fraction": 1.5,
-           }
-       )
+        "steps": json_to_steps(
+            {
+                "name": "",
+                "valid": True,
+                "description": "",
+                "type": "foo|bar|baz|something|else",
+                "address": {"street": "", "city": "", "state": "[A-Z][A-Z]"},
+                "age": 1,
+                "fraction": 1.5,
+            }
+        )
     }
 
     Xast = {
@@ -243,16 +244,27 @@ def main():
         ]
     }
     mod = upload_wasm()
-    ask_completion(
-        prompt=codellama_prompt("Write fib function in C"),
-        # prompt=llama_prompt("Write fib function in C, respond in code only"),
-        aici_module=mod,
-        aici_arg=ast,
-        n=2,
-        temperature=0.5,
-        log=True,
-        max_tokens=1000,
-    )
+    # read file named on command line if provided
+    if len(sys.argv) > 1:
+        with open(sys.argv[1]) as f:
+            ast = ujson.load(f)
+        ask_completion(
+            prompt=codellama_prompt(ast["prompt"]),
+            aici_module=mod,
+            aici_arg=ast,
+            **ast["sampling_params"],
+        )
+    else:
+        ask_completion(
+            prompt=codellama_prompt("Write fib function in C"),
+            # prompt=llama_prompt("Write fib function in C, respond in code only"),
+            aici_module=mod,
+            aici_arg=ast,
+            n=1,
+            temperature=0.5,
+            log=True,
+            max_tokens=1000,
+        )
 
 
 main()

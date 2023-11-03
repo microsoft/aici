@@ -1,5 +1,5 @@
 {
-  "prompt": "7 + 7 is",
+  "prompt": "Hello",
   "sampling_params": {
     "temperature": 0,
     "n": 1,
@@ -8,17 +8,18 @@
   "steps": [
     {
       "Gen": {
-        "max_tokens": 5
+        "rx": ", ",
+        "max_tokens": 10
       }
     },
     {
       "Fixed": {
-        "text": "\nand now I'm going to tell you 3 + 8 is"
+        "text": "3 + 8 has"
       }
     },
     {
       "Gen": {
-        "max_tokens": 5
+        "max_tokens": 10
       }
     }
   ]
