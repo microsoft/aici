@@ -63,5 +63,6 @@
         "usize",
         "vllm",
         "wprintln"
-    ]
+    ],
+    "mypy.configFile": "vllm/mypy.ini"
 }

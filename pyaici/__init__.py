@@ -490,7 +490,7 @@ def install_in_vllm(runner: AiciRunner):
             resp = runner.response_by_seq_id(seq.seq_id)
             ff = resp and resp.get("ff_tokens", None)
             if ff:
-                print("FF", seq.seq_id, ff, resp) # remove me
+                # print("FF", seq.seq_id, ff, resp)
                 seq.pending_ff_tokens = ff
 
     SamplingParams.apply_dynamic_logit_bias = apply_bias
