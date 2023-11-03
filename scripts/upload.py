@@ -260,9 +260,9 @@ def main():
             # prompt=llama_prompt("Write fib function in C, respond in code only"),
             aici_module=mod,
             aici_arg=ast,
-            n=1,
+            n=2,
             temperature=0.5,
-            log=True,
+            # log=True,
             max_tokens=1000,
         )
 

@@ -457,8 +457,10 @@ def install_in_vllm(runner: AiciRunner):
                     seq = s.seq_data[id]
                     if seq.num_pending_ff_tokens:
                         runner.step_add_tokens(
-                            id, seq.get_token_ids()[-seq.num_pending_ff_tokens :]
+                            id, seq.get_token_ids()[-seq.num_pending_ff_tokens :],
+                            clone_id=seq.parent_id
                         )
+                        seq.parent_id = None
             elif s.is_prompt:
                 assert len(ids) == 1
                 id = ids[0]
@@ -469,11 +471,10 @@ def install_in_vllm(runner: AiciRunner):
                 )
             else:
                 for id in ids:
-                    clone_id = None
-                    out = s.seq_data[id].output_token_ids
-                    if len(out) == 1 and id != ids[0]:
-                        clone_id = ids[0]
-                    runner.step_add_tokens(id, tokens=[out[-1]], clone_id=clone_id)
+                    seq = s.seq_data[id]
+                    out = seq.output_token_ids
+                    runner.step_add_tokens(id, tokens=[out[-1]], clone_id=seq.parent_id)
+                    seq.parent_id = None
         runner.step_finish()
 
     def apply_bias(logits: torch.Tensor):
