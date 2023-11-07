@@ -658,8 +658,8 @@ fn main() -> () {
 
     let limits = AiciLimits {
         max_memory_bytes: cli.wasm_max_memory * MEGABYTE,
-        max_init_ms: (cli.wasm_max_init_time / WASMTIME_EPOCH_MS) + 1,
-        max_step_ms: (cli.wasm_max_step_time / WASMTIME_EPOCH_MS) + 1,
+        max_init_ms: cli.wasm_max_init_time,
+        max_step_ms: cli.wasm_max_step_time,
     };
 
     let wasm_ctx =

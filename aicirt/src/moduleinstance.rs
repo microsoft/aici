@@ -10,9 +10,6 @@ use wasmtime;
 
 use crate::hostimpl::{setup_linker, AiciLimits, GlobalInfo, ModuleData, ModuleInstId};
 
-/// How often to check for timeout of WASM; should be between 1 and 10
-pub const WASMTIME_EPOCH_MS: u64 = 1;
-
 #[derive(Clone)]
 pub struct WasmContext {
     pub engine: wasmtime::Engine,
@@ -52,9 +49,6 @@ impl WasmContext {
         // compilation in Speed mode seems to be ~10% slower but the generated code is 20-30% faster
         cfg.cranelift_opt_level(wasmtime::OptLevel::Speed);
 
-        // we need it but it causes 28% slow-down in the generated code...
-        cfg.epoch_interruption(true);
-
         let engine = wasmtime::Engine::new(&cfg)?;
         let linker = setup_linker(&engine)?;
 
@@ -76,17 +70,6 @@ impl WasmContext {
             trie_bytes: bytes,
             hf_tokenizer_bytes: tokenizer.hf_bytes,
         };
-
-        {
-            let engine = engine.clone();
-            std::thread::spawn(move || {
-                let period = std::time::Duration::from_millis(WASMTIME_EPOCH_MS);
-                loop {
-                    std::thread::sleep(period);
-                    engine.increment_epoch();
-                }
-            });
-        }
 
         Ok(Self {
             engine,
@@ -199,7 +182,6 @@ impl ModuleInstance {
             ),
         );
         store.limiter(|state| &mut state.store_limits);
-        store.epoch_deadline_trap();
 
         let instance = ctx.linker.instantiate(&mut store, &module)?;
         let memory = instance
@@ -230,7 +212,6 @@ impl ModuleInstance {
     }
 
     pub fn run_main(&mut self) -> Result<()> {
-        self.store.set_epoch_deadline(1_000_000_000);
         self.run_init()?;
         let t0 = Instant::now();
         let _ = self.call_func::<(i32, i32), i32>("main", (0, 0))?;
@@ -287,7 +268,6 @@ impl ModuleInstance {
     }
 
     pub fn setup(&mut self, prompt: &[u32]) -> Result<()> {
-        self.store.set_epoch_deadline(self.limits.max_init_ms);
         self.run_init()?;
 
         let handle = self.call_func::<(), WasmAici>("aici_create", ())?;
@@ -310,7 +290,6 @@ impl ModuleInstance {
         match opidx.op {
             ThreadOp::Prompt {} => {}
             ThreadOp::Gen { tokens } => {
-                self.store.set_epoch_deadline(self.limits.max_step_ms);
                 self.run_process(&tokens)?;
             }
         }
