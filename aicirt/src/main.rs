@@ -170,7 +170,7 @@ struct MkModuleReq {
 }
 
 #[derive(Serialize, Deserialize, Clone)]
-struct InstantiateReq {
+pub struct InstantiateReq {
     req_id: String,
     // [TokenId] or str
     prompt: Value,
