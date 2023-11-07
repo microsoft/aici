@@ -3,40 +3,39 @@ mod moduleinstance;
 mod msgchannel;
 mod semaphore;
 mod shm;
+mod worker;
 
 use aici_abi::bytes::limit_str;
 use aici_abi::toktree::TokTrie;
-use aici_tokenizers::{find_tokenizer, Tokenizer};
+use aici_tokenizers::find_tokenizer;
 use anyhow::{anyhow, ensure, Result};
 use base64;
 use base64::Engine as _;
 use clap::Parser;
 use hex;
-use hostimpl::{GlobalInfo, ModuleData};
+use hostimpl::GlobalInfo;
 use log::{debug, info, warn};
-use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 use std::collections::HashMap;
 use std::fs;
+use std::hash::Hash;
 use std::path::PathBuf;
-use std::sync::{Arc, Mutex, RwLock};
+use std::sync::{Arc, Mutex};
 use std::time::Instant;
 use thread_priority::*;
-use wasmtime::{self, Config};
+use worker::SeqGroupWorkerHandle;
 
 use crate::hostimpl::*;
 use crate::moduleinstance::*;
 use crate::msgchannel::MessageChannel;
 use crate::shm::Shm;
+use crate::worker::WorkerForker;
 
 // Both of these are percentage of available cores
 const BG_THREADS_FRACTION: usize = 50;
 const STEP_THREADS_FRACTION: usize = 90;
-
-/// How often to check for timeout of WASM; should be between 1 and 10
-const WASMTIME_EPOCH_MS: u64 = 1;
 
 const MEGABYTE: usize = 1024 * 1024;
 
@@ -65,6 +64,10 @@ struct Cli {
     /// Run with POSIX shared memory interface
     #[arg(short, long)]
     server: bool,
+
+    /// Fork test
+    #[arg(long)]
+    fork: bool,
 
     /// Size of JSON comm buffer in megabytes
     #[arg(long, default_value = "8")]
@@ -97,23 +100,29 @@ impl Cli {
     }
 }
 
+enum ModuleStatus {
+    Missing,
+    Locked,
+    Ready,
+}
+
 // this is cloned for every module-level request, so don't go overboard with fields
 #[derive(Clone)]
 struct ModuleRegistry {
+    wasm_ctx: Arc<WasmContext>,
     cache_path: PathBuf,
-    engine: wasmtime::Engine,
-    linker: Arc<wasmtime::Linker<ModuleData>>,
-    // maps module_id (sha256 string) to module; set to None while the module is being compiled
-    modules: Arc<Mutex<HashMap<String, Option<wasmtime::Module>>>>,
-    req_instances: Arc<Mutex<HashMap<String, ModuleInstance>>>,
-    globals: Arc<RwLock<GlobalInfo>>,
-    limits: Arc<AiciLimits>,
+    // maps module_id (sha256 string) to module status
+    modules: Arc<Mutex<HashMap<String, ModuleStatus>>>,
+    req_instances: Arc<Mutex<HashMap<String, SeqGroupWorkerHandle>>>,
+    // note sure Mutex is needed
+    forker: Arc<Mutex<WorkerForker>>,
 }
 
 struct Stepper {
-    req_instances: Arc<Mutex<HashMap<String, ModuleInstance>>>,
-    instances: HashMap<ModuleInstId, Arc<Mutex<ModuleInstance>>>,
-    globals: Arc<RwLock<GlobalInfo>>,
+    req_instances: Arc<Mutex<HashMap<String, SeqGroupWorkerHandle>>>,
+    instances: HashMap<ModuleInstId, SeqGroupWorkerHandle>,
+    top_workers: HashMap<ModuleInstId, ModuleInstId>,
+    globals: GlobalInfo,
     bin_shm: Shm,
 }
 
@@ -127,7 +136,7 @@ struct AiciStepReq {
     ops: Vec<AiciOp>,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize)]
 #[serde(untagged)]
 pub enum AiciOp {
     Prompt {
@@ -160,7 +169,7 @@ struct MkModuleReq {
     meta: Value,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Clone)]
 struct InstantiateReq {
     req_id: String,
     // [TokenId] or str
@@ -191,92 +200,28 @@ struct TokensReq {
 }
 
 impl ModuleRegistry {
-    pub fn new(limits: AiciLimits, tokenizer: Tokenizer) -> Result<Self> {
-        let mut cfg = Config::default();
-        // these are defaults as of 13.0.0, but we specify them anyways for stability
-        cfg.debug_info(false)
-            .wasm_backtrace(true)
-            .native_unwind_info(true)
-            .consume_fuel(false)
-            .max_wasm_stack(512 * 1024)
-            .wasm_tail_call(false)
-            .wasm_threads(false)
-            .wasm_simd(true)
-            .wasm_relaxed_simd(false)
-            .wasm_bulk_memory(true)
-            .wasm_multi_value(true)
-            .wasm_memory64(false)
-            .strategy(wasmtime::Strategy::Auto)
-            .cranelift_nan_canonicalization(false)
-            .parallel_compilation(true);
-
-        // disable stuff we don't need
-        cfg.wasm_backtrace_details(wasmtime::WasmBacktraceDetails::Disable)
-            .wasm_reference_types(false);
-
-        // compilation in Speed mode seems to be ~10% slower but the generated code is 20-30% faster
-        cfg.cranelift_opt_level(wasmtime::OptLevel::Speed);
-
-        // we need it but it causes 28% slow-down in the generated code...
-        cfg.epoch_interruption(true);
-
-        let engine = wasmtime::Engine::new(&cfg)?;
-        let linker = setup_linker(&engine)?;
-
-        let tokens = tokenizer.token_bytes();
-        let trie = TokTrie::from(&tokenizer.tokrx_info(), &tokens);
-        trie.check_against(&tokens);
-        let bytes = trie.serialize();
-        // validate
-        let trie2 = TokTrie::from_bytes(&bytes);
-        assert!(trie.info() == trie2.info());
-        trie2.check_against(&tokens);
-
-        // let tok = tokenizers::Tokenizer::from_bytes(tokenizer.hf_bytes).unwrap();
-        // let tokens = tok.encode("I am something", false).unwrap();
-        // println!("tokens: {:?}", tokens);
-
-        let globals = GlobalInfo {
-            tokrx_info: tokenizer.tokrx_info(),
-            trie_bytes: bytes,
-            hf_tokenizer_bytes: tokenizer.hf_bytes,
-        };
-
-        {
-            let engine = engine.clone();
-            std::thread::spawn(move || {
-                let period = std::time::Duration::from_millis(WASMTIME_EPOCH_MS);
-                loop {
-                    std::thread::sleep(period);
-                    engine.increment_epoch();
-                }
-            });
-        }
+    pub fn new(wasm_ctx: WasmContext) -> Result<Self> {
+        let forker = WorkerForker::new(wasm_ctx.clone());
 
         Ok(Self {
+            forker: Arc::new(Mutex::new(forker)),
             cache_path: PathBuf::from("./cache"),
-            engine,
-            linker,
+            wasm_ctx: Arc::new(wasm_ctx),
             modules: Arc::new(Mutex::new(HashMap::new())),
             req_instances: Arc::new(Mutex::new(HashMap::new())),
-            globals: Arc::new(RwLock::new(globals)),
-            limits: Arc::new(limits),
         })
     }
 
-    fn lock_module(&self, module_id: &str) -> Option<wasmtime::Module> {
+    fn module_needs_check(&self, module_id: &str) -> bool {
         loop {
             let mut lck = self.modules.lock().unwrap();
-            match lck.get(module_id) {
-                Some(Some(m)) => return Some(m.clone()),
-                Some(None) => {
-                    // currently locked
-                    std::thread::sleep(std::time::Duration::from_millis(50))
-                }
-                None => {
+            match *lck.get(module_id).unwrap_or(&ModuleStatus::Missing) {
+                ModuleStatus::Locked => std::thread::sleep(std::time::Duration::from_millis(50)),
+                ModuleStatus::Ready => return false,
+                ModuleStatus::Missing => {
                     // we lock it
-                    lck.insert(module_id.to_string(), None);
-                    return None;
+                    lck.insert(module_id.to_string(), ModuleStatus::Locked);
+                    return true;
                 }
             }
         }
@@ -290,43 +235,43 @@ impl ModuleRegistry {
         self.cache_path.join(format!("{}.elf", module_id))
     }
 
-    fn compile_module(&self, module_id: &str, force: bool) -> Result<wasmtime::Module> {
+    fn compile_module(&self, module_id: &str, force: bool) -> Result<()> {
         let module = if force {
             Err(anyhow!("force"))
         } else {
-            unsafe { wasmtime::Module::deserialize_file(&self.engine, self.elf_path(module_id)) }
+            self.wasm_ctx.deserialize_module(self.elf_path(module_id))
         };
-        let module = match module {
+
+        match module {
             Err(e) => {
                 let wasm_bytes = fs::read(self.wasm_path(module_id))?;
                 info!("compiling {}; {}", module_id, e);
-                let compiled = self.engine.precompile_module(&wasm_bytes)?;
+                let compiled = self.wasm_ctx.engine.precompile_module(&wasm_bytes)?;
                 fs::write(self.elf_path(module_id), compiled)?;
-                unsafe {
-                    wasmtime::Module::deserialize_file(&self.engine, self.elf_path(module_id))?
-                }
+                // make sure we can deserialize it
+                let _ = self.wasm_ctx.deserialize_module(self.elf_path(module_id))?;
             }
-            Ok(module) => module,
+            Ok(_) => {}
         };
 
-        let r = module.clone();
         let mut lck = self.modules.lock().unwrap();
-        lck.insert(module_id.to_string(), Some(module));
-        return Ok(r);
+        lck.insert(module_id.to_string(), ModuleStatus::Ready);
+        return Ok(());
     }
 
-    fn module_from_fs(&self, module_id: &str) -> Result<wasmtime::Module> {
-        match self.lock_module(module_id) {
-            Some(r) => Ok(r),
-            None => match self.compile_module(module_id, false) {
-                Ok(module) => Ok(module),
+    fn ensure_module_in_fs(&self, module_id: &str) -> Result<PathBuf> {
+        if self.module_needs_check(module_id) {
+            match self.compile_module(module_id, false) {
+                Ok(_) => {}
                 Err(e) => {
                     let mut lck = self.modules.lock().unwrap();
                     lck.remove(module_id);
-                    Err(e)
+                    return Err(e);
                 }
-            },
+            }
         }
+
+        Ok(self.elf_path(module_id))
     }
 
     fn create_module(&self, wasm_bytes: Vec<u8>, meta_bytes: Vec<u8>) -> Result<Value> {
@@ -342,7 +287,7 @@ impl ModuleRegistry {
         let module_id = hex::encode(hasher.finalize());
         let module_id = &module_id;
 
-        if self.lock_module(module_id).is_none() {
+        if self.module_needs_check(module_id) {
             match self.write_and_compile(module_id, &meta_bytes, &wasm_bytes) {
                 Err(e) => {
                     let mut lck = self.modules.lock().unwrap();
@@ -378,7 +323,7 @@ impl ModuleRegistry {
         module_id: &String,
         meta_bytes: &Vec<u8>,
         wasm_bytes: &Vec<u8>,
-    ) -> Result<wasmtime::Module> {
+    ) -> Result<()> {
         fs::create_dir_all(&self.cache_path)?;
         Ok(if !self.wasm_path(module_id).exists() {
             let jsonpath = self.cache_path.join(format!("{}.json", module_id));
@@ -397,50 +342,17 @@ impl ModuleRegistry {
     }
 
     fn instantiate(&mut self, req: InstantiateReq) -> Result<Value> {
-        let arg = match req.module_arg.as_str() {
-            Some(a) => a.to_string(),
-            None => serde_json::to_string(&req.module_arg)?,
-        };
-        let mut modinst = self.new_instance(42424242, req.module_id.as_str(), arg)?;
-        let prompt = if req.prompt.is_string() {
-            modinst.tokenize(req.prompt.as_str().unwrap())?
-        } else {
-            req.prompt
-                .as_array()
-                .ok_or(anyhow!("expecting string or int array as prompt"))?
-                .iter()
-                .map(|x| -> Result<u32> {
-                    x.as_u64()
-                        .ok_or(anyhow!("expecting number as token"))?
-                        .try_into()
-                        .map_err(|e: std::num::TryFromIntError| anyhow!(e))
-                })
-                .collect::<Result<Vec<u32>>>()?
-        };
-        modinst.setup(&prompt)?;
+        ensure!(is_hex_string(&req.module_id), "invalid module_id");
+        let module_path = self.ensure_module_in_fs(&req.module_id)?;
+        let handle = self
+            .forker
+            .lock()
+            .unwrap()
+            .instantiate(req.clone(), module_path)?;
         info!("instance {} -> {}", req.module_id, req.req_id);
         let mut req_instances = self.req_instances.lock().unwrap();
-        req_instances.insert(req.req_id, modinst);
+        req_instances.insert(req.req_id, handle);
         Ok(json!({}))
-    }
-
-    pub fn new_instance(
-        &mut self,
-        id: ModuleInstId,
-        module_id: &str,
-        module_arg: String,
-    ) -> Result<ModuleInstance> {
-        ensure!(is_hex_string(module_id), "invalid module_id");
-        let module = self.module_from_fs(module_id)?;
-        let modinst = ModuleInstance::new(
-            id,
-            &self.limits,
-            module,
-            Arc::new(module_arg),
-            self.linker.clone(),
-            self.globals.clone(),
-        )?;
-        Ok(modinst)
     }
 
     pub fn dispatch_loop(&self, ch: CmdRespChannel) -> ! {
@@ -465,9 +377,22 @@ impl Stepper {
         Ok(Self {
             req_instances: reg.req_instances.clone(),
             instances: HashMap::new(),
-            globals: reg.globals.clone(),
+            top_workers: HashMap::new(),
+            globals: reg.wasm_ctx.globals.clone(),
             bin_shm,
         })
+    }
+
+    fn top_worker(&self, id: ModuleInstId) -> Result<&SeqGroupWorkerHandle> {
+        let id = self.top_worker_id(id)?;
+        Ok(self.instances.get(&id).unwrap())
+    }
+
+    fn top_worker_id(&self, id: ModuleInstId) -> Result<ModuleInstId> {
+        self.top_workers
+            .get(&id)
+            .map(|x| *x)
+            .ok_or(anyhow!("invalid id {}", id))
     }
 
     fn mk_instance(&mut self, op: &AiciOp) -> Result<()> {
@@ -475,14 +400,11 @@ impl Stepper {
         match op {
             AiciOp::Gen { id, clone_id, .. } => {
                 if let Some(cid) = clone_id {
-                    ensure!(!self.instances.contains_key(id));
-                    let parent = self
-                        .instances
-                        .get(cid)
-                        .ok_or(anyhow!("invalid clone_id {}", cid))?;
+                    ensure!(!self.top_workers.contains_key(id));
+                    let parent = self.top_worker(*cid)?;
                     info!("fork {} -> ({})", cid, id);
-                    let copy = parent.lock().unwrap().fork(*id)?;
-                    self.instances.insert(*id, Arc::new(Mutex::new(copy)));
+                    parent.create_clone(*cid, *id);
+                    self.top_workers.insert(*cid, self.top_worker_id(*id)?);
                 }
             }
             AiciOp::Prompt { id, req_id, .. } => {
@@ -492,10 +414,10 @@ impl Stepper {
                     !self.instances.contains_key(id),
                     format!("duplicate id {}", id)
                 );
-                let mut modinst = e.unwrap();
+                let modinst = e.unwrap();
                 info!("prompt {} ({})", id, req_id);
                 modinst.set_id(*id);
-                self.instances.insert(*id, Arc::new(Mutex::new(modinst)));
+                self.instances.insert(*id, modinst);
             }
         };
 
@@ -513,44 +435,47 @@ impl Stepper {
             self.mk_instance(&op)?
         }
 
-        let vocab_block_len = { self.globals.read().unwrap().tokrx_info.vocab_size * 4 } as usize;
+        let vocab_block_len = self.globals.tokrx_info.vocab_size as usize * 4;
 
         let mut slices = self.bin_shm.split(vocab_block_len)?;
         slices.reverse();
 
         let numops = req.ops.len();
 
-        ensure!(slices.len() >= numops, "shm size too small");
+        ensure!(
+            self.bin_shm.len() / vocab_block_len - 1 >= numops,
+            "shm size too small"
+        );
 
-        let mut ids = Vec::new();
+        let mut reqs = HashMap::new();
+        let mut used_ids = Vec::new();
+        let mut off = 0;
 
-        let reqs = req
-            .ops
-            .into_iter()
-            .map(|op| -> Arc<Mutex<ModuleInstance>> {
-                let instid = match op {
-                    AiciOp::Gen { id, .. } => id,
-                    AiciOp::Prompt { id, .. } => id,
-                };
-                ids.push(instid);
-                let modinst_rc = self.instances.get(&instid).unwrap();
-                let slice = slices.pop().unwrap();
+        for op in req.ops.into_iter() {
+            let instid = match op {
+                AiciOp::Gen { id, .. } => id,
+                AiciOp::Prompt { id, .. } => id,
+            };
+            let topid = self.top_worker_id(instid).unwrap();
+            if !reqs.contains_key(&topid) {
+                used_ids.push(topid);
+                reqs.insert(topid, Vec::new());
+            }
+            reqs.get_mut(&topid).unwrap().push((op, off));
+            off += vocab_block_len;
+        }
 
-                let mut lck = modinst_rc.lock();
-                lck.as_deref_mut().unwrap().add_op(slice, op.to_thread_op());
-
-                modinst_rc.clone()
-            })
-            .collect::<Vec<_>>();
-
-        let results = reqs
-            .into_par_iter()
-            .map(|req| req.lock().as_deref_mut().unwrap().exec())
-            .collect::<Vec<_>>();
+        for id in &used_ids {
+            let h = self.top_worker(*id).unwrap();
+            h.start_exec(reqs.remove(id).unwrap());
+        }
 
         let mut map = serde_json::Map::new();
-        for (id, result) in ids.into_iter().zip(results.into_iter()) {
-            map.insert(id.to_string(), result);
+        for id in &used_ids {
+            let h = self.top_worker(*id).unwrap();
+            for (id, result) in h.finish_exec() {
+                map.insert(id.to_string(), result);
+            }
         }
 
         Ok(Value::Object(map))
@@ -560,9 +485,7 @@ impl Stepper {
 impl Exec for Stepper {
     fn exec(&mut self, json: Value) -> Result<Value> {
         match json["op"].as_str() {
-            Some("tokens") => {
-                Ok(json!({ "vocab_size": self.globals.read().unwrap().tokrx_info.vocab_size }))
-            }
+            Some("tokens") => Ok(json!({ "vocab_size": self.globals.tokrx_info.vocab_size })),
             Some("step") => self.aici_step(serde_json::from_value(json)?),
             _ => return Err(anyhow!("bad op")),
         }
@@ -673,6 +596,58 @@ impl CmdRespChannel {
     }
 }
 
+fn set_priority(pri: ThreadPriority) {
+    set_thread_priority_and_policy(
+        thread_native_id(),
+        pri,
+        ThreadSchedulePolicy::Realtime(RealtimeThreadSchedulePolicy::RoundRobin),
+    )
+    .unwrap();
+}
+
+fn save_tokenizer(cli: &Cli) {
+    let filename = cli.save_tokenizer.as_deref().unwrap();
+    let tokenizer = find_tokenizer(&cli.tokenizer).unwrap();
+    let tokens = tokenizer.token_bytes();
+
+    let trie = TokTrie::from(&tokenizer.tokrx_info(), &tokens);
+    trie.check_against(&tokens);
+
+    let bytes = trie.serialize();
+
+    // validate
+    let trie2 = TokTrie::from_bytes(&bytes);
+    assert!(trie.info() == trie2.info());
+    trie2.check_against(&tokens);
+
+    std::fs::write(filename.clone(), &bytes).unwrap();
+    println!("wrote {}, {} bytes", filename, bytes.len());
+}
+
+fn install_from_cmdline(cli: &Cli, wasm_ctx: WasmContext) {
+    let name = cli.module.as_deref().unwrap();
+    let reg = ModuleRegistry::new(wasm_ctx).unwrap();
+    let module_id = if name.len() == 64 && name.chars().all(|c| c.is_digit(16)) {
+        name.to_string()
+    } else {
+        let wasm_bytes = fs::read(name).unwrap();
+        let meta_bytes = match cli.module_meta.as_deref() {
+            Some(name) => fs::read(name).unwrap(),
+            None => serde_json::to_vec(&Value::Null).unwrap(),
+        };
+
+        let json = reg.create_module(wasm_bytes, meta_bytes).unwrap();
+        json["module_id"].as_str().unwrap().to_string()
+    };
+
+    println!("{}", module_id);
+
+    // if cli.run {
+    //     let mut modinst = reg.new_instance(42, &module_id, "{}".to_string()).unwrap();
+    //     modinst.run_main().unwrap();
+    // }
+}
+
 fn main() -> () {
     env_logger::init();
 
@@ -689,48 +664,15 @@ fn main() -> () {
         max_step_epochs: (cli.wasm_max_step_time / WASMTIME_EPOCH_MS) + 1,
     };
 
-    // You can check the value provided by positional arguments, or option arguments
-    if let Some(name) = cli.module.as_deref() {
-        let mut reg = ModuleRegistry::new(limits, find_tokenizer(&cli.tokenizer).unwrap()).unwrap();
-        let module_id = if name.len() == 64 && name.chars().all(|c| c.is_digit(16)) {
-            name.to_string()
-        } else {
-            let wasm_bytes = fs::read(name).unwrap();
-            let meta_bytes = match cli.module_meta.as_deref() {
-                Some(name) => fs::read(name).unwrap(),
-                None => serde_json::to_vec(&Value::Null).unwrap(),
-            };
+    let wasm_ctx = WasmContext::new(limits, find_tokenizer(&cli.tokenizer).unwrap()).unwrap();
 
-            let json = reg.create_module(wasm_bytes, meta_bytes).unwrap();
-            json["module_id"].as_str().unwrap().to_string()
-        };
-
-        println!("{}", module_id);
-
-        if cli.run {
-            let mut modinst = reg.new_instance(42, &module_id, "{}".to_string()).unwrap();
-            modinst.run_main().unwrap();
-        }
-
+    if cli.save_tokenizer.is_some() {
+        save_tokenizer(&cli);
         return ();
     }
 
-    if let Some(filename) = cli.save_tokenizer {
-        let tokenizer = find_tokenizer(&cli.tokenizer).unwrap();
-        let tokens = tokenizer.token_bytes();
-
-        let trie = TokTrie::from(&tokenizer.tokrx_info(), &tokens);
-        trie.check_against(&tokens);
-
-        let bytes = trie.serialize();
-
-        // validate
-        let trie2 = TokTrie::from_bytes(&bytes);
-        assert!(trie.info() == trie2.info());
-        trie2.check_against(&tokens);
-
-        std::fs::write(filename.clone(), &bytes).unwrap();
-        println!("wrote {}, {} bytes", filename, bytes.len());
+    if cli.module.is_some() {
+        install_from_cmdline(&cli, wasm_ctx);
         return ();
     }
 
@@ -765,7 +707,7 @@ fn main() -> () {
         cli.bin_size * MEGABYTE,
     )
     .unwrap();
-    let reg = ModuleRegistry::new(limits, find_tokenizer(&cli.tokenizer).unwrap()).unwrap();
+    let reg = ModuleRegistry::new(wasm_ctx).unwrap();
     let exec = Stepper::new(&reg, bin_shm).unwrap();
     let cli2 = cli.clone();
     rayon::spawn(move || {
@@ -778,13 +720,4 @@ fn main() -> () {
         let exec_disp = CmdRespChannel::new("", &cli).unwrap();
         exec_disp.dispatch_loop(exec);
     })
-}
-
-fn set_priority(pri: ThreadPriority) {
-    set_thread_priority_and_policy(
-        thread_native_id(),
-        pri,
-        ThreadSchedulePolicy::Realtime(RealtimeThreadSchedulePolicy::RoundRobin),
-    )
-    .unwrap();
 }

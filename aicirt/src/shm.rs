@@ -52,6 +52,10 @@ impl Shm {
         })
     }
 
+    pub fn len(&self) -> usize {
+        self.size
+    }
+
     pub fn split(&self, slice_size: usize) -> Result<Vec<&'static mut [u8]>> {
         let num = self.size / slice_size;
         ensure!(num > 0);

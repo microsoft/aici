@@ -22,6 +22,7 @@ aici_abi = "0.1.0"
 aici_tokenizers = "0.1.0"
 tokenizers = "0.14.1"
 thread-priority = "0.13.1"
+ipc-channel = "0.18.0"
 
 [patch.crates-io]
 aici_abi = { path = "../aici_abi" }

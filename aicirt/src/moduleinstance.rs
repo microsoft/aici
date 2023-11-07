@@ -1,11 +1,101 @@
+use aici_abi::toktree::TokTrie;
+use aici_tokenizers::Tokenizer;
 use anyhow::{anyhow, ensure, Result};
 use log::{info, warn};
 use serde_json::{json, Value};
+use std::path::PathBuf;
 use std::sync::{Arc, RwLock};
 use std::time::Instant;
 use wasmtime;
 
-use crate::hostimpl::{AiciLimits, GlobalInfo, ModuleData, ModuleInstId};
+use crate::hostimpl::{setup_linker, AiciLimits, GlobalInfo, ModuleData, ModuleInstId};
+
+/// How often to check for timeout of WASM; should be between 1 and 10
+pub const WASMTIME_EPOCH_MS: u64 = 1;
+
+#[derive(Clone)]
+pub struct WasmContext {
+    pub engine: wasmtime::Engine,
+    pub linker: Arc<wasmtime::Linker<ModuleData>>,
+    pub globals: GlobalInfo,
+    pub limits: AiciLimits,
+}
+
+impl WasmContext {
+    pub fn deserialize_module(&self, path: PathBuf) -> Result<wasmtime::Module> {
+        unsafe { wasmtime::Module::deserialize_file(&self.engine, path) }
+    }
+
+    pub fn new(limits: AiciLimits, tokenizer: Tokenizer) -> Result<Self> {
+        let mut cfg = wasmtime::Config::default();
+        // these are defaults as of 13.0.0, but we specify them anyways for stability
+        cfg.debug_info(false)
+            .wasm_backtrace(true)
+            .native_unwind_info(true)
+            .consume_fuel(false)
+            .max_wasm_stack(512 * 1024)
+            .wasm_tail_call(false)
+            .wasm_threads(false)
+            .wasm_simd(true)
+            .wasm_relaxed_simd(false)
+            .wasm_bulk_memory(true)
+            .wasm_multi_value(true)
+            .wasm_memory64(false)
+            .strategy(wasmtime::Strategy::Auto)
+            .cranelift_nan_canonicalization(false)
+            .parallel_compilation(true);
+
+        // disable stuff we don't need
+        cfg.wasm_backtrace_details(wasmtime::WasmBacktraceDetails::Disable)
+            .wasm_reference_types(false);
+
+        // compilation in Speed mode seems to be ~10% slower but the generated code is 20-30% faster
+        cfg.cranelift_opt_level(wasmtime::OptLevel::Speed);
+
+        // we need it but it causes 28% slow-down in the generated code...
+        cfg.epoch_interruption(true);
+
+        let engine = wasmtime::Engine::new(&cfg)?;
+        let linker = setup_linker(&engine)?;
+
+        let tokens = tokenizer.token_bytes();
+        let trie = TokTrie::from(&tokenizer.tokrx_info(), &tokens);
+        trie.check_against(&tokens);
+        let bytes = trie.serialize();
+        // validate
+        let trie2 = TokTrie::from_bytes(&bytes);
+        assert!(trie.info() == trie2.info());
+        trie2.check_against(&tokens);
+
+        // let tok = tokenizers::Tokenizer::from_bytes(tokenizer.hf_bytes).unwrap();
+        // let tokens = tok.encode("I am something", false).unwrap();
+        // println!("tokens: {:?}", tokens);
+
+        let globals = GlobalInfo {
+            tokrx_info: tokenizer.tokrx_info(),
+            trie_bytes: bytes,
+            hf_tokenizer_bytes: tokenizer.hf_bytes,
+        };
+
+        {
+            let engine = engine.clone();
+            std::thread::spawn(move || {
+                let period = std::time::Duration::from_millis(WASMTIME_EPOCH_MS);
+                loop {
+                    std::thread::sleep(period);
+                    engine.increment_epoch();
+                }
+            });
+        }
+
+        Ok(Self {
+            engine,
+            linker,
+            globals,
+            limits,
+        })
+    }
+}
 
 pub struct ModuleInstance {
     store: wasmtime::Store<ModuleData>,
@@ -13,7 +103,6 @@ pub struct ModuleInstance {
     instance: wasmtime::Instance,
     handle: WasmAici,
     logit_ptr: WasmPtr,
-    globals: Arc<RwLock<GlobalInfo>>,
     op: Option<IdxOp>,
     had_error: bool,
     limits: AiciLimits,
@@ -92,22 +181,27 @@ impl ModuleInstance {
 impl ModuleInstance {
     pub fn new(
         id: ModuleInstId,
-        limits: &AiciLimits,
+        ctx: WasmContext,
         module: wasmtime::Module,
         module_arg: Arc<String>,
-        linker: Arc<wasmtime::Linker<ModuleData>>,
-        globals: Arc<RwLock<GlobalInfo>>,
     ) -> Result<Self> {
         let engine = module.engine();
 
         let mut store = wasmtime::Store::new(
             engine,
-            ModuleData::new(id, limits, &module, module_arg, &linker, &globals),
+            ModuleData::new(
+                id,
+                &ctx.limits,
+                &module,
+                module_arg,
+                &ctx.linker,
+                ctx.globals,
+            ),
         );
         store.limiter(|state| &mut state.store_limits);
         store.epoch_deadline_trap();
 
-        let instance = linker.instantiate(&mut store, &module)?;
+        let instance = ctx.linker.instantiate(&mut store, &module)?;
         let memory = instance
             .get_memory(&mut store, "memory")
             .ok_or(anyhow!("memory missing"))?;
@@ -121,42 +215,13 @@ impl ModuleInstance {
             store,
             memory,
             instance,
-            globals,
             had_error: false,
-            limits: limits.clone(),
+            limits: ctx.limits,
         })
     }
 
     pub fn set_id(&mut self, id: ModuleInstId) {
         self.store.data_mut().id = id;
-    }
-
-    #[inline(never)]
-    pub fn fork(&mut self, id: ModuleInstId) -> Result<Self> {
-        let t0 = Instant::now();
-        let mut fork = Self::new(
-            id,
-            &self.limits,
-            self.store.data().module.clone(),
-            self.store.data().module_arg.clone(),
-            self.store.data().linker.clone(),
-            self.globals.clone(),
-        )?;
-        fork.handle = self.handle;
-        fork.logit_ptr = self.logit_ptr;
-        let src = self.memory;
-        let dst = fork.memory;
-        let missing_size = src.data_size(&self.store) - dst.data_size(&fork.store);
-        dst.grow(&mut fork.store, (missing_size >> 16) as u64)?;
-        // TIME: 1-2ms at ~4MB
-        dst.data_mut(&mut fork.store)
-            .copy_from_slice(src.data(&self.store));
-        info!(
-            "fork time: {:?}, mem={}kB",
-            t0.elapsed(),
-            dst.data_size(&fork.store) / 1024
-        );
-        Ok(fork)
     }
 
     fn run_init(&mut self) -> Result<()> {
@@ -180,7 +245,7 @@ impl ModuleInstance {
     }
 
     fn setup_logit_bias(&mut self, handle: WasmAici) -> Result<u32> {
-        let vocab_size = { self.globals.read().unwrap().tokrx_info.vocab_size };
+        let vocab_size = self.store.data().globals.tokrx_info.vocab_size;
         let logit_ptr = self.call_func::<(WasmAici, u32), WasmPtr>(
             "aici_get_logit_bias_buffer",
             (handle, vocab_size),

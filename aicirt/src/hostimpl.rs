@@ -4,7 +4,7 @@ use aici_abi::{
 };
 use anyhow::{anyhow, Result};
 use log::info;
-use std::sync::{Arc, RwLock};
+use std::sync::Arc;
 use tokenizers::Tokenizer;
 
 pub type ModuleInstId = usize;
@@ -21,7 +21,7 @@ pub struct ModuleData {
     pub id: ModuleInstId,
     log: Vec<u8>,
     printed_log: usize,
-    globals: Arc<RwLock<GlobalInfo>>,
+    pub globals: GlobalInfo,
     pub ff_tokens: Vec<TokenId>,
     pub module_arg: Arc<String>,
     tokenize_out: Vec<TokenId>,
@@ -50,7 +50,7 @@ impl ModuleData {
         module: &wasmtime::Module,
         module_arg: Arc<String>,
         linker: &Arc<wasmtime::Linker<ModuleData>>,
-        globals: &Arc<RwLock<GlobalInfo>>,
+        globals: GlobalInfo,
     ) -> Self {
         let store_limits = wasmtime::StoreLimitsBuilder::new()
             .memories(1)
@@ -64,7 +64,7 @@ impl ModuleData {
             id,
             log: Vec::new(),
             printed_log: 0,
-            globals: globals.clone(),
+            globals,
             module_arg,
             module: module.clone(),
             linker: linker.clone(),
@@ -85,8 +85,7 @@ impl ModuleData {
 
     pub fn tokenize(&mut self, s: &str) -> Result<Vec<u32>> {
         if self.tokenizer.is_none() {
-            let lock = self.globals.clone();
-            let info = lock.read().unwrap();
+            let info = &self.globals;
             let tok = Tokenizer::from_bytes(info.hf_tokenizer_bytes).unwrap();
             self.tokenizer = Some(tok);
         };
@@ -132,6 +131,7 @@ impl ModuleData {
     }
 }
 
+#[derive(Clone)]
 pub struct GlobalInfo {
     pub tokrx_info: TokRxInfo,
     pub trie_bytes: Vec<u8>,
@@ -182,9 +182,9 @@ pub fn setup_linker(engine: &wasmtime::Engine) -> Result<Arc<wasmtime::Linker<Mo
         "aici_host_read_blob",
         |mut caller: wasmtime::Caller<'_, ModuleData>, blob_id: u32, ptr: u32, len: u32| {
             if blob_id == ModuleData::TRIE_ID.0 {
-                let lock = caller.data().globals.clone();
-                let info = lock.read().unwrap();
-                write_caller_mem(&mut caller, ptr, len, &info.trie_bytes)
+                // TODO remove .clone()
+                let trie_bytes = caller.data().globals.trie_bytes.clone();
+                write_caller_mem(&mut caller, ptr, len, &trie_bytes)
             } else if blob_id == ModuleData::ARG_ID.0 {
                 let arg = caller.data().module_arg.clone();
                 write_caller_mem(&mut caller, ptr, len, arg.as_bytes())
