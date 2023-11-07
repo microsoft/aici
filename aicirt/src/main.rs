@@ -353,6 +353,12 @@ impl ModuleRegistry {
         Ok(json!({}))
     }
 
+    fn run_main(&self, req_id: &String) -> Result<()> {
+        let req_instances = self.req_instances.lock().unwrap();
+        let inst = req_instances.get(req_id).ok_or(anyhow!("invalid req_id"))?;
+        inst.run_main()
+    }
+
     pub fn dispatch_loop(&self, ch: CmdRespChannel) -> ! {
         loop {
             let msg = ch.recv();
@@ -626,7 +632,7 @@ fn save_tokenizer(cli: &Cli) {
 
 fn install_from_cmdline(cli: &Cli, wasm_ctx: WasmContext, shm: Shm) {
     let name = cli.module.as_deref().unwrap();
-    let reg = ModuleRegistry::new(wasm_ctx, shm).unwrap();
+    let mut reg = ModuleRegistry::new(wasm_ctx, shm).unwrap();
     let module_id = if name.len() == 64 && name.chars().all(|c| c.is_digit(16)) {
         name.to_string()
     } else {
@@ -642,10 +648,20 @@ fn install_from_cmdline(cli: &Cli, wasm_ctx: WasmContext, shm: Shm) {
 
     println!("{}", module_id);
 
-    // if cli.run {
-    //     let mut modinst = reg.new_instance(42, &module_id, "{}".to_string()).unwrap();
-    //     modinst.run_main().unwrap();
-    // }
+    if cli.run {
+        let req_id = "main".to_string();
+        reg.instantiate(InstantiateReq {
+            req_id: req_id.clone(),
+            prompt: json!(""),
+            module_id: module_id.clone(),
+            module_arg: json!({"steps":[]}),
+        })
+        .unwrap();
+        reg.run_main(&req_id).unwrap();
+    }
+
+    // exit process
+    std::process::exit(0);
 }
 
 fn main() -> () {

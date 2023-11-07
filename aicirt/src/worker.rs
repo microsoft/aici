@@ -74,6 +74,7 @@ enum SeqCmd {
     Exec {
         data: ExecOp,
     },
+    RunMain {},
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -197,6 +198,10 @@ impl SeqCtx {
                 let res = self.mutinst().exec(data, &shm);
                 Ok(SeqResp::Exec { data: res })
             }
+            SeqCmd::RunMain {} => {
+                self.mutinst().run_main()?;
+                ok()
+            }
         }
     }
 
@@ -228,6 +233,7 @@ struct GroupCtx {
 }
 
 struct SeqCtx {
+    #[allow(dead_code)]
     id: String,
     cmd: IpcReceiver<SeqCmd>,
     cmd_resp: IpcSender<SeqResp>,
@@ -254,6 +260,11 @@ impl SeqWorkerHandle {
             SeqCmd::SetId { inst_id: id },
             Duration::from_millis(QUICK_OP_MS),
         )
+    }
+
+    pub fn run_main(&self) -> Result<()> {
+        self.handle
+            .send_cmd_expect_ok(SeqCmd::RunMain {}, Duration::from_secs(120))
     }
 
     pub fn fork(&self, target_id: ModuleInstId) -> Result<SeqWorkerHandle> {

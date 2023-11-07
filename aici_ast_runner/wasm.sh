@@ -6,8 +6,8 @@ set -e
 cargo build --release --target wasm32-unknown-unknown
 cp target/wasm32-unknown-unknown/release/aici_ast_runner.wasm target/opt.wasm
 # wasm-opt -Oz target/wasm32-unknown-unknown/release/aici_ast_runner.wasm -o target/opt.wasm
-wasm-strip -k name target/opt.wasm -o target/strip.wasm
-ls -l target/strip.wasm
+wasm-strip -k name target/opt.wasm # -o target/strip.wasm
+ls -l target/opt.wasm
 # curl -X POST -T "target/opt.wasm" "http://127.0.0.1:8080/v1/aici_modules"
 if [ "X$1" = "Xbuild" ] ; then
   exit
