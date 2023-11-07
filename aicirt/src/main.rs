@@ -25,13 +25,13 @@ use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use std::time::Instant;
 use thread_priority::*;
-use worker::SeqGroupWorkerHandle;
+use worker::SeqWorkerHandle;
 
 use crate::hostimpl::*;
 use crate::moduleinstance::*;
 use crate::msgchannel::MessageChannel;
 use crate::shm::Shm;
-use crate::worker::WorkerForker;
+use crate::worker::{ExecOp, WorkerForker};
 
 // Both of these are percentage of available cores
 const BG_THREADS_FRACTION: usize = 50;
@@ -113,15 +113,15 @@ struct ModuleRegistry {
     cache_path: PathBuf,
     // maps module_id (sha256 string) to module status
     modules: Arc<Mutex<HashMap<String, ModuleStatus>>>,
-    req_instances: Arc<Mutex<HashMap<String, SeqGroupWorkerHandle>>>,
+    req_instances: Arc<Mutex<HashMap<String, SeqWorkerHandle>>>,
     // note sure Mutex is needed
     forker: Arc<Mutex<WorkerForker>>,
 }
 
 struct Stepper {
-    req_instances: Arc<Mutex<HashMap<String, SeqGroupWorkerHandle>>>,
-    instances: HashMap<ModuleInstId, SeqGroupWorkerHandle>,
-    top_workers: HashMap<ModuleInstId, ModuleInstId>,
+    req_instances: Arc<Mutex<HashMap<String, SeqWorkerHandle>>>,
+    instances: HashMap<ModuleInstId, SeqWorkerHandle>,
+    limits: AiciLimits,
     globals: GlobalInfo,
     bin_shm: Shm,
 }
@@ -136,7 +136,7 @@ struct AiciStepReq {
     ops: Vec<AiciOp>,
 }
 
-#[derive(Clone, Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize, Debug)]
 #[serde(untagged)]
 pub enum AiciOp {
     Prompt {
@@ -373,26 +373,21 @@ impl ModuleRegistry {
 }
 
 impl Stepper {
-    pub fn new(reg: &ModuleRegistry, bin_shm: Shm) -> Result<Self> {
+    pub fn new(reg: &ModuleRegistry, bin_shm: Shm, limits: AiciLimits) -> Result<Self> {
         Ok(Self {
             req_instances: reg.req_instances.clone(),
             instances: HashMap::new(),
-            top_workers: HashMap::new(),
+            limits,
             globals: reg.wasm_ctx.globals.clone(),
             bin_shm,
         })
     }
 
-    fn top_worker(&self, id: ModuleInstId) -> Result<&SeqGroupWorkerHandle> {
-        let id = self.top_worker_id(id)?;
-        Ok(self.instances.get(&id).unwrap())
-    }
-
-    fn top_worker_id(&self, id: ModuleInstId) -> Result<ModuleInstId> {
-        self.top_workers
+    fn get_worker(&self, id: ModuleInstId) -> Result<&SeqWorkerHandle> {
+        Ok(self
+            .instances
             .get(&id)
-            .map(|x| *x)
-            .ok_or(anyhow!("invalid id {}", id))
+            .ok_or(anyhow!("invalid id {}", id))?)
     }
 
     fn mk_instance(&mut self, op: &AiciOp) -> Result<()> {
@@ -400,11 +395,11 @@ impl Stepper {
         match op {
             AiciOp::Gen { id, clone_id, .. } => {
                 if let Some(cid) = clone_id {
-                    ensure!(!self.top_workers.contains_key(id));
-                    let parent = self.top_worker(*cid)?;
+                    ensure!(!self.instances.contains_key(id));
+                    let parent = self.get_worker(*cid)?;
                     info!("fork {} -> ({})", cid, id);
-                    parent.create_clone(*cid, *id);
-                    self.top_workers.insert(*cid, self.top_worker_id(*id)?);
+                    let h = parent.fork(*cid)?;
+                    self.instances.insert(*cid, h);
                 }
             }
             AiciOp::Prompt { id, req_id, .. } => {
@@ -414,10 +409,10 @@ impl Stepper {
                     !self.instances.contains_key(id),
                     format!("duplicate id {}", id)
                 );
-                let modinst = e.unwrap();
+                let h = e.unwrap();
                 info!("prompt {} ({})", id, req_id);
-                modinst.set_id(*id);
-                self.instances.insert(*id, modinst);
+                h.set_id(*id);
+                self.instances.insert(*id, h);
             }
         };
 
@@ -427,7 +422,9 @@ impl Stepper {
     fn aici_step(&mut self, req: AiciStepReq) -> Result<Value> {
         for id in req.freed {
             info!("free module {}", id);
-            let _ = self.instances.remove(&id);
+            let h = self.instances.remove(&id);
+            let h = h.ok_or(anyhow!("invalid freed id {id}"))?;
+            h.free();
         }
 
         // first, start instances and link clones
@@ -447,34 +444,35 @@ impl Stepper {
             "shm size too small"
         );
 
-        let mut reqs = HashMap::new();
+        let mut logit_offset = 0;
         let mut used_ids = Vec::new();
-        let mut off = 0;
-
         for op in req.ops.into_iter() {
             let instid = match op {
                 AiciOp::Gen { id, .. } => id,
                 AiciOp::Prompt { id, .. } => id,
             };
-            let topid = self.top_worker_id(instid).unwrap();
-            if !reqs.contains_key(&topid) {
-                used_ids.push(topid);
-                reqs.insert(topid, Vec::new());
-            }
-            reqs.get_mut(&topid).unwrap().push((op, off));
-            off += vocab_block_len;
+            used_ids.push(instid);
+            let h = self.get_worker(instid)?;
+            h.start_exec(ExecOp { op, logit_offset })?;
+            logit_offset += vocab_block_len;
         }
 
-        for id in &used_ids {
-            let h = self.top_worker(*id).unwrap();
-            h.start_exec(reqs.remove(id).unwrap());
-        }
+        let deadline = Instant::now() + std::time::Duration::from_millis(self.limits.max_step_ms);
 
         let mut map = serde_json::Map::new();
-        for id in &used_ids {
-            let h = self.top_worker(*id).unwrap();
-            for (id, result) in h.finish_exec() {
-                map.insert(id.to_string(), result);
+        for id in used_ids {
+            let h = self.get_worker(id)?;
+            let timeout = deadline.saturating_duration_since(Instant::now());
+            let res = h.check_exec(timeout)?;
+            match res {
+                Some(json) => {
+                    map.insert(id.to_string(), json);
+                }
+                None => {
+                    info!("timeout {}", id);
+                    map.insert(id.to_string(), json!({ "timeout": 1 }));
+                    h.kill();
+                }
             }
         }
 
@@ -660,11 +658,12 @@ fn main() -> () {
 
     let limits = AiciLimits {
         max_memory_bytes: cli.wasm_max_memory * MEGABYTE,
-        max_init_epochs: (cli.wasm_max_init_time / WASMTIME_EPOCH_MS) + 1,
-        max_step_epochs: (cli.wasm_max_step_time / WASMTIME_EPOCH_MS) + 1,
+        max_init_ms: (cli.wasm_max_init_time / WASMTIME_EPOCH_MS) + 1,
+        max_step_ms: (cli.wasm_max_step_time / WASMTIME_EPOCH_MS) + 1,
     };
 
-    let wasm_ctx = WasmContext::new(limits, find_tokenizer(&cli.tokenizer).unwrap()).unwrap();
+    let wasm_ctx =
+        WasmContext::new(limits.clone(), find_tokenizer(&cli.tokenizer).unwrap()).unwrap();
 
     if cli.save_tokenizer.is_some() {
         save_tokenizer(&cli);
@@ -708,7 +707,7 @@ fn main() -> () {
     )
     .unwrap();
     let reg = ModuleRegistry::new(wasm_ctx).unwrap();
-    let exec = Stepper::new(&reg, bin_shm).unwrap();
+    let exec = Stepper::new(&reg, bin_shm, limits).unwrap();
     let cli2 = cli.clone();
     rayon::spawn(move || {
         let reg_disp = CmdRespChannel::new("-side", &cli2).unwrap();

@@ -1,4 +1,4 @@
-use std::{collections::HashMap, path::PathBuf, sync::Arc};
+use std::{collections::HashMap, path::PathBuf, sync::Arc, time::Duration};
 
 use aici_abi::TokenId;
 use anyhow::{anyhow, Result};
@@ -12,24 +12,32 @@ use crate::{
     AiciOp, InstantiateReq,
 };
 
-#[derive(Serialize, Deserialize, Debug)]
-pub struct Query {}
+pub type JSON = serde_json::Value;
 
 #[derive(Serialize, Deserialize, Debug)]
-pub struct QueryResp {}
+enum GroupCmd {
+    NewChannel {},
+    ReadVar { name: String },
+    WriteVar { name: String, value: Vec<u8> },
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+enum GroupResp {
+    NewChannel { channel: GroupHandle },
+    ReadVar { value: Vec<u8> },
+    Ok {},
+}
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct ProcessHandle<Cmd, Resp> {
     pid: pid_t,
     cmd: IpcSender<Cmd>,
     cmd_resp: IpcReceiver<Resp>,
-    // query: Option<IpcReceiver<Query>>,
-    // query_resp: IpcSender<QueryResp>,
 }
 
 type ForkerHandle = ProcessHandle<ForkerCmd, ForkerResp>;
-type SeqGroupHandle = ProcessHandle<SeqGroupCmd, SeqGroupResp>;
 type SeqHandle = ProcessHandle<SeqCmd, SeqResp>;
+type GroupHandle = ProcessHandle<GroupCmd, GroupResp>;
 
 #[derive(Serialize, Deserialize, Debug)]
 struct ForkerCmd {
@@ -37,16 +45,16 @@ struct ForkerCmd {
 }
 
 #[derive(Serialize, Deserialize, Debug)]
-struct ForkerResp(SeqGroupHandle);
+pub struct ExecOp {
+    pub op: AiciOp,
+    pub logit_offset: usize,
+}
 
 #[derive(Serialize, Deserialize, Debug)]
-enum SeqCmd {}
+struct ForkerResp(SeqHandle);
 
 #[derive(Serialize, Deserialize, Debug)]
-enum SeqResp {}
-
-#[derive(Serialize, Deserialize, Debug)]
-enum SeqGroupCmd {
+enum SeqCmd {
     Instantiate {
         module_path: PathBuf,
         module_id: String,
@@ -60,12 +68,16 @@ enum SeqGroupCmd {
     SetId {
         inst_id: ModuleInstId,
     },
+    Exec {
+        data: ExecOp,
+    },
 }
 
 #[derive(Serialize, Deserialize, Debug)]
-enum SeqGroupResp {
+enum SeqResp {
     Fork { handle: SeqHandle },
     Ok {},
+    Exec { data: JSON },
     Error { msg: String },
 }
 
@@ -80,109 +92,58 @@ where
     }
 }
 
-impl SeqGroupHandle {
-    fn fork(&self, inst_id: ModuleInstId) -> Result<ProcessHandle<SeqCmd, SeqResp>> {
-        match self.send_cmd(SeqGroupCmd::Fork { inst_id })? {
-            SeqGroupResp::Fork { handle: info } => match info.cmd_resp.recv().unwrap() {
-                SeqGroupResp::Ok {} => Ok(info),
-                r => Err(anyhow!("unexpected response (child) {r:?}")),
-            },
-            r => Err(anyhow!("unexpected response {r:?}")),
-        }
-    }
-
-    fn send_cmd_expect_ok(&self, cmd: SeqGroupCmd) -> Result<()> {
+impl SeqHandle {
+    fn send_cmd_expect_ok(&self, cmd: SeqCmd) -> Result<()> {
         match self.send_cmd(cmd)? {
-            SeqGroupResp::Ok {} => Ok(()),
-            r => Err(anyhow!("unexpected response {r:?}")),
+            SeqResp::Ok {} => Ok(()),
+            r => Err(anyhow!("unexpected response (not OK) {r:?}")),
         }
     }
 }
 
-struct SeqCtx {
-    cmd: IpcReceiver<SeqCmd>,
-    cmd_resp: IpcSender<SeqResp>,
-    wasm_ctx: WasmContext,
-    query: ProcessHandle<Query, QueryResp>,
-    inst_id: ModuleInstId,
-    modinst: ModuleInstance,
-}
-
-fn ok() -> Result<SeqGroupResp> {
-    Ok(SeqGroupResp::Ok {})
+fn ok() -> Result<SeqResp> {
+    Ok(SeqResp::Ok {})
 }
 
 struct SeqHandleRes {
     handle: SeqHandle,
-    query: IpcReceiver<Query>,
-    query_resp: IpcSender<QueryResp>,
+    query: IpcReceiver<GroupCmd>,
+    query_resp: IpcSender<GroupResp>,
 }
 
 impl SeqCtx {
-    fn dispatch_loop(&mut self) -> ! {
-        loop {}
-    }
-
-    fn spawn(modinst: ModuleInstance, wasm_ctx: WasmContext) -> SeqHandleRes {
-        let (cmd0, cmd1) = ipc::channel().unwrap();
-        let (cmd_resp0, cmd_resp1) = ipc::channel().unwrap();
-
-        let (query0, query1) = ipc::channel().unwrap();
-        let (query_resp0, query_resp1) = ipc::channel().unwrap();
-
-        let mut ctx = SeqCtx {
-            cmd: cmd1,
-            cmd_resp: cmd_resp0,
-            query: ProcessHandle {
-                pid: 0,
-                cmd: query0,
-                cmd_resp: query_resp1,
-            },
-            wasm_ctx,
-            inst_id: 0,
-            modinst,
-        };
-
-        let pid = unsafe { libc::fork() };
-        if pid == 0 {
-            ctx.dispatch_loop()
-        } else {
-            let handle = ProcessHandle {
-                pid,
-                cmd: cmd0,
-                cmd_resp: cmd_resp1,
-            };
-            SeqHandleRes {
-                handle,
-                query: query1,
-                query_resp: query_resp0,
-            }
-        }
-    }
-}
-
-impl SeqGroupCtx {
-    fn dispatch_one(&mut self, cmd: SeqGroupCmd) -> Result<SeqGroupResp> {
+    fn dispatch_one(&mut self, cmd: SeqCmd) -> Result<SeqResp> {
         match cmd {
-            SeqGroupCmd::Fork { inst_id } => {
-                let (mut wi, ctx) = new_channels(self.wasm_ctx.clone());
-                let pid = unsafe { libc::fork() };
-                if pid == 0 {
-                    *self = ctx;
+            SeqCmd::Fork { inst_id } => {
+                let (cmd0, cmd1) = ipc::channel().unwrap();
+                let (cmd_resp0, cmd_resp1) = ipc::channel().unwrap();
+                let w_pid = unsafe { libc::fork() };
+
+                let query_ch = match self.group_cmd(GroupCmd::NewChannel {}) {
+                    GroupResp::NewChannel { channel } => channel,
+                    r => return Err(anyhow!("unexpected response (SeqCtx.dispatch) {r:?}")),
+                };
+
+                if w_pid == 0 {
+                    self.cmd = cmd1;
+                    self.cmd_resp = cmd_resp0;
+                    self.query = query_ch;
                     self.inst_id = inst_id;
-                    if self.modinst.is_some() {
-                        self.modinst.as_mut().unwrap().set_id(inst_id);
-                    }
+                    self.mutinst().set_id(inst_id);
                     // note that this is sent over the child channel
                     // we do it this way, so that we come back to dispatch_loop()
                     // and continue in the child with the same stack height as in the parent
                     ok()
                 } else {
-                    wi.pid = pid;
-                    Ok(SeqGroupResp::Fork { handle: wi })
+                    let handle = ProcessHandle {
+                        pid: w_pid,
+                        cmd: cmd0,
+                        cmd_resp: cmd_resp1,
+                    };
+                    Ok(SeqResp::Fork { handle })
                 }
             }
-            SeqGroupCmd::Instantiate {
+            SeqCmd::Instantiate {
                 module_path,
                 module_id,
                 module_arg,
@@ -202,36 +163,34 @@ impl SeqGroupCtx {
                 } else {
                     inst.tokenize(prompt_str.as_ref().unwrap())?
                 };
-
-                let handle = SeqCtx::spawn(inst, self.wasm_ctx.clone());
-                self.workers.insert(handle.handle.pid as u64, handle.handle.clone());
-                handle.handle.send_cmd_expect_ok(SeqCmd::SetTokens {
-                    tokens: prompt_toks,
-                })?;
-
-                // inst.setup(&prompt_toks)?;
-
+                self.modinst = Some(inst);
+                self.mutinst().setup(&prompt_toks)?;
                 ok()
             }
-            SeqGroupCmd::SetId { inst_id } => {
+            SeqCmd::SetId { inst_id } => {
                 self.inst_id = inst_id;
-                self.modinst.as_mut().unwrap().set_id(inst_id);
+                self.mutinst().set_id(inst_id);
                 ok()
+            }
+            SeqCmd::Exec { data } => {
+                todo!()
             }
         }
     }
 
-    #[allow(dead_code)]
-    fn query(&mut self, query: Query) -> QueryResp {
-        self.query.send(query).unwrap();
-        self.query_resp.recv().unwrap()
+    fn mutinst(&mut self) -> &mut ModuleInstance {
+        self.modinst.as_mut().unwrap()
+    }
+
+    fn group_cmd(&mut self, query: GroupCmd) -> GroupResp {
+        self.query.send_cmd(query).unwrap()
     }
 
     fn dispatch_loop(&mut self) -> ! {
         loop {
             let resp = match self.dispatch_one(self.cmd.recv().unwrap()) {
                 Ok(v) => v,
-                Err(e) => SeqGroupResp::Error {
+                Err(e) => SeqResp::Error {
                     msg: format!("{e:?}"),
                 },
             };
@@ -240,47 +199,113 @@ impl SeqGroupCtx {
     }
 }
 
-
-pub struct SeqGroupCtx {
-    id: String,
-    cmd: IpcReceiver<SeqGroupCmd>,
-    cmd_resp: IpcSender<SeqGroupResp>,
-    wasm_ctx: WasmContext,
+struct GroupCtx {
     variables: HashMap<String, Vec<u8>>,
-    workers: HashMap<u64, SeqHandle>,
+    workers: HashMap<u64, IpcSender<GroupResp>>,
     cb_set: IpcReceiverSet,
 }
 
-impl SeqGroupCtx {
-    pub fn query_dispatcher(&mut self) -> () {
-        loop {
-            for ent in self.cb_set.select().unwrap() {
-                match ent {
-                    ipc::IpcSelectionResult::MessageReceived(id, msg) => {
-                        let worker = self.workers.get(&id).unwrap();
-                        let _q: Query = msg.to().unwrap();
-                        worker.query_resp.send(QueryResp {}).unwrap();
-                    }
-                    ipc::IpcSelectionResult::ChannelClosed(id) => {
-                        self.workers.remove(&id);
-                    }
-                }
-            }
+struct SeqCtx {
+    id: String,
+    cmd: IpcReceiver<SeqCmd>,
+    cmd_resp: IpcSender<SeqResp>,
+    wasm_ctx: WasmContext,
+    query: GroupHandle,
+    inst_id: ModuleInstId,
+    modinst: Option<ModuleInstance>,
+}
+
+pub struct SeqWorkerHandle {
+    handle: SeqHandle,
+}
+
+impl SeqWorkerHandle {
+    pub fn free(&self) {
+        todo!()
+    }
+
+    pub fn kill(&self) {
+        todo!()
+    }
+
+    pub fn set_id(&self, id: ModuleInstId) -> Result<()> {
+        self.handle
+            .send_cmd_expect_ok(SeqCmd::SetId { inst_id: id })
+    }
+
+    pub fn fork(&self, target_id: ModuleInstId) -> Result<SeqWorkerHandle> {
+        match self.handle.send_cmd(SeqCmd::Fork { inst_id: target_id })? {
+            SeqResp::Fork { handle: info } => match info.cmd_resp.recv().unwrap() {
+                SeqResp::Ok {} => Ok(SeqWorkerHandle { handle: info }),
+                r => Err(anyhow!("unexpected response (fork, child) {r:?}")),
+            },
+            r => Err(anyhow!("unexpected response (fork) {r:?}")),
+        }
+    }
+
+    pub fn start_exec(&self, data: ExecOp) -> Result<()> {
+        self.handle.cmd.send(SeqCmd::Exec { data })?;
+        Ok(())
+    }
+
+    pub fn check_exec(&self, timeout: Duration) -> Result<Option<JSON>> {
+        match self.handle.cmd_resp.try_recv_timeout(timeout) {
+            Ok(SeqResp::Exec { data }) => Ok(Some(data)),
+            Ok(r) => Err(anyhow!("unexpected response (exec) {r:?}")),
+            Err(ipc_channel::ipc::TryRecvError::Empty) => Ok(None),
+            Err(e) => Err(e.into()),
         }
     }
 }
 
-pub struct SeqGroupWorkerHandle {
-    handle: SeqGroupHandle,
-}
+impl GroupCtx {
+    fn add_worker(&mut self, query: IpcReceiver<GroupCmd>, query_resp: IpcSender<GroupResp>) {
+        let id = self.cb_set.add(query).unwrap();
+        self.workers.insert(id, query_resp);
+    }
 
-impl SeqGroupWorkerHandle {
-    pub fn set_id(&self, id: ModuleInstId) {}
-    pub fn create_clone(&self, clone_id: ModuleInstId, target_id: ModuleInstId) {}
-
-    pub fn start_exec(&self, ops: Vec<(AiciOp, usize)>) {}
-    pub fn finish_exec(&self) -> Vec<(ModuleInstId, serde_json::Value)> {
-        vec![]
+    fn dispatch_loop(&mut self) -> ! {
+        loop {
+            for ent in self.cb_set.select().unwrap() {
+                match ent {
+                    ipc::IpcSelectionResult::MessageReceived(id, msg) => {
+                        let cmd: GroupCmd = msg.to().unwrap();
+                        let resp = match cmd {
+                            GroupCmd::NewChannel {} => {
+                                let (query0, query1) = ipc::channel().unwrap();
+                                let (query_resp0, query_resp1) = ipc::channel().unwrap();
+                                self.add_worker(query1, query_resp0);
+                                GroupResp::NewChannel {
+                                    channel: ProcessHandle {
+                                        pid: 0,
+                                        cmd: query0,
+                                        cmd_resp: query_resp1,
+                                    },
+                                }
+                            }
+                            GroupCmd::ReadVar { name } => GroupResp::ReadVar {
+                                value: self
+                                    .variables
+                                    .get(&name)
+                                    .map(|x| x.clone())
+                                    .unwrap_or_else(Vec::new),
+                            },
+                            GroupCmd::WriteVar { name, value } => {
+                                self.variables.insert(name, value);
+                                GroupResp::Ok {}
+                            }
+                        };
+                        self.workers.get(&id).unwrap().send(resp).unwrap()
+                    }
+                    ipc::IpcSelectionResult::ChannelClosed(id) => {
+                        self.workers.remove(&id);
+                        if self.workers.len() == 0 {
+                            std::process::exit(0);
+                        }
+                    }
+                }
+            }
+        }
     }
 }
 
@@ -299,25 +324,43 @@ fn forker_dispatcher(
         let (cmd0, cmd1) = ipc::channel().unwrap();
         let (cmd_resp0, cmd_resp1) = ipc::channel().unwrap();
 
-        let pid = unsafe { libc::fork() };
-        if pid == 0 {
-            let mut ctx = SeqGroupCtx {
-                id: cmd.id,
-                cmd: cmd1,
-                cmd_resp: cmd_resp0,
-                wasm_ctx,
+        let (query0, query1) = ipc::channel().unwrap();
+        let (query_resp0, query_resp1) = ipc::channel().unwrap();
+
+        let grp_pid = unsafe { libc::fork() };
+        if grp_pid == 0 {
+            let mut grp_ctx = GroupCtx {
                 variables: HashMap::new(),
                 workers: HashMap::new(),
                 cb_set: IpcReceiverSet::new().unwrap(),
             };
-            ctx.dispatch_loop()
+            grp_ctx.add_worker(query1, query_resp0);
+            grp_ctx.dispatch_loop()
         } else {
-            let fork_worker = ProcessHandle {
-                pid,
-                cmd: cmd0,
-                cmd_resp: cmd_resp1,
-            };
-            cmd_resp.send(ForkerResp(fork_worker)).unwrap();
+            let w_pid = unsafe { libc::fork() };
+            if w_pid == 0 {
+                let mut w_ctx = SeqCtx {
+                    id: cmd.id,
+                    cmd: cmd1,
+                    cmd_resp: cmd_resp0,
+                    wasm_ctx,
+                    query: ProcessHandle {
+                        pid: grp_pid,
+                        cmd: query0,
+                        cmd_resp: query_resp1,
+                    },
+                    inst_id: 424242,
+                    modinst: None,
+                };
+                w_ctx.dispatch_loop()
+            } else {
+                let fork_worker = ProcessHandle {
+                    pid: w_pid,
+                    cmd: cmd0,
+                    cmd_resp: cmd_resp1,
+                };
+                cmd_resp.send(ForkerResp(fork_worker)).unwrap();
+            }
         }
     }
 }
@@ -344,7 +387,7 @@ impl WorkerForker {
         &self,
         req: InstantiateReq,
         module_path: PathBuf,
-    ) -> Result<SeqGroupWorkerHandle> {
+    ) -> Result<SeqWorkerHandle> {
         let module_arg = match req.module_arg.as_str() {
             Some(a) => a.to_string(),
             None => serde_json::to_string(&req.module_arg)?,
@@ -375,13 +418,13 @@ impl WorkerForker {
             id: req.req_id.clone(),
         })?;
         let handle = resp.0;
-        handle.send_cmd_expect_ok(SeqGroupCmd::Instantiate {
+        handle.send_cmd_expect_ok(SeqCmd::Instantiate {
             module_path,
             module_id: req.module_id.clone(),
             module_arg,
             prompt_str,
             prompt_toks,
         })?;
-        Ok(SeqGroupWorkerHandle { handle })
+        Ok(SeqWorkerHandle { handle })
     }
 }

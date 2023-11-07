@@ -287,7 +287,7 @@ impl ModuleInstance {
     }
 
     pub fn setup(&mut self, prompt: &[u32]) -> Result<()> {
-        self.store.set_epoch_deadline(self.limits.max_init_epochs);
+        self.store.set_epoch_deadline(self.limits.max_init_ms);
         self.run_init()?;
 
         let handle = self.call_func::<(), WasmAici>("aici_create", ())?;
@@ -310,7 +310,7 @@ impl ModuleInstance {
         match opidx.op {
             ThreadOp::Prompt {} => {}
             ThreadOp::Gen { tokens } => {
-                self.store.set_epoch_deadline(self.limits.max_step_epochs);
+                self.store.set_epoch_deadline(self.limits.max_step_ms);
                 self.run_process(&tokens)?;
             }
         }

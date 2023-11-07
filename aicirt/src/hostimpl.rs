@@ -12,8 +12,8 @@ pub type ModuleInstId = usize;
 #[derive(Debug, Clone)]
 pub struct AiciLimits {
     pub max_memory_bytes: usize,
-    pub max_step_epochs: u64,
-    pub max_init_epochs: u64,
+    pub max_step_ms: u64,
+    pub max_init_ms: u64,
 }
 
 // this is available to functions called from wasm
