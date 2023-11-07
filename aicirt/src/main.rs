@@ -5,9 +5,9 @@ mod semaphore;
 mod shm;
 mod worker;
 
-use aici_abi::{ProcessArg, TokenId};
 use aici_abi::bytes::limit_str;
 use aici_abi::toktree::TokTrie;
+use aici_abi::{ProcessArg, TokenId};
 use aici_tokenizers::find_tokenizer;
 use anyhow::{anyhow, ensure, Result};
 use base64;
@@ -123,7 +123,6 @@ struct Stepper {
     instances: HashMap<ModuleInstId, SeqWorkerHandle>,
     limits: AiciLimits,
     globals: GlobalInfo,
-    bin_shm: Shm,
 }
 
 fn is_hex_string(s: &str) -> bool {
@@ -141,9 +140,6 @@ struct AiciStepReq {
 pub enum AiciOp {
     Prompt {
         id: ModuleInstId,
-        // the prompt normally comes from InstantiateReq
-        // we currently ignore this one
-        prompt: Option<Vec<Token>>,
         req_id: String,
     },
     Gen {
@@ -156,7 +152,7 @@ pub enum AiciOp {
 impl AiciOp {
     pub fn to_thread_op(self) -> ProcessArg {
         match self {
-            AiciOp::Prompt { .. } => ProcessArg::Prompt {},
+            AiciOp::Prompt { .. } => ProcessArg::StepPrompt {},
             AiciOp::Gen { tokens, .. } => ProcessArg::Gen { tokens },
         }
     }
@@ -202,8 +198,8 @@ struct TokensReq {
 }
 
 impl ModuleRegistry {
-    pub fn new(wasm_ctx: WasmContext) -> Result<Self> {
-        let forker = WorkerForker::new(wasm_ctx.clone());
+    pub fn new(wasm_ctx: WasmContext, shm: Shm) -> Result<Self> {
+        let forker = WorkerForker::new(wasm_ctx.clone(), shm);
 
         Ok(Self {
             forker: Arc::new(Mutex::new(forker)),
@@ -375,13 +371,12 @@ impl ModuleRegistry {
 }
 
 impl Stepper {
-    pub fn new(reg: &ModuleRegistry, bin_shm: Shm, limits: AiciLimits) -> Result<Self> {
+    pub fn new(reg: &ModuleRegistry, limits: AiciLimits) -> Result<Self> {
         Ok(Self {
             req_instances: reg.req_instances.clone(),
             instances: HashMap::new(),
             limits,
             globals: reg.wasm_ctx.globals.clone(),
-            bin_shm,
         })
     }
 
@@ -434,13 +429,10 @@ impl Stepper {
 
         let vocab_block_len = self.globals.tokrx_info.vocab_size as usize * 4;
 
-        let mut slices = self.bin_shm.split(vocab_block_len)?;
-        slices.reverse();
-
         let numops = req.ops.len();
 
         ensure!(
-            self.bin_shm.len() / vocab_block_len - 1 >= numops,
+            self.limits.logit_memory_bytes / vocab_block_len - 1 >= numops,
             "shm size too small"
         );
 
@@ -632,9 +624,9 @@ fn save_tokenizer(cli: &Cli) {
     println!("wrote {}, {} bytes", filename, bytes.len());
 }
 
-fn install_from_cmdline(cli: &Cli, wasm_ctx: WasmContext) {
+fn install_from_cmdline(cli: &Cli, wasm_ctx: WasmContext, shm: Shm) {
     let name = cli.module.as_deref().unwrap();
-    let reg = ModuleRegistry::new(wasm_ctx).unwrap();
+    let reg = ModuleRegistry::new(wasm_ctx, shm).unwrap();
     let module_id = if name.len() == 64 && name.chars().all(|c| c.is_digit(16)) {
         name.to_string()
     } else {
@@ -670,6 +662,7 @@ fn main() -> () {
         max_memory_bytes: cli.wasm_max_memory * MEGABYTE,
         max_init_ms: cli.wasm_max_init_time,
         max_step_ms: cli.wasm_max_step_time,
+        logit_memory_bytes: cli.bin_size * MEGABYTE,
     };
 
     let wasm_ctx =
@@ -680,8 +673,14 @@ fn main() -> () {
         return ();
     }
 
+    let bin_shm = Shm::new(
+        &MessageChannel::shm_name(&cli.prefixed_name("bin", "")),
+        limits.logit_memory_bytes,
+    )
+    .unwrap();
+
     if cli.module.is_some() {
-        install_from_cmdline(&cli, wasm_ctx);
+        install_from_cmdline(&cli, wasm_ctx, bin_shm);
         return ();
     }
 
@@ -711,13 +710,8 @@ fn main() -> () {
         .build()
         .unwrap();
 
-    let bin_shm = Shm::new(
-        &MessageChannel::shm_name(&cli.prefixed_name("bin", "")),
-        cli.bin_size * MEGABYTE,
-    )
-    .unwrap();
-    let reg = ModuleRegistry::new(wasm_ctx).unwrap();
-    let exec = Stepper::new(&reg, bin_shm, limits).unwrap();
+    let reg = ModuleRegistry::new(wasm_ctx, bin_shm).unwrap();
+    let exec = Stepper::new(&reg, limits).unwrap();
     let cli2 = cli.clone();
     rayon::spawn(move || {
         let reg_disp = CmdRespChannel::new("-side", &cli2).unwrap();

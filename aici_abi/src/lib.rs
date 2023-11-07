@@ -15,7 +15,8 @@ pub type TokenId = bytes::TokenId;
 
 #[derive(Serialize, Deserialize, Debug)]
 pub enum ProcessArg {
-    Prompt {},
+    InitialPrompt { tokens: Vec<TokenId> },
+    StepPrompt {},
     Gen { tokens: Vec<TokenId> },
 }
 
@@ -79,9 +80,15 @@ impl AiciVmHelper {
 }
 
 pub trait AiciVm {
-    /// The prompt, single generated token, or all ff tokens, arg in host::tokens_arg().
+    fn process(&mut self, arg: ProcessArg);
+
+    /// The prompt, single generated token, or all ff tokens, arg in host::process_arg().
     /// On return, self.helper.logit_biases are supposed to be updated.
-    fn aici_process(&mut self);
+    fn aici_process(&mut self) {
+        let arg: ProcessArg = serde_json::from_slice(&host::process_arg_bytes()).unwrap();
+        self.process(arg);
+    }
+
     // Used in testing.
     fn get_helper(&mut self) -> &mut AiciVmHelper;
 }

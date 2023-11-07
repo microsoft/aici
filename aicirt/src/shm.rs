@@ -5,6 +5,7 @@ use std::ptr;
 use anyhow::{anyhow, ensure, Result};
 use log::info;
 
+#[derive(Clone)]
 pub struct Shm {
     addr: *mut u8,
     size: usize,

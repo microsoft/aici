@@ -1,4 +1,5 @@
 use aici_abi::toktree::TokTrie;
+use aici_abi::{ProcessArg, TokenId};
 use aici_tokenizers::Tokenizer;
 use anyhow::{anyhow, ensure, Result};
 use log::{info, warn};
@@ -9,6 +10,7 @@ use std::time::Instant;
 use wasmtime;
 
 use crate::hostimpl::{setup_linker, AiciLimits, GlobalInfo, ModuleData, ModuleInstId};
+use crate::shm::Shm;
 use crate::worker::ExecOp;
 
 #[derive(Clone)]
@@ -205,12 +207,13 @@ impl ModuleInstance {
         Ok(())
     }
 
-    pub fn exec(&mut self) -> Value {
+    pub fn exec(&mut self, op: ExecOp, shm: &Shm) -> Value {
         let mut json_type = "ok";
         let mut suffix = "".to_string();
         let t0 = Instant::now();
 
-        match self.exec_inner() {
+        self.store.data_mut().set_exec_data(op, shm);
+        match self.run_process() {
             Ok(_) => {}
             Err(e) => {
                 json_type = "error";
@@ -234,35 +237,21 @@ impl ModuleInstance {
         self.store.data_mut().tokenize(s)
     }
 
-    pub fn setup(&mut self, prompt: &[u32]) -> Result<()> {
+    pub fn setup(&mut self, prompt: Vec<TokenId>) -> Result<()> {
         self.run_init()?;
 
         self.handle = self.call_func::<(), WasmAici>("aici_create", ())?;
-        self.run_process(prompt)?;
+
+        self.store
+            .data_mut()
+            .set_initial_exec_data(ProcessArg::InitialPrompt { tokens: prompt });
+        self.run_process()?;
 
         Ok(())
     }
 
-    fn run_process(&mut self, tokens: &[u32]) -> Result<()> {
-        self.store.data_mut().set_tokens(tokens);
+    fn run_process(&mut self) -> Result<()> {
         self.call_func::<WasmAici, ()>("aici_process", self.handle)?;
-        Ok(())
-    }
-
-    fn exec_inner(&mut self, op: ExecOp) -> Result<()> {
-        self.store.data_mut().set_exec_data(op, &self.memory)?;
-        
-        let opidx = std::mem::replace(&mut self.op, None).unwrap();
-
-        match opidx.op {
-            ThreadOp::Prompt {} => {}
-            ThreadOp::Gen { tokens } => {
-                self.run_process(&tokens)?;
-            }
-        }
-
-        self.read_mem(self.logit_ptr, opidx.dst_slice)?;
-
         Ok(())
     }
 }

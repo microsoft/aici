@@ -1,6 +1,6 @@
 use aici_abi::{
     bytes::{clone_vec_as_bytes, TokRxInfo},
-    TokenId,
+    ProcessArg, TokenId,
 };
 use anyhow::{anyhow, Result};
 use log::info;
@@ -16,6 +16,7 @@ pub struct AiciLimits {
     pub max_memory_bytes: usize,
     pub max_step_ms: u64,
     pub max_init_ms: u64,
+    pub logit_memory_bytes: usize,
 }
 
 // this is available to functions called from wasm
@@ -27,7 +28,6 @@ pub struct ModuleData {
     pub ff_tokens: Vec<TokenId>,
     pub module_arg: Arc<String>,
     tokenize_out: Vec<TokenId>,
-    tokens_arg: Vec<TokenId>,
     process_arg: Vec<u8>,
     logit_ptr: *mut u8,
     pub linker: Arc<wasmtime::Linker<ModuleData>>,
@@ -81,15 +81,13 @@ impl ModuleData {
             store_limits,
             ff_tokens: Vec::new(),
             tokenize_out: Vec::new(),
-            tokens_arg: Vec::new(),
             process_arg: Vec::new(),
             logit_ptr: std::ptr::null_mut(),
         }
     }
 
-    pub fn set_tokens(&mut self, tokens: &[u32]) {
-        self.tokens_arg.clear();
-        self.tokens_arg.extend_from_slice(tokens);
+    pub fn set_initial_exec_data(&mut self, arg: ProcessArg) {
+        self.process_arg = serde_json::to_vec(&arg).unwrap();
     }
 
     pub fn set_exec_data(&mut self, data: ExecOp, shm: &Shm) {
@@ -205,9 +203,6 @@ pub fn setup_linker(engine: &wasmtime::Engine) -> Result<Arc<wasmtime::Linker<Mo
             } else if blob_id == BlobId::TOKENIZE.0 {
                 // TODO fix perf here and next lines
                 let arg = clone_vec_as_bytes(&caller.data().tokenize_out);
-                write_caller_mem(&mut caller, ptr, len, &arg)
-            } else if blob_id == BlobId::TOKENS.0 {
-                let arg = clone_vec_as_bytes(&caller.data().tokens_arg);
                 write_caller_mem(&mut caller, ptr, len, &arg)
             } else if blob_id == BlobId::PROCESS_ARG.0 {
                 let arg = clone_vec_as_bytes(&caller.data().process_arg);

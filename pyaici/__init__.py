@@ -348,13 +348,13 @@ class AiciRunner:
 
         Args:
             id (int): The user-assigned ID of the batch entry - needs to be unique.
-            prompt (List[int]): The tokens in the prompt.
+            prompt (List[int]): The tokens in the prompt. This ignored by aicirt.
             req_id (str): The ID used in instantiate() previously.
         """
         self.prompt_q.append(
             {
                 "id": id,
-                "prompt": prompt,
+                "_prompt": prompt,
                 "req_id": req_id,
             }
         )

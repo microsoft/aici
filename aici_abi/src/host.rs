@@ -29,9 +29,6 @@ extern "C" {
     // It's a JSON serialization of ProcessArg.
     fn aici_host_process_arg() -> BlobId;
 
-    // Return the ID of argument passed by the user.
-    fn aici_host_tokens() -> BlobId;
-
     // Tokenize given UTF8 string. The result is only valid until next call to this function.
     fn aici_host_tokenize(src: *const u8, src_size: u32) -> BlobId;
 
@@ -143,11 +140,6 @@ pub fn trie_bytes() -> Vec<u8> {
     return std::fs::read("tokenizer.bin").unwrap();
 }
 
-pub fn tokens_arg() -> Vec<TokenId> {
-    let r = read_blob(unsafe { aici_host_tokens() }, 256);
-    vec_from_bytes(&r)
-}
-
 pub fn tokenize(s: &str) -> Vec<TokenId> {
     let id = unsafe { aici_host_tokenize(s.as_ptr(), s.len() as u32) };
     let r = read_blob(id, 4 * (s.len() / 3 + 10));
@@ -168,3 +160,8 @@ pub fn return_logits(vob: &SimpleVob) {
         aici_host_return_logits(vob.as_ptr());
     }
 }
+
+pub fn process_arg_bytes() -> Vec<u8> {
+    return read_blob(unsafe { aici_host_process_arg() }, 1024);
+}
+

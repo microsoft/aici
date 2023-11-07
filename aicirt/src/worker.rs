@@ -9,6 +9,7 @@ use serde::{Deserialize, Serialize};
 use crate::{
     hostimpl::{AiciLimits, ModuleInstId},
     moduleinstance::{ModuleInstance, WasmContext},
+    shm::Shm,
     InstantiateReq,
 };
 
@@ -183,7 +184,7 @@ impl SeqCtx {
                     inst.tokenize(prompt_str.as_ref().unwrap())?
                 };
                 self.modinst = Some(inst);
-                self.mutinst().setup(&prompt_toks)?;
+                self.mutinst().setup(prompt_toks)?;
                 ok()
             }
             SeqCmd::SetId { inst_id } => {
@@ -192,7 +193,8 @@ impl SeqCtx {
                 ok()
             }
             SeqCmd::Exec { data } => {
-                let res = self.mutinst().exec();
+                let shm = self.shm.clone();
+                let res = self.mutinst().exec(data, &shm);
                 Ok(SeqResp::Exec { data: res })
             }
         }
@@ -233,6 +235,7 @@ struct SeqCtx {
     query: GroupHandle,
     inst_id: ModuleInstId,
     modinst: Option<ModuleInstance>,
+    shm: Shm,
 }
 
 pub struct SeqWorkerHandle {
@@ -346,6 +349,7 @@ fn forker_dispatcher(
     cmd: IpcReceiver<ForkerCmd>,
     cmd_resp: IpcSender<ForkerResp>,
     wasm_ctx: WasmContext,
+    shm: Shm,
 ) -> ! {
     loop {
         let cmd = cmd.recv().unwrap();
@@ -373,6 +377,7 @@ fn forker_dispatcher(
                     cmd: cmd1,
                     cmd_resp: cmd_resp0,
                     wasm_ctx,
+                    shm,
                     query: ProcessHandle {
                         pid: grp_pid,
                         cmd: query0,
@@ -395,14 +400,14 @@ fn forker_dispatcher(
 }
 
 impl WorkerForker {
-    pub fn new(wasm_ctx: WasmContext) -> Self {
+    pub fn new(wasm_ctx: WasmContext, shm: Shm) -> Self {
         let (cmd0, cmd1) = ipc::channel().unwrap();
         let (cmd_resp0, cmd_resp1) = ipc::channel().unwrap();
 
         let limits = wasm_ctx.limits.clone();
         let pid = unsafe { libc::fork() };
         if pid == 0 {
-            forker_dispatcher(cmd1, cmd_resp0, wasm_ctx)
+            forker_dispatcher(cmd1, cmd_resp0, wasm_ctx, shm)
         } else {
             let fork_worker = ProcessHandle {
                 pid,

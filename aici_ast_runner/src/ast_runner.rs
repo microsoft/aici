@@ -24,7 +24,7 @@ use crate::rx::RecRx;
 use aici_abi::{
     aici_expose_all,
     bytes::limit_str,
-    host::{self, ff_token, tokenize, tokens_arg},
+    host::{self, ff_token, tokenize},
     svob::SimpleVob,
     toktree::{Recognizer, SpecialToken, TokTrie},
     wprintln, AiciVm, AiciVmHelper, TokenId,
@@ -454,26 +454,27 @@ impl Runner {
 }
 
 impl AiciVm for Runner {
-    fn aici_process(&mut self) {
-        let toks = tokens_arg();
-        if self.is_prompt {
-            // ignore the prompt (for now)
-            wprintln!("prompt, {} tokens", toks.len());
-            self.is_prompt = false;
-        } else {
-            let ntok = toks.len();
-            if ntok > 1 {
-                wprintln!("<<< {} tokens", ntok);
+    fn process(&mut self, arg: ProcessArg) {
+        match arg {
+            ProcessArg::InitialPrompt { tokens } => {
+                // ignore the prompt (for now)
+                wprintln!("prompt, {} tokens", tokens.len());
             }
-            for token in toks {
-                self.advance(token);
-            }
-            if ntok > 1 {
-                wprintln!(">>>");
+            ProcessArg::StepPrompt {} => self.compute(),
+            ProcessArg::Gen { tokens } => {
+                let ntok = tokens.len();
+                if ntok > 1 {
+                    wprintln!("<<< {} tokens", ntok);
+                }
+                for token in tokens {
+                    self.advance(token);
+                }
+                if ntok > 1 {
+                    wprintln!(">>>");
+                }
+                self.compute()
             }
         }
-
-        self.compute();
     }
 
     fn get_helper(&mut self) -> &mut AiciVmHelper {
