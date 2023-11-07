@@ -5,6 +5,7 @@ mod semaphore;
 mod shm;
 mod worker;
 
+use aici_abi::{ProcessArg, TokenId};
 use aici_abi::bytes::limit_str;
 use aici_abi::toktree::TokTrie;
 use aici_tokenizers::find_tokenizer;
@@ -153,10 +154,10 @@ pub enum AiciOp {
 }
 
 impl AiciOp {
-    pub fn to_thread_op(self) -> ThreadOp {
+    pub fn to_thread_op(self) -> ProcessArg {
         match self {
-            AiciOp::Prompt { .. } => ThreadOp::Prompt {},
-            AiciOp::Gen { tokens, .. } => ThreadOp::Gen { tokens },
+            AiciOp::Prompt { .. } => ProcessArg::Prompt {},
+            AiciOp::Gen { tokens, .. } => ProcessArg::Gen { tokens },
         }
     }
 }
@@ -181,6 +182,8 @@ pub struct InstantiateReq {
 fn mk_null() -> Value {
     Value::Null
 }
+
+type Token = TokenId;
 
 #[derive(Serialize, Deserialize)]
 struct SpecialTokenIds {
@@ -451,6 +454,7 @@ impl Stepper {
                 AiciOp::Prompt { id, .. } => id,
             };
             let h = self.get_worker(instid).unwrap();
+            let op = serde_json::to_vec(&op.to_thread_op()).unwrap();
             match h.start_exec(ExecOp { op, logit_offset }) {
                 Ok(_) => used_ids.push(instid),
                 Err(e) => self.worker_error(instid, &mut map, e),

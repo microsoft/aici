@@ -2,6 +2,7 @@ use std::io;
 
 use crate::{
     bytes::{vec_from_bytes, TokenId},
+    svob::SimpleVob,
     wprintln,
 };
 
@@ -24,11 +25,18 @@ extern "C" {
     // Return the ID of argument passed by the user.
     fn aici_host_module_arg() -> BlobId;
 
+    // Return the ID of argument passed to the process() function.
+    // It's a JSON serialization of ProcessArg.
+    fn aici_host_process_arg() -> BlobId;
+
     // Return the ID of argument passed by the user.
     fn aici_host_tokens() -> BlobId;
 
     // Tokenize given UTF8 string. The result is only valid until next call to this function.
     fn aici_host_tokenize(src: *const u8, src_size: u32) -> BlobId;
+
+    // Set logit bias based on bitmask in src.
+    fn aici_host_return_logits(src: *const u32);
 
     // Append fast-forward (FF) token.
     // First FF token has to be returned by setting logit bias appropriately.
@@ -151,5 +159,12 @@ pub fn tokenize(s: &str) -> Vec<TokenId> {
 pub fn ff_token(token: TokenId) {
     unsafe {
         aici_host_ff_token(token);
+    }
+}
+
+pub fn return_logits(vob: &SimpleVob) {
+    assert!(vob.len() > 0);
+    unsafe {
+        aici_host_return_logits(vob.as_ptr());
     }
 }

@@ -56,6 +56,10 @@ impl Shm {
         self.size
     }
 
+    pub fn ptr_at(&self, off: usize) -> *mut u8 {
+        unsafe { self.addr.add(off) }
+    }
+
     pub fn split(&self, slice_size: usize) -> Result<Vec<&'static mut [u8]>> {
         let num = self.size / slice_size;
         ensure!(num > 0);

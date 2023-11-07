@@ -1,5 +1,6 @@
 use std::rc::Rc;
 
+use serde::{Deserialize, Serialize};
 use svob::SimpleVob;
 use toktree::{SpecialToken, TokTrie};
 
@@ -11,6 +12,12 @@ pub mod svob;
 pub mod toktree;
 
 pub type TokenId = bytes::TokenId;
+
+#[derive(Serialize, Deserialize, Debug)]
+pub enum ProcessArg {
+    Prompt {},
+    Gen { tokens: Vec<TokenId> },
+}
 
 /// Expose method as extern "C", usage:
 ///     expose!(Foo::set_count(n: i32) -> i32);
@@ -38,7 +45,6 @@ macro_rules! expose {
 
 #[derive(Clone)]
 pub struct AiciVmHelper {
-    pub logit_biases: Vec<f32>,
     pub allowed_tokens: SimpleVob,
     pub trie: Rc<Box<TokTrie>>,
 }
@@ -46,18 +52,13 @@ pub struct AiciVmHelper {
 // aici_* are exposed to C in both AiciVm and AiciVmHelper
 impl AiciVmHelper {
     pub fn new() -> Self {
+        let trie = TokTrie::from_host();
+        let mut allowed_tokens = SimpleVob::new();
+        allowed_tokens.resize(trie.vocab_size() + 1);
         AiciVmHelper {
-            logit_biases: Vec::new(),
-            allowed_tokens: SimpleVob::new(),
-            trie: Rc::new(Box::new(TokTrie::from_host())),
+            allowed_tokens,
+            trie: Rc::new(Box::new(trie)),
         }
-    }
-    pub fn aici_get_logit_bias_buffer(&mut self, size: u32) -> *mut f32 {
-        // we keep one more logit at the end as a placeholder to avoid branching in
-        // the inner loop of append_bias
-        self.logit_biases.resize((size + 1) as usize, 0.0);
-        self.allowed_tokens.resize(self.logit_biases.len());
-        self.logit_biases.as_mut_ptr()
     }
 
     pub fn all_disallowed(&mut self) {
@@ -73,8 +74,7 @@ impl AiciVmHelper {
     }
 
     pub fn compute_biases(&mut self) {
-        self.logit_biases.iter_mut().for_each(|x| *x = -100.0);
-        self.allowed_tokens.apply_to(&mut self.logit_biases);
+        host::return_logits(&self.allowed_tokens);
     }
 }
 
@@ -90,7 +90,6 @@ pub trait AiciVm {
 macro_rules! aici_expose_all {
     ($struct_name:ident, $new:expr) => {
         $crate::expose!($struct_name::aici_process() -> ());
-        $crate::expose!($struct_name::helper::aici_get_logit_bias_buffer(size: u32) -> *mut f32);
 
         #[no_mangle]
         pub extern "C" fn aici_create() -> *mut $struct_name {
@@ -136,4 +135,3 @@ macro_rules! wprint {
         $crate::host::_print(&format!($($arg)*));
     }};
 }
-

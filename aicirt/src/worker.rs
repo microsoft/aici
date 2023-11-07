@@ -9,7 +9,7 @@ use serde::{Deserialize, Serialize};
 use crate::{
     hostimpl::{AiciLimits, ModuleInstId},
     moduleinstance::{ModuleInstance, WasmContext},
-    AiciOp, InstantiateReq,
+    InstantiateReq,
 };
 
 pub type JSON = serde_json::Value;
@@ -48,7 +48,7 @@ struct ForkerCmd {
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct ExecOp {
-    pub op: AiciOp,
+    pub op: Vec<u8>,
     pub logit_offset: usize,
 }
 
@@ -192,7 +192,8 @@ impl SeqCtx {
                 ok()
             }
             SeqCmd::Exec { data } => {
-                todo!()
+                let res = self.mutinst().exec();
+                Ok(SeqResp::Exec { data: res })
             }
         }
     }

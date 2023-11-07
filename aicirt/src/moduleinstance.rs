@@ -9,6 +9,7 @@ use std::time::Instant;
 use wasmtime;
 
 use crate::hostimpl::{setup_linker, AiciLimits, GlobalInfo, ModuleData, ModuleInstId};
+use crate::worker::ExecOp;
 
 #[derive(Clone)]
 pub struct WasmContext {
@@ -85,23 +86,9 @@ pub struct ModuleInstance {
     memory: wasmtime::Memory,
     instance: wasmtime::Instance,
     handle: WasmAici,
-    logit_ptr: WasmPtr,
-    op: Option<IdxOp>,
     had_error: bool,
     limits: AiciLimits,
 }
-pub struct IdxOp {
-    dst_slice: &'static mut [u8],
-    op: ThreadOp,
-}
-
-pub type Token = u32;
-
-pub enum ThreadOp {
-    Prompt {},
-    Gen { tokens: Vec<Token> },
-}
-
 type WasmPtr = u32;
 type WasmAici = u32;
 
@@ -192,8 +179,6 @@ impl ModuleInstance {
 
         Ok(ModuleInstance {
             handle: 0,
-            logit_ptr: 0,
-            op: None,
             store,
             memory,
             instance,
@@ -218,24 +203,6 @@ impl ModuleInstance {
         println!("{}\n", self.store.data_mut().string_log());
         println!("time: {:?}", t0.elapsed());
         Ok(())
-    }
-
-    pub fn add_op(&mut self, dst_slice: &'static mut [u8], op: ThreadOp) {
-        assert!(self.op.is_none());
-        self.op = Some(IdxOp { dst_slice, op });
-    }
-
-    fn setup_logit_bias(&mut self, handle: WasmAici) -> Result<u32> {
-        let vocab_size = self.store.data().globals.tokrx_info.vocab_size;
-        let logit_ptr = self.call_func::<(WasmAici, u32), WasmPtr>(
-            "aici_get_logit_bias_buffer",
-            (handle, vocab_size),
-        )?;
-
-        self.handle = handle;
-        self.logit_ptr = logit_ptr;
-
-        Ok(logit_ptr)
     }
 
     pub fn exec(&mut self) -> Value {
@@ -270,9 +237,7 @@ impl ModuleInstance {
     pub fn setup(&mut self, prompt: &[u32]) -> Result<()> {
         self.run_init()?;
 
-        let handle = self.call_func::<(), WasmAici>("aici_create", ())?;
-        let _logit_ptr = self.setup_logit_bias(handle)?;
-
+        self.handle = self.call_func::<(), WasmAici>("aici_create", ())?;
         self.run_process(prompt)?;
 
         Ok(())
@@ -284,7 +249,9 @@ impl ModuleInstance {
         Ok(())
     }
 
-    fn exec_inner(&mut self) -> Result<()> {
+    fn exec_inner(&mut self, op: ExecOp) -> Result<()> {
+        self.store.data_mut().set_exec_data(op, &self.memory)?;
+        
         let opidx = std::mem::replace(&mut self.op, None).unwrap();
 
         match opidx.op {

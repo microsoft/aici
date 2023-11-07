@@ -16,6 +16,10 @@ impl SimpleVob {
         self.data.len() * BITS
     }
 
+    pub unsafe fn as_ptr(&self) -> *const u32 {
+        self.data.as_ptr()
+    }
+
     #[inline(always)]
     pub fn allow_token(&mut self, tok: TokenId) {
         let idx = tok as usize;

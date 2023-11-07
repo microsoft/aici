@@ -7,3 +7,4 @@ edition = "2021"
 name = "aici_abi"
 
 [dependencies]
+serde = { version = "1.0.192", features = ["derive"] }

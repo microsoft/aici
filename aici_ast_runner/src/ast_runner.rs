@@ -445,7 +445,7 @@ impl Runner {
                 "prob {:?} {} = {}",
                 tok,
                 id,
-                self.helper.logit_biases[id as usize]
+                self.helper.allowed_tokens.is_allowed(id)
             );
         } else {
             wprintln!("prob {:?} -> no token", tok)

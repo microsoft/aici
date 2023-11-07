@@ -9,6 +9,9 @@
         "aici_tokenizers/Cargo.toml",
         "aici_ast_runner/Cargo.toml"
     ],
+    "rust-analyzer.diagnostics.disabled": [
+        "unresolved-proc-macro"
+    ],
     "files.associations": {
         "*.rasi": "css",
         "*.bbmodel": "json",
