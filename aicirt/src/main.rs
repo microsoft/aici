@@ -20,7 +20,6 @@ use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 use std::collections::HashMap;
 use std::fs;
-use std::hash::Hash;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use std::time::Instant;
@@ -411,7 +410,7 @@ impl Stepper {
                 );
                 let h = e.unwrap();
                 info!("prompt {} ({})", id, req_id);
-                h.set_id(*id);
+                h.set_id(*id)?;
                 self.instances.insert(*id, h);
             }
         };
@@ -422,9 +421,7 @@ impl Stepper {
     fn aici_step(&mut self, req: AiciStepReq) -> Result<Value> {
         for id in req.freed {
             info!("free module {}", id);
-            let h = self.instances.remove(&id);
-            let h = h.ok_or(anyhow!("invalid freed id {id}"))?;
-            h.free();
+            self.instances.remove(&id);
         }
 
         // first, start instances and link clones
@@ -446,37 +443,46 @@ impl Stepper {
 
         let mut logit_offset = 0;
         let mut used_ids = Vec::new();
+        let mut map = serde_json::Map::new();
+
         for op in req.ops.into_iter() {
             let instid = match op {
                 AiciOp::Gen { id, .. } => id,
                 AiciOp::Prompt { id, .. } => id,
             };
-            used_ids.push(instid);
-            let h = self.get_worker(instid)?;
-            h.start_exec(ExecOp { op, logit_offset })?;
+            let h = self.get_worker(instid).unwrap();
+            match h.start_exec(ExecOp { op, logit_offset }) {
+                Ok(_) => used_ids.push(instid),
+                Err(e) => self.worker_error(instid, &mut map, e),
+            };
             logit_offset += vocab_block_len;
         }
 
         let deadline = Instant::now() + std::time::Duration::from_millis(self.limits.max_step_ms);
 
-        let mut map = serde_json::Map::new();
         for id in used_ids {
-            let h = self.get_worker(id)?;
+            let h = self.get_worker(id).unwrap();
             let timeout = deadline.saturating_duration_since(Instant::now());
-            let res = h.check_exec(timeout)?;
-            match res {
-                Some(json) => {
+            match h.check_exec(timeout) {
+                Ok(json) => {
                     map.insert(id.to_string(), json);
                 }
-                None => {
-                    info!("timeout {}", id);
-                    map.insert(id.to_string(), json!({ "timeout": 1 }));
-                    h.kill();
-                }
+                Err(e) => self.worker_error(id, &mut map, e),
             }
         }
 
         Ok(Value::Object(map))
+    }
+
+    fn worker_error(
+        &mut self,
+        instid: usize,
+        map: &mut serde_json::Map<String, Value>,
+        e: anyhow::Error,
+    ) {
+        warn!("worker error: {e:?}");
+        map.insert(instid.to_string(), json!({ "error": format!("{e:?}") }));
+        self.instances.remove(&instid);
     }
 }
 

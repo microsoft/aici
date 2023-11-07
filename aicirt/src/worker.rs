@@ -7,12 +7,14 @@ use libc::pid_t;
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    hostimpl::ModuleInstId,
+    hostimpl::{AiciLimits, ModuleInstId},
     moduleinstance::{ModuleInstance, WasmContext},
     AiciOp, InstantiateReq,
 };
 
 pub type JSON = serde_json::Value;
+
+const QUICK_OP_MS: u64 = 10;
 
 #[derive(Serialize, Deserialize, Debug)]
 enum GroupCmd {
@@ -90,25 +92,42 @@ where
         self.cmd.send(cmd)?;
         Ok(self.cmd_resp.recv()?)
     }
+
+    fn kill(&self) {
+        assert!(self.pid != 0);
+        unsafe { libc::kill(self.pid, libc::SIGKILL) };
+    }
+
+    fn send_cmd_with_timeout(&self, cmd: Cmd, timeout: Duration) -> Result<Resp> {
+        self.cmd.send(cmd)?;
+        self.recv_with_timeout(timeout)
+    }
+
+    fn recv_with_timeout(&self, timeout: Duration) -> Result<Resp> {
+        match self.cmd_resp.try_recv_timeout(timeout) {
+            Ok(r) => Ok(r),
+            Err(ipc_channel::ipc::TryRecvError::Empty) => {
+                self.kill();
+                Err(anyhow!("timeout ({timeout:?})"))
+            }
+            Err(e) => Err(e.into()),
+        }
+    }
 }
 
 impl SeqHandle {
-    fn send_cmd_expect_ok(&self, cmd: SeqCmd) -> Result<()> {
-        match self.send_cmd(cmd)? {
-            SeqResp::Ok {} => Ok(()),
-            r => Err(anyhow!("unexpected response (not OK) {r:?}")),
+    fn send_cmd_expect_ok(&self, cmd: SeqCmd, timeout: Duration) -> Result<()> {
+        self.cmd.send(cmd)?;
+        match self.recv_with_timeout(timeout) {
+            Ok(SeqResp::Ok {}) => Ok(()),
+            Ok(r) => Err(anyhow!("unexpected response (not OK) {r:?}")),
+            Err(e) => Err(e.into()),
         }
     }
 }
 
 fn ok() -> Result<SeqResp> {
     Ok(SeqResp::Ok {})
-}
-
-struct SeqHandleRes {
-    handle: SeqHandle,
-    query: IpcReceiver<GroupCmd>,
-    query_resp: IpcSender<GroupResp>,
 }
 
 impl SeqCtx {
@@ -219,26 +238,35 @@ pub struct SeqWorkerHandle {
     handle: SeqHandle,
 }
 
+impl Drop for SeqWorkerHandle {
+    fn drop(&mut self) {
+        self.handle.kill()
+    }
+}
+
 impl SeqWorkerHandle {
-    pub fn free(&self) {
-        todo!()
-    }
-
-    pub fn kill(&self) {
-        todo!()
-    }
-
     pub fn set_id(&self, id: ModuleInstId) -> Result<()> {
-        self.handle
-            .send_cmd_expect_ok(SeqCmd::SetId { inst_id: id })
+        self.handle.send_cmd_expect_ok(
+            SeqCmd::SetId { inst_id: id },
+            Duration::from_millis(QUICK_OP_MS),
+        )
     }
 
     pub fn fork(&self, target_id: ModuleInstId) -> Result<SeqWorkerHandle> {
-        match self.handle.send_cmd(SeqCmd::Fork { inst_id: target_id })? {
-            SeqResp::Fork { handle: info } => match info.cmd_resp.recv().unwrap() {
-                SeqResp::Ok {} => Ok(SeqWorkerHandle { handle: info }),
-                r => Err(anyhow!("unexpected response (fork, child) {r:?}")),
-            },
+        match self.handle.send_cmd_with_timeout(
+            SeqCmd::Fork { inst_id: target_id },
+            Duration::from_millis(QUICK_OP_MS),
+        )? {
+            SeqResp::Fork { handle } => {
+                let res = SeqWorkerHandle { handle };
+                match res
+                    .handle
+                    .recv_with_timeout(Duration::from_millis(QUICK_OP_MS))?
+                {
+                    SeqResp::Ok {} => Ok(res),
+                    r => Err(anyhow!("unexpected response (fork, child) {r:?}")),
+                }
+            }
             r => Err(anyhow!("unexpected response (fork) {r:?}")),
         }
     }
@@ -248,11 +276,10 @@ impl SeqWorkerHandle {
         Ok(())
     }
 
-    pub fn check_exec(&self, timeout: Duration) -> Result<Option<JSON>> {
-        match self.handle.cmd_resp.try_recv_timeout(timeout) {
-            Ok(SeqResp::Exec { data }) => Ok(Some(data)),
+    pub fn check_exec(&self, timeout: Duration) -> Result<JSON> {
+        match self.handle.recv_with_timeout(timeout) {
+            Ok(SeqResp::Exec { data }) => Ok(data),
             Ok(r) => Err(anyhow!("unexpected response (exec) {r:?}")),
-            Err(ipc_channel::ipc::TryRecvError::Empty) => Ok(None),
             Err(e) => Err(e.into()),
         }
     }
@@ -310,6 +337,7 @@ impl GroupCtx {
 }
 
 pub struct WorkerForker {
+    limits: AiciLimits,
     fork_worker: ForkerHandle,
 }
 
@@ -370,6 +398,7 @@ impl WorkerForker {
         let (cmd0, cmd1) = ipc::channel().unwrap();
         let (cmd_resp0, cmd_resp1) = ipc::channel().unwrap();
 
+        let limits = wasm_ctx.limits.clone();
         let pid = unsafe { libc::fork() };
         if pid == 0 {
             forker_dispatcher(cmd1, cmd_resp0, wasm_ctx)
@@ -379,7 +408,10 @@ impl WorkerForker {
                 cmd: cmd0,
                 cmd_resp: cmd_resp1,
             };
-            WorkerForker { fork_worker }
+            WorkerForker {
+                fork_worker,
+                limits,
+            }
         }
     }
 
@@ -417,14 +449,17 @@ impl WorkerForker {
         let resp = self.fork_worker.send_cmd(ForkerCmd {
             id: req.req_id.clone(),
         })?;
-        let handle = resp.0;
-        handle.send_cmd_expect_ok(SeqCmd::Instantiate {
-            module_path,
-            module_id: req.module_id.clone(),
-            module_arg,
-            prompt_str,
-            prompt_toks,
-        })?;
-        Ok(SeqWorkerHandle { handle })
+        let res = SeqWorkerHandle { handle: resp.0 };
+        res.handle.send_cmd_expect_ok(
+            SeqCmd::Instantiate {
+                module_path,
+                module_id: req.module_id.clone(),
+                module_arg,
+                prompt_str,
+                prompt_toks,
+            },
+            Duration::from_millis(self.limits.max_init_ms),
+        )?;
+        Ok(res)
     }
 }
