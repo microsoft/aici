@@ -53,22 +53,13 @@ impl Shm {
         })
     }
 
+    #[allow(dead_code)]
     pub fn len(&self) -> usize {
         self.size
     }
 
     pub fn ptr_at(&self, off: usize) -> *mut u8 {
         unsafe { self.addr.add(off) }
-    }
-
-    pub fn split(&self, slice_size: usize) -> Result<Vec<&'static mut [u8]>> {
-        let num = self.size / slice_size;
-        ensure!(num > 0);
-        Ok((0..self.size / slice_size)
-            .map(|idx| unsafe {
-                std::slice::from_raw_parts_mut(self.addr.add(idx * slice_size), slice_size)
-            })
-            .collect::<Vec<_>>())
     }
 
     pub fn fits_msg(&self, msg: &[u8]) -> Result<()> {

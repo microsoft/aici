@@ -2,10 +2,10 @@ use aici_abi::toktree::TokTrie;
 use aici_abi::{ProcessArg, TokenId};
 use aici_tokenizers::Tokenizer;
 use anyhow::{anyhow, ensure, Result};
-use log::{info, warn};
+use log::warn;
 use serde_json::{json, Value};
 use std::path::PathBuf;
-use std::sync::{Arc, RwLock};
+use std::sync::Arc;
 use std::time::Instant;
 use wasmtime;
 
@@ -89,6 +89,7 @@ pub struct ModuleInstance {
     instance: wasmtime::Instance,
     handle: WasmAici,
     had_error: bool,
+    #[allow(dead_code)]
     limits: AiciLimits,
 }
 type WasmPtr = u32;
@@ -135,6 +136,7 @@ impl ModuleInstance {
         Ok(())
     }
 
+    #[allow(dead_code)]
     fn read_mem<T>(&self, ptr: WasmPtr, target: &mut [T]) -> Result<()> {
         let numbytes = target.len() * std::mem::size_of::<T>();
         let src_slice = &self.memory.data(&self.store)[ptr as usize..];

@@ -346,13 +346,13 @@ pub struct WorkerForker {
 }
 
 fn forker_dispatcher(
-    cmd: IpcReceiver<ForkerCmd>,
+    cmdch: IpcReceiver<ForkerCmd>,
     cmd_resp: IpcSender<ForkerResp>,
     wasm_ctx: WasmContext,
     shm: Shm,
 ) -> ! {
     loop {
-        let cmd = cmd.recv().unwrap();
+        let cmd = cmdch.recv().unwrap();
 
         let (cmd0, cmd1) = ipc::channel().unwrap();
         let (cmd_resp0, cmd_resp1) = ipc::channel().unwrap();

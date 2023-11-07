@@ -27,7 +27,7 @@ use aici_abi::{
     host::{self, ff_token, tokenize},
     svob::SimpleVob,
     toktree::{Recognizer, SpecialToken, TokTrie},
-    wprintln, AiciVm, AiciVmHelper, TokenId,
+    wprintln, AiciVm, AiciVmHelper, TokenId, ProcessArg,
 };
 
 // The JSON AST
@@ -122,7 +122,6 @@ pub struct Runner {
     helper: AiciVmHelper,
     state_idx: usize,
     states: Vec<StepState>,
-    is_prompt: bool,
 }
 
 impl Debug for StepState {
@@ -367,7 +366,6 @@ impl Runner {
             helper: AiciVmHelper::new(),
             state_idx: 0,
             states,
-            is_prompt: true,
         }
     }
 

@@ -1,5 +1,5 @@
 use aici_abi::{
-    bytes::{clone_vec_as_bytes, TokRxInfo},
+    bytes::{clone_vec_as_bytes, vec_from_bytes, TokRxInfo},
     ProcessArg, TokenId,
 };
 use anyhow::{anyhow, Result};
@@ -29,7 +29,7 @@ pub struct ModuleData {
     pub module_arg: Arc<String>,
     tokenize_out: Vec<TokenId>,
     process_arg: Vec<u8>,
-    logit_ptr: *mut u8,
+    logit_ptr: *mut f32,
     pub linker: Arc<wasmtime::Linker<ModuleData>>,
     pub instance: Option<wasmtime::Instance>,
     pub memory: Option<wasmtime::Memory>,
@@ -92,7 +92,7 @@ impl ModuleData {
 
     pub fn set_exec_data(&mut self, data: ExecOp, shm: &Shm) {
         self.process_arg = data.op;
-        self.logit_ptr = shm.ptr_at(data.logit_offset);
+        self.logit_ptr = shm.ptr_at(data.logit_offset) as *mut f32;
     }
 
     pub fn tokenize(&mut self, s: &str) -> Result<Vec<u32>> {
@@ -237,11 +237,25 @@ pub fn setup_linker(engine: &wasmtime::Engine) -> Result<Arc<wasmtime::Linker<Mo
     linker.func_wrap(
         "env",
         "aici_host_return_logits",
-        |mut caller: wasmtime::Caller<'_, ModuleData>, src: u32| {
-            let numtok = caller.data().globals.tokrx_info.vocab_size;
+        |caller: wasmtime::Caller<'_, ModuleData>, src: u32| {
+            let numtok = caller.data().globals.tokrx_info.vocab_size as usize;
             let numbytes = (numtok + 31) / 32;
-            let m = read_caller_mem(&caller, src, numbytes);
-            todo!()
+            let mut ptr = caller.data().logit_ptr;
+            if ptr == std::ptr::null_mut() {
+                return;
+            }
+            let m = read_caller_mem(&caller, src, numbytes as u32);
+            let masks = vec_from_bytes::<u32>(&m);
+            for idx in 0..numtok {
+                let mask = masks[idx / 32];
+                let bit = 1 << (idx % 32);
+                if mask & bit != 0 {
+                    unsafe {
+                        *ptr = 100.0;
+                    }
+                }
+                ptr = unsafe { ptr.add(1) };
+            }
         },
     )?;
 
