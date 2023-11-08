@@ -518,7 +518,7 @@ trait Exec {
                 debug!("dispatch: rid={:?} op={:?}", rid, json["op"]);
                 let val = match json["op"].as_str() {
                     Some("ping") => Ok(json!({ "pong": 1 })),
-                    Some("stop") => std::process::exit(0),
+                    Some("stop") => worker::stop_process(),
                     _ => self.exec(json),
                 };
                 let mut resp = match val {
@@ -660,8 +660,7 @@ fn install_from_cmdline(cli: &Cli, wasm_ctx: WasmContext, shm: Shm) {
         reg.run_main(&req_id).unwrap();
     }
 
-    // exit process
-    std::process::exit(0);
+    worker::stop_process();
 }
 
 fn main() -> () {

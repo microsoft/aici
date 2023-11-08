@@ -4,6 +4,7 @@ use aici_abi::TokenId;
 use anyhow::{anyhow, Result};
 use ipc_channel::ipc::{self, IpcReceiver, IpcReceiverSet, IpcSender};
 use libc::pid_t;
+use log::info;
 use serde::{Deserialize, Serialize};
 
 use crate::{
@@ -410,8 +411,26 @@ fn forker_dispatcher(
     }
 }
 
+extern "C" fn clean_exit(_: libc::c_int) {
+    std::process::exit(0);
+}
+
+pub fn stop_process() -> ! {
+    let pgid = unsafe { libc::getpgrp() };
+    unsafe { libc::kill(-pgid, libc::SIGUSR1) };
+    std::thread::sleep(Duration::from_millis(500));
+    panic!("didn't die");
+}
+
 impl WorkerForker {
     pub fn new(wasm_ctx: WasmContext, shm: Shm) -> Self {
+        // create a new process group
+        let pid = unsafe { libc::getpid() };
+        unsafe {
+            let r = libc::setpgid(pid, pid);
+            assert!(r >= 0);
+        };
+
         let (cmd0, cmd1) = ipc::channel().unwrap();
         let (cmd_resp0, cmd_resp1) = ipc::channel().unwrap();
 
@@ -425,6 +444,7 @@ impl WorkerForker {
                 cmd: cmd0,
                 cmd_resp: cmd_resp1,
             };
+            unsafe { libc::signal(libc::SIGUSR1, clean_exit as usize) };
             WorkerForker {
                 fork_worker,
                 limits,
