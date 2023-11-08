@@ -33,7 +33,7 @@ extern "C" {
     // Tokenize given UTF8 string. The result is only valid until next call to this function.
     fn aici_host_tokenize(src: *const u8, src_size: u32) -> BlobId;
 
-    // Set logit bias based on bitmask in src.
+    // Set logit bias based on bit-mask in src.
     fn aici_host_return_logit_bias(src: *const u32);
 
     // Append fast-forward (FF) token.
@@ -247,7 +247,7 @@ impl VariableStorage {
             when_version_is: None,
         }) {
             StorageResp::WriteVar { version } => version,
-            _ => panic!("unexpected response to writevar"),
+            _ => panic!("unexpected response to write var"),
         }
     }
 
@@ -257,7 +257,7 @@ impl VariableStorage {
         }) {
             StorageResp::ReadVar { version, value } => Some((version, value)),
             StorageResp::VariableMissing {} => None,
-            StorageResp::WriteVar { .. } => panic!("unexpected response to readvar"),
+            StorageResp::WriteVar { .. } => panic!("unexpected response to read var"),
         }
     }
 }

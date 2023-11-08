@@ -3,11 +3,14 @@ use aici_abi::{
     TokenId,
 };
 use anyhow::{anyhow, Result};
-use log::info;
+use log::{info, warn};
 use std::sync::Arc;
 use tokenizers::Tokenizer;
 
-use crate::{shm::Shm, worker::ExecOp};
+use crate::{
+    shm::Shm,
+    worker::{ExecOp, GroupCmd, GroupHandle, GroupResp},
+};
 
 pub type ModuleInstId = usize;
 
@@ -27,9 +30,11 @@ pub struct ModuleData {
     pub globals: GlobalInfo,
     pub ff_tokens: Vec<TokenId>,
     pub module_arg: Arc<String>,
+    pub group_channel: GroupHandle,
     tokenize_out: Vec<TokenId>,
     process_arg: Vec<u8>,
     pub process_result: Vec<u8>,
+    storage_result: Vec<u8>,
     logit_ptr: *mut f32,
     pub linker: Arc<wasmtime::Linker<ModuleData>>,
     pub instance: Option<wasmtime::Instance>,
@@ -49,6 +54,7 @@ impl BlobId {
     pub const TRIE: BlobId = BlobId(3);
     pub const TOKENS: BlobId = BlobId(4);
     pub const PROCESS_ARG: BlobId = BlobId(5);
+    pub const STORAGE_RESULT: BlobId = BlobId(6);
 }
 
 impl ModuleData {
@@ -59,6 +65,7 @@ impl ModuleData {
         module_arg: Arc<String>,
         linker: &Arc<wasmtime::Linker<ModuleData>>,
         globals: GlobalInfo,
+        group_channel: GroupHandle,
     ) -> Self {
         let store_limits = wasmtime::StoreLimitsBuilder::new()
             .memories(1)
@@ -74,6 +81,7 @@ impl ModuleData {
             printed_log: 0,
             globals,
             module_arg,
+            group_channel,
             module: module.clone(),
             linker: linker.clone(),
             instance: None,
@@ -84,6 +92,7 @@ impl ModuleData {
             tokenize_out: Vec::new(),
             process_arg: Vec::new(),
             process_result: Vec::new(),
+            storage_result: Vec::new(),
             logit_ptr: std::ptr::null_mut(),
         }
     }
@@ -109,6 +118,12 @@ impl ModuleData {
             Err(e) => Err(anyhow!(e)),
             Ok(tokens) => Ok(Vec::from(tokens.get_ids())),
         }
+    }
+
+    pub fn warn(&mut self, msg: &str) {
+        warn!("{}: {}", self.id, msg);
+        let msg = format!("warning: {}\n", msg);
+        self.write_log(msg.as_bytes());
     }
 
     pub fn write_log(&mut self, bytes: &[u8]) {
@@ -143,6 +158,25 @@ impl ModuleData {
         for line in logs.lines() {
             info!("{}:{}> {}", self.id, name, line);
         }
+    }
+
+    pub fn aici_host_storage_cmd(&mut self, m: Vec<u8>) -> BlobId {
+        self.storage_result.clear();
+        match serde_json::from_slice(&m) {
+            Ok(cmd) => {
+                let res = self.group_channel.send_cmd(GroupCmd::StorageCmd { cmd });
+                match res {
+                    Ok(GroupResp::StorageResp { resp }) => {
+                        let res_bytes = serde_json::to_vec(&resp).unwrap();
+                        self.storage_result = res_bytes;
+                    }
+                    Ok(r) => self.warn(&format!("storage_cmd invalid resp: {r:?}")),
+                    Err(msg) => self.warn(&format!("storage_cmd send error: {msg:?}")),
+                }
+            }
+            Err(e) => self.warn(&format!("storage_cmd error: {e:?}")),
+        }
+        BlobId::STORAGE_RESULT
     }
 }
 
@@ -210,6 +244,9 @@ pub fn setup_linker(engine: &wasmtime::Engine) -> Result<Arc<wasmtime::Linker<Mo
             } else if blob_id == BlobId::PROCESS_ARG.0 {
                 let arg = clone_vec_as_bytes(&caller.data().process_arg);
                 write_caller_mem(&mut caller, ptr, len, &arg)
+            } else if blob_id == BlobId::STORAGE_RESULT.0 {
+                let arg = clone_vec_as_bytes(&caller.data().storage_result);
+                write_caller_mem(&mut caller, ptr, len, &arg)
             } else {
                 0
             }
@@ -230,7 +267,10 @@ pub fn setup_linker(engine: &wasmtime::Engine) -> Result<Arc<wasmtime::Linker<Mo
             let s = String::from_utf8_lossy(&m);
             let tokens = caller.data_mut().tokenize(&s);
             match tokens {
-                Err(_) => caller.data_mut().tokenize_out.clear(),
+                Err(e) => {
+                    caller.data_mut().warn(&format!("tokenize error: {e:?}"));
+                    caller.data_mut().tokenize_out.clear()
+                }
                 Ok(tokens) => caller.data_mut().tokenize_out = tokens,
             }
             BlobId::TOKENIZE.0
@@ -240,11 +280,12 @@ pub fn setup_linker(engine: &wasmtime::Engine) -> Result<Arc<wasmtime::Linker<Mo
     linker.func_wrap(
         "env",
         "aici_host_return_logit_bias",
-        |caller: wasmtime::Caller<'_, ModuleData>, src: u32| {
+        |mut caller: wasmtime::Caller<'_, ModuleData>, src: u32| {
             let numtok = caller.data().globals.tokrx_info.vocab_size as usize;
             let numbytes = (numtok + 31) / 32;
             let mut ptr = caller.data().logit_ptr;
             if ptr == std::ptr::null_mut() {
+                caller.data_mut().warn("logit_ptr is null");
                 return;
             }
             let m = read_caller_mem(&caller, src, numbytes as u32);
@@ -276,6 +317,17 @@ pub fn setup_linker(engine: &wasmtime::Engine) -> Result<Arc<wasmtime::Linker<Mo
             caller.data_mut().process_result = m;
         },
     )?;
+
+    linker.func_wrap(
+        "env",
+        "aici_host_storage_cmd",
+        |mut caller: wasmtime::Caller<'_, ModuleData>, src: u32, src_size: u32| {
+            let m = read_caller_mem(&caller, src, src_size);
+            caller.data_mut().aici_host_storage_cmd(m).0
+        },
+    )?;
+
+    // fn (cmd: *const u8, cmd_size: u32) -> BlobId;
 
     let linker = Arc::new(linker);
     Ok(linker)

@@ -19,13 +19,13 @@ pub type JSON = serde_json::Value;
 const QUICK_OP_MS: u64 = 10;
 
 #[derive(Serialize, Deserialize, Debug)]
-enum GroupCmd {
+pub enum GroupCmd {
     NewChannel {},
     StorageCmd { cmd: StorageCmd },
 }
 
 #[derive(Serialize, Deserialize, Debug)]
-enum GroupResp {
+pub enum GroupResp {
     NewChannel { channel: GroupHandle },
     StorageResp { resp: StorageResp },
 }
@@ -39,7 +39,7 @@ pub struct ProcessHandle<Cmd, Resp> {
 
 type ForkerHandle = ProcessHandle<ForkerCmd, ForkerResp>;
 type SeqHandle = ProcessHandle<SeqCmd, SeqResp>;
-type GroupHandle = ProcessHandle<GroupCmd, GroupResp>;
+pub type GroupHandle = ProcessHandle<GroupCmd, GroupResp>;
 
 #[derive(Serialize, Deserialize, Debug)]
 struct ForkerCmd {
@@ -89,7 +89,7 @@ where
     Cmd: for<'d> Deserialize<'d> + Serialize,
     Resp: for<'d> Deserialize<'d> + Serialize,
 {
-    fn send_cmd(&self, cmd: Cmd) -> Result<Resp> {
+    pub fn send_cmd(&self, cmd: Cmd) -> Result<Resp> {
         self.cmd.send(cmd)?;
         Ok(self.cmd_resp.recv()?)
     }
@@ -147,7 +147,7 @@ impl SeqCtx {
                 if w_pid == 0 {
                     self.cmd = cmd1;
                     self.cmd_resp = cmd_resp0;
-                    self.query = query_ch;
+                    self.query = Some(query_ch);
                     self.inst_id = inst_id;
                     self.mutinst().set_id(inst_id);
                     // note that this is sent over the child channel
@@ -172,11 +172,13 @@ impl SeqCtx {
             } => {
                 let module = self.wasm_ctx.deserialize_module(module_path).unwrap();
                 let _ = module_id;
+                let ch = std::mem::take(&mut self.query);
                 let mut inst = ModuleInstance::new(
                     424242,
                     self.wasm_ctx.clone(),
                     module,
                     Arc::new(module_arg),
+                    ch.unwrap(),
                 )?;
                 let prompt_toks = if let Some(t) = prompt_toks {
                     t
@@ -208,8 +210,17 @@ impl SeqCtx {
         self.modinst.as_mut().unwrap()
     }
 
-    fn group_cmd(&mut self, query: GroupCmd) -> GroupResp {
-        self.query.send_cmd(query).unwrap()
+    fn group_cmd(&self, query: GroupCmd) -> GroupResp {
+        if let Some(q) = &self.query {
+            q.send_cmd(query).unwrap()
+        } else {
+            self.modinst
+                .as_ref()
+                .unwrap()
+                .group_channel()
+                .send_cmd(query)
+                .unwrap()
+        }
     }
 
     fn dispatch_loop(&mut self) -> ! {
@@ -237,7 +248,7 @@ struct SeqCtx {
     cmd: IpcReceiver<SeqCmd>,
     cmd_resp: IpcSender<SeqResp>,
     wasm_ctx: WasmContext,
-    query: GroupHandle,
+    query: Option<GroupHandle>,
     inst_id: ModuleInstId,
     modinst: Option<ModuleInstance>,
     shm: Shm,
@@ -429,11 +440,11 @@ fn forker_dispatcher(
                     cmd_resp: cmd_resp0,
                     wasm_ctx,
                     shm,
-                    query: ProcessHandle {
+                    query: Some(ProcessHandle {
                         pid: grp_pid,
                         cmd: query0,
                         cmd_resp: query_resp1,
-                    },
+                    }),
                     inst_id: 424242,
                     modinst: None,
                 };

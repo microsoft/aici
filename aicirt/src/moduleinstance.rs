@@ -11,7 +11,7 @@ use wasmtime;
 
 use crate::hostimpl::{setup_linker, AiciLimits, GlobalInfo, ModuleData, ModuleInstId};
 use crate::shm::Shm;
-use crate::worker::ExecOp;
+use crate::worker::{ExecOp, GroupHandle};
 
 #[derive(Clone)]
 pub struct WasmContext {
@@ -158,6 +158,7 @@ impl ModuleInstance {
         ctx: WasmContext,
         module: wasmtime::Module,
         module_arg: Arc<String>,
+        group_channel: GroupHandle,
     ) -> Result<Self> {
         let engine = module.engine();
 
@@ -170,6 +171,7 @@ impl ModuleInstance {
                 module_arg,
                 &ctx.linker,
                 ctx.globals,
+                group_channel,
             ),
         );
         store.limiter(|state| &mut state.store_limits);
@@ -207,6 +209,10 @@ impl ModuleInstance {
         println!("{}\n", self.store.data_mut().string_log());
         println!("time: {:?}", t0.elapsed());
         Ok(())
+    }
+
+    pub fn group_channel(&self) -> &GroupHandle {
+        &self.store.data().group_channel
     }
 
     pub fn exec(&mut self, op: ExecOp, shm: &Shm) -> Value {
