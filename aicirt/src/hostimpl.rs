@@ -4,7 +4,7 @@ use aici_abi::{
 };
 use anyhow::{anyhow, Result};
 use log::{info, warn};
-use std::sync::Arc;
+use std::{rc::Rc, sync::Arc};
 use tokenizers::Tokenizer;
 
 use crate::{
@@ -39,7 +39,7 @@ pub struct ModuleData {
     tokenizer: Option<Tokenizer>,
     pub store_limits: wasmtime::StoreLimits,
     pub had_error: bool,
-    blobs: Vec<Vec<u8>>,
+    blobs: Vec<Rc<Vec<u8>>>,
 }
 
 const MAXLOG: usize = 32 * 1024;
@@ -91,18 +91,18 @@ impl ModuleData {
             process_result: Vec::new(),
             logit_ptr: std::ptr::null_mut(),
             had_error: false,
-            blobs: vec![Vec::new(); BlobId::MAX_BLOB_ID as usize],
+            blobs: vec![Rc::new(Vec::new()); BlobId::MAX_BLOB_ID as usize],
         };
         r.set_blob(BlobId::MODULE_ARG, module_arg.as_bytes().to_vec());
         r
     }
 
     fn clear_blob(&mut self, blob_id: BlobId) {
-        self.blobs[blob_id.0 as usize].clear();
+        self.set_blob(blob_id, vec![])
     }
 
     fn set_blob(&mut self, blob_id: BlobId, bytes: Vec<u8>) {
-        self.blobs[blob_id.0 as usize] = bytes;
+        self.blobs[blob_id.0 as usize] = Rc::new(bytes);
     }
 
     pub fn set_process_arg(&mut self, bytes: Vec<u8>) {
@@ -205,7 +205,7 @@ impl ModuleData {
 #[derive(Clone)]
 pub struct GlobalInfo {
     pub tokrx_info: TokRxInfo,
-    pub trie_bytes: Vec<u8>,
+    pub trie_bytes: Arc<Vec<u8>>,
     pub hf_tokenizer_bytes: &'static [u8],
 }
 
@@ -270,11 +270,10 @@ pub fn setup_linker(engine: &wasmtime::Engine) -> Result<Arc<wasmtime::Linker<Mo
         "aici_host_read_blob",
         |mut caller: wasmtime::Caller<'_, ModuleData>, blob_id: u32, ptr: u32, len: u32| {
             if blob_id == BlobId::TRIE.0 {
-                // TODO remove .clone()
                 let trie_bytes = caller.data().globals.trie_bytes.clone();
                 write_caller_mem(&mut caller, ptr, len, &trie_bytes)
             } else if blob_id < BlobId::MAX_BLOB_ID {
-                let blob = &caller.data().blobs[blob_id as usize].clone();
+                let blob = caller.data().blobs[blob_id as usize].clone();
                 write_caller_mem(&mut caller, ptr, len, &blob)
             } else {
                 fatal_error(&mut caller, "invalid blob_id");

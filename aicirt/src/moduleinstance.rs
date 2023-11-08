@@ -70,7 +70,7 @@ impl WasmContext {
 
         let globals = GlobalInfo {
             tokrx_info: tokenizer.tokrx_info(),
-            trie_bytes: bytes,
+            trie_bytes: Arc::new(bytes),
             hf_tokenizer_bytes: tokenizer.hf_bytes,
         };
 
