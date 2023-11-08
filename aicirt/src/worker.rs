@@ -1,6 +1,6 @@
 use std::{collections::HashMap, path::PathBuf, sync::Arc, time::Duration};
 
-use aici_abi::TokenId;
+use aici_abi::{StorageCmd, StorageOp, StorageResp, TokenId};
 use anyhow::{anyhow, Result};
 use ipc_channel::ipc::{self, IpcReceiver, IpcReceiverSet, IpcSender};
 use libc::pid_t;
@@ -20,22 +20,13 @@ const QUICK_OP_MS: u64 = 10;
 #[derive(Serialize, Deserialize, Debug)]
 enum GroupCmd {
     NewChannel {},
-    ReadVar {
-        name: String,
-    },
-    WriteVar {
-        name: String,
-        value: Vec<u8>,
-        when_version_is: Option<u64>,
-    },
+    StorageCmd { cmd: StorageCmd },
 }
 
 #[derive(Serialize, Deserialize, Debug)]
 enum GroupResp {
     NewChannel { channel: GroupHandle },
-    ReadVar { version: u64, value: Vec<u8> },
-    VariableMissing {},
-    WriteOk { version: u64 },
+    StorageResp { resp: StorageResp },
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -313,6 +304,52 @@ impl GroupCtx {
         self.workers.insert(id, query_resp);
     }
 
+    fn dispatch_storage_cmd(&mut self, cmd: StorageCmd) -> StorageResp {
+        match cmd {
+            StorageCmd::ReadVar { name } => match self.variables.get(&name).map(|x| x.clone()) {
+                None => StorageResp::VariableMissing {},
+                Some((version, value)) => StorageResp::ReadVar { value, version },
+            },
+            StorageCmd::WriteVar {
+                name,
+                value,
+                when_version_is,
+                op,
+            } => {
+                let curr = self.variables.get(&name).map(|x| x.clone());
+                match curr {
+                    Some((prev_version, prev_val)) => match when_version_is {
+                        Some(v) if v != prev_version => StorageResp::ReadVar {
+                            version: prev_version,
+                            value: prev_val,
+                        },
+                        _ => {
+                            let value = match op {
+                                StorageOp::Append => {
+                                    let mut v = prev_val.clone();
+                                    v.extend(value);
+                                    v
+                                }
+                                StorageOp::Set => value,
+                            };
+                            let version = prev_version + 1;
+                            self.variables.insert(name, (version, value));
+                            StorageResp::WriteVar { version }
+                        }
+                    },
+
+                    None => match when_version_is {
+                        None => {
+                            self.variables.insert(name, (1, value));
+                            StorageResp::WriteVar { version: 1 }
+                        }
+                        Some(_) => StorageResp::VariableMissing {},
+                    },
+                }
+            }
+        }
+    }
+
     fn dispatch_cmd(&mut self, cmd: GroupCmd) -> GroupResp {
         match cmd {
             GroupCmd::NewChannel {} => {
@@ -327,45 +364,9 @@ impl GroupCtx {
                     },
                 }
             }
-            GroupCmd::ReadVar { name } => match self.variables.get(&name).map(|x| x.clone()) {
-                None => GroupResp::VariableMissing {},
-                Some((version, value)) => GroupResp::ReadVar { value, version },
+            GroupCmd::StorageCmd { cmd } => GroupResp::StorageResp {
+                resp: self.dispatch_storage_cmd(cmd),
             },
-            GroupCmd::WriteVar {
-                name,
-                value,
-                when_version_is,
-            } => {
-                match (
-                    when_version_is,
-                    self.variables.get(&name).map(|x| x.clone()),
-                ) {
-                    (None, None) => {
-                        self.variables.insert(name, (1, value));
-                        GroupResp::WriteOk { version: 1 }
-                    }
-                    (None, Some((version, _))) => {
-                        self.variables.insert(name, (version + 1, value));
-                        GroupResp::WriteOk {
-                            version: version + 1,
-                        }
-                    }
-                    (Some(_), None) => GroupResp::VariableMissing {},
-                    (Some(req_v), Some((version, prev_val))) => {
-                        if req_v == version {
-                            self.variables.insert(name, (version + 1, value));
-                            GroupResp::WriteOk {
-                                version: version + 1,
-                            }
-                        } else {
-                            GroupResp::ReadVar {
-                                version,
-                                value: prev_val,
-                            }
-                        }
-                    }
-                }
-            }
         }
     }
 
