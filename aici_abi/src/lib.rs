@@ -14,41 +14,6 @@ pub mod toktree;
 pub type TokenId = bytes::TokenId;
 
 #[derive(Serialize, Deserialize, Debug)]
-pub enum StorageOp {
-    Set,
-    Append,
-}
-
-#[derive(Serialize, Deserialize, Debug)]
-pub enum StorageCmd {
-    /// Read variable. Returns StorageResp::ReadVar or StorageResp::VariableMissing.
-    ReadVar { name: String },
-
-    /// Write variable.
-    /// If `when_version_is == None`, always writes the variable and returns StorageResp::WriteVar.
-    /// Otherwise, if the variable has the specified version, it writes the variable
-    /// and returns StorageResp::WriteVar.
-    /// Otherwise (version conflict), returns either StorageResp::ReadVar or StorageResp::VariableMissing
-    /// just like ReadVar would.
-    WriteVar {
-        name: String,
-        value: Vec<u8>,
-        op: StorageOp,
-        when_version_is: Option<u64>,
-    },
-}
-
-#[derive(Serialize, Deserialize, Debug)]
-pub enum StorageResp {
-    /// Upon handling the request the variable had the specified value and version number.
-    ReadVar { version: u64, value: Vec<u8> },
-    /// Upon handling the request the variable was unset.
-    VariableMissing {},
-    /// The variable has been written, and the new version is returned.
-    WriteVar { version: u64 },
-}
-
-#[derive(Serialize, Deserialize, Debug)]
 pub struct InitPromptArg {
     pub prompt: Vec<TokenId>,
 }
