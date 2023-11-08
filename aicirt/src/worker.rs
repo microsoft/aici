@@ -20,15 +20,22 @@ const QUICK_OP_MS: u64 = 10;
 #[derive(Serialize, Deserialize, Debug)]
 enum GroupCmd {
     NewChannel {},
-    ReadVar { name: String },
-    WriteVar { name: String, value: Vec<u8> },
+    ReadVar {
+        name: String,
+    },
+    WriteVar {
+        name: String,
+        value: Vec<u8>,
+        when_version_is: Option<u64>,
+    },
 }
 
 #[derive(Serialize, Deserialize, Debug)]
 enum GroupResp {
     NewChannel { channel: GroupHandle },
-    ReadVar { value: Vec<u8> },
-    Ok {},
+    ReadVar { version: u64, value: Vec<u8> },
+    VariableMissing {},
+    WriteOk { version: u64 },
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -227,7 +234,7 @@ impl SeqCtx {
 }
 
 struct GroupCtx {
-    variables: HashMap<String, Vec<u8>>,
+    variables: HashMap<String, (u64, Vec<u8>)>,
     workers: HashMap<u64, IpcSender<GroupResp>>,
     cb_set: IpcReceiverSet,
 }
@@ -306,37 +313,68 @@ impl GroupCtx {
         self.workers.insert(id, query_resp);
     }
 
+    fn dispatch_cmd(&mut self, cmd: GroupCmd) -> GroupResp {
+        match cmd {
+            GroupCmd::NewChannel {} => {
+                let (query0, query1) = ipc::channel().unwrap();
+                let (query_resp0, query_resp1) = ipc::channel().unwrap();
+                self.add_worker(query1, query_resp0);
+                GroupResp::NewChannel {
+                    channel: ProcessHandle {
+                        pid: 0,
+                        cmd: query0,
+                        cmd_resp: query_resp1,
+                    },
+                }
+            }
+            GroupCmd::ReadVar { name } => match self.variables.get(&name).map(|x| x.clone()) {
+                None => GroupResp::VariableMissing {},
+                Some((version, value)) => GroupResp::ReadVar { value, version },
+            },
+            GroupCmd::WriteVar {
+                name,
+                value,
+                when_version_is,
+            } => {
+                match (
+                    when_version_is,
+                    self.variables.get(&name).map(|x| x.clone()),
+                ) {
+                    (None, None) => {
+                        self.variables.insert(name, (1, value));
+                        GroupResp::WriteOk { version: 1 }
+                    }
+                    (None, Some((version, _))) => {
+                        self.variables.insert(name, (version + 1, value));
+                        GroupResp::WriteOk {
+                            version: version + 1,
+                        }
+                    }
+                    (Some(_), None) => GroupResp::VariableMissing {},
+                    (Some(req_v), Some((version, prev_val))) => {
+                        if req_v == version {
+                            self.variables.insert(name, (version + 1, value));
+                            GroupResp::WriteOk {
+                                version: version + 1,
+                            }
+                        } else {
+                            GroupResp::ReadVar {
+                                version,
+                                value: prev_val,
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     fn dispatch_loop(&mut self) -> ! {
         loop {
             for ent in self.cb_set.select().unwrap() {
                 match ent {
                     ipc::IpcSelectionResult::MessageReceived(id, msg) => {
-                        let cmd: GroupCmd = msg.to().unwrap();
-                        let resp = match cmd {
-                            GroupCmd::NewChannel {} => {
-                                let (query0, query1) = ipc::channel().unwrap();
-                                let (query_resp0, query_resp1) = ipc::channel().unwrap();
-                                self.add_worker(query1, query_resp0);
-                                GroupResp::NewChannel {
-                                    channel: ProcessHandle {
-                                        pid: 0,
-                                        cmd: query0,
-                                        cmd_resp: query_resp1,
-                                    },
-                                }
-                            }
-                            GroupCmd::ReadVar { name } => GroupResp::ReadVar {
-                                value: self
-                                    .variables
-                                    .get(&name)
-                                    .map(|x| x.clone())
-                                    .unwrap_or_else(Vec::new),
-                            },
-                            GroupCmd::WriteVar { name, value } => {
-                                self.variables.insert(name, value);
-                                GroupResp::Ok {}
-                            }
-                        };
+                        let resp = self.dispatch_cmd(msg.to().unwrap());
                         self.workers.get(&id).unwrap().send(resp).unwrap()
                     }
                     ipc::IpcSelectionResult::ChannelClosed(id) => {
