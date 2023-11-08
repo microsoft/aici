@@ -165,6 +165,11 @@ macro_rules! aici_expose_all {
             let b = Box::new($new);
             Box::into_raw(b)
         }
+
+        #[no_mangle]
+        pub extern "C" fn aici_panic() {
+            panic!("aici_panic()")
+        }
     }
 }
 

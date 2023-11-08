@@ -88,7 +88,6 @@ pub struct ModuleInstance {
     memory: wasmtime::Memory,
     instance: wasmtime::Instance,
     handle: WasmAici,
-    had_error: bool,
     #[allow(dead_code)]
     limits: AiciLimits,
 }
@@ -101,7 +100,7 @@ impl ModuleInstance {
         Params: wasmtime::WasmParams,
         Results: wasmtime::WasmResults,
     {
-        if self.had_error {
+        if self.store.data().had_error {
             return Err(anyhow!("Previous WASM Error"));
         }
         let f = self
@@ -110,7 +109,7 @@ impl ModuleInstance {
         let r = f.call(&mut self.store, params);
         let ctx = self.store.data_mut();
         if r.is_err() {
-            self.had_error = true;
+            ctx.had_error = true;
         }
         ctx.flush_logs(name);
         r
@@ -157,7 +156,7 @@ impl ModuleInstance {
         id: ModuleInstId,
         ctx: WasmContext,
         module: wasmtime::Module,
-        module_arg: Arc<String>,
+        module_arg: String,
         group_channel: GroupHandle,
     ) -> Result<Self> {
         let engine = module.engine();
@@ -188,7 +187,6 @@ impl ModuleInstance {
             store,
             memory,
             instance,
-            had_error: false,
             limits: ctx.limits,
         })
     }

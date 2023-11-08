@@ -215,7 +215,7 @@ pub fn storage_cmd(cmd: StorageCmd) -> StorageResp {
 // Public APIs
 
 pub struct VariableStorage {
-    // no fields yet
+    // no fields (yet?)
 }
 
 impl VariableStorage {

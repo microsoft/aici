@@ -1,4 +1,4 @@
-use std::{collections::HashMap, path::PathBuf, sync::Arc, time::Duration};
+use std::{collections::HashMap, path::PathBuf, time::Duration};
 
 use aici_abi::host::{StorageCmd, StorageOp, StorageResp};
 use aici_abi::TokenId;
@@ -177,7 +177,7 @@ impl SeqCtx {
                     424242,
                     self.wasm_ctx.clone(),
                     module,
-                    Arc::new(module_arg),
+                    module_arg,
                     ch.unwrap(),
                 )?;
                 let prompt_toks = if let Some(t) = prompt_toks {
