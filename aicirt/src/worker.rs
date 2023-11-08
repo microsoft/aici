@@ -4,7 +4,6 @@ use aici_abi::TokenId;
 use anyhow::{anyhow, Result};
 use ipc_channel::ipc::{self, IpcReceiver, IpcReceiverSet, IpcSender};
 use libc::pid_t;
-use log::info;
 use serde::{Deserialize, Serialize};
 
 use crate::{

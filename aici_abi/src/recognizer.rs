@@ -2,7 +2,7 @@ use std::{fmt::Debug, rc::Rc};
 
 use crate::{
     toktree::{Recognizer, SpecialToken, TokTrie},
-    AiciVm, AiciVmHelper, ProcessArg,
+    AiciVm, AiciVmHelper, ProcessArg, ProcessResult,
 };
 
 pub struct AiciRecognizer<R: Recognizer> {
@@ -19,13 +19,6 @@ impl<R: Recognizer> AiciRecognizer<R> {
             trie,
         }
     }
-
-    fn compute(&mut self) {
-        // wprintln!("compute");
-        self.trie
-            .compute_bias(&mut self.rec, &mut self.helper.allowed_tokens);
-        self.helper.compute_biases();
-    }
 }
 
 impl<R: Recognizer + Clone> AiciVm for AiciRecognizer<R> {
@@ -33,11 +26,9 @@ impl<R: Recognizer + Clone> AiciVm for AiciRecognizer<R> {
         &mut self.helper
     }
 
-    fn process(&mut self, arg: ProcessArg) {
+    fn process(&mut self, arg: ProcessArg) -> ProcessResult {
         match arg {
-            ProcessArg::InitialPrompt { .. } => {}
-            ProcessArg::StepPrompt {} => self.compute(),
-            ProcessArg::Gen { tokens } => {
+            ProcessArg::Append { tokens } => {
                 for token in tokens {
                     let bytes = self.trie.token(token);
                     // wprintln!("xapp {} {:?}", token, bytes);
@@ -46,8 +37,11 @@ impl<R: Recognizer + Clone> AiciVm for AiciRecognizer<R> {
                     }
                     self.rec.collapse();
                 }
-                self.compute();
+                self.trie
+                    .compute_bias(&mut self.rec, &mut self.helper.allowed_tokens);
+                self.helper.return_logit_bias()
             }
+            ProcessArg::Fork { .. } => panic!("fork not requested!"),
         }
     }
 }

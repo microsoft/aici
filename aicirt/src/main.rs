@@ -152,8 +152,8 @@ pub enum AiciOp {
 impl AiciOp {
     pub fn to_thread_op(self) -> ProcessArg {
         match self {
-            AiciOp::Prompt { .. } => ProcessArg::StepPrompt {},
-            AiciOp::Gen { tokens, .. } => ProcessArg::Gen { tokens },
+            AiciOp::Prompt { .. } => ProcessArg::Append { tokens: vec![] },
+            AiciOp::Gen { tokens, .. } => ProcessArg::Append { tokens },
         }
     }
 }

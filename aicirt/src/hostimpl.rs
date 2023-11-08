@@ -1,6 +1,6 @@
 use aici_abi::{
     bytes::{clone_vec_as_bytes, vec_from_bytes, TokRxInfo},
-    ProcessArg, TokenId,
+    TokenId,
 };
 use anyhow::{anyhow, Result};
 use log::info;
@@ -29,6 +29,7 @@ pub struct ModuleData {
     pub module_arg: Arc<String>,
     tokenize_out: Vec<TokenId>,
     process_arg: Vec<u8>,
+    pub process_result: Vec<u8>,
     logit_ptr: *mut f32,
     pub linker: Arc<wasmtime::Linker<ModuleData>>,
     pub instance: Option<wasmtime::Instance>,
@@ -82,16 +83,18 @@ impl ModuleData {
             ff_tokens: Vec::new(),
             tokenize_out: Vec::new(),
             process_arg: Vec::new(),
+            process_result: Vec::new(),
             logit_ptr: std::ptr::null_mut(),
         }
     }
 
-    pub fn set_initial_exec_data(&mut self, arg: ProcessArg) {
-        self.process_arg = serde_json::to_vec(&arg).unwrap();
+    pub fn set_process_arg(&mut self, bytes: Vec<u8>) {
+        self.process_result.clear();
+        self.process_arg = bytes;
     }
 
     pub fn set_exec_data(&mut self, data: ExecOp, shm: &Shm) {
-        self.process_arg = data.op;
+        self.set_process_arg(data.op);
         self.logit_ptr = shm.ptr_at(data.logit_offset) as *mut f32;
     }
 
@@ -236,7 +239,7 @@ pub fn setup_linker(engine: &wasmtime::Engine) -> Result<Arc<wasmtime::Linker<Mo
 
     linker.func_wrap(
         "env",
-        "aici_host_return_logits",
+        "aici_host_return_logit_bias",
         |caller: wasmtime::Caller<'_, ModuleData>, src: u32| {
             let numtok = caller.data().globals.tokrx_info.vocab_size as usize;
             let numbytes = (numtok + 31) / 32;
@@ -256,6 +259,21 @@ pub fn setup_linker(engine: &wasmtime::Engine) -> Result<Arc<wasmtime::Linker<Mo
                 }
                 ptr = unsafe { ptr.add(1) };
             }
+        },
+    )?;
+
+    linker.func_wrap(
+        "env",
+        "aici_host_self_seq_id",
+        |caller: wasmtime::Caller<'_, ModuleData>| caller.data().id as u32,
+    )?;
+
+    linker.func_wrap(
+        "env",
+        "aici_host_return_process_result",
+        |mut caller: wasmtime::Caller<'_, ModuleData>, src: u32, src_size: u32| {
+            let m = read_caller_mem(&caller, src, src_size);
+            caller.data_mut().process_result = m;
         },
     )?;
 

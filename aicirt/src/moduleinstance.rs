@@ -1,5 +1,5 @@
 use aici_abi::toktree::TokTrie;
-use aici_abi::{ProcessArg, TokenId};
+use aici_abi::{InitPromptArg, ProcessResult, TokenId};
 use aici_tokenizers::Tokenizer;
 use anyhow::{anyhow, ensure, Result};
 use log::warn;
@@ -215,7 +215,27 @@ impl ModuleInstance {
         let t0 = Instant::now();
 
         self.store.data_mut().set_exec_data(op, shm);
-        match self.run_process() {
+        let res = self.call_func::<WasmAici, ()>("aici_process", self.handle);
+
+        let res = match res {
+            Ok(()) => {
+                let bytes = &self.store.data().process_result;
+                if bytes.len() == 0 {
+                    Err(anyhow!("aici_host_return_process_result not called"))
+                } else {
+                    serde_json::from_slice::<ProcessResult>(bytes).map_err(|e| e.into())
+                }
+            }
+            Err(e) => Err(e),
+        };
+
+        let res = match res {
+            Ok(ProcessResult::SampleWithBias) => Ok(()),
+            Ok(r) => Err(anyhow!("unhandled {r:?}")),
+            Err(e) => Err(e),
+        };
+
+        match res {
             Ok(_) => {}
             Err(e) => {
                 json_type = "error";
@@ -246,14 +266,9 @@ impl ModuleInstance {
 
         self.store
             .data_mut()
-            .set_initial_exec_data(ProcessArg::InitialPrompt { tokens: prompt });
-        self.run_process()?;
+            .set_process_arg(serde_json::to_vec(&InitPromptArg { prompt })?);
+        self.call_func::<WasmAici, ()>("aici_init_prompt", self.handle)?;
 
-        Ok(())
-    }
-
-    fn run_process(&mut self) -> Result<()> {
-        self.call_func::<WasmAici, ()>("aici_process", self.handle)?;
         Ok(())
     }
 }

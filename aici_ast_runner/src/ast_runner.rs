@@ -27,7 +27,7 @@ use aici_abi::{
     host::{self, ff_token, tokenize},
     svob::SimpleVob,
     toktree::{Recognizer, SpecialToken, TokTrie},
-    wprintln, AiciVm, AiciVmHelper, TokenId, ProcessArg,
+    wprintln, AiciVm, AiciVmHelper, ProcessArg, ProcessResult, TokenId,
 };
 
 // The JSON AST
@@ -407,7 +407,7 @@ impl Runner {
         wprintln!(" => {:?}", self.states[self.state_idx]);
     }
 
-    fn compute(&mut self) {
+    fn compute(&mut self) -> ProcessResult {
         self.helper.all_disallowed();
         let mut ff_tokens = None;
         let mut can_ff = true;
@@ -433,7 +433,7 @@ impl Runner {
             }
         }
 
-        self.helper.compute_biases();
+        self.helper.return_logit_bias()
     }
 
     #[allow(dead_code)]
@@ -452,14 +452,9 @@ impl Runner {
 }
 
 impl AiciVm for Runner {
-    fn process(&mut self, arg: ProcessArg) {
+    fn process(&mut self, arg: ProcessArg) -> ProcessResult {
         match arg {
-            ProcessArg::InitialPrompt { tokens } => {
-                // ignore the prompt (for now)
-                wprintln!("prompt, {} tokens", tokens.len());
-            }
-            ProcessArg::StepPrompt {} => self.compute(),
-            ProcessArg::Gen { tokens } => {
+            ProcessArg::Append { tokens } => {
                 let ntok = tokens.len();
                 if ntok > 1 {
                     wprintln!("<<< {} tokens", ntok);
@@ -472,6 +467,7 @@ impl AiciVm for Runner {
                 }
                 self.compute()
             }
+            ProcessArg::Fork { .. } => panic!("fork not requested!"),
         }
     }
 

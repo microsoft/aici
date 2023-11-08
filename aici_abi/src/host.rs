@@ -3,7 +3,7 @@ use std::io;
 use crate::{
     bytes::{vec_from_bytes, TokenId},
     svob::SimpleVob,
-    wprintln,
+    wprintln, SeqId,
 };
 
 #[repr(transparent)]
@@ -33,13 +33,17 @@ extern "C" {
     fn aici_host_tokenize(src: *const u8, src_size: u32) -> BlobId;
 
     // Set logit bias based on bitmask in src.
-    fn aici_host_return_logits(src: *const u32);
+    fn aici_host_return_logit_bias(src: *const u32);
 
     // Append fast-forward (FF) token.
     // First FF token has to be returned by setting logit bias appropriately.
     // Next tokens are added using this interface.
     // All FF tokens are then generated in one go.
     fn aici_host_ff_token(token: u32);
+
+    fn aici_host_self_seq_id() -> u32;
+
+    fn aici_host_return_process_result(res: *const u8, res_size: u32);
 }
 
 // TODO: add <T>
@@ -140,6 +144,32 @@ pub fn trie_bytes() -> Vec<u8> {
     return std::fs::read("tokenizer.bin").unwrap();
 }
 
+pub fn ff_token(token: TokenId) {
+    unsafe {
+        aici_host_ff_token(token);
+    }
+}
+
+pub fn return_logit_bias(vob: &SimpleVob) {
+    assert!(vob.len() > 0);
+    unsafe {
+        aici_host_return_logit_bias(vob.as_ptr());
+    }
+}
+
+pub fn process_arg_bytes() -> Vec<u8> {
+    return read_blob(unsafe { aici_host_process_arg() }, 1024);
+}
+
+pub fn return_process_result(res: &[u8]) {
+    unsafe {
+        aici_host_return_process_result(res.as_ptr(), res.len() as u32);
+    }
+}
+
+// Public APIs
+
+/// Tokenize given UTF8 string.
 pub fn tokenize(s: &str) -> Vec<TokenId> {
     let id = unsafe { aici_host_tokenize(s.as_ptr(), s.len() as u32) };
     let r = read_blob(id, 4 * (s.len() / 3 + 10));
@@ -148,20 +178,7 @@ pub fn tokenize(s: &str) -> Vec<TokenId> {
     res
 }
 
-pub fn ff_token(token: TokenId) {
-    unsafe {
-        aici_host_ff_token(token);
-    }
+/// Return the ID of the current process.
+pub fn self_seq_id() -> SeqId {
+    unsafe { SeqId(aici_host_self_seq_id()) }
 }
-
-pub fn return_logits(vob: &SimpleVob) {
-    assert!(vob.len() > 0);
-    unsafe {
-        aici_host_return_logits(vob.as_ptr());
-    }
-}
-
-pub fn process_arg_bytes() -> Vec<u8> {
-    return read_blob(unsafe { aici_host_process_arg() }, 1024);
-}
-
