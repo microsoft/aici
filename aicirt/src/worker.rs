@@ -37,6 +37,46 @@ pub struct ProcessHandle<Cmd, Resp> {
     cmd_resp: IpcReceiver<Resp>,
 }
 
+enum ForkResult<Cmd, Resp> {
+    Parent {
+        handle: ProcessHandle<Cmd, Resp>,
+    },
+    Child {
+        cmd: IpcReceiver<Cmd>,
+        cmd_resp: IpcSender<Resp>,
+    },
+}
+
+fn fork_child<Cmd, Resp>() -> Result<ForkResult<Cmd, Resp>>
+where
+    Cmd: for<'d> Deserialize<'d> + Serialize,
+    Resp: for<'d> Deserialize<'d> + Serialize,
+{
+    let (cmd0, cmd1) = ipc::channel()?;
+    let (cmd_resp0, cmd_resp1) = ipc::channel()?;
+
+    let pid = unsafe { libc::fork() };
+
+    if pid < 0 {
+        return Err(anyhow!("fork failed"));
+    }
+
+    if pid == 0 {
+        Ok(ForkResult::Child {
+            cmd: cmd1,
+            cmd_resp: cmd_resp0,
+        })
+    } else {
+        Ok(ForkResult::Parent {
+            handle: ProcessHandle {
+                pid,
+                cmd: cmd0,
+                cmd_resp: cmd_resp1,
+            },
+        })
+    }
+}
+
 type ForkerHandle = ProcessHandle<ForkerCmd, ForkerResp>;
 type SeqHandle = ProcessHandle<SeqCmd, SeqResp>;
 pub type GroupHandle = ProcessHandle<GroupCmd, GroupResp>;
@@ -63,6 +103,9 @@ enum SeqCmd {
         module_arg: String,
         prompt_str: Option<String>,
         prompt_toks: Option<Vec<TokenId>>,
+    },
+    SetGroupChannel {
+        handle: GroupHandle,
     },
     Fork {
         inst_id: ModuleInstId,
@@ -135,32 +178,30 @@ impl SeqCtx {
     fn dispatch_one(&mut self, cmd: SeqCmd) -> Result<SeqResp> {
         match cmd {
             SeqCmd::Fork { inst_id } => {
-                let (cmd0, cmd1) = ipc::channel().unwrap();
-                let (cmd_resp0, cmd_resp1) = ipc::channel().unwrap();
-                let w_pid = unsafe { libc::fork() };
-
-                let query_ch = match self.group_cmd(GroupCmd::NewChannel {}) {
-                    GroupResp::NewChannel { channel } => channel,
-                    r => return Err(anyhow!("unexpected response (SeqCtx.dispatch) {r:?}")),
-                };
-
-                if w_pid == 0 {
-                    self.cmd = cmd1;
-                    self.cmd_resp = cmd_resp0;
-                    self.query = Some(query_ch);
-                    self.inst_id = inst_id;
-                    self.mutinst().set_id(inst_id);
-                    // note that this is sent over the child channel
-                    // we do it this way, so that we come back to dispatch_loop()
-                    // and continue in the child with the same stack height as in the parent
-                    ok()
-                } else {
-                    let handle = ProcessHandle {
-                        pid: w_pid,
-                        cmd: cmd0,
-                        cmd_resp: cmd_resp1,
-                    };
-                    Ok(SeqResp::Fork { handle })
+                match fork_child()? {
+                    ForkResult::Parent { handle } => {
+                        let group_ch = match self.group_cmd(GroupCmd::NewChannel {}) {
+                            GroupResp::NewChannel { channel } => channel,
+                            r => {
+                                return Err(anyhow!("unexpected response (SeqCtx.dispatch) {r:?}"))
+                            }
+                        };
+                        handle.send_cmd_expect_ok(
+                            SeqCmd::SetGroupChannel { handle: group_ch },
+                            Duration::from_millis(QUICK_OP_MS),
+                        )?;
+                        Ok(SeqResp::Fork { handle })
+                    }
+                    ForkResult::Child { cmd, cmd_resp } => {
+                        self.cmd = cmd;
+                        self.cmd_resp = cmd_resp;
+                        self.inst_id = inst_id;
+                        self.mutinst().set_id(inst_id);
+                        // note that this is sent over the child channel
+                        // we do it this way, so that we come back to dispatch_loop()
+                        // and continue in the child with the same stack height as in the parent
+                        ok()
+                    }
                 }
             }
             SeqCmd::Instantiate {
@@ -203,6 +244,10 @@ impl SeqCtx {
                 self.mutinst().run_main()?;
                 ok()
             }
+            SeqCmd::SetGroupChannel { handle } => {
+                self.mutinst().set_group_channel(handle);
+                ok()
+            },
         }
     }
 
@@ -415,47 +460,38 @@ fn forker_dispatcher(
 ) -> ! {
     loop {
         let cmd = cmdch.recv().unwrap();
+        let cmd_id = cmd.id;
 
-        let (cmd0, cmd1) = ipc::channel().unwrap();
-        let (cmd_resp0, cmd_resp1) = ipc::channel().unwrap();
-
-        let (query0, query1) = ipc::channel().unwrap();
-        let (query_resp0, query_resp1) = ipc::channel().unwrap();
-
-        let grp_pid = unsafe { libc::fork() };
-        if grp_pid == 0 {
-            let mut grp_ctx = GroupCtx {
-                variables: HashMap::new(),
-                workers: HashMap::new(),
-                cb_set: IpcReceiverSet::new().unwrap(),
-            };
-            grp_ctx.add_worker(query1, query_resp0);
-            grp_ctx.dispatch_loop()
-        } else {
-            let w_pid = unsafe { libc::fork() };
-            if w_pid == 0 {
-                let mut w_ctx = SeqCtx {
-                    id: cmd.id,
-                    cmd: cmd1,
-                    cmd_resp: cmd_resp0,
-                    wasm_ctx,
-                    shm,
-                    query: Some(ProcessHandle {
-                        pid: grp_pid,
-                        cmd: query0,
-                        cmd_resp: query_resp1,
-                    }),
-                    inst_id: 424242,
-                    modinst: None,
+        match fork_child().unwrap() {
+            ForkResult::Parent { handle } => {
+                let query_handle = handle;
+                match fork_child().unwrap() {
+                    ForkResult::Parent { handle } => {
+                        cmd_resp.send(ForkerResp(handle)).unwrap();
+                    }
+                    ForkResult::Child { cmd, cmd_resp } => {
+                        let mut w_ctx = SeqCtx {
+                            id: cmd_id,
+                            cmd,
+                            cmd_resp,
+                            wasm_ctx,
+                            shm,
+                            query: Some(query_handle),
+                            inst_id: 424242,
+                            modinst: None,
+                        };
+                        w_ctx.dispatch_loop()
+                    }
+                }
+            }
+            ForkResult::Child { cmd, cmd_resp } => {
+                let mut grp_ctx = GroupCtx {
+                    variables: HashMap::new(),
+                    workers: HashMap::new(),
+                    cb_set: IpcReceiverSet::new().unwrap(),
                 };
-                w_ctx.dispatch_loop()
-            } else {
-                let fork_worker = ProcessHandle {
-                    pid: w_pid,
-                    cmd: cmd0,
-                    cmd_resp: cmd_resp1,
-                };
-                cmd_resp.send(ForkerResp(fork_worker)).unwrap();
+                grp_ctx.add_worker(cmd, cmd_resp);
+                grp_ctx.dispatch_loop()
             }
         }
     }
@@ -481,24 +517,17 @@ impl WorkerForker {
             assert!(r >= 0);
         };
 
-        let (cmd0, cmd1) = ipc::channel().unwrap();
-        let (cmd_resp0, cmd_resp1) = ipc::channel().unwrap();
-
         let limits = wasm_ctx.limits.clone();
-        let pid = unsafe { libc::fork() };
-        if pid == 0 {
-            forker_dispatcher(cmd1, cmd_resp0, wasm_ctx, shm)
-        } else {
-            let fork_worker = ProcessHandle {
-                pid,
-                cmd: cmd0,
-                cmd_resp: cmd_resp1,
-            };
-            unsafe { libc::signal(libc::SIGUSR1, clean_exit as usize) };
-            WorkerForker {
-                fork_worker,
-                limits,
+
+        match fork_child().unwrap() {
+            ForkResult::Parent { handle } => {
+                unsafe { libc::signal(libc::SIGUSR1, clean_exit as usize) };
+                WorkerForker {
+                    fork_worker: handle,
+                    limits,
+                }
             }
+            ForkResult::Child { cmd, cmd_resp } => forker_dispatcher(cmd, cmd_resp, wasm_ctx, shm),
         }
     }
 

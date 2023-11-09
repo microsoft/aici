@@ -209,6 +209,10 @@ impl ModuleInstance {
         Ok(())
     }
 
+    pub fn set_group_channel(&mut self, ch: GroupHandle) {
+        self.store.data_mut().group_channel = ch
+    }
+
     pub fn group_channel(&self) -> &GroupHandle {
         &self.store.data().group_channel
     }
