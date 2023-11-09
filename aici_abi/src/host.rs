@@ -1,9 +1,10 @@
+use serde::{Deserialize, Serialize};
 use std::io;
 
 use crate::{
     bytes::{vec_from_bytes, TokenId},
     svob::SimpleVob,
-    wprintln,
+    wprintln, SeqId,
 };
 
 #[repr(transparent)]
@@ -32,14 +33,14 @@ extern "C" {
     // Tokenize given UTF8 string. The result is only valid until next call to this function.
     fn aici_host_tokenize(src: *const u8, src_size: u32) -> BlobId;
 
-    // Set logit bias based on bitmask in src.
-    fn aici_host_return_logits(src: *const u32);
+    // Set logit bias based on bit-mask in src.
+    fn aici_host_return_logit_bias(src: *const u32);
 
-    // Append fast-forward (FF) token.
-    // First FF token has to be returned by setting logit bias appropriately.
-    // Next tokens are added using this interface.
-    // All FF tokens are then generated in one go.
-    fn aici_host_ff_token(token: u32);
+    fn aici_host_self_seq_id() -> u32;
+
+    fn aici_host_return_process_result(res: *const u8, res_size: u32);
+
+    fn aici_host_storage_cmd(cmd: *const u8, cmd_size: u32) -> BlobId;
 }
 
 // TODO: add <T>
@@ -140,6 +141,116 @@ pub fn trie_bytes() -> Vec<u8> {
     return std::fs::read("tokenizer.bin").unwrap();
 }
 
+pub fn return_logit_bias(vob: &SimpleVob) {
+    assert!(vob.len() > 0);
+    unsafe {
+        aici_host_return_logit_bias(vob.as_ptr());
+    }
+}
+
+pub fn process_arg_bytes() -> Vec<u8> {
+    return read_blob(unsafe { aici_host_process_arg() }, 1024);
+}
+
+pub fn return_process_result(res: &[u8]) {
+    unsafe {
+        aici_host_return_process_result(res.as_ptr(), res.len() as u32);
+    }
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub enum StorageOp {
+    Set,
+    Append,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub enum StorageCmd {
+    /// Read variable. Returns StorageResp::ReadVar or StorageResp::VariableMissing.
+    ReadVar { name: String },
+
+    /// Write variable.
+    /// If `when_version_is == None`, always writes the variable and returns StorageResp::WriteVar.
+    /// Otherwise, if the variable has the specified version, it writes the variable
+    /// and returns StorageResp::WriteVar.
+    /// Otherwise (version conflict), returns either StorageResp::ReadVar or StorageResp::VariableMissing
+    /// just like ReadVar would.
+    WriteVar {
+        name: String,
+        value: Vec<u8>,
+        op: StorageOp,
+        when_version_is: Option<u64>,
+    },
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub enum StorageResp {
+    /// Upon handling the request the variable had the specified value and version number.
+    ReadVar { version: u64, value: Vec<u8> },
+    /// Upon handling the request the variable was unset.
+    VariableMissing {},
+    /// The variable has been written, and the new version is returned.
+    WriteVar { version: u64 },
+}
+
+pub fn storage_cmd(cmd: StorageCmd) -> StorageResp {
+    let cmd_bytes = serde_json::to_vec(&cmd).unwrap();
+    let res_id = unsafe { aici_host_storage_cmd(cmd_bytes.as_ptr(), cmd_bytes.len() as u32) };
+    let resp_bytes = read_blob(res_id, 1024);
+    serde_json::from_slice(&resp_bytes).unwrap()
+}
+
+// Public APIs
+
+pub struct VariableStorage {
+    // no fields (yet?)
+}
+
+impl VariableStorage {
+    /// Create a new instance of VariableStorage. It currently has no fields.
+    pub fn new() -> Self {
+        VariableStorage {}
+    }
+
+    /// Read variable. Returns None if the variable is unset.
+    pub fn get(&self, name: &str) -> Option<Vec<u8>> {
+        self.get_with_version(name).map(|x| x.1)
+    }
+
+    /// Write specified value to variable.
+    pub fn set(&self, name: &str, value: Vec<u8>) {
+        let _ver = self.write_var(name, value, StorageOp::Set);
+    }
+
+    /// Append specified value to variable.
+    pub fn append(&self, name: &str, value: Vec<u8>) {
+        let _ver = self.write_var(name, value, StorageOp::Append);
+    }
+
+    fn write_var(&self, name: &str, value: Vec<u8>, op: StorageOp) -> u64 {
+        match storage_cmd(StorageCmd::WriteVar {
+            name: name.to_string(),
+            value,
+            op,
+            when_version_is: None,
+        }) {
+            StorageResp::WriteVar { version } => version,
+            _ => panic!("unexpected response to write var"),
+        }
+    }
+
+    fn get_with_version(&self, name: &str) -> Option<(u64, Vec<u8>)> {
+        match storage_cmd(StorageCmd::ReadVar {
+            name: name.to_string(),
+        }) {
+            StorageResp::ReadVar { version, value } => Some((version, value)),
+            StorageResp::VariableMissing {} => None,
+            StorageResp::WriteVar { .. } => panic!("unexpected response to read var"),
+        }
+    }
+}
+
+/// Tokenize given UTF8 string.
 pub fn tokenize(s: &str) -> Vec<TokenId> {
     let id = unsafe { aici_host_tokenize(s.as_ptr(), s.len() as u32) };
     let r = read_blob(id, 4 * (s.len() / 3 + 10));
@@ -148,20 +259,7 @@ pub fn tokenize(s: &str) -> Vec<TokenId> {
     res
 }
 
-pub fn ff_token(token: TokenId) {
-    unsafe {
-        aici_host_ff_token(token);
-    }
+/// Return the ID of the current process.
+pub fn self_seq_id() -> SeqId {
+    unsafe { SeqId(aici_host_self_seq_id()) }
 }
-
-pub fn return_logits(vob: &SimpleVob) {
-    assert!(vob.len() > 0);
-    unsafe {
-        aici_host_return_logits(vob.as_ptr());
-    }
-}
-
-pub fn process_arg_bytes() -> Vec<u8> {
-    return read_blob(unsafe { aici_host_process_arg() }, 1024);
-}
-

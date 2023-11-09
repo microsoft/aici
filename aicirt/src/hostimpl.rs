@@ -1,13 +1,16 @@
 use aici_abi::{
     bytes::{clone_vec_as_bytes, vec_from_bytes, TokRxInfo},
-    ProcessArg, TokenId,
+    TokenId,
 };
 use anyhow::{anyhow, Result};
-use log::info;
-use std::sync::Arc;
+use log::{info, warn};
+use std::{rc::Rc, sync::Arc};
 use tokenizers::Tokenizer;
 
-use crate::{shm::Shm, worker::ExecOp};
+use crate::{
+    shm::Shm,
+    worker::{ExecOp, GroupCmd, GroupHandle, GroupResp},
+};
 
 pub type ModuleInstId = usize;
 
@@ -25,29 +28,37 @@ pub struct ModuleData {
     log: Vec<u8>,
     printed_log: usize,
     pub globals: GlobalInfo,
-    pub ff_tokens: Vec<TokenId>,
-    pub module_arg: Arc<String>,
-    tokenize_out: Vec<TokenId>,
-    process_arg: Vec<u8>,
-    logit_ptr: *mut f32,
+    pub group_channel: GroupHandle,
+    pub process_result: Vec<u8>,
+    pub logit_ptr: &'static mut [f32],
     pub linker: Arc<wasmtime::Linker<ModuleData>>,
     pub instance: Option<wasmtime::Instance>,
     pub memory: Option<wasmtime::Memory>,
     pub module: wasmtime::Module,
     tokenizer: Option<Tokenizer>,
     pub store_limits: wasmtime::StoreLimits,
+    pub had_error: bool,
+    blobs: Vec<Rc<Vec<u8>>>,
 }
 
 const MAXLOG: usize = 32 * 1024;
+
+pub const LOGIT_BIAS_ALLOW: f32 = 1.0e10;
+pub const LOGIT_BIAS_DISALLOW: f32 = 0.0;
 
 pub struct BlobId(u32);
 
 impl BlobId {
     pub const MODULE_ARG: BlobId = BlobId(1);
     pub const TOKENIZE: BlobId = BlobId(2);
-    pub const TRIE: BlobId = BlobId(3);
-    pub const TOKENS: BlobId = BlobId(4);
-    pub const PROCESS_ARG: BlobId = BlobId(5);
+    pub const TOKENS: BlobId = BlobId(3);
+    pub const PROCESS_ARG: BlobId = BlobId(4);
+    pub const STORAGE_RESULT: BlobId = BlobId(5);
+
+    pub const MAX_BLOB_ID: u32 = 20;
+
+    // these have special handling:
+    pub const TRIE: BlobId = BlobId(100);
 }
 
 impl ModuleData {
@@ -55,9 +66,10 @@ impl ModuleData {
         id: ModuleInstId,
         limits: &AiciLimits,
         module: &wasmtime::Module,
-        module_arg: Arc<String>,
+        module_arg: String,
         linker: &Arc<wasmtime::Linker<ModuleData>>,
         globals: GlobalInfo,
+        group_channel: GroupHandle,
     ) -> Self {
         let store_limits = wasmtime::StoreLimitsBuilder::new()
             .memories(1)
@@ -67,32 +79,49 @@ impl ModuleData {
             .instances(1)
             .trap_on_grow_failure(true)
             .build();
-        ModuleData {
+        let mut r = ModuleData {
             id,
             log: Vec::new(),
             printed_log: 0,
             globals,
-            module_arg,
+            group_channel,
             module: module.clone(),
             linker: linker.clone(),
             instance: None,
             memory: None,
             tokenizer: None,
             store_limits,
-            ff_tokens: Vec::new(),
-            tokenize_out: Vec::new(),
-            process_arg: Vec::new(),
-            logit_ptr: std::ptr::null_mut(),
-        }
+            process_result: Vec::new(),
+            logit_ptr: &mut [],
+            had_error: false,
+            blobs: vec![Rc::new(Vec::new()); BlobId::MAX_BLOB_ID as usize],
+        };
+        r.set_blob(BlobId::MODULE_ARG, module_arg.as_bytes().to_vec());
+        r
     }
 
-    pub fn set_initial_exec_data(&mut self, arg: ProcessArg) {
-        self.process_arg = serde_json::to_vec(&arg).unwrap();
+    fn clear_blob(&mut self, blob_id: BlobId) {
+        self.set_blob(blob_id, vec![])
+    }
+
+    fn set_blob(&mut self, blob_id: BlobId, bytes: Vec<u8>) {
+        self.blobs[blob_id.0 as usize] = Rc::new(bytes);
+    }
+
+    pub fn set_process_arg(&mut self, bytes: Vec<u8>) {
+        self.process_result.clear();
+        self.set_blob(BlobId::PROCESS_ARG, bytes);
     }
 
     pub fn set_exec_data(&mut self, data: ExecOp, shm: &Shm) {
-        self.process_arg = data.op;
-        self.logit_ptr = shm.ptr_at(data.logit_offset) as *mut f32;
+        self.set_process_arg(data.op);
+        let nument = self.globals.tokrx_info.vocab_size as usize;
+        let ptr = shm.ptr_at(data.logit_offset);
+        assert!(LOGIT_BIAS_DISALLOW == 0.0);
+        unsafe {
+            std::ptr::write_bytes(ptr, 0, nument * 4);
+            self.logit_ptr = std::slice::from_raw_parts_mut(ptr as *mut f32, nument);
+        }
     }
 
     pub fn tokenize(&mut self, s: &str) -> Result<Vec<u32>> {
@@ -108,12 +137,32 @@ impl ModuleData {
         }
     }
 
+    pub fn fatal(&mut self, msg: &str) {
+        warn!("{}: fatal error {}", self.id, msg);
+        let msg = format!("FATAL ERROR: {}\n", msg);
+        self.write_log(msg.as_bytes());
+        self.had_error = true;
+        // ideally, this should call into the module and cause panic
+    }
+
+    pub fn warn(&mut self, msg: &str) {
+        warn!("{}: {}", self.id, msg);
+        let msg = format!("warning: {}\n", msg);
+        self.write_log(msg.as_bytes());
+    }
+
     pub fn write_log(&mut self, bytes: &[u8]) {
         self.log.extend_from_slice(bytes);
         if self.log.len() > MAXLOG {
             let drop = MAXLOG / 4;
-            self.printed_log = self.printed_log.saturating_sub(drop);
-            self.log.drain(0..drop);
+            if self.had_error {
+                // normally, we drop prefix, but if "had_error" is set
+                // we drop the suffix instead to avoid flushing out "FATAL ERROR" message
+                self.log.truncate(self.log.len() - drop);
+            } else {
+                self.printed_log = self.printed_log.saturating_sub(drop);
+                self.log.drain(0..drop);
+            }
         }
     }
 
@@ -141,13 +190,49 @@ impl ModuleData {
             info!("{}:{}> {}", self.id, name, line);
         }
     }
+
+    pub fn aici_host_storage_cmd(&mut self, m: Vec<u8>) -> BlobId {
+        self.clear_blob(BlobId::STORAGE_RESULT);
+        match serde_json::from_slice(&m) {
+            Ok(cmd) => {
+                let res = self.group_channel.send_cmd(GroupCmd::StorageCmd { cmd });
+                match res {
+                    Ok(GroupResp::StorageResp { resp }) => {
+                        let res_bytes = serde_json::to_vec(&resp).unwrap();
+                        self.set_blob(BlobId::STORAGE_RESULT, res_bytes);
+                    }
+                    Ok(r) => self.fatal(&format!("storage_cmd invalid resp: {r:?}")),
+                    Err(msg) => self.fatal(&format!("storage_cmd send error: {msg:?}")),
+                }
+            }
+            Err(e) => self.fatal(&format!("storage_cmd error: {e:?}")),
+        }
+        BlobId::STORAGE_RESULT
+    }
 }
 
 #[derive(Clone)]
 pub struct GlobalInfo {
     pub tokrx_info: TokRxInfo,
-    pub trie_bytes: Vec<u8>,
+    pub trie_bytes: Arc<Vec<u8>>,
     pub hf_tokenizer_bytes: &'static [u8],
+}
+
+fn check_fatal(caller: &mut wasmtime::Caller<'_, ModuleData>) {
+    if caller.data().had_error {
+        fatal_error(caller, "see above")
+    }
+}
+
+fn fatal_error(caller: &mut wasmtime::Caller<'_, ModuleData>, msg: &str) {
+    caller.data_mut().fatal(msg);
+    match caller.get_export("aici_panic") {
+        Some(wasmtime::Extern::Func(f)) => {
+            let mut res = Vec::new();
+            let _ = f.call(caller, &[], &mut res);
+        }
+        _ => {}
+    }
 }
 
 fn read_caller_mem(caller: &wasmtime::Caller<'_, ModuleData>, ptr: u32, len: u32) -> Vec<u8> {
@@ -183,31 +268,16 @@ pub fn setup_linker(engine: &wasmtime::Engine) -> Result<Arc<wasmtime::Linker<Mo
 
     linker.func_wrap(
         "env",
-        "aici_host_ff_token",
-        |mut caller: wasmtime::Caller<'_, ModuleData>, tok: u32| {
-            caller.data_mut().ff_tokens.push(tok);
-        },
-    )?;
-
-    linker.func_wrap(
-        "env",
         "aici_host_read_blob",
         |mut caller: wasmtime::Caller<'_, ModuleData>, blob_id: u32, ptr: u32, len: u32| {
             if blob_id == BlobId::TRIE.0 {
-                // TODO remove .clone()
                 let trie_bytes = caller.data().globals.trie_bytes.clone();
                 write_caller_mem(&mut caller, ptr, len, &trie_bytes)
-            } else if blob_id == BlobId::MODULE_ARG.0 {
-                let arg = caller.data().module_arg.clone();
-                write_caller_mem(&mut caller, ptr, len, arg.as_bytes())
-            } else if blob_id == BlobId::TOKENIZE.0 {
-                // TODO fix perf here and next lines
-                let arg = clone_vec_as_bytes(&caller.data().tokenize_out);
-                write_caller_mem(&mut caller, ptr, len, &arg)
-            } else if blob_id == BlobId::PROCESS_ARG.0 {
-                let arg = clone_vec_as_bytes(&caller.data().process_arg);
-                write_caller_mem(&mut caller, ptr, len, &arg)
+            } else if blob_id < BlobId::MAX_BLOB_ID {
+                let blob = caller.data().blobs[blob_id as usize].clone();
+                write_caller_mem(&mut caller, ptr, len, &blob)
             } else {
+                fatal_error(&mut caller, "invalid blob_id");
                 0
             }
         },
@@ -227,8 +297,15 @@ pub fn setup_linker(engine: &wasmtime::Engine) -> Result<Arc<wasmtime::Linker<Mo
             let s = String::from_utf8_lossy(&m);
             let tokens = caller.data_mut().tokenize(&s);
             match tokens {
-                Err(_) => caller.data_mut().tokenize_out.clear(),
-                Ok(tokens) => caller.data_mut().tokenize_out = tokens,
+                Err(e) => {
+                    caller.data_mut().warn(&format!("tokenize error: {e:?}"));
+                    caller.data_mut().clear_blob(BlobId::TOKENIZE);
+                }
+                Ok(tokens) => {
+                    caller
+                        .data_mut()
+                        .set_blob(BlobId::TOKENIZE, clone_vec_as_bytes(&tokens));
+                }
             }
             BlobId::TOKENIZE.0
         },
@@ -236,16 +313,16 @@ pub fn setup_linker(engine: &wasmtime::Engine) -> Result<Arc<wasmtime::Linker<Mo
 
     linker.func_wrap(
         "env",
-        "aici_host_return_logits",
-        |caller: wasmtime::Caller<'_, ModuleData>, src: u32| {
+        "aici_host_return_logit_bias",
+        |mut caller: wasmtime::Caller<'_, ModuleData>, src: u32| {
             let numtok = caller.data().globals.tokrx_info.vocab_size as usize;
             let numbytes = 4 * ((numtok + 31) / 32);
-            let mut ptr = caller.data().logit_ptr;
-            if ptr == std::ptr::null_mut() {
-                return;
+            if caller.data().logit_ptr.len() == 0 {
+                return fatal_error(&mut caller, "logit_ptr is empty");
             }
             let m = read_caller_mem(&caller, src, numbytes as u32);
             let masks = vec_from_bytes::<u32>(&m);
+            let ptr = &mut caller.data_mut().logit_ptr;
             info!(
                 "return_logits: numtok={} numbytes={} mlen={} maskslen={}",
                 numtok,
@@ -257,12 +334,35 @@ pub fn setup_linker(engine: &wasmtime::Engine) -> Result<Arc<wasmtime::Linker<Mo
                 let mask = masks[idx / 32];
                 let bit = 1 << (idx % 32);
                 if mask & bit != 0 {
-                    unsafe {
-                        *ptr = 100.0;
-                    }
+                    ptr[idx] = LOGIT_BIAS_ALLOW;
                 }
-                ptr = unsafe { ptr.add(1) };
             }
+        },
+    )?;
+
+    linker.func_wrap(
+        "env",
+        "aici_host_self_seq_id",
+        |caller: wasmtime::Caller<'_, ModuleData>| caller.data().id as u32,
+    )?;
+
+    linker.func_wrap(
+        "env",
+        "aici_host_return_process_result",
+        |mut caller: wasmtime::Caller<'_, ModuleData>, src: u32, src_size: u32| {
+            let m = read_caller_mem(&caller, src, src_size);
+            caller.data_mut().process_result = m;
+        },
+    )?;
+
+    linker.func_wrap(
+        "env",
+        "aici_host_storage_cmd",
+        |mut caller: wasmtime::Caller<'_, ModuleData>, src: u32, src_size: u32| {
+            let m = read_caller_mem(&caller, src, src_size);
+            let r = caller.data_mut().aici_host_storage_cmd(m);
+            check_fatal(&mut caller);
+            r.0
         },
     )?;
 
