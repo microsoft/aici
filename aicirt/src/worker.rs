@@ -70,6 +70,9 @@ where
         let tmp = IpcSender::connect(server_name).unwrap();
         tmp.send((other_cmd, other_resp)).unwrap();
 
+        // don't try to free it in the child
+        std::mem::forget(server);
+
         Ok(ForkResult::Child { cmd, cmd_resp })
     } else {
         let (_, (cmd, cmd_resp)) = server.accept().unwrap();

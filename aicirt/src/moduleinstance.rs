@@ -45,6 +45,9 @@ impl WasmContext {
             .cranelift_nan_canonicalization(false)
             .parallel_compilation(true);
 
+        // we use fork()
+        cfg.macos_use_mach_ports(false);
+
         // disable stuff we don't need
         cfg.wasm_backtrace_details(wasmtime::WasmBacktraceDetails::Disable)
             .wasm_reference_types(false);
