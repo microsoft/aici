@@ -3,7 +3,7 @@ use std::{collections::HashMap, path::PathBuf, time::Duration};
 use aici_abi::host::{StorageCmd, StorageOp, StorageResp};
 use aici_abi::TokenId;
 use anyhow::{anyhow, Result};
-use ipc_channel::ipc::{self, IpcReceiver, IpcReceiverSet, IpcSender};
+use ipc_channel::ipc::{self, IpcOneShotServer, IpcReceiver, IpcReceiverSet, IpcSender};
 use libc::pid_t;
 use serde::{Deserialize, Serialize};
 
@@ -52,8 +52,8 @@ where
     Cmd: for<'d> Deserialize<'d> + Serialize,
     Resp: for<'d> Deserialize<'d> + Serialize,
 {
-    let (cmd0, cmd1) = ipc::channel()?;
-    let (cmd_resp0, cmd_resp1) = ipc::channel()?;
+    let (server1, server1_name) = IpcOneShotServer::new().unwrap();
+    let (server3, server3_name) = IpcOneShotServer::new().unwrap();
 
     let pid = unsafe { libc::fork() };
 
@@ -62,16 +62,27 @@ where
     }
 
     if pid == 0 {
+        let (tx1, rx1) = ipc::channel().unwrap();
+        let tx0 = IpcSender::connect(server1_name).unwrap();
+        tx0.send(tx1).unwrap();
+
+        let (tx3, rx3) = ipc::channel().unwrap();
+        let tx2 = IpcSender::connect(server3_name).unwrap();
+        tx2.send(rx3).unwrap();
+
         Ok(ForkResult::Child {
-            cmd: cmd1,
-            cmd_resp: cmd_resp0,
+            cmd: rx1,
+            cmd_resp: tx3,
         })
     } else {
+        let (_, tx1) = server1.accept().unwrap();
+        let (_, rx3) = server3.accept().unwrap();
+
         Ok(ForkResult::Parent {
             handle: ProcessHandle {
                 pid,
-                cmd: cmd0,
-                cmd_resp: cmd_resp1,
+                cmd: tx1,
+                cmd_resp: rx3,
             },
         })
     }
@@ -247,7 +258,7 @@ impl SeqCtx {
             SeqCmd::SetGroupChannel { handle } => {
                 self.mutinst().set_group_channel(handle);
                 ok()
-            },
+            }
         }
     }
 
