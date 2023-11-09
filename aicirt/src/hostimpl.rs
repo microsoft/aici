@@ -47,14 +47,16 @@ const MAXLOG: usize = 32 * 1024;
 pub struct BlobId(u32);
 
 impl BlobId {
-    pub const MAX_BLOB_ID: u32 = 10;
-
     pub const MODULE_ARG: BlobId = BlobId(1);
     pub const TOKENIZE: BlobId = BlobId(2);
-    pub const TRIE: BlobId = BlobId(3);
-    pub const TOKENS: BlobId = BlobId(4);
-    pub const PROCESS_ARG: BlobId = BlobId(5);
-    pub const STORAGE_RESULT: BlobId = BlobId(6);
+    pub const TOKENS: BlobId = BlobId(3);
+    pub const PROCESS_ARG: BlobId = BlobId(4);
+    pub const STORAGE_RESULT: BlobId = BlobId(5);
+
+    pub const MAX_BLOB_ID: u32 = 20;
+
+    // these have special handling:
+    pub const TRIE: BlobId = BlobId(100);
 }
 
 impl ModuleData {
