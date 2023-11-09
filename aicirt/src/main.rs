@@ -342,12 +342,12 @@ impl ModuleRegistry {
     fn instantiate(&mut self, req: InstantiateReq) -> Result<Value> {
         ensure!(is_hex_string(&req.module_id), "invalid module_id");
         let module_path = self.ensure_module_in_fs(&req.module_id)?;
+        info!("instance {} -> {}", req.module_id, req.req_id);
         let handle = self
             .forker
             .lock()
             .unwrap()
             .instantiate(req.clone(), module_path)?;
-        info!("instance {} -> {}", req.module_id, req.req_id);
         let mut req_instances = self.req_instances.lock().unwrap();
         req_instances.insert(req.req_id, handle);
         Ok(json!({}))
@@ -402,7 +402,10 @@ impl Stepper {
                     let parent = self.get_worker(*cid)?;
                     info!("fork {} -> ({})", cid, id);
                     let h = parent.fork(*cid)?;
-                    self.instances.insert(*cid, h);
+                    self.instances.insert(*id, h);
+                } else {
+                    // make sure worker exists
+                    self.get_worker(*id)?;
                 }
             }
             AiciOp::Prompt { id, req_id, .. } => {
@@ -626,7 +629,7 @@ fn save_tokenizer(cli: &Cli) {
     assert!(trie.info() == trie2.info());
     trie2.check_against(&tokens);
 
-    std::fs::write(filename.clone(), &bytes).unwrap();
+    std::fs::write(filename, &bytes).unwrap();
     println!("wrote {}, {} bytes", filename, bytes.len());
 }
 

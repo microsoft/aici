@@ -60,7 +60,7 @@ def main(args: argparse.Namespace):
 
     request_id = 0
     for prompt, _params in test_prompts:
-        aici.instantiate(str(request_id), prompt, args.aici_module, arg)
+        aici.instantiate("R" + str(request_id), prompt, args.aici_module, arg)
         request_id += 1
 
     # Run the engine by calling `engine.step()` manually.
@@ -72,7 +72,7 @@ def main(args: argparse.Namespace):
         # To test continuous batching, we add one request at each step.
         if test_prompts and step_no % 3 == 1:
             prompt, sampling_params = test_prompts.pop(0)
-            engine.add_request(str(request_id), prompt, sampling_params)
+            engine.add_request("R" + str(request_id), prompt, sampling_params)
             request_id += 1
 
         request_outputs = engine.step()
@@ -85,6 +85,8 @@ def main(args: argparse.Namespace):
 
         if not (engine.has_unfinished_requests() or test_prompts):
             break
+
+    aici.stop()
 
 
 if __name__ == "__main__":

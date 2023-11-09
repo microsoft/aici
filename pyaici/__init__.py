@@ -11,6 +11,8 @@ import argparse
 import asyncio
 import concurrent.futures
 import threading
+import atexit
+import signal
 
 from typing import List, Union, Dict, Any
 
@@ -258,6 +260,15 @@ class AiciRunner:
         print("running: ", args)
         self.proc = subprocess.Popen(args)
 
+        # we assume aicirt created its own process group
+        pgid = self.proc.pid
+        def cleanup():
+            try:
+                os.killpg(pgid, signal.SIGTERM)
+            except:
+                pass
+        atexit.register(cleanup)
+
         self.cmd.exec("ping")
         resp = self.cmd.exec("tokens")
         self.vocab_size = resp["data"]["vocab_size"]
@@ -265,6 +276,9 @@ class AiciRunner:
         self.step_reset()
 
         AiciRunner.instance = self
+
+    def terminate(self):
+        os.killpg(self.proc.pid, signal.SIGTERM)
 
     def replay(self, prev_trace: str):
         with open(prev_trace) as f:

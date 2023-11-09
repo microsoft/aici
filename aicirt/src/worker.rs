@@ -4,7 +4,6 @@ use aici_abi::TokenId;
 use anyhow::{anyhow, Result};
 use ipc_channel::ipc::{self, IpcReceiver, IpcReceiverSet, IpcSender};
 use libc::pid_t;
-use log::info;
 use serde::{Deserialize, Serialize};
 
 use crate::{
@@ -96,9 +95,9 @@ where
         Ok(self.cmd_resp.recv()?)
     }
 
-    fn kill(&self) {
+    fn kill(&self) -> libc::c_int {
         assert!(self.pid != 0);
-        unsafe { libc::kill(self.pid, libc::SIGKILL) };
+        unsafe { libc::kill(self.pid, libc::SIGKILL) }
     }
 
     fn send_cmd_with_timeout(&self, cmd: Cmd, timeout: Duration) -> Result<Resp> {
@@ -110,8 +109,26 @@ where
         match self.cmd_resp.try_recv_timeout(timeout) {
             Ok(r) => Ok(r),
             Err(ipc_channel::ipc::TryRecvError::Empty) => {
-                self.kill();
-                Err(anyhow!("timeout ({timeout:?})"))
+                // waitpid() here doesn't work, since it's not our child
+                let mut child_status = 0;
+                let options = libc::WNOHANG;
+                let wait_result = unsafe {
+                    libc::waitpid(self.pid, &mut child_status as *mut libc::c_int, options)
+                };
+                if wait_result != -1 && libc::WIFEXITED(child_status) {
+                    Err(anyhow!(
+                        "child exited {}; and timeout ({timeout:?})",
+                        libc::WEXITSTATUS(child_status)
+                    ))
+                } else {
+                    let ok = self.kill() >= 0;
+                    // kill succeeds also for zombies...
+                    Err(anyhow!(
+                        "timeout ({timeout:?}){} {child_status} {wait_result} {}",
+                        if ok { "" } else { "; kill failed" },
+                        self.pid
+                    ))
+                }
             }
             Err(e) => Err(e.into()),
         }
@@ -251,7 +268,7 @@ pub struct SeqWorkerHandle {
 
 impl Drop for SeqWorkerHandle {
     fn drop(&mut self) {
-        self.handle.kill()
+        self.handle.kill();
     }
 }
 
@@ -363,6 +380,7 @@ fn forker_dispatcher(
     wasm_ctx: WasmContext,
     shm: Shm,
 ) -> ! {
+    // TODO we should waitpid() children here, so they don't become zombies
     loop {
         let cmd = cmdch.recv().unwrap();
 

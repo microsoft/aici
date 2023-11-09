@@ -1,5 +1,5 @@
 {
-  "prompt": "Hello",
+  "prompt": "Hello world!\n",
   "sampling_params": {
     "temperature": 0,
     "n": 1,

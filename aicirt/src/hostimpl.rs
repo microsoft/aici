@@ -239,13 +239,20 @@ pub fn setup_linker(engine: &wasmtime::Engine) -> Result<Arc<wasmtime::Linker<Mo
         "aici_host_return_logits",
         |caller: wasmtime::Caller<'_, ModuleData>, src: u32| {
             let numtok = caller.data().globals.tokrx_info.vocab_size as usize;
-            let numbytes = (numtok + 31) / 32;
+            let numbytes = 4 * ((numtok + 31) / 32);
             let mut ptr = caller.data().logit_ptr;
             if ptr == std::ptr::null_mut() {
                 return;
             }
             let m = read_caller_mem(&caller, src, numbytes as u32);
             let masks = vec_from_bytes::<u32>(&m);
+            info!(
+                "return_logits: numtok={} numbytes={} mlen={} maskslen={}",
+                numtok,
+                numbytes,
+                m.len(),
+                masks.len()
+            );
             for idx in 0..numtok {
                 let mask = masks[idx / 32];
                 let bit = 1 << (idx % 32);
