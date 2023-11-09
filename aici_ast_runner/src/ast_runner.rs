@@ -24,7 +24,7 @@ use crate::rx::RecRx;
 use aici_abi::{
     aici_expose_all,
     bytes::limit_str,
-    host::{self, ff_token, tokenize},
+    host::{self, tokenize},
     svob::SimpleVob,
     toktree::{Recognizer, SpecialToken, TokTrie},
     wprintln, AiciVm, AiciVmHelper, ProcessArg, ProcessResult, TokenId,
@@ -224,7 +224,7 @@ impl StepState {
                     .filter(|t| t.len() >= self.tokens.len() + 2)
                     .collect::<Vec<_>>();
                 if tt.len() == 1 {
-                    Some(tt[0][self.tokens.len() + 1..].to_vec())
+                    Some(tt[0][self.tokens.len()..].to_vec())
                 } else {
                     None
                 }
@@ -427,13 +427,14 @@ impl Runner {
             }
         }
 
-        if let Some(ff) = ff_tokens {
-            for t in ff {
-                ff_token(t);
+        if let Some(ff_tokens) = ff_tokens {
+            ProcessResult::Splice {
+                backtrack: 0,
+                ff_tokens,
             }
+        } else {
+            self.helper.return_logit_bias()
         }
-
-        self.helper.return_logit_bias()
     }
 
     #[allow(dead_code)]

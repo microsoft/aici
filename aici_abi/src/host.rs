@@ -36,12 +36,6 @@ extern "C" {
     // Set logit bias based on bit-mask in src.
     fn aici_host_return_logit_bias(src: *const u32);
 
-    // Append fast-forward (FF) token.
-    // First FF token has to be returned by setting logit bias appropriately.
-    // Next tokens are added using this interface.
-    // All FF tokens are then generated in one go.
-    fn aici_host_ff_token(token: u32);
-
     fn aici_host_self_seq_id() -> u32;
 
     fn aici_host_return_process_result(res: *const u8, res_size: u32);
@@ -145,12 +139,6 @@ pub fn trie_bytes() -> Vec<u8> {
 
     #[cfg(not(target_arch = "wasm32"))]
     return std::fs::read("tokenizer.bin").unwrap();
-}
-
-pub fn ff_token(token: TokenId) {
-    unsafe {
-        aici_host_ff_token(token);
-    }
 }
 
 pub fn return_logit_bias(vob: &SimpleVob) {

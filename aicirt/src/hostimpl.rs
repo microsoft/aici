@@ -28,10 +28,9 @@ pub struct ModuleData {
     log: Vec<u8>,
     printed_log: usize,
     pub globals: GlobalInfo,
-    pub ff_tokens: Vec<TokenId>,
     pub group_channel: GroupHandle,
     pub process_result: Vec<u8>,
-    logit_ptr: *mut f32,
+    pub logit_ptr: &'static mut [f32],
     pub linker: Arc<wasmtime::Linker<ModuleData>>,
     pub instance: Option<wasmtime::Instance>,
     pub memory: Option<wasmtime::Memory>,
@@ -43,6 +42,9 @@ pub struct ModuleData {
 }
 
 const MAXLOG: usize = 32 * 1024;
+
+pub const LOGIT_BIAS_ALLOW: f32 = 1.0e10;
+pub const LOGIT_BIAS_DISALLOW: f32 = 0.0;
 
 pub struct BlobId(u32);
 
@@ -89,9 +91,8 @@ impl ModuleData {
             memory: None,
             tokenizer: None,
             store_limits,
-            ff_tokens: Vec::new(),
             process_result: Vec::new(),
-            logit_ptr: std::ptr::null_mut(),
+            logit_ptr: &mut [],
             had_error: false,
             blobs: vec![Rc::new(Vec::new()); BlobId::MAX_BLOB_ID as usize],
         };
@@ -114,7 +115,13 @@ impl ModuleData {
 
     pub fn set_exec_data(&mut self, data: ExecOp, shm: &Shm) {
         self.set_process_arg(data.op);
-        self.logit_ptr = shm.ptr_at(data.logit_offset) as *mut f32;
+        let nument = self.globals.tokrx_info.vocab_size as usize;
+        let ptr = shm.ptr_at(data.logit_offset);
+        assert!(LOGIT_BIAS_DISALLOW == 0.0);
+        unsafe {
+            std::ptr::write_bytes(ptr, 0, nument * 4);
+            self.logit_ptr = std::slice::from_raw_parts_mut(ptr as *mut f32, nument);
+        }
     }
 
     pub fn tokenize(&mut self, s: &str) -> Result<Vec<u32>> {
@@ -261,14 +268,6 @@ pub fn setup_linker(engine: &wasmtime::Engine) -> Result<Arc<wasmtime::Linker<Mo
 
     linker.func_wrap(
         "env",
-        "aici_host_ff_token",
-        |mut caller: wasmtime::Caller<'_, ModuleData>, tok: u32| {
-            caller.data_mut().ff_tokens.push(tok);
-        },
-    )?;
-
-    linker.func_wrap(
-        "env",
         "aici_host_read_blob",
         |mut caller: wasmtime::Caller<'_, ModuleData>, blob_id: u32, ptr: u32, len: u32| {
             if blob_id == BlobId::TRIE.0 {
@@ -318,21 +317,18 @@ pub fn setup_linker(engine: &wasmtime::Engine) -> Result<Arc<wasmtime::Linker<Mo
         |mut caller: wasmtime::Caller<'_, ModuleData>, src: u32| {
             let numtok = caller.data().globals.tokrx_info.vocab_size as usize;
             let numbytes = (numtok + 31) / 32;
-            let mut ptr = caller.data().logit_ptr;
-            if ptr == std::ptr::null_mut() {
-                return fatal_error(&mut caller, "logit_ptr is null");
+            if caller.data().logit_ptr.len() == 0 {
+                return fatal_error(&mut caller, "logit_ptr is empty");
             }
             let m = read_caller_mem(&caller, src, numbytes as u32);
             let masks = vec_from_bytes::<u32>(&m);
+            let ptr = &mut caller.data_mut().logit_ptr;
             for idx in 0..numtok {
                 let mask = masks[idx / 32];
                 let bit = 1 << (idx % 32);
                 if mask & bit != 0 {
-                    unsafe {
-                        *ptr = 100.0;
-                    }
+                    ptr[idx] = LOGIT_BIAS_ALLOW;
                 }
-                ptr = unsafe { ptr.add(1) };
             }
         },
     )?;
