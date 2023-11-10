@@ -2,10 +2,12 @@ import subprocess
 import ujson
 import sys
 import os
+import unittest
 
 import pyaici.ast
 import pyaici.rest
 import pyaici.util
+import pyaici.test
 
 prog = "aici_ast_runner"
 
@@ -45,38 +47,28 @@ def main():
         )
     }
 
-    Xast = {
-        "steps": [
-            pyaici.ast.gen(
-                yacc=open("grammars/c.y").read(),
-                # rx="#include(.|\n)*",
-                stop_at="\n}",
-                max_tokens=100,
-            )
-        ]
-    }
-    Xast = {
-        "steps": [
-            {"Fixed": {"text": "I am about "}},
-            {"Gen": {"max_tokens": 10, "rx": r"\d+"}},
-            {"Fixed": {"text": " years and "}},
-            {"Gen": {"max_tokens": 10, "rx": r"\d+"}},
-            {"Fixed": {"text": " months."}},
-        ]
-    }
     mod = upload_wasm()
     pyaici.rest.log_level = 1
     # read file named on command line if provided
     wrap = pyaici.util.codellama_prompt
     if len(sys.argv) > 1:
-        with open(sys.argv[1]) as f:
-            ast = ujson.load(f)
-        ask_completion(
-            prompt=wrap(ast["prompt"]),
-            aici_module=mod,
-            aici_arg=ast,
-            **ast["sampling_params"],
-        )
+        arg = sys.argv[1]
+        if arg == "test":
+            pyaici.rest.log_level = 0
+            pyaici.test.ast_module = mod
+            loader = unittest.TestLoader()
+            suite = loader.loadTestsFromModule(pyaici.test)
+            runner = unittest.TextTestRunner()
+            runner.run(suite)
+        else:
+            with open(sys.argv[1]) as f:
+                ast = ujson.load(f)
+            ask_completion(
+                prompt=wrap(ast["prompt"]),
+                aici_module=mod,
+                aici_arg=ast,
+                **ast["sampling_params"],
+            )
     else:
         ask_completion(
             prompt=wrap("Say something about J.R.R. Tolkien"),
