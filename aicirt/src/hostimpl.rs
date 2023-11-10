@@ -1,7 +1,4 @@
-use aici_abi::{
-    bytes::{clone_vec_as_bytes, vec_from_bytes, TokRxInfo},
-    TokenId,
-};
+use aici_abi::bytes::{clone_vec_as_bytes, vec_from_bytes, TokRxInfo};
 use anyhow::{anyhow, Result};
 use log::{info, warn};
 use std::{rc::Rc, sync::Arc};

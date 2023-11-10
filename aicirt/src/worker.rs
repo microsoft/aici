@@ -129,7 +129,7 @@ enum SeqCmd {
 enum SeqResp {
     Fork { handle: SeqHandle },
     Ok {},
-    Exec { data: JSON },
+    Exec { json: Vec<u8> },
     Error { msg: String },
 }
 
@@ -178,7 +178,10 @@ where
                     ))
                 }
             }
-            Err(e) => Err(e.into()),
+            Err(e) => {
+                // panic!("unexpected error {e:?}");
+                Err(e.into())
+            }
         }
     }
 }
@@ -262,7 +265,9 @@ impl SeqCtx {
             SeqCmd::Exec { data } => {
                 let shm = self.shm.clone();
                 let res = self.mutinst().exec(data, &shm);
-                Ok(SeqResp::Exec { data: res })
+                Ok(SeqResp::Exec {
+                    json: serde_json::to_vec(&res)?,
+                })
             }
             SeqCmd::RunMain {} => {
                 self.mutinst().run_main()?;
@@ -372,7 +377,7 @@ impl SeqWorkerHandle {
 
     pub fn check_exec(&self, timeout: Duration) -> Result<JSON> {
         match self.handle.recv_with_timeout(timeout) {
-            Ok(SeqResp::Exec { data }) => Ok(data),
+            Ok(SeqResp::Exec { json }) => Ok(serde_json::from_slice(&json)?),
             Ok(r) => Err(anyhow!("unexpected response (exec) {r:?}")),
             Err(e) => Err(e.into()),
         }

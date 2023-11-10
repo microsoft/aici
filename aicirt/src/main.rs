@@ -492,6 +492,7 @@ impl Stepper {
 }
 
 impl Exec for Stepper {
+    #[inline(never)]
     fn exec(&mut self, json: Value) -> Result<Value> {
         match json["op"].as_str() {
             Some("tokens") => Ok(json!({ "vocab_size": self.globals.tokrx_info.vocab_size })),
@@ -502,6 +503,7 @@ impl Exec for Stepper {
 }
 
 impl Exec for ModuleRegistry {
+    #[inline(never)]
     fn exec(&mut self, json: Value) -> Result<Value> {
         match json["op"].as_str() {
             Some("mk_module") => self.mk_module(serde_json::from_value(json)?),
