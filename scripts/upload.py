@@ -120,7 +120,7 @@ def upload_wasm():
     r = subprocess.run(["sh", "wasm.sh", "build"], cwd=prog)
     if r.returncode != 0:
         sys.exit(1)
-    file_path = prog + "/target/strip.wasm"
+    file_path = prog + "/target/opt.wasm"
     print("upload module... ", end="")
     with open(file_path, "rb") as f:
         resp = requests.post(base_url + "aici_modules", data=f)

@@ -35,4 +35,4 @@ fi
 RUST_LOG=info $PERF ./aicirt/target/release/aicirt --tokenizer gpt4 --module $p/target/opt.wasm
 RUST_LOG=info $PERF ./aicirt/target/release/aicirt \
   --tokenizer gpt4 --module $p/target/opt.wasm --run | tee tmp/runlog.txt
-ls -l $p/target/opt.wasm $p/target/strip.wasm
+ls -l $p/target/opt.wasm
