@@ -1,3 +1,4 @@
+use std::fmt::Debug;
 use std::{collections::HashMap, path::PathBuf, time::Duration};
 
 use aici_abi::host::{StorageCmd, StorageOp, StorageResp};
@@ -5,6 +6,7 @@ use aici_abi::TokenId;
 use anyhow::{anyhow, Result};
 use ipc_channel::ipc::{self, IpcOneShotServer, IpcReceiver, IpcReceiverSet, IpcSender};
 use libc::pid_t;
+use log::debug;
 use serde::{Deserialize, Serialize};
 
 use crate::{
@@ -94,7 +96,7 @@ struct ForkerCmd {
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct ExecOp {
-    pub op: Vec<u8>,
+    pub op: String, // json
     pub logit_offset: usize,
 }
 
@@ -129,18 +131,34 @@ enum SeqCmd {
 enum SeqResp {
     Fork { handle: SeqHandle },
     Ok {},
-    Exec { json: Vec<u8> },
+    Exec { json: String },
     Error { msg: String },
 }
 
 impl<Cmd, Resp> ProcessHandle<Cmd, Resp>
 where
-    Cmd: for<'d> Deserialize<'d> + Serialize,
-    Resp: for<'d> Deserialize<'d> + Serialize,
+    Cmd: for<'d> Deserialize<'d> + Serialize + Debug,
+    Resp: for<'d> Deserialize<'d> + Serialize + Debug,
 {
-    pub fn send_cmd(&self, cmd: Cmd) -> Result<Resp> {
+    pub fn just_send(&self, cmd: Cmd) -> Result<()> {
+        debug!("send {cmd:?}");
         self.cmd.send(cmd)?;
-        Ok(self.cmd_resp.recv()?)
+        Ok(())
+    }
+
+    pub fn recv(&self) -> Result<Resp> {
+        match self.cmd_resp.recv() {
+            Ok(r) => {
+                debug!("recv {r:?}");
+                Ok(r)
+            }
+            Err(e) => Err(e.into()),
+        }
+    }
+
+    pub fn send_cmd(&self, cmd: Cmd) -> Result<Resp> {
+        self.just_send(cmd)?;
+        self.recv()
     }
 
     fn kill(&self) -> libc::c_int {
@@ -149,34 +167,18 @@ where
     }
 
     fn send_cmd_with_timeout(&self, cmd: Cmd, timeout: Duration) -> Result<Resp> {
-        self.cmd.send(cmd)?;
+        self.just_send(cmd)?;
         self.recv_with_timeout(timeout)
     }
 
     fn recv_with_timeout(&self, timeout: Duration) -> Result<Resp> {
         match self.cmd_resp.try_recv_timeout(timeout) {
-            Ok(r) => Ok(r),
+            Ok(r) => {
+                debug!("recv t/o {r:?}");
+                Ok(r)
+            }
             Err(ipc_channel::ipc::TryRecvError::Empty) => {
-                // waitpid() here doesn't work, since it's not our child
-                let mut child_status = 0;
-                let options = libc::WNOHANG;
-                let wait_result = unsafe {
-                    libc::waitpid(self.pid, &mut child_status as *mut libc::c_int, options)
-                };
-                if wait_result != -1 && libc::WIFEXITED(child_status) {
-                    Err(anyhow!(
-                        "child exited {}; and timeout ({timeout:?})",
-                        libc::WEXITSTATUS(child_status)
-                    ))
-                } else {
-                    let ok = self.kill() >= 0;
-                    // kill succeeds also for zombies...
-                    Err(anyhow!(
-                        "timeout ({timeout:?}){} {child_status} {wait_result} {}",
-                        if ok { "" } else { "; kill failed" },
-                        self.pid
-                    ))
-                }
+                Err(anyhow!("timeout ({timeout:?}); pid={}", self.pid))
             }
             Err(e) => {
                 // panic!("unexpected error {e:?}");
@@ -188,7 +190,7 @@ where
 
 impl SeqHandle {
     fn send_cmd_expect_ok(&self, cmd: SeqCmd, timeout: Duration) -> Result<()> {
-        self.cmd.send(cmd)?;
+        self.just_send(cmd)?;
         match self.recv_with_timeout(timeout) {
             Ok(SeqResp::Ok {}) => Ok(()),
             Ok(r) => Err(anyhow!("unexpected response (not OK) {r:?}")),
@@ -266,7 +268,7 @@ impl SeqCtx {
                 let shm = self.shm.clone();
                 let res = self.mutinst().exec(data, &shm);
                 Ok(SeqResp::Exec {
-                    json: serde_json::to_vec(&res)?,
+                    json: serde_json::to_string(&res)?,
                 })
             }
             SeqCmd::RunMain {} => {
@@ -299,7 +301,9 @@ impl SeqCtx {
 
     fn dispatch_loop(&mut self) -> ! {
         loop {
-            let resp = match self.dispatch_one(self.cmd.recv().unwrap()) {
+            let cmd = self.cmd.recv().unwrap();
+            debug!("seq recv {cmd:?}");
+            let resp = match self.dispatch_one(cmd) {
                 Ok(v) => v,
                 Err(e) => SeqResp::Error {
                     msg: format!("{e:?}"),
@@ -371,13 +375,13 @@ impl SeqWorkerHandle {
     }
 
     pub fn start_exec(&self, data: ExecOp) -> Result<()> {
-        self.handle.cmd.send(SeqCmd::Exec { data })?;
+        self.handle.just_send(SeqCmd::Exec { data })?;
         Ok(())
     }
 
     pub fn check_exec(&self, timeout: Duration) -> Result<JSON> {
         match self.handle.recv_with_timeout(timeout) {
-            Ok(SeqResp::Exec { json }) => Ok(serde_json::from_slice(&json)?),
+            Ok(SeqResp::Exec { json }) => Ok(serde_json::from_str(&json)?),
             Ok(r) => Err(anyhow!("unexpected response (exec) {r:?}")),
             Err(e) => Err(e.into()),
         }

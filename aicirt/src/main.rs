@@ -455,7 +455,7 @@ impl Stepper {
                 AiciOp::Prompt { id, .. } => id,
             };
             let h = self.get_worker(instid).unwrap();
-            let op = serde_json::to_vec(&op.to_thread_op()).unwrap();
+            let op = serde_json::to_string(&op.to_thread_op()).unwrap();
             match h.start_exec(ExecOp { op, logit_offset }) {
                 Ok(_) => used_ids.push(instid),
                 Err(e) => self.worker_error(instid, &mut map, e),

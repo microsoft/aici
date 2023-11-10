@@ -111,7 +111,7 @@ impl ModuleData {
     }
 
     pub fn set_exec_data(&mut self, data: ExecOp, shm: &Shm) {
-        self.set_process_arg(data.op);
+        self.set_process_arg(data.op.into_bytes());
         let nument = self.globals.tokrx_info.vocab_size as usize;
         let ptr = shm.ptr_at(data.logit_offset);
         assert!(LOGIT_BIAS_DISALLOW == 0.0);
