@@ -123,6 +123,9 @@ struct Stepper {
     instances: HashMap<ModuleInstId, SeqWorkerHandle>,
     limits: AiciLimits,
     globals: GlobalInfo,
+    // for debugging
+    shm: Shm,
+    token_bytes: Vec<Vec<u8>>,
 }
 
 fn is_hex_string(s: &str) -> bool {
@@ -377,12 +380,19 @@ impl ModuleRegistry {
 }
 
 impl Stepper {
-    pub fn new(reg: &ModuleRegistry, limits: AiciLimits) -> Result<Self> {
+    pub fn new(
+        reg: &ModuleRegistry,
+        limits: AiciLimits,
+        shm: Shm,
+        token_bytes: Vec<Vec<u8>>,
+    ) -> Result<Self> {
         Ok(Self {
             req_instances: reg.req_instances.clone(),
             instances: HashMap::new(),
             limits,
             globals: reg.wasm_ctx.globals.clone(),
+            shm,
+            token_bytes,
         })
     }
 
@@ -391,6 +401,17 @@ impl Stepper {
             .instances
             .get(&id)
             .ok_or(anyhow!("invalid id {}", id))?)
+    }
+
+    fn token_name(&self, idx: usize) -> String {
+        if idx >= self.token_bytes.len() {
+            format!("<{idx}>")
+        } else {
+            format!(
+                "{:?}",
+                String::from_utf8_lossy(&self.token_bytes[idx as usize])
+            )
+        }
     }
 
     fn mk_instance(&mut self, op: &AiciOp) -> Result<()> {
@@ -457,7 +478,7 @@ impl Stepper {
             let h = self.get_worker(instid).unwrap();
             let op = serde_json::to_string(&op.to_thread_op()).unwrap();
             match h.start_exec(ExecOp { op, logit_offset }) {
-                Ok(_) => used_ids.push(instid),
+                Ok(_) => used_ids.push((logit_offset, instid)),
                 Err(e) => self.worker_error(instid, &mut map, e),
             };
             logit_offset += vocab_block_len;
@@ -465,18 +486,46 @@ impl Stepper {
 
         let deadline = Instant::now() + std::time::Duration::from_millis(self.limits.max_step_ms);
 
-        for id in used_ids {
+        for (off, id) in used_ids {
             let h = self.get_worker(id).unwrap();
             let timeout = deadline.saturating_duration_since(Instant::now());
             match h.check_exec(timeout) {
                 Ok(json) => {
                     map.insert(id.to_string(), json);
+                    if log::log_enabled!(log::Level::Debug) {
+                        let slice = self.logit_bias_at_byte_offset(off);
+                        let allow_set = slice
+                            .iter()
+                            .enumerate()
+                            .filter_map(|(idx, v)| if *v > 0.0 { Some(idx) } else { None })
+                            .collect::<Vec<_>>();
+                        let list = if allow_set.len() > 10000 {
+                            "...".to_string()
+                        } else {
+                            allow_set
+                                .iter()
+                                .take(40)
+                                .map(|idx| self.token_name(*idx))
+                                .collect::<Vec<_>>()
+                                .join(", ")
+                        };
+                        debug!("logits: {} allow; toks: {}", allow_set.len(), list);
+                    }
                 }
                 Err(e) => self.worker_error(id, &mut map, e),
             }
         }
 
         Ok(Value::Object(map))
+    }
+
+    fn logit_bias_at_byte_offset(&self, off: usize) -> &'static mut [f32] {
+        unsafe {
+            std::slice::from_raw_parts_mut(
+                self.shm.ptr_at(off) as *mut f32,
+                self.globals.tokrx_info.vocab_size as usize,
+            )
+        }
     }
 
     fn worker_error(
@@ -685,8 +734,9 @@ fn main() -> () {
         logit_memory_bytes: cli.bin_size * MEGABYTE,
     };
 
-    let wasm_ctx =
-        WasmContext::new(limits.clone(), find_tokenizer(&cli.tokenizer).unwrap()).unwrap();
+    let tokenizer = find_tokenizer(&cli.tokenizer).unwrap();
+    let token_bytes = tokenizer.token_bytes();
+    let wasm_ctx = WasmContext::new(limits.clone(), tokenizer).unwrap();
 
     if cli.save_tokenizer.is_some() {
         save_tokenizer(&cli);
@@ -731,7 +781,12 @@ fn main() -> () {
         .unwrap();
 
     let reg = ModuleRegistry::new(wasm_ctx, bin_shm).unwrap();
-    let exec = Stepper::new(&reg, limits).unwrap();
+    let debug_shm = Shm::new(
+        &MessageChannel::shm_name(&cli.prefixed_name("bin", "")),
+        limits.logit_memory_bytes,
+    )
+    .unwrap();
+    let exec = Stepper::new(&reg, limits, debug_shm, token_bytes).unwrap();
     let cli2 = cli.clone();
     rayon::spawn(move || {
         let reg_disp = CmdRespChannel::new("-side", &cli2).unwrap();

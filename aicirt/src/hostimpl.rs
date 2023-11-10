@@ -40,7 +40,7 @@ pub struct ModuleData {
 
 const MAXLOG: usize = 32 * 1024;
 
-pub const LOGIT_BIAS_ALLOW: f32 = 1.0e10;
+pub const LOGIT_BIAS_ALLOW: f32 = 100.0;
 pub const LOGIT_BIAS_DISALLOW: f32 = 0.0;
 
 pub struct BlobId(u32);
@@ -320,13 +320,6 @@ pub fn setup_linker(engine: &wasmtime::Engine) -> Result<Arc<wasmtime::Linker<Mo
             let m = read_caller_mem(&caller, src, numbytes as u32);
             let masks = vec_from_bytes::<u32>(&m);
             let ptr = &mut caller.data_mut().logit_ptr;
-            info!(
-                "return_logits: numtok={} numbytes={} mlen={} maskslen={}",
-                numtok,
-                numbytes,
-                m.len(),
-                masks.len()
-            );
             for idx in 0..numtok {
                 let mask = masks[idx / 32];
                 let bit = 1 << (idx % 32);
