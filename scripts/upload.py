@@ -7,7 +7,6 @@ import unittest
 import pyaici.ast
 import pyaici.rest
 import pyaici.util
-import pyaici.test
 
 prog = "aici_ast_runner"
 

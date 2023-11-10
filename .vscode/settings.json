@@ -65,5 +65,8 @@
         "vllm",
         "wprintln"
     ],
-    "mypy.configFile": "vllm/mypy.ini"
+    "mypy.configFile": "vllm/mypy.ini",
+    "python.testing.pytestArgs": [],
+    "python.testing.unittestEnabled": false,
+    "python.testing.pytestEnabled": true
 }
