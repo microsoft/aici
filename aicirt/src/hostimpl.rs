@@ -40,8 +40,8 @@ pub struct ModuleData {
 
 const MAXLOG: usize = 32 * 1024;
 
-pub const LOGIT_BIAS_ALLOW: f32 = 100.0;
-pub const LOGIT_BIAS_DISALLOW: f32 = 0.0;
+pub const LOGIT_BIAS_ALLOW: f32 = 0.0;
+pub const LOGIT_BIAS_DISALLOW: f32 = -100.0;
 
 pub struct BlobId(u32);
 
@@ -114,11 +114,10 @@ impl ModuleData {
         self.set_process_arg(data.op.into_bytes());
         let nument = self.globals.tokrx_info.vocab_size as usize;
         let ptr = shm.ptr_at(data.logit_offset);
-        assert!(LOGIT_BIAS_DISALLOW == 0.0);
-        unsafe {
-            std::ptr::write_bytes(ptr, 0, nument * 4);
-            self.logit_ptr = std::slice::from_raw_parts_mut(ptr as *mut f32, nument);
-        }
+        self.logit_ptr = unsafe { std::slice::from_raw_parts_mut(ptr as *mut f32, nument) };
+        self.logit_ptr
+            .iter_mut()
+            .for_each(|x| *x = LOGIT_BIAS_DISALLOW);
     }
 
     pub fn tokenize(&mut self, s: &str) -> Result<Vec<u32>> {

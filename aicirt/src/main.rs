@@ -497,7 +497,7 @@ impl Stepper {
                         let allow_set = slice
                             .iter()
                             .enumerate()
-                            .filter_map(|(idx, v)| if *v > 0.0 { Some(idx) } else { None })
+                            .filter_map(|(idx, v)| if *v >= 0.0 { Some(idx) } else { None })
                             .collect::<Vec<_>>();
                         let list = if allow_set.len() > 10000 {
                             "...".to_string()
