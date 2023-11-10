@@ -1,4 +1,5 @@
 use std::fmt::Debug;
+use std::rc::Rc;
 use std::{collections::HashMap, path::PathBuf, time::Duration};
 
 use aici_abi::host::{StorageCmd, StorageOp, StorageResp};
@@ -329,7 +330,7 @@ struct SeqCtx {
     query: Option<GroupHandle>,
     inst_id: ModuleInstId,
     modinst: Option<ModuleInstance>,
-    shm: Shm,
+    shm: Rc<Shm>,
 }
 
 pub struct SeqWorkerHandle {
@@ -509,7 +510,7 @@ fn forker_dispatcher(
                             cmd,
                             cmd_resp,
                             wasm_ctx,
-                            shm,
+                            shm: Rc::new(shm),
                             query: Some(query_handle),
                             inst_id: 424242,
                             modinst: None,
