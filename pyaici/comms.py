@@ -282,6 +282,17 @@ class AiciRunner:
 
         AiciRunner.instance = self
 
+    def bench(self):
+        cnt = 10000
+        start = time.time()
+        sum = 0
+        for i in range(cnt):
+            r = self.cmd.exec("ping")
+            sum += r["data"]["pong"]
+        assert sum == cnt
+        dur = (time.time() - start) * 1_000_000 / cnt
+        print(f"py MessageChannel: {dur:.2f} us")
+
     def terminate(self):
         os.killpg(self.proc.pid, signal.SIGTERM)
 
