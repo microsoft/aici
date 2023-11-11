@@ -67,8 +67,5 @@
         "waitpid",
         "wprintln"
     ],
-    "mypy.configFile": "vllm/mypy.ini",
-    "python.testing.pytestArgs": [],
-    "python.testing.unittestEnabled": false,
-    "python.testing.pytestEnabled": true
+    "mypy.configFile": "vllm/mypy.ini"
 }
