@@ -153,7 +153,7 @@ class CmdChannel:
 
         if resp["type"] != "ok":
             raise ChildProcessError(
-                f"Bad response to async {op}: {ujson.dumps(resp)[0:1000]}"
+                f"Bad response to async {op}: {json.dumps(resp)[0:1000]}"
             )
 
         return resp
@@ -163,7 +163,7 @@ class CmdChannel:
             return
 
         self.trace_file.write(
-            ujson.dumps(
+            json.dumps(
                 {
                     "timestamp": time.time() * 1000,
                     "suff": self.suff,
@@ -188,7 +188,7 @@ class CmdChannel:
         self._trace_resp(self.last_cmd, resp)
         if resp["type"] != "ok":
             raise ChildProcessError(
-                f"Bad response ({ctx}): {ujson.dumps(resp)[0:1000]}"
+                f"Bad response ({ctx}): {json.dumps(resp)[0:1000]}"
             )
         return resp
 
@@ -300,7 +300,7 @@ class AiciRunner:
     def replay(self, prev_trace: str):
         with open(prev_trace) as f:
             for line in f:
-                obj = ujson.loads(line)
+                obj = json.loads(line)
                 ch = self.cmd
                 if obj["suff"] == "-side":
                     ch = self.side_cmd
