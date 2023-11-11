@@ -3,7 +3,8 @@ import mmap
 import os
 import struct
 import subprocess
-import ujson
+import ujson as json
+#import json as json
 import numpy as np
 import base64
 import time
@@ -69,7 +70,7 @@ class MessageChannel:
         self.read_sem.release()
 
     def send_json(self, obj):
-        self.send_bytes(ujson.dumps(obj).encode())
+        self.send_bytes(json.dumps(obj).encode())
 
     def recv(self):
         self.read_sem.acquire()
@@ -81,7 +82,7 @@ class MessageChannel:
         return msg
 
     def recv_json(self):
-        return ujson.loads(self.recv())
+        return json.loads(self.recv())
 
     def close(self):
         self.map_file.close()
