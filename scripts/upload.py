@@ -4,11 +4,9 @@ import sys
 import os
 import unittest
 
-import pyaici.ast
+import pyaici.ast as ast
 import pyaici.rest
 import pyaici.util
-
-from pyaici import ast
 
 prog = "aici_ast_runner"
 

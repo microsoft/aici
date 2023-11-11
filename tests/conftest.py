@@ -9,7 +9,7 @@ ast_module_path = prj_dir + "/tmp/ast_module.txt"
 
 
 def upload_wasm():
-    import pyaici
+    import pyaici.rest
 
     prog = prj_dir + "/aici_ast_runner"
     r = subprocess.run(
@@ -30,7 +30,7 @@ def upload_wasm():
 
 
 def pytest_configure(config):
-    import pyaici
+    import pyaici.rest
 
     if not hasattr(config, "workerinput"):
         upload_wasm()

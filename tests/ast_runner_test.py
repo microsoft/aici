@@ -2,7 +2,9 @@ import ujson
 import pytest
 
 import pyaici
-from pyaici import ast
+import pyaici.rest
+import pyaici.util
+import pyaici.ast as ast
 
 model_name = "codellama/CodeLlama-13b-Instruct-hf"
 
