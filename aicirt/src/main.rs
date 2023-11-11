@@ -25,13 +25,13 @@ use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use std::time::Instant;
 use thread_priority::*;
-use worker::SeqWorkerHandle;
+use worker::{fork_child, SeqWorkerHandle};
 
 use crate::hostimpl::*;
 use crate::moduleinstance::*;
 use crate::msgchannel::MessageChannel;
 use crate::shm::Shm;
-use crate::worker::{ExecOp, WorkerForker};
+use crate::worker::{bench_ipc, ExecOp, WorkerForker};
 
 // Both of these are percentage of available cores
 const BG_THREADS_FRACTION: usize = 50;
@@ -64,6 +64,10 @@ struct Cli {
     /// Run with POSIX shared memory interface
     #[arg(short, long)]
     server: bool,
+
+    /// Run benchmarks
+    #[arg(long)]
+    bench: bool,
 
     /// Fork test
     #[arg(long)]
@@ -685,6 +689,39 @@ impl CmdRespChannel {
     }
 }
 
+fn bench_cmd_resp(cli: &Cli) {
+    match fork_child::<u8, u8>().unwrap() {
+        worker::ForkResult::Parent { handle } => {
+            let t0 = Instant::now();
+            let ch = CmdRespChannel::new("", cli).unwrap();
+            let resp_ch = ch.resp_ch.lock().unwrap();
+            let cnt = 10_000;
+            let mut sum0 = 0u64;
+            let mut sum1 = 0u64;
+            for idx in 0..cnt {
+                let q = (idx & 0xf0) as u8;
+                sum0 += q as u64 + 1;
+                let v = vec![q];
+                ch.cmd_ch.send(&v).unwrap();
+                let resp = resp_ch.recv().unwrap();
+                sum1 += resp[0] as u64;
+            }
+            assert!(sum0 == sum1);
+            println!("MessageChannel {:?}", t0.elapsed() / cnt);
+            handle.kill();
+        }
+        worker::ForkResult::Child { .. } => {
+            let ch = CmdRespChannel::new("", cli).unwrap();
+            let resp_ch = ch.resp_ch.lock().unwrap();
+            loop {
+                let mut msg = ch.recv();
+                msg[0] += 1;
+                resp_ch.send(&msg).unwrap();
+            }
+        }
+    }
+}
+
 fn set_priority(pri: ThreadPriority) {
     set_thread_priority_and_policy(
         thread_native_id(),
@@ -754,6 +791,12 @@ fn main() -> () {
     if !cli.name.starts_with("/") {
         eprintln!("--name must start with /");
         std::process::exit(1);
+    }
+
+    if cli.bench {
+        bench_ipc();
+        bench_cmd_resp(&cli);
+        return ();
     }
 
     let limits = AiciLimits {

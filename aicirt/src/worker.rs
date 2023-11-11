@@ -40,7 +40,7 @@ pub struct ProcessHandle<Cmd, Resp> {
     cmd_resp: IpcReceiver<Resp>,
 }
 
-enum ForkResult<Cmd, Resp> {
+pub enum ForkResult<Cmd, Resp> {
     Parent {
         handle: ProcessHandle<Cmd, Resp>,
     },
@@ -50,7 +50,7 @@ enum ForkResult<Cmd, Resp> {
     },
 }
 
-fn fork_child<Cmd, Resp>() -> Result<ForkResult<Cmd, Resp>>
+pub fn fork_child<Cmd, Resp>() -> Result<ForkResult<Cmd, Resp>>
 where
     Cmd: for<'d> Deserialize<'d> + Serialize,
     Resp: for<'d> Deserialize<'d> + Serialize,
@@ -164,7 +164,7 @@ where
         self.recv()
     }
 
-    fn kill(&self) -> libc::c_int {
+    pub fn kill(&self) -> libc::c_int {
         assert!(self.pid != 0);
         unsafe { libc::kill(self.pid, libc::SIGKILL) }
     }
@@ -554,6 +554,31 @@ pub fn stop_process() -> ! {
     unsafe { libc::kill(-pgid, libc::SIGUSR1) };
     std::thread::sleep(Duration::from_millis(500));
     panic!("didn't die");
+}
+
+pub fn bench_ipc() {
+    match fork_child().unwrap() {
+        ForkResult::Parent { handle } => {
+            let t0 = std::time::Instant::now();
+            let mut sum = 0;
+            let mut sum1 = 0;
+            let cnt = 10_000;
+            for idx in 0..cnt {
+                sum1 += idx * 2;
+                let r = handle.send_cmd(idx).unwrap();
+                sum += r;
+            }
+            assert!(sum == sum1);
+            println!("ipc_channel {:?}", t0.elapsed() / cnt);
+            handle.kill();
+        }
+        ForkResult::Child { cmd, cmd_resp } => loop {
+            let r = cmd.recv().unwrap();
+            cmd_resp.send(2 * r).unwrap();
+        },
+    }
+
+
 }
 
 impl WorkerForker {
