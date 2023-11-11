@@ -247,12 +247,12 @@ impl ModuleInstance {
                 continue;
             }
             ensure!(
-                attn.len() == attn_elts,
-                "wrong attn mask size: {} != {}",
+                attn.len() > attn_elts,
+                "wrong attn mask size: {} > {}",
                 attn.len(),
                 attn_elts
             );
-            shm_slice.copy_from_slice(&attn);
+            shm_slice[0..attn.len()].copy_from_slice(&attn);
         }
         Ok(json!({}))
     }
