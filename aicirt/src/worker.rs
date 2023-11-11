@@ -3,7 +3,7 @@ use std::rc::Rc;
 use std::{collections::HashMap, path::PathBuf, time::Duration};
 
 use aici_abi::host::{StorageCmd, StorageOp, StorageResp};
-use aici_abi::TokenId;
+use aici_abi::{PreProcessArg, TokenId};
 use anyhow::{anyhow, Result};
 use ipc_channel::ipc::{self, IpcOneShotServer, IpcReceiver, IpcReceiverSet, IpcSender};
 use libc::pid_t;
@@ -97,8 +97,9 @@ struct ForkerCmd {
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct ExecOp {
-    pub op: String, // json
+    pub op: PreProcessArg,
     pub logit_offset: usize,
+    pub logit_size: usize, // bytes
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -122,7 +123,8 @@ enum SeqCmd {
     SetId {
         inst_id: ModuleInstId,
     },
-    Exec {
+    Process {
+        is_pre: bool,
         data: ExecOp,
     },
     RunMain {},
@@ -132,7 +134,7 @@ enum SeqCmd {
 enum SeqResp {
     Fork { handle: SeqHandle },
     Ok {},
-    Exec { json: String },
+    Process { json: String },
     Error { msg: String },
 }
 
@@ -265,10 +267,10 @@ impl SeqCtx {
                 self.mutinst().set_id(inst_id);
                 ok()
             }
-            SeqCmd::Exec { data } => {
+            SeqCmd::Process { is_pre, data } => {
                 let shm = self.shm.clone();
-                let res = self.mutinst().exec(data, &shm);
-                Ok(SeqResp::Exec {
+                let res = self.mutinst().process(is_pre, data, &shm);
+                Ok(SeqResp::Process {
                     json: serde_json::to_string(&res)?,
                 })
             }
@@ -375,14 +377,23 @@ impl SeqWorkerHandle {
         }
     }
 
-    pub fn start_exec(&self, data: ExecOp) -> Result<()> {
-        self.handle.just_send(SeqCmd::Exec { data })?;
+    pub fn start_pre_process(&self, data: ExecOp) -> Result<()> {
+        self.handle
+            .just_send(SeqCmd::Process { is_pre: true, data })?;
+        Ok(())
+    }
+
+    pub fn start_process(&self, data: ExecOp) -> Result<()> {
+        self.handle.just_send(SeqCmd::Process {
+            is_pre: false,
+            data,
+        })?;
         Ok(())
     }
 
     pub fn check_exec(&self, timeout: Duration) -> Result<JSON> {
         match self.handle.recv_with_timeout(timeout) {
-            Ok(SeqResp::Exec { json }) => Ok(serde_json::from_str(&json)?),
+            Ok(SeqResp::Process { json }) => Ok(serde_json::from_str(&json)?),
             Ok(r) => Err(anyhow!("unexpected response (exec) {r:?}")),
             Err(e) => Err(e.into()),
         }

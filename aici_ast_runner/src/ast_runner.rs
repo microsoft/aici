@@ -454,22 +454,18 @@ impl Runner {
 
 impl AiciVm for Runner {
     fn process(&mut self, arg: ProcessArg) -> ProcessResult {
-        match arg {
-            ProcessArg::Append { tokens } => {
-                let ntok = tokens.len();
-                if ntok > 1 {
-                    wprintln!("<<< {} tokens", ntok);
-                }
-                for token in tokens {
-                    self.advance(token);
-                }
-                if ntok > 1 {
-                    wprintln!(">>>");
-                }
-                self.compute()
-            }
-            ProcessArg::Fork { .. } => panic!("fork not requested!"),
+        let tokens = arg.tokens;
+        let ntok = tokens.len();
+        if ntok > 1 {
+            wprintln!("<<< {} tokens", ntok);
         }
+        for token in tokens {
+            self.advance(token);
+        }
+        if ntok > 1 {
+            wprintln!(">>>");
+        }
+        self.compute()
     }
 
     fn get_helper(&mut self) -> &mut AiciVmHelper {

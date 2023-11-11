@@ -1,4 +1,7 @@
-use aici_abi::bytes::{clone_vec_as_bytes, vec_from_bytes, TokRxInfo};
+use aici_abi::{
+    bytes::{clone_vec_as_bytes, vec_from_bytes, TokRxInfo},
+    ProcessArg,
+};
 use anyhow::{anyhow, Result};
 use log::{info, warn};
 use std::{rc::Rc, sync::Arc};
@@ -110,14 +113,24 @@ impl ModuleData {
         self.set_blob(BlobId::PROCESS_ARG, bytes);
     }
 
-    pub fn set_exec_data(&mut self, data: ExecOp, shm: &Shm) {
-        self.set_process_arg(data.op.into_bytes());
+    pub fn set_process_data(&mut self, data: ExecOp, shm: &Shm) {
+        let op = ProcessArg {
+            tokens: data.op.tokens,
+            fork_group: vec![], // TODO
+        };
+        let bytes = serde_json::to_vec(&op).unwrap();
+        self.set_process_arg(bytes);
         let nument = self.globals.tokrx_info.vocab_size as usize;
-        let ptr = shm.ptr_at(data.logit_offset);
-        self.logit_ptr = unsafe { std::slice::from_raw_parts_mut(ptr as *mut f32, nument) };
+        assert!(data.logit_size == nument * 4);
+        self.logit_ptr = shm.slice_at_byte_offset(data.logit_offset, nument);
         self.logit_ptr
             .iter_mut()
             .for_each(|x| *x = LOGIT_BIAS_DISALLOW);
+    }
+
+    pub fn set_pre_process_data(&mut self, data: ExecOp, _shm: &Shm) {
+        let bytes = serde_json::to_vec(&data.op).unwrap();
+        self.set_process_arg(bytes);
     }
 
     pub fn tokenize(&mut self, s: &str) -> Result<Vec<u32>> {

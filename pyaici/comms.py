@@ -231,6 +231,7 @@ class AiciRunner:
         self.vocab_size = -1
         self.batch_size = -1
         self.last_response = {}
+        self.disable_attn_mask = False
 
         if trace_file:
             self.trace_file = open(trace_file, "w")
@@ -238,6 +239,8 @@ class AiciRunner:
             self.trace_file = None
 
         self.logit_pending = False
+        self.last_ops = None
+        self.max_context_len = -1
 
         self.cmd = CmdChannel(
             pref=pref, suff="", json_size=json_size, trace_file=self.trace_file
@@ -262,11 +265,13 @@ class AiciRunner:
 
         # we assume aicirt created its own process group
         pgid = self.proc.pid
+
         def cleanup():
             try:
                 os.killpg(pgid, signal.SIGTERM)
             except:
                 pass
+
         atexit.register(cleanup)
 
         self.cmd.exec("ping")
@@ -393,17 +398,20 @@ class AiciRunner:
         """
         self.freed_seq_ids.append(id)
 
-    def step_finish(self):
+    def step_finish(self, max_context_len):
         """
         Send step data to the aicirt process.
         recv_logit_bias() (or flush_logit_bias()) needs to be called after this.
         """
         cmd = {
-            "op": "step",
+            "op": "pre_process",
             "freed": self.freed_seq_ids,
             "ops": self.prompt_q + self.gen_q,
+            "max_context_len": max_context_len,
         }
-        self.batch_size = len(cmd["ops"])
+        self.last_ops = cmd["ops"]
+        self.batch_size = len(self.last_ops)
+        self.max_context_len = max_context_len
         if len(cmd["freed"]) == 0 and self.batch_size == 0:
             # nothing to do
             self.step_reset()
@@ -413,9 +421,29 @@ class AiciRunner:
         self.cmd.send(cmd)
         self.step_reset()
 
+    def recv_attention_mask(self):
+        assert self.logit_pending
+        self.last_response = self.cmd.expect("recv")["data"]
+        n = self.batch_size
+        if self.disable_attn_mask:
+            self.disable_attn_mask = False
+            n = 0
+        arr = np.frombuffer(
+            self.bin_shm, dtype=np.float32, offset=0, count=n * self.max_context_len
+        ).reshape([n, self.max_context_len])
+        # need to clone it before sending "process" req
+        arr = arr.copy()
+        self.cmd.send(
+            {
+                "op": "process",
+                "ops": self.last_ops,
+            }
+        )
+        return arr
+
     def flush_logit_bias(self):
         """
-        Drop any pending logit computation.
+        Drop any pending logit/mask computation.
         """
         if self.logit_pending:
             print("Warning: unflushed AICI logit bias")
@@ -454,7 +482,7 @@ def install_in_vllm(runner: AiciRunner):
     from vllm.sequence import SequenceGroupMetadata, SequenceGroup
     import torch
 
-    def step(
+    def initiate_step(
         freed_seq_ids: List[int],
         seq_group_metadata_list: List[SequenceGroupMetadata],
         _scheduler_outputs,
@@ -464,40 +492,54 @@ def install_in_vllm(runner: AiciRunner):
         for f in freed_seq_ids:
             runner.step_free_seq(f)
 
+        max_context_len = 0
+        num_gen = 0
         for s in seq_group_metadata_list:
             ids = list(s.seq_data.keys())
             if s.is_ff:
                 for id in ids:
                     seq = s.seq_data[id]
                     if seq.num_pending_ff_tokens:
+                        toks = seq.get_token_ids()
+                        max_context_len = max(max_context_len, len(toks))
                         runner.step_add_tokens(
-                            id, seq.get_token_ids()[-seq.num_pending_ff_tokens :],
-                            clone_id=seq.parent_id
+                            id,
+                            toks[-seq.num_pending_ff_tokens :],
+                            clone_id=seq.parent_id,
                         )
                         seq.parent_id = None
             elif s.is_prompt:
                 assert len(ids) == 1
                 id = ids[0]
+                toks = s.seq_data[id].prompt_token_ids
+                max_context_len = max(max_context_len, len(toks))
                 runner.step_add_prompt(
                     id,
-                    prompt=s.seq_data[id].prompt_token_ids,
+                    prompt=toks,
                     req_id=s.request_id,
                 )
             else:
                 for id in ids:
+                    num_gen += 1
                     seq = s.seq_data[id]
                     out = seq.output_token_ids
+                    max_context_len = max(max_context_len, seq.get_len())
                     runner.step_add_tokens(id, tokens=[out[-1]], clone_id=seq.parent_id)
                     seq.parent_id = None
-        runner.step_finish()
+        runner.step_finish(max_context_len)
+        if num_gen == 0:
+            runner.disable_attn_mask = True
 
-    def apply_bias(logits: torch.Tensor):
+    def apply_dynamic_logit_bias(logits: torch.Tensor):
         bias = (
             torch.from_numpy(runner.recv_logit_bias())
             .to(logits.device)
             .to(logits.dtype)
         )
         logits += bias
+
+    def recv_attention_mask():
+        return torch.from_numpy(runner.recv_attention_mask())
 
     def append_ff_tokens(seq_group: SequenceGroup):
         for seq in seq_group.get_seqs():
@@ -507,9 +549,10 @@ def install_in_vllm(runner: AiciRunner):
                 # print("FF", seq.seq_id, ff, resp)
                 seq.pending_ff_tokens = ff
 
-    SamplingParams.apply_dynamic_logit_bias = apply_bias
-    SamplingParams.initiate_step = step
+    SamplingParams.apply_dynamic_logit_bias = apply_dynamic_logit_bias
+    SamplingParams.initiate_step = initiate_step
     SamplingParams.append_ff_tokens = append_ff_tokens
+    SamplingParams.recv_attention_mask = recv_attention_mask
 
 
 def add_cli_args(parser: argparse.ArgumentParser, single=False):

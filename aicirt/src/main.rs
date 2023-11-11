@@ -7,7 +7,7 @@ mod worker;
 
 use aici_abi::bytes::limit_str;
 use aici_abi::toktree::TokTrie;
-use aici_abi::{ProcessArg, TokenId};
+use aici_abi::{PreProcessArg, TokenId};
 use aici_tokenizers::find_tokenizer;
 use anyhow::{anyhow, ensure, Result};
 use base64;
@@ -133,8 +133,14 @@ fn is_hex_string(s: &str) -> bool {
 }
 
 #[derive(Serialize, Deserialize)]
-struct AiciStepReq {
+struct AiciPreProcessReq {
+    max_context_len: usize, // in tokens
     freed: Vec<ModuleInstId>,
+    ops: Vec<AiciOp>,
+}
+
+#[derive(Serialize, Deserialize)]
+struct AiciProcessReq {
     ops: Vec<AiciOp>,
 }
 
@@ -153,10 +159,10 @@ pub enum AiciOp {
 }
 
 impl AiciOp {
-    pub fn to_thread_op(self) -> ProcessArg {
+    pub fn to_thread_op(self) -> PreProcessArg {
         match self {
-            AiciOp::Prompt { .. } => ProcessArg::Append { tokens: vec![] },
-            AiciOp::Gen { tokens, .. } => ProcessArg::Append { tokens },
+            AiciOp::Prompt { .. } => PreProcessArg { tokens: vec![] },
+            AiciOp::Gen { tokens, .. } => PreProcessArg { tokens },
         }
     }
 }
@@ -446,23 +452,12 @@ impl Stepper {
         Ok(())
     }
 
-    fn aici_step(&mut self, req: AiciStepReq) -> Result<Value> {
-        for id in req.freed {
-            info!("free module {}", id);
-            self.instances.remove(&id);
-        }
-
-        // first, start instances and link clones
-        for op in req.ops.iter() {
-            self.mk_instance(&op)?
-        }
-
-        let vocab_block_len = self.globals.tokrx_info.vocab_size as usize * 4;
-
-        let numops = req.ops.len();
+    fn aici_step(&mut self, ops: Vec<AiciOp>, block_elts: usize, is_pre: bool) -> Result<Value> {
+        let numops = ops.len();
+        let block_bytes = block_elts * 4;
 
         ensure!(
-            self.limits.logit_memory_bytes / vocab_block_len - 1 >= numops,
+            self.limits.logit_memory_bytes > numops * block_bytes,
             "shm size too small"
         );
 
@@ -470,18 +465,36 @@ impl Stepper {
         let mut used_ids = Vec::new();
         let mut map = serde_json::Map::new();
 
-        for op in req.ops.into_iter() {
+        // initialize shm
+        let slice = self.shm.slice_at_byte_offset::<f32>(0, numops * block_elts);
+        let init_v = if is_pre { 1.0 } else { 0.0 };
+        slice.iter_mut().for_each(|v| *v = init_v);
+
+        for op in ops.into_iter() {
             let instid = match op {
                 AiciOp::Gen { id, .. } => id,
                 AiciOp::Prompt { id, .. } => id,
             };
-            let h = self.get_worker(instid).unwrap();
-            let op = serde_json::to_string(&op.to_thread_op()).unwrap();
-            match h.start_exec(ExecOp { op, logit_offset }) {
-                Ok(_) => used_ids.push((logit_offset, instid)),
-                Err(e) => self.worker_error(instid, &mut map, e),
-            };
-            logit_offset += vocab_block_len;
+            if let Ok(h) = self.get_worker(instid) {
+                let op = op.to_thread_op();
+                let op = ExecOp {
+                    op,
+                    logit_offset,
+                    logit_size: block_bytes,
+                };
+                let res = if is_pre {
+                    h.start_pre_process(op)
+                } else {
+                    h.start_process(op)
+                };
+                match res {
+                    Ok(_) => used_ids.push((logit_offset, instid)),
+                    Err(e) => self.worker_error(instid, &mut map, e),
+                };
+            } else {
+                warn!("invalid id {}", instid);
+            }
+            logit_offset += block_bytes;
         }
 
         let deadline = Instant::now() + std::time::Duration::from_millis(self.limits.max_step_ms);
@@ -509,7 +522,7 @@ impl Stepper {
                                 .collect::<Vec<_>>()
                                 .join(", ")
                         };
-                        debug!("logits: {} allow; toks: {}", allow_set.len(), list);
+                        debug!("logits: {} allow; tokens: {}", allow_set.len(), list);
                     }
                 }
                 Err(e) => self.worker_error(id, &mut map, e),
@@ -519,13 +532,28 @@ impl Stepper {
         Ok(Value::Object(map))
     }
 
-    fn logit_bias_at_byte_offset(&self, off: usize) -> &'static mut [f32] {
-        unsafe {
-            std::slice::from_raw_parts_mut(
-                self.shm.ptr_at(off) as *mut f32,
-                self.globals.tokrx_info.vocab_size as usize,
-            )
+    fn aici_pre_process(&mut self, req: AiciPreProcessReq) -> Result<Value> {
+        for id in req.freed {
+            info!("free module {}", id);
+            self.instances.remove(&id);
         }
+
+        // first, start instances and link clones
+        for op in req.ops.iter() {
+            self.mk_instance(&op)?
+        }
+
+        self.aici_step(req.ops, req.max_context_len, true)
+    }
+
+    fn aici_process(&mut self, req: AiciProcessReq) -> Result<Value> {
+        let vocab_block_len = self.globals.tokrx_info.vocab_size as usize;
+        self.aici_step(req.ops, vocab_block_len, false)
+    }
+
+    fn logit_bias_at_byte_offset(&self, off: usize) -> &'static mut [f32] {
+        self.shm
+            .slice_at_byte_offset(off, self.globals.tokrx_info.vocab_size as usize)
     }
 
     fn worker_error(
@@ -545,7 +573,8 @@ impl Exec for Stepper {
     fn exec(&mut self, json: Value) -> Result<Value> {
         match json["op"].as_str() {
             Some("tokens") => Ok(json!({ "vocab_size": self.globals.tokrx_info.vocab_size })),
-            Some("step") => self.aici_step(serde_json::from_value(json)?),
+            Some("pre_process") => self.aici_pre_process(serde_json::from_value(json)?),
+            Some("process") => self.aici_process(serde_json::from_value(json)?),
             _ => return Err(anyhow!("bad op")),
         }
     }

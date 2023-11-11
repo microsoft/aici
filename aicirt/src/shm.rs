@@ -57,6 +57,13 @@ impl Shm {
         self.size
     }
 
+    pub fn slice_at_byte_offset<T>(&self, off: usize, num_elts: usize) -> &'static mut [T] {
+        let ptr = self.ptr_at(off);
+        assert!(off + num_elts * std::mem::size_of::<T>() <= self.size);
+        assert!(off % std::mem::align_of::<T>() == 0);
+        unsafe { std::slice::from_raw_parts_mut(ptr as *mut T, num_elts) }
+    }
+
     pub fn ptr_at(&self, off: usize) -> *mut u8 {
         unsafe { self.addr.add(off) }
     }

@@ -1,8 +1,9 @@
 use aici_abi::toktree::TokTrie;
-use aici_abi::{InitPromptArg, ProcessResult, TokenId};
+use aici_abi::{InitPromptArg, PreProcessResult, ProcessResult, TokenId};
 use aici_tokenizers::Tokenizer;
 use anyhow::{anyhow, ensure, Result};
 use log::warn;
+use serde::Deserialize;
 use serde_json::{json, Value};
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -222,34 +223,49 @@ impl ModuleInstance {
         &self.store.data().group_channel
     }
 
-    pub fn exec(&mut self, op: ExecOp, shm: &Shm) -> Value {
-        let mut json_type = "ok";
-        let mut suffix = "".to_string();
-        let t0 = Instant::now();
+    fn proc_result<T: for<'a> Deserialize<'a>>(&self) -> Result<T> {
+        let bytes = &self.store.data().process_result;
+        if bytes.len() == 0 {
+            Err(anyhow!("aici_host_return_process_result not called"))
+        } else {
+            serde_json::from_slice::<T>(bytes).map_err(|e| e.into())
+        }
+    }
 
-        self.store.data_mut().set_exec_data(op, shm);
-        let res = self.call_func::<WasmAici, ()>("aici_process", self.handle);
-
-        let res = match res {
-            Ok(()) => {
-                let bytes = &self.store.data().process_result;
-                if bytes.len() == 0 {
-                    Err(anyhow!("aici_host_return_process_result not called"))
-                } else {
-                    serde_json::from_slice::<ProcessResult>(bytes).map_err(|e| e.into())
-                }
+    fn do_pre_process(&mut self, op: ExecOp, shm: &Shm) -> Result<Value> {
+        let attn_elts = op.logit_size / 4;
+        let shm_slice = shm.slice_at_byte_offset::<f32>(op.logit_offset, attn_elts);
+        self.store.data_mut().set_pre_process_data(op, shm);
+        self.call_func::<WasmAici, ()>("aici_pre_process", self.handle)?;
+        let res: PreProcessResult = self.proc_result()?;
+        ensure!(
+            res.attention_masks.len() == 1,
+            "only single attention_mask support atm"
+        );
+        for attn in res.attention_masks {
+            if attn.len() == 0 {
+                continue;
             }
-            Err(e) => Err(e),
-        };
+            ensure!(
+                attn.len() == attn_elts,
+                "wrong attn mask size: {} != {}",
+                attn.len(),
+                attn_elts
+            );
+            shm_slice.copy_from_slice(&attn);
+        }
+        Ok(json!({}))
+    }
 
-        let mut outer_ff_tokens = Vec::new();
-
-        let res = match res {
-            Ok(ProcessResult::SampleWithBias) => Ok(()),
-            Ok(ProcessResult::Splice {
+    fn do_process(&mut self, op: ExecOp, shm: &Shm) -> Result<Value> {
+        self.store.data_mut().set_process_data(op, shm);
+        self.call_func::<WasmAici, ()>("aici_process", self.handle)?;
+        match self.proc_result()? {
+            ProcessResult::SampleWithBias => Ok(json!({})),
+            ProcessResult::Splice {
                 backtrack: 0,
-                ff_tokens,
-            }) if ff_tokens.len() >= 1 => {
+                mut ff_tokens,
+            } if ff_tokens.len() >= 1 => {
                 let vocab_size = self.store.data().logit_ptr.len();
                 if let Some((idx, val)) = ff_tokens.iter().enumerate().find_map(|(idx, t)| {
                     if *t as usize >= vocab_size {
@@ -262,32 +278,57 @@ impl ModuleInstance {
                         "ff_token out of range ({val} >= {vocab_size} at {idx})"
                     ))
                 } else {
-                    outer_ff_tokens = ff_tokens;
-                    let t0 = outer_ff_tokens.remove(0);
+                    let t0 = ff_tokens.remove(0);
                     self.store.data_mut().logit_ptr[t0 as usize] = LOGIT_BIAS_ALLOW;
-                    Ok(())
+                    Ok(json!({
+                        "ff_tokens": ff_tokens
+                    }))
                 }
             }
-            Ok(r) => Err(anyhow!("unhandled {r:?}")),
-            Err(e) => Err(e),
+            r => Err(anyhow!("unhandled {r:?}")),
+        }
+    }
+
+    fn json_result(&mut self, t0: Instant, res: Result<Value>) -> Value {
+        let mut m = match &res {
+            Ok(v) => v.as_object().unwrap().clone(),
+            Err(_) => serde_json::Map::new(),
         };
 
-        match res {
-            Ok(_) => {}
-            Err(e) => {
-                json_type = "error";
-                suffix = format!("\nError: {:?}", e);
-                warn!("exec error:{}", suffix);
-            }
-        };
+        m.insert("millis".to_string(), json!(t0.elapsed().as_millis() as u64));
 
         let logs = self.store.data_mut().string_log();
-        json!({
-            "type": json_type,
-            "millis": t0.elapsed().as_millis() as u64,
-            "logs": logs + &suffix,
-            "ff_tokens": outer_ff_tokens,
-        })
+        let spec = match res {
+            Ok(_) => json!({
+                "type": "ok",
+                "logs": logs,
+            }),
+
+            Err(e) => {
+                let suffix = format!("\nError: {:?}", e);
+                warn!("exec error:{}", suffix);
+                json!({
+                    "type": "error",
+                    "logs": logs + &suffix,
+                })
+            }
+        };
+        spec.as_object().unwrap().iter().for_each(|(k, v)| {
+            m.insert(k.to_string(), v.clone());
+        });
+        Value::Object(m)
+    }
+
+    pub fn process(&mut self, is_pre: bool, op: ExecOp, shm: &Shm) -> Value {
+        let t0 = Instant::now();
+
+        let res = if is_pre {
+            self.do_pre_process(op, shm)
+        } else {
+            self.do_process(op, shm)
+        };
+
+        self.json_result(t0, res)
     }
 
     pub fn tokenize(&mut self, s: &str) -> Result<Vec<u32>> {

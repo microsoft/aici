@@ -74,8 +74,8 @@ def main():
             # prompt=wrap("Write fib function in C, respond in code only"),
             aici_module=mod,
             aici_arg=ast,
-            n=2,
-            temperature=0.5,
+            n=1,
+            temperature=0.001,
             max_tokens=1000,
         )
 

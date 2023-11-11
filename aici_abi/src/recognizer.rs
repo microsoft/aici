@@ -27,22 +27,17 @@ impl<R: Recognizer + Clone> AiciVm for AiciRecognizer<R> {
     }
 
     fn process(&mut self, arg: ProcessArg) -> ProcessResult {
-        match arg {
-            ProcessArg::Append { tokens } => {
-                for token in tokens {
-                    let bytes = self.trie.token(token);
-                    // wprintln!("xapp {} {:?}", token, bytes);
-                    for b in bytes {
-                        self.rec.push_byte(*b)
-                    }
-                    self.rec.collapse();
-                }
-                self.trie
-                    .compute_bias(&mut self.rec, &mut self.helper.allowed_tokens);
-                self.helper.return_logit_bias()
+        for token in arg.tokens {
+            let bytes = self.trie.token(token);
+            // wprintln!("process {} {:?}", token, bytes);
+            for b in bytes {
+                self.rec.push_byte(*b)
             }
-            ProcessArg::Fork { .. } => panic!("fork not requested!"),
+            self.rec.collapse();
         }
+        self.trie
+            .compute_bias(&mut self.rec, &mut self.helper.allowed_tokens);
+        self.helper.return_logit_bias()
     }
 }
 
