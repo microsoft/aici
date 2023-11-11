@@ -247,8 +247,8 @@ impl ModuleInstance {
                 continue;
             }
             ensure!(
-                attn.len() > attn_elts,
-                "wrong attn mask size: {} > {}",
+                attn.len() <= attn_elts,
+                "wrong attn mask size: {} <= {}",
                 attn.len(),
                 attn_elts
             );
