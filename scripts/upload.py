@@ -8,6 +8,8 @@ import pyaici.ast
 import pyaici.rest
 import pyaici.util
 
+from pyaici import ast
+
 prog = "aici_ast_runner"
 
 
@@ -32,7 +34,7 @@ def ask_completion(*args, **kwargs):
 
 
 def main():
-    ast = {
+    arg = {
         "steps": pyaici.ast.json_to_steps(
             {
                 "name": "",
@@ -44,6 +46,12 @@ def main():
                 "fraction": 1.5,
             }
         )
+    }
+    arg = {
+        "steps": [
+            ast.fixed(" French is", tag="lang"),
+            ast.gen(max_tokens=5, mask_tags=["lang"]),
+        ]
     }
 
     mod = upload_wasm()
@@ -61,19 +69,19 @@ def main():
             runner.run(suite)
         else:
             with open(sys.argv[1]) as f:
-                ast = ujson.load(f)
+                arg = ujson.load(f)
             ask_completion(
-                prompt=wrap(ast["prompt"]),
+                prompt=wrap(arg["prompt"]),
                 aici_module=mod,
-                aici_arg=ast,
-                **ast["sampling_params"],
+                aici_arg=arg,
+                **arg["sampling_params"],
             )
     else:
         ask_completion(
-            prompt=wrap("Say something about J.R.R. Tolkien"),
+            prompt="The word 'hello' in",
             # prompt=wrap("Write fib function in C, respond in code only"),
             aici_module=mod,
-            aici_arg=ast,
+            aici_arg=arg,
             n=1,
             temperature=0.001,
             max_tokens=1000,

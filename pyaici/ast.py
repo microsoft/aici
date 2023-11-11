@@ -1,5 +1,5 @@
 import re
-from typing import Optional
+from typing import Optional, List
 
 
 def gen(
@@ -7,9 +7,10 @@ def gen(
     rx: Optional[str] = None,
     yacc: Optional[str] = None,
     stop_at: Optional[str] = None,
-    max_tokens=None,
-    max_words=None,
-    max_bytes=None,
+    max_tokens: Optional[int] = None,
+    max_words: Optional[int] = None,
+    max_bytes: Optional[int] = None,
+    mask_tags: Optional[List[str]] = None,
 ):
     """
     Generate output with given constraints.
@@ -25,15 +26,16 @@ def gen(
             "max_tokens": max_tokens,
             "max_words": max_words,
             "max_bytes": max_bytes,
+            "mask_tags": mask_tags,
         }
     }
 
 
-def fixed(text: str):
+def fixed(text: str, tag: Optional[str] = None):
     """
     Generate fixed text. Same as `choose([text])`.
     """
-    return {"Fixed": {"text": text}}
+    return {"Fixed": {"text": text, "tag": tag}}
 
 
 def choose(options: list[str]):

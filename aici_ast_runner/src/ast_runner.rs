@@ -27,7 +27,8 @@ use aici_abi::{
     host::{self, tokenize},
     svob::SimpleVob,
     toktree::{Recognizer, SpecialToken, TokTrie},
-    wprintln, AiciVm, AiciVmHelper, ProcessArg, ProcessResult, TokenId,
+    wprintln, AiciVm, AiciVmHelper, InitPromptArg, PreProcessArg, PreProcessResult, ProcessArg,
+    ProcessResult, TokenId,
 };
 
 // The JSON AST
@@ -36,6 +37,7 @@ pub enum Step {
     // Generate exactly the provided string
     Fixed {
         text: String,
+        tag: Option<String>,
     },
     // Generate exactly one of the provided strings
     Choose {
@@ -50,13 +52,16 @@ pub enum Step {
         max_tokens: Option<usize>,
         max_words: Option<usize>,
         max_bytes: Option<usize>,
+        mask_tags: Option<Vec<String>>,
     },
 }
 
 impl Debug for Step {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Step::Fixed { text } => write!(f, "Fixed({:?})", text),
+            Step::Fixed { text, tag } => {
+                write!(f, "Fixed({}: {:?})", tag.as_deref().unwrap_or(""), text,)
+            }
             Step::Choose { options } => write!(f, "Choose({:?})", options),
             Step::Gen {
                 rx,
@@ -65,6 +70,7 @@ impl Debug for Step {
                 max_tokens,
                 max_words,
                 max_bytes,
+                mask_tags,
             } => {
                 write!(f, "Gen(")?;
                 if let Some(rx) = rx {
@@ -84,6 +90,9 @@ impl Debug for Step {
                 }
                 if let Some(max_bytes) = max_bytes {
                     write!(f, "max_bytes:{:?}, ", max_bytes)?;
+                }
+                if let Some(mask_tags) = mask_tags {
+                    write!(f, "mask_tags:{:?}, ", mask_tags)?;
                 }
                 write!(f, ")")
             }
@@ -113,13 +122,23 @@ struct StepState {
     max_words: usize,
     max_bytes: usize,
 
+    tag: String, // can be empty
+    mask_tags: Vec<String>,
+
     // state so far for this step
     tokens: Vec<TokenId>,
     bytes: Vec<u8>,
     word_idx: usize,
 }
+
+struct TokenInfo {
+    id: TokenId,
+    tag: String,
+}
+
 pub struct Runner {
     helper: AiciVmHelper,
+    tokens: Vec<TokenInfo>,
     state_idx: usize,
     states: Vec<StepState>,
 }
@@ -164,17 +183,25 @@ impl StepState {
             max_words: usize::MAX,
             max_bytes: usize::MAX,
             max_tokens: usize::MAX,
+            tag: "".to_string(),
+            mask_tags: Vec::new(),
         }
     }
 
     fn from_ast(s: &Step) -> StepState {
         match s {
-            Step::Fixed { text } => Self::from_specific(
-                s,
-                StepSpecific::Options {
-                    tokens: vec![tokenize(&text)],
-                },
-            ),
+            Step::Fixed { text, tag } => {
+                let mut r = Self::from_specific(
+                    s,
+                    StepSpecific::Options {
+                        tokens: vec![tokenize(&text)],
+                    },
+                );
+                if let Some(tag) = tag {
+                    r.tag = tag.clone();
+                }
+                r
+            }
 
             Step::Choose { options } => Self::from_specific(
                 s,
@@ -190,6 +217,7 @@ impl StepState {
                 max_tokens,
                 max_bytes,
                 max_words,
+                mask_tags,
             } => {
                 let spec = match (yacc, rx) {
                     (Some(_), Some(_)) => {
@@ -211,6 +239,7 @@ impl StepState {
                 r.max_words = max_words.unwrap_or(usize::MAX);
                 r.max_tokens = max_tokens.unwrap_or(usize::MAX);
                 r.stop_at = stop_at.clone();
+                r.mask_tags = mask_tags.clone().unwrap_or_default();
                 r
             }
         }
@@ -354,6 +383,7 @@ impl Runner {
             .collect::<Vec<_>>();
         let stop_ast = Step::Fixed {
             text: "[STOP]".to_string(),
+            tag: None,
         };
         states.push(StepState::from_specific(&stop_ast, StepSpecific::Stop));
 
@@ -365,6 +395,7 @@ impl Runner {
         Self {
             helper: AiciVmHelper::new(),
             state_idx: 0,
+            tokens: Vec::new(),
             states,
         }
     }
@@ -404,6 +435,12 @@ impl Runner {
         }
 
         self.states[last_idx].advance(&mut self.helper, token);
+
+        self.tokens.push(TokenInfo {
+            id: token,
+            tag: self.states[last_idx].tag.clone(),
+        });
+
         wprintln!(" => {:?}", self.states[self.state_idx]);
     }
 
@@ -453,7 +490,17 @@ impl Runner {
 }
 
 impl AiciVm for Runner {
-    fn process(&mut self, arg: ProcessArg) -> ProcessResult {
+    fn init_prompt(&mut self, arg: InitPromptArg) {
+        wprintln!("prompt: {:?}", arg.prompt);
+        for t in arg.prompt {
+            self.tokens.push(TokenInfo {
+                id: t,
+                tag: "prompt".to_string(),
+            })
+        }
+    }
+
+    fn pre_process(&mut self, arg: PreProcessArg) -> PreProcessResult {
         let tokens = arg.tokens;
         let ntok = tokens.len();
         if ntok > 1 {
@@ -465,6 +512,31 @@ impl AiciVm for Runner {
         if ntok > 1 {
             wprintln!(">>>");
         }
+
+        let s = &self.states[self.state_idx];
+        let attn_mask = if s.mask_tags.len() == 0 {
+            vec![]
+        } else {
+            let mut mask = vec![1.0; self.tokens.len()];
+            for (idx, tok) in self.tokens.iter().enumerate() {
+                if s.mask_tags.contains(&tok.tag) {
+                    wprintln!(
+                        "masking t[{}] = {:?} tag={}",
+                        idx,
+                        self.helper.trie.token_str(tok.id),
+                        tok.tag
+                    );
+                    mask[idx] = 0.0;
+                }
+            }
+            mask
+        };
+        PreProcessResult {
+            attention_masks: vec![attn_mask],
+        }
+    }
+
+    fn process(&mut self, _arg: ProcessArg) -> ProcessResult {
         self.compute()
     }
 

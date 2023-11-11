@@ -256,7 +256,9 @@ impl SeqCtx {
                 let prompt_toks = if let Some(t) = prompt_toks {
                     t
                 } else {
-                    inst.tokenize(prompt_str.as_ref().unwrap())?
+                    // TODO llama hack
+                    let p = "<s> ".to_string() + &prompt_str.unwrap();
+                    inst.tokenize(&p)?
                 };
                 self.modinst = Some(inst);
                 self.mutinst().setup(prompt_toks)?;
