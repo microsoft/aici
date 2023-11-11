@@ -145,3 +145,20 @@ def test_ff_2():
             ast.gen(rx=r" = \d+"),
         ],
     )
+
+
+def check_mask(expected, mask_tags):
+    expect(
+        expected,
+        "The word 'hello' in",
+        [
+            ast.fixed(" French is", tag="lang"),
+            ast.gen(max_tokens=5, mask_tags=mask_tags),
+        ],
+    )
+
+def test_mask_1():
+    check_mask(" French is 'hello world' is", ["lang"])
+
+def test_mask_2():
+    check_mask(" French is 'bonjour'.", [])
