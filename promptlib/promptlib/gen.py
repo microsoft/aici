@@ -5,17 +5,18 @@ from .constrain import ConstraintNode
 
 class GenNode(PromptNode):
 
-    def __init__(self, max_tokens=1000, id:str=None, tags:dict=None, **genargs):
+    def __init__(self, max_tokens=1000, id:str=None, tag:str=None, ignore:list=None, **genargs):
         args = {}
         if id is not None:
             args["id"] = id
-        if tags is not None:
-            args["tags"] = tags
+        if tag is not None:
+            args["tag"] = tag
 
         super().__init__(**args)
         self.max_tokens = max_tokens
         self.generated_text = None
         self.genargs = genargs
+        self.ignore = ignore
     
     def set_parent(self, parent): 
         super().set_parent(parent)
@@ -51,13 +52,15 @@ class GenNode(PromptNode):
         return self.generated_text
 
     def _get_plan_step(self):
-        dict = {"max_tokens": self.max_tokens, "rx": r".+"}
+        dict = {"max_tokens": self.max_tokens}
         dict.update(self._get_attributes())
         return {"Gen": dict}
     
     def _get_attributes(self):
         attr = super()._get_attributes()
         attr.update({"genargs": self.genargs})
+        if self.ignore is not None:
+            attr.update({"mask_tags": self.ignore})
         return attr
 
 

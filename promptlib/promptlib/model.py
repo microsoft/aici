@@ -38,11 +38,11 @@ def set_model(prompt_code:PromptNode, llm:LLM) -> PromptNode:
     prompt_code.add_child(model)
     return model
 
-def begin_system(prompt_code:PromptNode, id:str=None, tags=None) -> PromptNode:
-    return prompt_code.begin_chat(role="system", id=id, tags=tags)
+def begin_system(prompt_code:PromptNode, id:str=None, tag:str=None) -> PromptNode:
+    return prompt_code.begin_chat(role="system", id=id, tag=tag)
 
-def begin_user(prompt_code:PromptNode, id:str=None, tags=None) -> PromptNode:
-    return prompt_code.begin_chat(role="user", id=id, tags=tags)
+def begin_user(prompt_code:PromptNode, id:str=None, tag:str=None) -> PromptNode:
+    return prompt_code.begin_chat(role="user", id=id, tag=tag)
 
-def begin_assistant(prompt_code:PromptNode, id:str=None, tags=None) -> PromptNode:
-    return prompt_code.begin_chat(role="assistant", id=id, tags=tags)
+def begin_assistant(prompt_code:PromptNode, id:str=None, tag:str=None) -> PromptNode:
+    return prompt_code.begin_chat(role="assistant", id=id, tag=tag)

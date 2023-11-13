@@ -4,11 +4,11 @@ class PromptNode:
     A node in a prompt tree, representing a prompt or a group of prompts.
     """
 
-    def __init__(self, id:str=None, tags:dict=None):
+    def __init__(self, id:str=None, tag:str=None):
         self.children = []
         self.parent = None
         self.id = id
-        self.tags = tags 
+        self.tag = tag
 
     def add_child(self, child):
         # this function should be overriden to validate that adding the child is ok
@@ -25,8 +25,8 @@ class PromptNode:
         dict = {}
         if self.id is not None:
             dict["id"] = self.id
-        if self.tags is not None:
-            dict["tags"] = self.tags
+        if self.tag is not None:
+            dict["tag"] = self.tag
         return dict
 
     def get_text(self):
@@ -115,8 +115,8 @@ class PromptNode:
 
 class TextNode(PromptNode):
 
-    def __init__(self, text:str):
-        super().__init__()
+    def __init__(self, text:str, tag:str=None):
+        super().__init__(tag=tag)
         self.text = text
 
     def get_text(self):
@@ -128,8 +128,8 @@ class TextNode(PromptNode):
         return {"Fixed": dict}
 
 
-def append(prompt_code:PromptNode, text:str) -> PromptNode:
-    node = TextNode(text)
+def append(prompt_code:PromptNode, text:str, tag:str=None) -> PromptNode:
+    node = TextNode(text, tag=tag)
     prompt_code.add_child(node)
     return node
 
@@ -151,8 +151,8 @@ class BeginBlockNode(PromptNode):
         return steps
 
 
-def begin(prompt_code:PromptNode, id:str=None, tags=None) -> PromptNode:
-    node = BeginBlockNode(id=id)
+def begin(prompt_code:PromptNode, id:str=None, tag:str=None) -> PromptNode:
+    node = BeginBlockNode(id=id, tag=tag)
     prompt_code.add_child(node)
     return node
 
@@ -193,8 +193,8 @@ class BeginChatBlockNode(BeginBlockNode):
         return {"role": self.role}
 
 
-def begin_chat(prompt_code:PromptNode, role:str, id:str=None, tags=None) -> PromptNode:
-    node = BeginChatBlockNode(role, id=id, tags=tags)
+def begin_chat(prompt_code:PromptNode, role:str, id:str=None, tag:str=None) -> PromptNode:
+    node = BeginChatBlockNode(role, id=id, tag=tag)
     prompt_code.add_child(node)
     return node
 

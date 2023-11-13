@@ -50,6 +50,18 @@ def main():
             ast.gen(max_tokens=5, mask_tags=["lang"]),
         ]
     }
+    _arg = {
+        "steps": [
+            ast.fixed("Please answer the following questions:"),
+            ast.fixed("(And answer in ALL CAPS):", tag="allcaps"),
+            ast.fixed("\n Q: Who is the president of the USA?\n A:"),
+            ast.gen(max_tokens=10, mask_tags=["allcaps"]),
+            ast.fixed("\\n Q: And who is the vice president?\n A:"),
+            ast.gen(max_tokens=20, mask_tags=["allcaps"]),
+            ast.fixed("\nPlease give a url with evidence\n http://"),
+            ast.gen(max_tokens=20)
+        ]
+    }
 
     mod = upload_wasm()
     pyaici.rest.log_level = 1
