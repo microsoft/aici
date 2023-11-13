@@ -2,7 +2,6 @@ import subprocess
 import ujson
 import sys
 import os
-import unittest
 
 import pyaici.ast as ast
 import pyaici.rest
@@ -58,22 +57,14 @@ def main():
     wrap = pyaici.util.codellama_prompt
     if len(sys.argv) > 1:
         arg = sys.argv[1]
-        if arg == "test":
-            pyaici.rest.log_level = 0
-            pyaici.test.ast_module = mod
-            loader = unittest.TestLoader()
-            suite = loader.loadTestsFromModule(pyaici.test)
-            runner = unittest.TextTestRunner()
-            runner.run(suite)
-        else:
-            with open(sys.argv[1]) as f:
-                arg = ujson.load(f)
-            ask_completion(
-                prompt=wrap(arg["prompt"]),
-                aici_module=mod,
-                aici_arg=arg,
-                **arg["sampling_params"],
-            )
+        with open(sys.argv[1]) as f:
+            arg = ujson.load(f)
+        ask_completion(
+            prompt=wrap(arg["prompt"]),
+            aici_module=mod,
+            aici_arg=arg,
+            **arg["sampling_params"],
+        )
     else:
         ask_completion(
             prompt="The word 'hello' in",

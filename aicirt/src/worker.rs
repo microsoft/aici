@@ -275,7 +275,12 @@ impl SeqCtx {
                     t
                 } else {
                     // TODO llama hack
-                    let p = "<s> ".to_string() + &prompt_str.unwrap();
+                    let ps = &prompt_str.as_ref().unwrap();
+                    let p = if ps.len() == 0 {
+                        "<s>".to_string()
+                    } else {
+                        "<s> ".to_string() + ps
+                    };
                     inst.tokenize(&p)?
                 };
                 self.modinst = Some(inst);
