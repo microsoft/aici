@@ -14,7 +14,7 @@ use crate::hostimpl::{
     setup_linker, AiciLimits, GlobalInfo, ModuleData, ModuleInstId, LOGIT_BIAS_ALLOW,
 };
 use crate::shm::Shm;
-use crate::worker::{ExecOp, GroupHandle};
+use crate::worker::{ExecOp, GroupHandle, WorkerPreProcessResult};
 
 #[derive(Clone)]
 pub struct WasmContext {
@@ -232,17 +232,16 @@ impl ModuleInstance {
         }
     }
 
-    fn do_pre_process(&mut self, op: ExecOp, shm: &Shm) -> Result<Value> {
+    fn do_pre_process(&mut self, op: ExecOp) -> Result<WorkerPreProcessResult> {
         let attn_elts = op.logit_size / 4;
-        let shm_slice = shm.slice_at_byte_offset::<f32>(op.logit_offset, attn_elts);
-        self.store.data_mut().set_pre_process_data(op, shm);
+        self.store.data_mut().set_pre_process_data(op);
         self.call_func::<WasmAici, ()>("aici_pre_process", self.handle)?;
         let res: PreProcessResult = self.proc_result()?;
         ensure!(
-            res.attention_masks.len() == 1,
-            "only single attention_mask support atm"
+            res.attention_masks.len() >= 1,
+            "at least one attention_mask required ([[]] will work)"
         );
-        for attn in res.attention_masks {
+        for attn in &res.attention_masks {
             if attn.len() == 0 {
                 continue;
             }
@@ -252,9 +251,11 @@ impl ModuleInstance {
                 attn.len(),
                 attn_elts
             );
-            shm_slice[0..attn.len()].copy_from_slice(&attn);
         }
-        Ok(json!({}))
+        Ok(WorkerPreProcessResult {
+            json: json!({}),
+            attn_masks: res.attention_masks,
+        })
     }
 
     fn do_process(&mut self, op: ExecOp, shm: &Shm) -> Result<Value> {
@@ -319,15 +320,25 @@ impl ModuleInstance {
         Value::Object(m)
     }
 
-    pub fn process(&mut self, is_pre: bool, op: ExecOp, shm: &Shm) -> Value {
+    pub fn pre_process(&mut self, op: ExecOp) -> WorkerPreProcessResult {
         let t0 = Instant::now();
 
-        let res = if is_pre {
-            self.do_pre_process(op, shm)
-        } else {
-            self.do_process(op, shm)
+        let mut attn_masks = Vec::new();
+
+        let json = match self.do_pre_process(op) {
+            Err(e) => self.json_result(t0, Err(e)),
+            Ok(res) => {
+                attn_masks = res.attn_masks;
+                self.json_result(t0, Ok(res.json))
+            }
         };
 
+        WorkerPreProcessResult { json, attn_masks }
+    }
+
+    pub fn process(&mut self, op: ExecOp, shm: &Shm) -> Value {
+        let t0 = Instant::now();
+        let res = self.do_process(op, shm);
         self.json_result(t0, res)
     }
 

@@ -4,7 +4,8 @@ import os
 import struct
 import subprocess
 import ujson as json
-#import json as json
+
+# import json as json
 import numpy as np
 import base64
 import time
@@ -187,9 +188,7 @@ class CmdChannel:
         self.cmd_pending = False
         self._trace_resp(self.last_cmd, resp)
         if resp["type"] != "ok":
-            raise ChildProcessError(
-                f"Bad response ({ctx}): {json.dumps(resp)[0:1000]}"
-            )
+            raise ChildProcessError(f"Bad response ({ctx}): {json.dumps(resp)[0:1000]}")
         return resp
 
 
@@ -233,6 +232,7 @@ class AiciRunner:
         self.batch_size = -1
         self.last_response = {}
         self.disable_attn_mask = False
+        self.curr_attn_mask = None
 
         if trace_file:
             self.trace_file = open(trace_file, "w")
@@ -427,31 +427,40 @@ class AiciRunner:
         if len(cmd["freed"]) == 0 and self.batch_size == 0:
             # nothing to do
             self.step_reset()
-            return
+            return False
         assert not self.logit_pending
         self.logit_pending = True
         self.cmd.send(cmd)
         self.step_reset()
+        return True
 
     def recv_attention_mask(self):
+        mask = self.curr_attn_mask
+        self.curr_attn_mask = None
+        assert mask is not None
+        return mask
+
+    def process_forks(self):
         assert self.logit_pending
         self.last_response = self.cmd.expect("recv")["data"]
-        n = self.batch_size
+        num_forks_arr: list[int] = self.last_response["num_forks"]
+        del self.last_response["num_forks"]
+        n = sum(num_forks_arr)
         if self.disable_attn_mask:
             self.disable_attn_mask = False
             n = 0
-        arr = np.frombuffer(
+        mask = np.frombuffer(
             self.bin_shm, dtype=np.float32, offset=0, count=n * self.max_context_len
         ).reshape([n, self.max_context_len])
         # need to clone it before sending "process" req
-        arr = arr.copy()
+        self.curr_attn_mask = mask.copy()
         self.cmd.send(
             {
                 "op": "process",
                 "ops": self.last_ops,
             }
         )
-        return arr
+        return num_forks_arr
 
     def flush_logit_bias(self):
         """

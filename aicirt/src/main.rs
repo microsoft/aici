@@ -163,6 +163,12 @@ pub enum AiciOp {
 }
 
 impl AiciOp {
+    pub fn id(&self) -> ModuleInstId {
+        match self {
+            AiciOp::Prompt { id, .. } => *id,
+            AiciOp::Gen { id, .. } => *id,
+        }
+    }
     pub fn to_thread_op(self) -> PreProcessArg {
         match self {
             AiciOp::Prompt { .. } => PreProcessArg { tokens: vec![] },
@@ -456,8 +462,91 @@ impl Stepper {
         Ok(())
     }
 
-    fn aici_step(&mut self, ops: Vec<AiciOp>, block_elts: usize, is_pre: bool) -> Result<Value> {
-        let numops = ops.len();
+    fn aici_pre_process(&mut self, req: AiciPreProcessReq) -> Result<Value> {
+        for id in req.freed {
+            info!("free module {}", id);
+            self.instances.remove(&id);
+        }
+
+        // first, start instances and link clones
+        for op in req.ops.iter() {
+            self.mk_instance(&op)?
+        }
+
+        let mut used_ids = Vec::new();
+        let mut map = serde_json::Map::new();
+        let mut num_masks = Vec::new();
+        let block_elts = req.max_context_len;
+
+        for op in req.ops.into_iter() {
+            let instid = op.id();
+            num_masks.push(0);
+            if let Ok(h) = self.get_worker(instid) {
+                let op = op.to_thread_op();
+                let op = ExecOp {
+                    op,
+                    logit_offset: 0,
+                    logit_size: block_elts * 4,
+                };
+                match h.start_pre_process(op) {
+                    Ok(_) => used_ids.push((num_masks.len() - 1, instid)),
+                    Err(e) => self.worker_error(instid, &mut map, e),
+                };
+            } else {
+                warn!("invalid id {}", instid);
+            }
+        }
+
+        let deadline = Instant::now() + std::time::Duration::from_millis(self.limits.max_step_ms);
+
+        let mut all_masks = Vec::new();
+        let mut curr_req_masks = Vec::new();
+        let mut curr_req_id = "".to_string();
+
+        for (num_masks_idx, id) in used_ids {
+            let h = self.get_worker(id).unwrap();
+            if h.req_id != curr_req_id {
+                all_masks.append(&mut curr_req_masks);
+                curr_req_id = h.req_id.clone();
+            }
+            let timeout = deadline.saturating_duration_since(Instant::now());
+            match h.check_pre_process(timeout) {
+                Ok(mut data) => {
+                    map.insert(id.to_string(), data.json);
+                    let len = data.attn_masks.len();
+                    num_masks[num_masks_idx] = len;
+                    if len >= 1 {
+                        // first mask goes in place of the current sequence
+                        all_masks.push(data.attn_masks.remove(0));
+                        // other masks need to go after all sequences of the current sequence group (req_id)
+                        curr_req_masks.append(&mut data.attn_masks);
+                    }
+                }
+                Err(e) => self.worker_error(id, &mut map, e),
+            }
+        }
+
+        // add masks of the last req
+        all_masks.append(&mut curr_req_masks);
+      
+        let mut block_off = 0;
+        for mask in &all_masks {
+            let dst = self.shm.slice_at_byte_offset(block_off, block_elts);
+            block_off += block_elts * 4;
+            dst.iter_mut().for_each(|v| *v = 1.0 as f32);
+            let len = std::cmp::min(mask.len(), block_elts);
+            dst[0..len].copy_from_slice(&mask[0..len]);
+        }
+
+        map.insert("num_forks".to_string(), serde_json::to_value(num_masks)?);
+
+        Ok(Value::Object(map))
+    }
+
+    fn aici_process(&mut self, req: AiciProcessReq) -> Result<Value> {
+        let block_elts = self.globals.tokrx_info.vocab_size as usize;
+
+        let numops = req.ops.len();
         let block_bytes = block_elts * 4;
 
         ensure!(
@@ -471,14 +560,10 @@ impl Stepper {
 
         // initialize shm
         let slice = self.shm.slice_at_byte_offset::<f32>(0, numops * block_elts);
-        let init_v = if is_pre { 1.0 } else { 0.0 };
-        slice.iter_mut().for_each(|v| *v = init_v);
+        slice.iter_mut().for_each(|v| *v = 0.0);
 
-        for op in ops.into_iter() {
-            let instid = match op {
-                AiciOp::Gen { id, .. } => id,
-                AiciOp::Prompt { id, .. } => id,
-            };
+        for op in req.ops.into_iter() {
+            let instid = op.id();
             if let Ok(h) = self.get_worker(instid) {
                 let op = op.to_thread_op();
                 let op = ExecOp {
@@ -486,12 +571,7 @@ impl Stepper {
                     logit_offset,
                     logit_size: block_bytes,
                 };
-                let res = if is_pre {
-                    h.start_pre_process(op)
-                } else {
-                    h.start_process(op)
-                };
-                match res {
+                match h.start_process(op) {
                     Ok(_) => used_ids.push((logit_offset, instid)),
                     Err(e) => self.worker_error(instid, &mut map, e),
                 };
@@ -506,9 +586,9 @@ impl Stepper {
         for (off, id) in used_ids {
             let h = self.get_worker(id).unwrap();
             let timeout = deadline.saturating_duration_since(Instant::now());
-            match h.check_exec(timeout) {
-                Ok(json) => {
-                    map.insert(id.to_string(), json);
+            match h.check_process(timeout) {
+                Ok(data) => {
+                    map.insert(id.to_string(), data);
                     if log::log_enabled!(log::Level::Debug) {
                         let slice = self.logit_bias_at_byte_offset(off);
                         let allow_set = slice
@@ -534,25 +614,6 @@ impl Stepper {
         }
 
         Ok(Value::Object(map))
-    }
-
-    fn aici_pre_process(&mut self, req: AiciPreProcessReq) -> Result<Value> {
-        for id in req.freed {
-            info!("free module {}", id);
-            self.instances.remove(&id);
-        }
-
-        // first, start instances and link clones
-        for op in req.ops.iter() {
-            self.mk_instance(&op)?
-        }
-
-        self.aici_step(req.ops, req.max_context_len, true)
-    }
-
-    fn aici_process(&mut self, req: AiciProcessReq) -> Result<Value> {
-        let vocab_block_len = self.globals.tokrx_info.vocab_size as usize;
-        self.aici_step(req.ops, vocab_block_len, false)
     }
 
     fn logit_bias_at_byte_offset(&self, off: usize) -> &'static mut [f32] {

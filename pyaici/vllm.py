@@ -3,25 +3,28 @@ from typing import List, Union, Dict, Any
 import torch
 
 from vllm.sampling_params import SamplingParams
-from vllm.sequence import SequenceGroupMetadata, SequenceGroup, SequenceStatus
+from vllm.sequence import SequenceGroupMetadata, SequenceGroup, SequenceStatus, Sequence
 from vllm.core.scheduler import Scheduler, SchedulerOutputs
+from vllm.utils import Counter
 
 from .comms import AiciRunner
 
 
 def install(runner: AiciRunner):
     def initiate_step(
-        freed_seq_ids: List[int],
+        scheduler: Scheduler,
+        counter: Counter,
         scheduler_outputs: SchedulerOutputs,
     ):
         runner.flush_logit_bias()
 
-        for f in freed_seq_ids:
+        for f in scheduler.freed_seq_ids:
             runner.step_free_seq(f)
 
         max_context_len = 0
         num_gen = 0
 
+        steps: list[tuple[SequenceGroup, Sequence]] = []
         for seq_group in scheduler_outputs.scheduled_seq_groups:
             seqs = seq_group.get_seqs(status=SequenceStatus.RUNNING)
             ff_seqs = [seq for seq in seqs if seq.data.num_pending_ff_tokens > 0]
@@ -32,6 +35,7 @@ def install(runner: AiciRunner):
             elif scheduler_outputs.prompt_run:
                 assert len(seqs) == 1
             for seq in seqs:
+                steps.append((seq_group, seq))
                 id = seq.seq_id
                 if seq.data.num_pending_ff_tokens:
                     toks = seq.get_token_ids()
@@ -54,12 +58,34 @@ def install(runner: AiciRunner):
                     num_gen += 1
                     out = seq.data.output_token_ids
                     max_context_len = max(max_context_len, seq.get_len())
-                    runner.step_add_tokens(id, tokens=[out[-1]], clone_id=seq.data.parent_id)
+                    runner.step_add_tokens(
+                        id, tokens=[out[-1]], clone_id=seq.data.parent_id
+                    )
                     seq.data.parent_id = None
 
-        runner.step_finish(max_context_len)
         if num_gen == 0:
             runner.disable_attn_mask = True
+
+        sent = runner.step_finish(max_context_len)
+        if not sent:
+            return
+
+        num_forks_arr = runner.process_forks()
+        for (seq_group, seq), num_forks in zip(steps, num_forks_arr):
+            if num_forks == 0:
+                seq.status = SequenceStatus.FINISHED_ABORTED
+                seq_group.remove(seq.seq_id)
+                scheduler.free_seq(seq)
+            elif num_forks == 1:
+                pass
+            else:
+                for _ in range(num_forks - 1):
+                    assert not seq.is_finished()
+                    copy = seq.fork(next(counter))
+                    seq_group.add(copy)
+                    scheduler.fork_seq(seq, copy)
+                    copy.data.parent_id = seq.seq_id
+
 
     def apply_dynamic_logit_bias(logits: torch.Tensor):
         bias = (

@@ -123,19 +123,37 @@ enum SeqCmd {
     SetId {
         inst_id: ModuleInstId,
     },
+    PreProcess {
+        data: ExecOp,
+    },
     Process {
-        is_pre: bool,
         data: ExecOp,
     },
     RunMain {},
 }
 
 #[derive(Serialize, Deserialize, Debug)]
+pub struct WorkerPreProcessResult {
+    pub json: JSON,
+    pub attn_masks: Vec<Vec<f32>>,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
 enum SeqResp {
-    Fork { handle: SeqHandle },
+    Fork {
+        handle: SeqHandle,
+    },
     Ok {},
-    Process { json: String },
-    Error { msg: String },
+    PreProcess {
+        json: String,
+        attn_masks: Vec<Vec<f32>>,
+    },
+    Process {
+        json: String,
+    },
+    Error {
+        msg: String,
+    },
 }
 
 impl<Cmd, Resp> ProcessHandle<Cmd, Resp>
@@ -269,9 +287,16 @@ impl SeqCtx {
                 self.mutinst().set_id(inst_id);
                 ok()
             }
-            SeqCmd::Process { is_pre, data } => {
+            SeqCmd::PreProcess { data } => {
+                let res = self.mutinst().pre_process(data);
+                Ok(SeqResp::PreProcess {
+                    json: serde_json::to_string(&res.json)?,
+                    attn_masks: res.attn_masks,
+                })
+            }
+            SeqCmd::Process { data } => {
                 let shm = self.shm.clone();
-                let res = self.mutinst().process(is_pre, data, &shm);
+                let res = self.mutinst().process(data, &shm);
                 Ok(SeqResp::Process {
                     json: serde_json::to_string(&res)?,
                 })
@@ -338,6 +363,7 @@ struct SeqCtx {
 }
 
 pub struct SeqWorkerHandle {
+    pub req_id: String,
     handle: SeqHandle,
 }
 
@@ -366,7 +392,10 @@ impl SeqWorkerHandle {
             Duration::from_millis(QUICK_OP_MS),
         )? {
             SeqResp::Fork { handle } => {
-                let res = SeqWorkerHandle { handle };
+                let res = SeqWorkerHandle {
+                    req_id: self.req_id.clone(),
+                    handle,
+                };
                 match res
                     .handle
                     .recv_with_timeout(Duration::from_millis(QUICK_OP_MS))?
@@ -380,23 +409,30 @@ impl SeqWorkerHandle {
     }
 
     pub fn start_pre_process(&self, data: ExecOp) -> Result<()> {
-        self.handle
-            .just_send(SeqCmd::Process { is_pre: true, data })?;
+        self.handle.just_send(SeqCmd::PreProcess { data })?;
         Ok(())
     }
 
     pub fn start_process(&self, data: ExecOp) -> Result<()> {
-        self.handle.just_send(SeqCmd::Process {
-            is_pre: false,
-            data,
-        })?;
+        self.handle.just_send(SeqCmd::Process { data })?;
         Ok(())
     }
 
-    pub fn check_exec(&self, timeout: Duration) -> Result<JSON> {
+    pub fn check_pre_process(&self, timeout: Duration) -> Result<WorkerPreProcessResult> {
+        match self.handle.recv_with_timeout(timeout) {
+            Ok(SeqResp::PreProcess { json, attn_masks }) => Ok(WorkerPreProcessResult {
+                json: serde_json::from_str(&json)?,
+                attn_masks,
+            }),
+            Ok(r) => Err(anyhow!("unexpected response (pre_process) {r:?}")),
+            Err(e) => Err(e.into()),
+        }
+    }
+
+    pub fn check_process(&self, timeout: Duration) -> Result<JSON> {
         match self.handle.recv_with_timeout(timeout) {
             Ok(SeqResp::Process { json }) => Ok(serde_json::from_str(&json)?),
-            Ok(r) => Err(anyhow!("unexpected response (exec) {r:?}")),
+            Ok(r) => Err(anyhow!("unexpected response (process) {r:?}")),
             Err(e) => Err(e.into()),
         }
     }
@@ -577,8 +613,6 @@ pub fn bench_ipc() {
             cmd_resp.send(2 * r).unwrap();
         },
     }
-
-
 }
 
 impl WorkerForker {
@@ -638,7 +672,10 @@ impl WorkerForker {
         let resp = self.fork_worker.send_cmd(ForkerCmd {
             id: req.req_id.clone(),
         })?;
-        let res = SeqWorkerHandle { handle: resp.0 };
+        let res = SeqWorkerHandle {
+            req_id: req.req_id.clone(),
+            handle: resp.0,
+        };
         res.handle.send_cmd_expect_ok(
             SeqCmd::Instantiate {
                 module_path,
