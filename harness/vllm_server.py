@@ -19,7 +19,9 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, StreamingResponse
 from packaging import version
+
 import pyaici
+import pyaici.vllm
 
 from vllm.engine.arg_utils import AsyncEngineArgs
 from vllm.engine.async_llm_engine import AsyncLLMEngine
@@ -450,7 +452,7 @@ if __name__ == "__main__":
     engine_model_config = asyncio.run(engine.get_model_config())
     max_model_len = engine_model_config.get_max_model_len()
 
-    pyaici.install_in_vllm(aici)
+    pyaici.vllm.install(aici)
 
     # A separate tokenizer to map token IDs to strings.
     tokenizer = get_tokenizer(

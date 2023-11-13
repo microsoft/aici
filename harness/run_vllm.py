@@ -3,6 +3,7 @@ from typing import List, Tuple
 
 from vllm import EngineArgs, LLMEngine, SamplingParams
 import pyaici
+import pyaici.vllm
 import ujson
 
 
@@ -14,7 +15,7 @@ def main(args: argparse.Namespace):
     aici = pyaici.AiciRunner.from_cli(args)
 
     engine = LLMEngine.from_engine_args(engine_args)
-    pyaici.install_in_vllm(aici)
+    pyaici.vllm.install(aici)
 
     # Test the following prompts.
     test_prompts: List[Tuple[str, SamplingParams]] = [

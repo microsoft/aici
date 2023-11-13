@@ -1,7 +1,6 @@
-from pyaici.comms import AiciRunner, install_in_vllm, add_cli_args
+from pyaici.comms import AiciRunner, add_cli_args
 
 __all__ = [
     "AiciRunner",
-    "install_in_vllm",
     "add_cli_args",
 ]
