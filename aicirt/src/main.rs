@@ -174,7 +174,7 @@ impl AiciOp {
 #[derive(Serialize, Deserialize)]
 struct MkModuleReq {
     binary: String,
-    #[serde(default = "mk_null")]
+    #[serde(default)]
     meta: Value,
 }
 
@@ -184,12 +184,8 @@ pub struct InstantiateReq {
     // [TokenId] or str
     prompt: Value,
     module_id: String,
-    #[serde(default = "mk_null")]
+    #[serde(default)]
     module_arg: Value,
-}
-
-fn mk_null() -> Value {
-    Value::Null
 }
 
 type Token = TokenId;

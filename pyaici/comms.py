@@ -153,8 +153,13 @@ class CmdChannel:
         resp = req.resp
 
         if resp["type"] != "ok":
+            info = ""
+            if resp["type"] == "error" and "error" in resp:
+                info = resp['error'][0:2000]
+            else:
+                info = json.dumps(resp)[0:2000]
             raise ChildProcessError(
-                f"Bad response to async {op}: {json.dumps(resp)[0:1000]}"
+                f"Bad response to async {op}: {info}"
             )
 
         return resp

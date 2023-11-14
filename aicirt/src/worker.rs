@@ -220,6 +220,7 @@ impl SeqHandle {
         self.just_send(cmd)?;
         match self.recv_with_timeout(timeout) {
             Ok(SeqResp::Ok {}) => Ok(()),
+            Ok(SeqResp::Error { msg }) => Err(anyhow!("{}", msg)),
             Ok(r) => Err(anyhow!("unexpected response (not OK) {r:?}")),
             Err(e) => Err(e.into()),
         }

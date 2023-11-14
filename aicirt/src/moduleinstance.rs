@@ -114,11 +114,14 @@ impl ModuleInstance {
             .get_typed_func::<Params, Results>(&mut self.store, name)?;
         let r = f.call(&mut self.store, params);
         let ctx = self.store.data_mut();
-        if r.is_err() {
-            ctx.had_error = true;
-        }
         ctx.flush_logs(name);
-        r
+        match r {
+            Ok(r) => Ok(r),
+            Err(e) => {
+                ctx.had_error = true;
+                Err(anyhow!("{:?}\n\n{}", e, ctx.string_log()))
+            }
+        }
     }
 
     #[allow(dead_code)]
