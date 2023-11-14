@@ -303,6 +303,9 @@ async def create_completion(request: AiciCompletionRequest, raw_request: Request
             res: RequestOutput
             for output in res.outputs:
                 i = output.index
+                while i >= len(previous_texts):
+                    previous_texts.append("")
+                    previous_num_tokens.append(0)
                 delta_text = output.text[len(previous_texts[i]) :]
                 if request.logprobs is not None:
                     logprobs = create_logprobs(

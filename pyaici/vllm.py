@@ -80,6 +80,7 @@ def install(runner: AiciRunner):
                 assert not seq.is_finished()
                 copy = seq.fork(next(counter))
                 seq_group.add(copy)
+                seq_group.dynamic_forks = True
                 scheduler.fork_seq(seq, copy)
                 clone_id = seq.seq_id
                 copy.data.parent_id = None # don't clone it again in the next step

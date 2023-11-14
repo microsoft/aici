@@ -75,6 +75,8 @@ def completion(
                 if "Previous WASM Error" in ch["logs"]:
                     res["error"] = "WASM error"
                 idx = ch["index"]
+                while len(texts) <= idx:
+                    texts.append("")
                 if idx == 0:
                     if log_level > 1:
                         l = ch["logs"].rstrip("\n")
