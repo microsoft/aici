@@ -59,7 +59,22 @@ def main():
             ast.fixed("\\n Q: And who is the vice president?\n A:"),
             ast.gen(max_tokens=20, mask_tags=["allcaps"]),
             ast.fixed("\nPlease give a url with evidence\n http://"),
-            ast.gen(max_tokens=20)
+            ast.gen(max_tokens=20),
+        ]
+    }
+    arg = {
+        "steps": [
+            ast.fixed("The word 'hello' in"),
+            ast.fork(
+                [
+                    ast.fixed(" French is"),
+                    ast.gen(max_tokens=5),
+                ],
+                [
+                    ast.fixed(" Spanish is"),
+                    ast.gen(max_tokens=5),
+                ],
+            )
         ]
     }
 
@@ -79,7 +94,7 @@ def main():
         )
     else:
         ask_completion(
-            prompt="The word 'hello' in",
+            prompt="",
             # prompt=wrap("Write fib function in C, respond in code only"),
             aici_module=mod,
             aici_arg=arg,

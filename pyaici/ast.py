@@ -31,6 +31,13 @@ def gen(
     }
 
 
+def fork(*branches: list[dict]):
+    return {
+        "Fork": {
+            "branches": list(branches),
+        }
+    }
+
 def fixed(text: str, tag: Optional[str] = None):
     """
     Generate fixed text. Same as `choose([text])`.

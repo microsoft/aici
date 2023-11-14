@@ -429,10 +429,13 @@ impl Stepper {
         match op {
             AiciOp::Gen { id, clone_id, .. } => {
                 if let Some(parent_id) = clone_id {
-                    ensure!(!self.instances.contains_key(id));
+                    ensure!(
+                        !self.instances.contains_key(id),
+                        "duplicate id {id} (cloning {parent_id})"
+                    );
                     let parent = self.get_worker(*parent_id)?;
                     info!("fork {} -> ({})", parent_id, id);
-                    let h = parent.fork(*parent_id)?;
+                    let h = parent.fork(*id)?;
                     self.instances.insert(*id, h);
                     return Ok(*parent_id);
                 } else {
@@ -443,11 +446,8 @@ impl Stepper {
             AiciOp::Prompt { id, req_id, .. } => {
                 ensure!(is_pre, "prompt only allowed in pre_process");
                 let e = { self.req_instances.lock().unwrap().remove(req_id) };
-                ensure!(e.is_some(), format!("invalid req_id {}", req_id));
-                ensure!(
-                    !self.instances.contains_key(id),
-                    format!("duplicate id {}", id)
-                );
+                ensure!(e.is_some(), "invalid req_id {req_id}");
+                ensure!(!self.instances.contains_key(id), "duplicate id {id}");
                 let h = e.unwrap();
                 info!("prompt {} ({})", id, req_id);
                 h.set_id(*id)?;
@@ -700,12 +700,12 @@ trait Exec {
                         })
                     }
                     Err(err) => {
-                        info!(
-                            "data: {}",
-                            String::from_utf8_lossy(&msg[0..std::cmp::min(100, msg.len())])
-                        );
                         let err = format!("{:?}", err);
                         warn!("dispatch error: {}", err);
+                        info!(
+                            "for data: {}",
+                            String::from_utf8_lossy(&msg[0..std::cmp::min(100, msg.len())])
+                        );
                         json!({
                             "type": "error",
                             "error": err

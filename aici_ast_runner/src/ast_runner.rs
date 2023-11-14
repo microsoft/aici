@@ -609,6 +609,7 @@ impl AiciVm for Runner {
 
     fn process(&mut self, arg: ProcessArg) -> ProcessResult {
         if arg.fork_group.len() > 1 {
+            wprintln!("fork group: {:?}", arg.fork_group);
             if let StepSpecific::Fork { branches } = &self.curr_state().specific {
                 assert!(arg.fork_group.len() == branches.len());
                 let my_id = host::self_seq_id();
