@@ -1,3 +1,4 @@
+from typing import Union
 import ujson
 import pytest
 
@@ -13,30 +14,35 @@ def wrap(text):
     return pyaici.util.codellama_prompt(text)
 
 
-def single_query(prompt: str, steps: list):
+def greedy_query(prompt: str, steps: list):
     ast_module = pyaici.rest.ast_module
     assert ast_module
     res = pyaici.rest.completion(
         prompt=prompt,
         aici_module=ast_module,
         aici_arg={"steps": steps},
-        temperature=0,
+        temperature=0.001,
         max_tokens=200,
         n=1,
     )
     if res["error"]:
         pytest.fail(res["error"])
-    return res["text"][0]
+    return res["text"]
 
 
-def expect(expected: str, prompt: str, steps: list):
-    res = single_query(prompt, steps)
-    if res != expected:
-        if len(res) > 40:
-            print(f'"""{res}"""')
-        else:
-            print(ujson.dumps(res))
-        pytest.fail("query output mismatch")
+def expect(expected: Union[list[str], str], prompt: str, steps: list):
+    if isinstance(expected, str):
+        expected = [expected]
+    res = greedy_query(prompt, steps)
+    if len(res) != len(expected):
+        pytest.fail(f"query output length mismatch {len(res)} != {len(expected)}")
+    for i in range(len(res)):
+        if res[i] != expected[i]:
+            if len(res[i]) > 40:
+                print(f'"""{res[i]}"""')
+            else:
+                print(ujson.dumps(res[i]))
+            pytest.fail(f"query output mismatch at #{i}")
 
 
 def test_hello():
@@ -159,8 +165,33 @@ def check_mask(expected, mask_tags):
         ],
     )
 
+
 def test_mask_1():
     check_mask(" French is 'hello world' is", ["lang"])
 
+
 def test_mask_2():
     check_mask(" French is 'bonjour'.", [])
+
+
+def test_fork_1():
+    expect(
+        [
+            "The word 'hello' in French is 'bonjour'.",
+            "The word 'hello' in Spanish is 'hola'.\n",
+        ],
+        "",
+        [
+            ast.fixed("The word 'hello' in"),
+            ast.fork(
+                [
+                    ast.fixed(" French is"),
+                    ast.gen(max_tokens=5),
+                ],
+                [
+                    ast.fixed(" Spanish is"),
+                    ast.gen(max_tokens=5),
+                ],
+            ),
+        ],
+    )
