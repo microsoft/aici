@@ -133,6 +133,29 @@ impl Debug for StepAttributes {
     }
 }
 
+impl std::fmt::Display for Step {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Step::Fork { branches } => write!(f, "Fork({})", branches.len()),
+            Step::Stop {} => write!(f, "Stop"),
+            Step::Fixed {
+                text, expand_vars, ..
+            } => {
+                write!(
+                    f,
+                    "Fixed({}{:?})",
+                    if *expand_vars { "f" } else { "" },
+                    limit_str(text, 30)
+                )
+            }
+            Step::Choose { options, .. } => write!(f, "Choose({})", options.len()),
+            Step::Gen { .. } => {
+                write!(f, "Gen()")
+            }
+        }
+    }
+}
+
 impl Debug for Step {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
@@ -211,7 +234,6 @@ enum StepSpecific {
     Stop,
 }
 struct StepState {
-    idx: usize,
     ast: Step,
     specific: StepSpecific,
 
@@ -247,7 +269,7 @@ pub struct Runner {
 
 impl Debug for StepState {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "[{}] tok:{}/", self.idx, self.tokens.len())?;
+        write!(f, "[{}] tok:{}/", self.ast, self.tokens.len())?;
         if self.max_tokens > 10000 {
             write!(f, "inf")?;
         } else {
@@ -275,7 +297,6 @@ impl StepState {
 
     fn from_specific(ast: &Step, attrs: &StepAttributes, specific: StepSpecific) -> StepState {
         StepState {
-            idx: 0,
             ast: ast.clone(),
             attrs: attrs.clone(),
             specific,
@@ -592,7 +613,6 @@ impl Runner {
         states.push(StepState::from_ast(&Step::Stop {}));
 
         for (idx, state) in states.iter_mut().enumerate() {
-            state.idx = idx;
             wprintln!("[{}] {} {:?}", idx, state.pp(), state);
         }
 
@@ -603,7 +623,7 @@ impl Runner {
             tokens: Vec::new(),
             vars: host::VariableStorage::new(),
             states,
-            log_advance: true,
+            log_advance: false,
         }
     }
 
@@ -681,11 +701,17 @@ impl Runner {
         let mut allowed_tokens = self.trie.alloc_token_set();
         let mut ff_tokens = None;
         let mut can_ff = true;
+        let mut all_eos = true;
+
         for state in &mut self.states[self.state_idx..] {
             state.concretize(&self.vars);
             if state.forces_eos() {
+                if all_eos {
+                    self.state_idx += 1;
+                }
                 continue;
             }
+            all_eos = false;
             state.apply_to(&self.trie, &mut allowed_tokens);
             if can_ff {
                 ff_tokens = state.ff_state_tokens();
@@ -698,6 +724,8 @@ impl Runner {
             }
         }
 
+        self.finish_states();
+
         if let Some(ff_tokens) = ff_tokens {
             ProcessResult::Splice {
                 backtrack: 0,
@@ -706,6 +734,13 @@ impl Runner {
         } else {
             host::return_logit_bias(&allowed_tokens);
             ProcessResult::SampleWithBias
+        }
+    }
+
+    fn finish_states(&mut self) {
+        while self.prev_state_idx < self.state_idx {
+            self.states[self.prev_state_idx].finish(&self.vars);
+            self.prev_state_idx += 1;
         }
     }
 }
@@ -754,10 +789,7 @@ impl AiciVm for Runner {
     }
 
     fn process(&mut self, arg: ProcessArg) -> ProcessResult {
-        while self.prev_state_idx < self.state_idx {
-            self.states[self.prev_state_idx].finish(&self.vars);
-            self.prev_state_idx += 1;
-        }
+        self.finish_states();
 
         if arg.fork_group.len() > 1 {
             wprintln!("fork group: {:?}", arg.fork_group);

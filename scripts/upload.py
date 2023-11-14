@@ -77,7 +77,7 @@ def main():
                 ],
             ),
             ast.fixed("\nsomething\n"),
-            ast.fixed("\nfrench: {{french}}\nspanish: {{spanish}}\n", expand_vars=True),
+            ast.fixed("\nfrench:{{french}}\nspanish:{{spanish}}\n", expand_vars=True),
         ]
     }
 
