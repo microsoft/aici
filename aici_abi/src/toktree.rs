@@ -172,6 +172,12 @@ impl TokTrie {
         self.info.vocab_size as usize
     }
 
+    pub fn alloc_token_set(&self) -> SimpleVob {
+        let mut r = SimpleVob::new();
+        r.resize(self.vocab_size() + 1);
+        r
+    }
+
     pub fn alloc_logits(&self) -> Vec<f32> {
         vec![0.0; self.vocab_size() + 1]
     }

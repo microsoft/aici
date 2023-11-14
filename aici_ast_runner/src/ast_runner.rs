@@ -677,14 +677,8 @@ impl Runner {
         &self.states[self.state_idx]
     }
 
-    fn none_allowed(&self) -> SimpleVob {
-        let mut r = SimpleVob::new();
-        r.resize(self.trie.vocab_size() + 1);
-        r
-    }
-
     fn compute(&mut self) -> ProcessResult {
-        let mut allowed_tokens = self.none_allowed();
+        let mut allowed_tokens = self.trie.alloc_token_set();
         let mut ff_tokens = None;
         let mut can_ff = true;
         for state in &mut self.states[self.state_idx..] {

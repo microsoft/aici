@@ -1,22 +1,21 @@
-use std::{fmt::Debug, rc::Rc};
+use std::fmt::Debug;
 
 use crate::{
+    host,
     toktree::{Recognizer, SpecialToken, TokTrie},
-    AiciVm, AiciVmHelper, ProcessArg, ProcessResult,
+    AiciVm, ProcessArg, ProcessResult,
 };
 
 pub struct AiciRecognizer<R: Recognizer> {
-    pub helper: AiciVmHelper,
+    pub trie: TokTrie,
     pub rec: R,
-    pub trie: Rc<Box<TokTrie>>,
 }
 
 impl<R: Recognizer> AiciRecognizer<R> {
-    pub fn from_recognizer(trie: Rc<Box<TokTrie>>, rec: R) -> Self {
+    pub fn from_recognizer(rec: R) -> Self {
         AiciRecognizer {
-            helper: AiciVmHelper::new(),
+            trie: TokTrie::from_host(),
             rec,
-            trie,
         }
     }
 }
@@ -37,9 +36,10 @@ impl<R: Recognizer + Clone> AiciVm for AiciRecognizer<R> {
     }
 
     fn process(&mut self, _arg: ProcessArg) -> ProcessResult {
-        self.trie
-            .compute_bias(&mut self.rec, &mut self.helper.allowed_tokens);
-        self.helper.return_logit_bias()
+        let mut set = self.trie.alloc_token_set();
+        self.trie.compute_bias(&mut self.rec, &mut set);
+        host::return_logit_bias(&set);
+        ProcessResult::SampleWithBias
     }
 }
 

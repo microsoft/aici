@@ -1,8 +1,4 @@
 use serde::{Deserialize, Serialize};
-use std::rc::Rc;
-
-use crate::svob::SimpleVob;
-use crate::toktree::{SpecialToken, TokTrie};
 
 pub mod bytes;
 pub mod host;
@@ -113,41 +109,6 @@ pub trait AiciVm {
         host::return_process_result(&res_bytes);
     }
 
-}
-
-#[derive(Clone)]
-pub struct AiciVmHelper {
-    pub allowed_tokens: SimpleVob,
-    pub trie: Rc<Box<TokTrie>>,
-}
-
-impl AiciVmHelper {
-    pub fn new() -> Self {
-        let trie = TokTrie::from_host();
-        let mut allowed_tokens = SimpleVob::new();
-        allowed_tokens.resize(trie.vocab_size() + 1);
-        AiciVmHelper {
-            allowed_tokens,
-            trie: Rc::new(Box::new(trie)),
-        }
-    }
-
-    pub fn all_disallowed(&mut self) {
-        self.allowed_tokens.set_all(false);
-    }
-
-    pub fn allow_one(&mut self, tok: TokenId) {
-        self.allowed_tokens.allow_token(tok);
-    }
-
-    pub fn allow_eos(&mut self) {
-        self.allow_one(self.trie.special_token(SpecialToken::EndOfSentence));
-    }
-
-    pub fn return_logit_bias(&mut self) -> ProcessResult {
-        host::return_logit_bias(&self.allowed_tokens);
-        ProcessResult::SampleWithBias
-    }
 }
 
 /// Expose method as extern "C", usage:

@@ -102,7 +102,7 @@ def main():
             aici_module=mod,
             aici_arg=arg,
             n=1,
-            temperature=0.001,
+            temperature=0,
             max_tokens=1000,
         )
 
