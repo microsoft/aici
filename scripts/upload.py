@@ -68,13 +68,16 @@ def main():
             ast.fork(
                 [
                     ast.fixed(" French is"),
-                    ast.gen(max_tokens=5),
+                    ast.gen(rx=r" '[^']*'",max_tokens=5,set_var="french"),
                 ],
                 [
                     ast.fixed(" Spanish is"),
-                    ast.gen(max_tokens=5),
+                    ast.gen(rx=r" '[^']*'",max_tokens=5,set_var="spanish"),
+                    ast.stop(),
                 ],
-            )
+            ),
+            ast.fixed("\nsomething\n"),
+            ast.fixed("\nfrench: {{french}}\nspanish: {{spanish}}\n", expand_vars=True),
         ]
     }
 

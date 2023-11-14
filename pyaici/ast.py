@@ -2,6 +2,13 @@ import re
 from typing import Optional, List
 
 
+def stop():
+    """
+    Stop generating output.
+    """
+    return {"Stop": {}}
+
+
 def gen(
     *,
     rx: Optional[str] = None,
@@ -11,6 +18,8 @@ def gen(
     max_words: Optional[int] = None,
     max_bytes: Optional[int] = None,
     mask_tags: Optional[List[str]] = None,
+    append_to_var: Optional[str] = None,
+    set_var: Optional[str] = None,
 ):
     """
     Generate output with given constraints.
@@ -27,6 +36,8 @@ def gen(
             "max_words": max_words,
             "max_bytes": max_bytes,
             "mask_tags": mask_tags,
+            "append_to_var": append_to_var,
+            "set_var": set_var,
         }
     }
 
@@ -38,11 +49,18 @@ def fork(*branches: list[dict]):
         }
     }
 
-def fixed(text: str, tag: Optional[str] = None):
+
+def fixed(text: str, expand_vars=False, tag: Optional[str] = None):
     """
     Generate fixed text. Same as `choose([text])`.
     """
-    return {"Fixed": {"text": text, "tag": tag}}
+    return {
+        "Fixed": {
+            "text": text,
+            "tag": tag,
+            "expand_vars": expand_vars,
+        }
+    }
 
 
 def choose(options: list[str]):

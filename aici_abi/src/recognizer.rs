@@ -22,10 +22,6 @@ impl<R: Recognizer> AiciRecognizer<R> {
 }
 
 impl<R: Recognizer + Clone> AiciVm for AiciRecognizer<R> {
-    fn get_helper(&mut self) -> &mut AiciVmHelper {
-        &mut self.helper
-    }
-
     fn pre_process(&mut self, arg: crate::PreProcessArg) -> crate::PreProcessResult {
         for token in arg.tokens {
             let bytes = self.trie.token(token);

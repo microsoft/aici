@@ -93,8 +93,6 @@ pub trait AiciVm {
     /// Either way, a bias should be eventually generated.
     fn process(&mut self, arg: ProcessArg) -> ProcessResult;
 
-    fn get_helper(&mut self) -> &mut AiciVmHelper;
-
     // Internals
     fn aici_init_prompt(&mut self) {
         let arg: InitPromptArg = serde_json::from_slice(&host::process_arg_bytes()).unwrap();
