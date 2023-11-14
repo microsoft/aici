@@ -26,7 +26,7 @@ impl<R: Recognizer + Clone> AiciVm for AiciRecognizer<R> {
         &mut self.helper
     }
 
-    fn process(&mut self, arg: ProcessArg) -> ProcessResult {
+    fn pre_process(&mut self, arg: crate::PreProcessArg) -> crate::PreProcessResult {
         for token in arg.tokens {
             let bytes = self.trie.token(token);
             // wprintln!("process {} {:?}", token, bytes);
@@ -35,6 +35,12 @@ impl<R: Recognizer + Clone> AiciVm for AiciRecognizer<R> {
             }
             self.rec.collapse();
         }
+        crate::PreProcessResult {
+            attention_masks: vec![vec![]],
+        }
+    }
+
+    fn process(&mut self, _arg: ProcessArg) -> ProcessResult {
         self.trie
             .compute_bias(&mut self.rec, &mut self.helper.allowed_tokens);
         self.helper.return_logit_bias()

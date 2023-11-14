@@ -410,6 +410,24 @@ class AiciRunner:
         """
         self.freed_seq_ids.append(id)
 
+    def step_finish2(self):
+        cmd = {
+            "op": "process",
+            "ops": self.prompt_q + self.gen_q,
+        }
+        self.last_ops = cmd["ops"]
+        self.batch_size = len(self.last_ops)
+        if self.batch_size == 0:
+            # nothing to do
+            self.step_reset()
+            return False
+        assert self.curr_attn_mask is not None
+        assert not self.logit_pending
+        self.logit_pending = True
+        self.cmd.send(cmd)
+        self.step_reset()
+        return True
+
     def step_finish(self, max_context_len):
         """
         Send step data to the aicirt process.
@@ -442,10 +460,11 @@ class AiciRunner:
 
     def process_forks(self):
         assert self.logit_pending
+        self.logit_pending = False
         self.last_response = self.cmd.expect("recv")["data"]
-        num_forks_arr: list[int] = self.last_response["num_forks"]
-        del self.last_response["num_forks"]
-        n = sum(num_forks_arr)
+        fork_map: list[int] = self.last_response["fork_map"]
+        del self.last_response["fork_map"]
+        n = len(fork_map)
         if self.disable_attn_mask:
             self.disable_attn_mask = False
             n = 0
@@ -454,13 +473,7 @@ class AiciRunner:
         ).reshape([n, self.max_context_len])
         # need to clone it before sending "process" req
         self.curr_attn_mask = mask.copy()
-        self.cmd.send(
-            {
-                "op": "process",
-                "ops": self.last_ops,
-            }
-        )
-        return num_forks_arr
+        return fork_map
 
     def flush_logit_bias(self):
         """

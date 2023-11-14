@@ -70,22 +70,32 @@ def install(runner: AiciRunner):
         if not sent:
             return
 
-        num_forks_arr = runner.process_forks()
-        for (seq_group, seq), num_forks in zip(steps, num_forks_arr):
-            if num_forks == 0:
-                seq.status = SequenceStatus.FINISHED_ABORTED
-                seq_group.remove(seq.seq_id)
-                scheduler.free_seq(seq)
-            elif num_forks == 1:
-                pass
-            else:
-                for _ in range(num_forks - 1):
-                    assert not seq.is_finished()
-                    copy = seq.fork(next(counter))
-                    seq_group.add(copy)
-                    scheduler.fork_seq(seq, copy)
-                    copy.data.parent_id = seq.seq_id
+        fork_map = runner.process_forks()
+        used = [False for _ in steps]
 
+        for _op_idx, parent_idx in enumerate(fork_map):
+            seq_group, seq = steps[parent_idx]
+            clone_id = None
+            if used[parent_idx]:
+                assert not seq.is_finished()
+                copy = seq.fork(next(counter))
+                seq_group.add(copy)
+                scheduler.fork_seq(seq, copy)
+                clone_id = seq.seq_id
+                seq = copy
+            else:
+                used[parent_idx] = True
+            runner.step_add_tokens(seq.seq_id, tokens=[], clone_id=clone_id)
+
+        runner.step_finish2()
+
+        for idx in range(len(steps)):
+            if used[idx]:
+                continue
+            seq_group, seq = steps[idx]
+            seq.status = SequenceStatus.FINISHED_ABORTED
+            seq_group.remove(seq.seq_id)
+            scheduler.free_seq(seq)
 
     def apply_dynamic_logit_bias(logits: torch.Tensor):
         bias = (

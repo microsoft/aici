@@ -3,7 +3,7 @@ use std::rc::Rc;
 use std::{collections::HashMap, path::PathBuf, time::Duration};
 
 use aici_abi::host::{StorageCmd, StorageOp, StorageResp};
-use aici_abi::{PreProcessArg, TokenId};
+use aici_abi::{PreProcessArg, ProcessArg, TokenId};
 use anyhow::{anyhow, Result};
 use ipc_channel::ipc::{self, IpcOneShotServer, IpcReceiver, IpcReceiverSet, IpcSender};
 use libc::pid_t;
@@ -96,8 +96,8 @@ struct ForkerCmd {
 }
 
 #[derive(Serialize, Deserialize, Debug)]
-pub struct ExecOp {
-    pub op: PreProcessArg,
+pub struct ProcessArgWithShm {
+    pub op: ProcessArg,
     pub logit_offset: usize,
     pub logit_size: usize, // bytes
 }
@@ -124,10 +124,10 @@ enum SeqCmd {
         inst_id: ModuleInstId,
     },
     PreProcess {
-        data: ExecOp,
+        data: PreProcessArg,
     },
     Process {
-        data: ExecOp,
+        data: ProcessArgWithShm,
     },
     RunMain {},
 }
@@ -413,12 +413,12 @@ impl SeqWorkerHandle {
         }
     }
 
-    pub fn start_pre_process(&self, data: ExecOp) -> Result<()> {
+    pub fn start_pre_process(&self, data: PreProcessArg) -> Result<()> {
         self.handle.just_send(SeqCmd::PreProcess { data })?;
         Ok(())
     }
 
-    pub fn start_process(&self, data: ExecOp) -> Result<()> {
+    pub fn start_process(&self, data: ProcessArgWithShm) -> Result<()> {
         self.handle.just_send(SeqCmd::Process { data })?;
         Ok(())
     }

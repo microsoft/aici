@@ -7,7 +7,7 @@ mod worker;
 
 use aici_abi::bytes::limit_str;
 use aici_abi::toktree::TokTrie;
-use aici_abi::{PreProcessArg, TokenId};
+use aici_abi::{PreProcessArg, ProcessArg, SeqId, TokenId};
 use aici_tokenizers::find_tokenizer;
 use anyhow::{anyhow, ensure, Result};
 use base64;
@@ -31,7 +31,7 @@ use crate::hostimpl::*;
 use crate::moduleinstance::*;
 use crate::msgchannel::MessageChannel;
 use crate::shm::Shm;
-use crate::worker::{bench_ipc, ExecOp, WorkerForker};
+use crate::worker::{bench_ipc, ProcessArgWithShm, WorkerForker};
 
 // Both of these are percentage of available cores
 const BG_THREADS_FRACTION: usize = 50;
@@ -167,12 +167,6 @@ impl AiciOp {
         match self {
             AiciOp::Prompt { id, .. } => *id,
             AiciOp::Gen { id, .. } => *id,
-        }
-    }
-    pub fn to_thread_op(self) -> PreProcessArg {
-        match self {
-            AiciOp::Prompt { .. } => PreProcessArg { tokens: vec![] },
-            AiciOp::Gen { tokens, .. } => PreProcessArg { tokens },
         }
     }
 }
@@ -430,22 +424,24 @@ impl Stepper {
         }
     }
 
-    fn mk_instance(&mut self, op: &AiciOp) -> Result<()> {
+    fn mk_instance(&mut self, op: &AiciOp, is_pre: bool) -> Result<usize> {
         // TODO the forks should be done in parallel, best in tree-like fashion
         match op {
             AiciOp::Gen { id, clone_id, .. } => {
-                if let Some(cid) = clone_id {
+                if let Some(parent_id) = clone_id {
                     ensure!(!self.instances.contains_key(id));
-                    let parent = self.get_worker(*cid)?;
-                    info!("fork {} -> ({})", cid, id);
-                    let h = parent.fork(*cid)?;
+                    let parent = self.get_worker(*parent_id)?;
+                    info!("fork {} -> ({})", parent_id, id);
+                    let h = parent.fork(*parent_id)?;
                     self.instances.insert(*id, h);
+                    return Ok(*parent_id);
                 } else {
                     // make sure worker exists
                     self.get_worker(*id)?;
                 }
             }
             AiciOp::Prompt { id, req_id, .. } => {
+                ensure!(is_pre, "prompt only allowed in pre_process");
                 let e = { self.req_instances.lock().unwrap().remove(req_id) };
                 ensure!(e.is_some(), format!("invalid req_id {}", req_id));
                 ensure!(
@@ -459,7 +455,7 @@ impl Stepper {
             }
         };
 
-        Ok(())
+        Ok(op.id())
     }
 
     fn aici_pre_process(&mut self, req: AiciPreProcessReq) -> Result<Value> {
@@ -470,31 +466,33 @@ impl Stepper {
 
         // first, start instances and link clones
         for op in req.ops.iter() {
-            self.mk_instance(&op)?
+            self.mk_instance(&op, true)?;
         }
 
         let mut used_ids = Vec::new();
         let mut map = serde_json::Map::new();
-        let mut num_masks = Vec::new();
         let block_elts = req.max_context_len;
+        let mut idx = 0;
 
         for op in req.ops.into_iter() {
             let instid = op.id();
-            num_masks.push(0);
             if let Ok(h) = self.get_worker(instid) {
-                let op = op.to_thread_op();
-                let op = ExecOp {
-                    op,
-                    logit_offset: 0,
-                    logit_size: block_elts * 4,
+                let tokens = match op {
+                    AiciOp::Prompt { .. } => vec![],
+                    AiciOp::Gen { tokens, .. } => tokens,
+                };
+                let op = PreProcessArg {
+                    tokens,
+                    max_context_size: req.max_context_len,
                 };
                 match h.start_pre_process(op) {
-                    Ok(_) => used_ids.push((num_masks.len() - 1, instid)),
+                    Ok(_) => used_ids.push((idx, instid)),
                     Err(e) => self.worker_error(instid, &mut map, e),
                 };
             } else {
                 warn!("invalid id {}", instid);
             }
+            idx += 1;
         }
 
         let deadline = Instant::now() + std::time::Duration::from_millis(self.limits.max_step_ms);
@@ -503,7 +501,7 @@ impl Stepper {
         let mut curr_req_masks = Vec::new();
         let mut curr_req_id = "".to_string();
 
-        for (num_masks_idx, id) in used_ids {
+        for (op_idx, id) in used_ids {
             let h = self.get_worker(id).unwrap();
             if h.req_id != curr_req_id {
                 all_masks.append(&mut curr_req_masks);
@@ -514,12 +512,14 @@ impl Stepper {
                 Ok(mut data) => {
                     map.insert(id.to_string(), data.json);
                     let len = data.attn_masks.len();
-                    num_masks[num_masks_idx] = len;
                     if len >= 1 {
                         // first mask goes in place of the current sequence
-                        all_masks.push(data.attn_masks.remove(0));
+                        all_masks.push((op_idx, data.attn_masks.remove(0)));
+
                         // other masks need to go after all sequences of the current sequence group (req_id)
-                        curr_req_masks.append(&mut data.attn_masks);
+                        for e in data.attn_masks {
+                            curr_req_masks.push((op_idx, e));
+                        }
                     }
                 }
                 Err(e) => self.worker_error(id, &mut map, e),
@@ -528,17 +528,19 @@ impl Stepper {
 
         // add masks of the last req
         all_masks.append(&mut curr_req_masks);
-      
+
         let mut block_off = 0;
-        for mask in &all_masks {
+        let mut fork_map = Vec::new();
+        for (op_idx, mask) in &all_masks {
             let dst = self.shm.slice_at_byte_offset(block_off, block_elts);
             block_off += block_elts * 4;
             dst.iter_mut().for_each(|v| *v = 1.0 as f32);
             let len = std::cmp::min(mask.len(), block_elts);
             dst[0..len].copy_from_slice(&mask[0..len]);
+            fork_map.push(op_idx);
         }
 
-        map.insert("num_forks".to_string(), serde_json::to_value(num_masks)?);
+        map.insert("fork_map".to_string(), serde_json::to_value(fork_map)?);
 
         Ok(Value::Object(map))
     }
@@ -546,11 +548,18 @@ impl Stepper {
     fn aici_process(&mut self, req: AiciProcessReq) -> Result<Value> {
         let block_elts = self.globals.tokrx_info.vocab_size as usize;
 
+        // first, execute forks
+        let mut parents = HashMap::new();
+        for op in req.ops.iter() {
+            let parent_id = self.mk_instance(&op, false)?;
+            parents.insert(op.id(), parent_id);
+        }
+
         let numops = req.ops.len();
-        let block_bytes = block_elts * 4;
+        let logit_size = block_elts * 4;
 
         ensure!(
-            self.limits.logit_memory_bytes > numops * block_bytes,
+            self.limits.logit_memory_bytes > numops * logit_size,
             "shm size too small"
         );
 
@@ -565,11 +574,21 @@ impl Stepper {
         for op in req.ops.into_iter() {
             let instid = op.id();
             if let Ok(h) = self.get_worker(instid) {
-                let op = op.to_thread_op();
-                let op = ExecOp {
-                    op,
+                let par = *parents.get(&instid).unwrap();
+                let fork_group = parents
+                    .iter()
+                    .filter_map(|(k, v)| {
+                        if *v == par {
+                            Some(SeqId(*k as u32))
+                        } else {
+                            None
+                        }
+                    })
+                    .collect();
+                let op = ProcessArgWithShm {
+                    op: ProcessArg { fork_group },
                     logit_offset,
-                    logit_size: block_bytes,
+                    logit_size,
                 };
                 match h.start_process(op) {
                     Ok(_) => used_ids.push((logit_offset, instid)),
@@ -578,7 +597,7 @@ impl Stepper {
             } else {
                 warn!("invalid id {}", instid);
             }
-            logit_offset += block_bytes;
+            logit_offset += logit_size;
         }
 
         let deadline = Instant::now() + std::time::Duration::from_millis(self.limits.max_step_ms);

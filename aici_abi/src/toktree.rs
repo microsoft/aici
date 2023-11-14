@@ -164,7 +164,7 @@ impl TokTrie {
     pub fn special_token(&self, tok: SpecialToken) -> TokenId {
         match tok {
             SpecialToken::EndOfSentence => self.info.tok_eos,
-            _ => todo!(),
+            _ => panic!("non-EOS special_token() called"), // TODO?
         }
     }
 

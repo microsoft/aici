@@ -1,6 +1,6 @@
 use aici_abi::{
     bytes::{clone_vec_as_bytes, vec_from_bytes, TokRxInfo},
-    ProcessArg,
+    PreProcessArg,
 };
 use anyhow::{anyhow, Result};
 use log::{info, warn};
@@ -9,7 +9,7 @@ use tokenizers::Tokenizer;
 
 use crate::{
     shm::Shm,
-    worker::{ExecOp, GroupCmd, GroupHandle, GroupResp},
+    worker::{GroupCmd, GroupHandle, GroupResp, ProcessArgWithShm},
 };
 
 pub type ModuleInstId = usize;
@@ -113,12 +113,8 @@ impl ModuleData {
         self.set_blob(BlobId::PROCESS_ARG, bytes);
     }
 
-    pub fn set_process_data(&mut self, data: ExecOp, shm: &Shm) {
-        let op = ProcessArg {
-            tokens: data.op.tokens,
-            fork_group: vec![], // TODO
-        };
-        let bytes = serde_json::to_vec(&op).unwrap();
+    pub fn set_process_data(&mut self, data: ProcessArgWithShm, shm: &Shm) {
+        let bytes = serde_json::to_vec(&data.op).unwrap();
         self.set_process_arg(bytes);
         let nument = self.globals.tokrx_info.vocab_size as usize;
         assert!(data.logit_size == nument * 4);
@@ -128,8 +124,8 @@ impl ModuleData {
             .for_each(|x| *x = LOGIT_BIAS_DISALLOW);
     }
 
-    pub fn set_pre_process_data(&mut self, data: ExecOp) {
-        let bytes = serde_json::to_vec(&data.op).unwrap();
+    pub fn set_pre_process_data(&mut self, data: PreProcessArg) {
+        let bytes = serde_json::to_vec(&data).unwrap();
         self.set_process_arg(bytes);
     }
 

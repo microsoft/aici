@@ -54,13 +54,28 @@ pub enum Step {
         max_bytes: Option<usize>,
         mask_tags: Option<Vec<String>>,
     },
+
+    /// Generate one sequence for each of the branches.
+    Fork {
+        branches: Vec<Vec<Step>>,
+    },
 }
 
 impl Debug for Step {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
+            Step::Fork { branches } => {
+                write!(f, "Fork {{")?;
+                for branch in branches {
+                    write!(f, "  branch:\n")?;
+                    for step in branch {
+                        write!(f, "      {:?}\n", step)?;
+                    }
+                }
+                write!(f, "}}")
+            }
             Step::Fixed { text, tag } => {
-                write!(f, "Fixed({}: {:?})", tag.as_deref().unwrap_or(""), text,)
+                write!(f, "Fixed({}: {:?})", tag.as_deref().unwrap_or(""), text)
             }
             Step::Choose { options } => write!(f, "Choose({:?})", options),
             Step::Gen {
@@ -109,6 +124,7 @@ enum StepSpecific {
     Options { tokens: Vec<Vec<TokenId>> },
     Gen { rx: RxStackRecognizer },
     Cfg { cfg: CfgParser },
+    Fork { branches: Vec<Vec<Step>> },
     Stop,
 }
 struct StepState {
@@ -190,6 +206,20 @@ impl StepState {
 
     fn from_ast(s: &Step) -> StepState {
         match s {
+            Step::Fork { branches } => {
+                assert!(branches.len() > 1, "more than one branch required in fork");
+                assert!(
+                    branches.iter().all(|b| b.len() > 0),
+                    "fork branches cannot be empty"
+                );
+                Self::from_specific(
+                    s,
+                    StepSpecific::Fork {
+                        branches: branches.clone(),
+                    },
+                )
+            }
+
             Step::Fixed { text, tag } => {
                 let mut r = Self::from_specific(
                     s,
@@ -268,6 +298,7 @@ impl StepState {
             || self.word_idx >= self.max_words
             || (self.stop_at.is_some() && self.stop_at.as_ref().unwrap().is_empty())
             || match &mut self.specific {
+                StepSpecific::Fork { .. } => false,
                 StepSpecific::Stop => false,
                 StepSpecific::Options { tokens } => {
                     if optional {
@@ -293,6 +324,26 @@ impl StepState {
 
     fn forces_eos(&mut self) -> bool {
         self.check_eos(false)
+    }
+
+    fn attention_mask(&self, helper: &AiciVmHelper, all_tokens: &Vec<TokenInfo>) -> Vec<f32> {
+        if self.mask_tags.len() == 0 {
+            vec![]
+        } else {
+            let mut mask = vec![1.0f32; all_tokens.len()];
+            for (idx, tok) in all_tokens.iter().enumerate() {
+                if self.mask_tags.contains(&tok.tag) {
+                    wprintln!(
+                        "masking t[{}] = {:?} tag={}",
+                        idx,
+                        helper.trie.token_str(tok.id),
+                        tok.tag
+                    );
+                    mask[idx] = 0.0;
+                }
+            }
+            mask
+        }
     }
 
     fn advance(&mut self, helper: &AiciVmHelper, token: TokenId) {
@@ -321,6 +372,9 @@ impl StepState {
         }
 
         match &mut self.specific {
+            StepSpecific::Fork { .. } => {
+                panic!("advance on fork")
+            }
             StepSpecific::Stop => {}
             StepSpecific::Options { tokens } => {
                 tokens.retain(has_token_at(token, self.tokens.len() - 1))
@@ -343,6 +397,7 @@ impl StepState {
             return false;
         }
         match &mut self.specific {
+            StepSpecific::Fork { .. } => false,
             StepSpecific::Stop => false,
             StepSpecific::Options { tokens } => {
                 tokens.iter().any(has_token_at(token, self.tokens.len()))
@@ -356,6 +411,9 @@ impl StepState {
         match &mut self.specific {
             StepSpecific::Stop => {
                 toks.allow_token(trie.special_token(SpecialToken::EndOfSentence));
+            }
+            StepSpecific::Fork { .. } => {
+                // don't allow anything else
             }
             StepSpecific::Options { tokens } => {
                 for v in tokens {
@@ -405,13 +463,26 @@ impl Runner {
         wprintln!("stop: {}", info)
     }
 
+    fn should_fork(&mut self) -> bool {
+        if !self.states[self.state_idx].allows_eos() {
+            return false;
+        }
+        let idx = self.state_idx + 1;
+        if idx < self.states.len() {
+            if let StepSpecific::Fork { .. } = &self.states[idx].specific {
+                return true;
+            }
+        }
+        false
+    }
+
     fn advance(&mut self, token: TokenId) {
         let bytes = self.helper.trie.token(token);
         wprintln!(
             "advance {} {:?} {:?}",
             token,
             String::from_utf8_lossy(bytes),
-            self.states[self.state_idx]
+            self.curr_state()
         );
 
         // skip as many states as we can (that allow EOS), and find the last one that allows the token
@@ -434,14 +505,18 @@ impl Runner {
             self.state_idx = last_idx;
         }
 
-        self.states[last_idx].advance(&mut self.helper, token);
+        self.states[self.state_idx].advance(&mut self.helper, token);
 
         self.tokens.push(TokenInfo {
             id: token,
-            tag: self.states[last_idx].tag.clone(),
+            tag: self.curr_state().tag.clone(),
         });
 
-        wprintln!(" => {:?}", self.states[self.state_idx]);
+        wprintln!(" => {:?}", self.curr_state());
+    }
+
+    fn curr_state(&self) -> &StepState {
+        &self.states[self.state_idx]
     }
 
     fn compute(&mut self) -> ProcessResult {
@@ -513,30 +588,41 @@ impl AiciVm for Runner {
             wprintln!(">>>");
         }
 
-        let s = &self.states[self.state_idx];
-        let attn_mask = if s.mask_tags.len() == 0 {
-            vec![]
-        } else {
-            let mut mask = vec![1.0; self.tokens.len()];
-            for (idx, tok) in self.tokens.iter().enumerate() {
-                if s.mask_tags.contains(&tok.tag) {
-                    wprintln!(
-                        "masking t[{}] = {:?} tag={}",
-                        idx,
-                        self.helper.trie.token_str(tok.id),
-                        tok.tag
-                    );
-                    mask[idx] = 0.0;
-                }
+        if self.should_fork() {
+            self.state_idx += 1;
+            if let StepSpecific::Fork { branches } = &self.curr_state().specific {
+                let attention_masks = branches
+                    .iter()
+                    .map(|b| StepState::from_ast(&b[0]).attention_mask(&self.helper, &self.tokens))
+                    .collect::<Vec<_>>();
+                PreProcessResult { attention_masks }
+            } else {
+                panic!();
             }
-            mask
-        };
-        PreProcessResult {
-            attention_masks: vec![attn_mask],
+        } else {
+            let mask = self.curr_state().attention_mask(&self.helper, &self.tokens);
+            PreProcessResult {
+                attention_masks: vec![mask],
+            }
         }
     }
 
-    fn process(&mut self, _arg: ProcessArg) -> ProcessResult {
+    fn process(&mut self, arg: ProcessArg) -> ProcessResult {
+        if arg.fork_group.len() > 1 {
+            if let StepSpecific::Fork { branches } = &self.curr_state().specific {
+                assert!(arg.fork_group.len() == branches.len());
+                let my_id = host::self_seq_id();
+                let idx = arg.fork_group.iter().position(|id| *id == my_id).unwrap();
+                let branch = branches[idx]
+                    .iter()
+                    .map(StepState::from_ast)
+                    .collect::<Vec<_>>();
+                self.states
+                    .splice(self.state_idx..(self.state_idx + 1), branch);
+            } else {
+                panic!("curr step not fork");
+            }
+        }
         self.compute()
     }
 

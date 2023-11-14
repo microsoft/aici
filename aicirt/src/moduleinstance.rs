@@ -1,5 +1,5 @@
 use aici_abi::toktree::TokTrie;
-use aici_abi::{InitPromptArg, PreProcessResult, ProcessResult, TokenId};
+use aici_abi::{InitPromptArg, PreProcessResult, ProcessResult, TokenId, PreProcessArg};
 use aici_tokenizers::Tokenizer;
 use anyhow::{anyhow, ensure, Result};
 use log::warn;
@@ -14,7 +14,7 @@ use crate::hostimpl::{
     setup_linker, AiciLimits, GlobalInfo, ModuleData, ModuleInstId, LOGIT_BIAS_ALLOW,
 };
 use crate::shm::Shm;
-use crate::worker::{ExecOp, GroupHandle, WorkerPreProcessResult};
+use crate::worker::{GroupHandle, WorkerPreProcessResult, ProcessArgWithShm};
 
 #[derive(Clone)]
 pub struct WasmContext {
@@ -232,8 +232,8 @@ impl ModuleInstance {
         }
     }
 
-    fn do_pre_process(&mut self, op: ExecOp) -> Result<WorkerPreProcessResult> {
-        let attn_elts = op.logit_size / 4;
+    fn do_pre_process(&mut self, op: PreProcessArg) -> Result<WorkerPreProcessResult> {
+        let attn_elts = op.max_context_size;
         self.store.data_mut().set_pre_process_data(op);
         self.call_func::<WasmAici, ()>("aici_pre_process", self.handle)?;
         let res: PreProcessResult = self.proc_result()?;
@@ -258,7 +258,7 @@ impl ModuleInstance {
         })
     }
 
-    fn do_process(&mut self, op: ExecOp, shm: &Shm) -> Result<Value> {
+    fn do_process(&mut self, op: ProcessArgWithShm, shm: &Shm) -> Result<Value> {
         self.store.data_mut().set_process_data(op, shm);
         self.call_func::<WasmAici, ()>("aici_process", self.handle)?;
         match self.proc_result()? {
@@ -320,7 +320,7 @@ impl ModuleInstance {
         Value::Object(m)
     }
 
-    pub fn pre_process(&mut self, op: ExecOp) -> WorkerPreProcessResult {
+    pub fn pre_process(&mut self, op: PreProcessArg) -> WorkerPreProcessResult {
         let t0 = Instant::now();
 
         let mut attn_masks = Vec::new();
@@ -336,7 +336,7 @@ impl ModuleInstance {
         WorkerPreProcessResult { json, attn_masks }
     }
 
-    pub fn process(&mut self, op: ExecOp, shm: &Shm) -> Value {
+    pub fn process(&mut self, op: ProcessArgWithShm, shm: &Shm) -> Value {
         let t0 = Instant::now();
         let res = self.do_process(op, shm);
         self.json_result(t0, res)

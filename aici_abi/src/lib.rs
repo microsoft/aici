@@ -19,8 +19,8 @@ pub struct InitPromptArg {
 }
 
 #[repr(transparent)]
-#[derive(Serialize, Deserialize, Debug)]
-pub struct SeqId(u32);
+#[derive(Serialize, Deserialize, Debug, PartialEq, Eq)]
+pub struct SeqId(pub u32);
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct PreProcessArg {
@@ -28,6 +28,8 @@ pub struct PreProcessArg {
     /// `tokens` is typically just this one token, except for the first call, when
     /// `tokens` is empty, and the cases when fast-forward tokens are used.
     pub tokens: Vec<TokenId>,
+
+    pub max_context_size: usize,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -42,11 +44,8 @@ pub struct PreProcessResult {
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct ProcessArg {
-    /// This is the same tokens as in PreProcessArg.
-    pub tokens: Vec<TokenId>,
     /// fork_group.len() == attention_masks.len().
     /// Use host::self_seq_id() to get the ID of the current sequence.
-    /// TODO: not impl yet
     pub fork_group: Vec<SeqId>,
 }
 
