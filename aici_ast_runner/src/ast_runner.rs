@@ -620,7 +620,7 @@ impl AiciVm for Runner {
                 self.states
                     .splice(self.state_idx..(self.state_idx + 1), branch);
             } else {
-                panic!("curr step not fork");
+                panic!("current step not a fork");
             }
         }
         self.compute()

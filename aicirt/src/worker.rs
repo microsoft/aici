@@ -96,10 +96,16 @@ struct ForkerCmd {
 }
 
 #[derive(Serialize, Deserialize, Debug)]
-pub struct ProcessArgWithShm {
+pub struct RtProcessArg {
     pub op: ProcessArg,
     pub logit_offset: usize,
     pub logit_size: usize, // bytes
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct RtPreProcessArg {
+    pub op: PreProcessArg,
+    pub max_context_size: usize, // elements
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -124,16 +130,16 @@ enum SeqCmd {
         inst_id: ModuleInstId,
     },
     PreProcess {
-        data: PreProcessArg,
+        data: RtPreProcessArg,
     },
     Process {
-        data: ProcessArgWithShm,
+        data: RtProcessArg,
     },
     RunMain {},
 }
 
 #[derive(Serialize, Deserialize, Debug)]
-pub struct WorkerPreProcessResult {
+pub struct RtPreProcessResult {
     pub json: JSON,
     pub attn_masks: Vec<Vec<f32>>,
 }
@@ -413,19 +419,19 @@ impl SeqWorkerHandle {
         }
     }
 
-    pub fn start_pre_process(&self, data: PreProcessArg) -> Result<()> {
+    pub fn start_pre_process(&self, data: RtPreProcessArg) -> Result<()> {
         self.handle.just_send(SeqCmd::PreProcess { data })?;
         Ok(())
     }
 
-    pub fn start_process(&self, data: ProcessArgWithShm) -> Result<()> {
+    pub fn start_process(&self, data: RtProcessArg) -> Result<()> {
         self.handle.just_send(SeqCmd::Process { data })?;
         Ok(())
     }
 
-    pub fn check_pre_process(&self, timeout: Duration) -> Result<WorkerPreProcessResult> {
+    pub fn check_pre_process(&self, timeout: Duration) -> Result<RtPreProcessResult> {
         match self.handle.recv_with_timeout(timeout) {
-            Ok(SeqResp::PreProcess { json, attn_masks }) => Ok(WorkerPreProcessResult {
+            Ok(SeqResp::PreProcess { json, attn_masks }) => Ok(RtPreProcessResult {
                 json: serde_json::from_str(&json)?,
                 attn_masks,
             }),

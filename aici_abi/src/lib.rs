@@ -28,8 +28,6 @@ pub struct PreProcessArg {
     /// `tokens` is typically just this one token, except for the first call, when
     /// `tokens` is empty, and the cases when fast-forward tokens are used.
     pub tokens: Vec<TokenId>,
-
-    pub max_context_size: usize,
 }
 
 #[derive(Serialize, Deserialize, Debug)]

@@ -25,13 +25,13 @@ use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use std::time::Instant;
 use thread_priority::*;
-use worker::{fork_child, SeqWorkerHandle};
+use worker::{fork_child, RtPreProcessArg, SeqWorkerHandle};
 
 use crate::hostimpl::*;
 use crate::moduleinstance::*;
 use crate::msgchannel::MessageChannel;
 use crate::shm::Shm;
-use crate::worker::{bench_ipc, ProcessArgWithShm, WorkerForker};
+use crate::worker::{bench_ipc, RtProcessArg, WorkerForker};
 
 // Both of these are percentage of available cores
 const BG_THREADS_FRACTION: usize = 50;
@@ -481,8 +481,8 @@ impl Stepper {
                     AiciOp::Prompt { .. } => vec![],
                     AiciOp::Gen { tokens, .. } => tokens,
                 };
-                let op = PreProcessArg {
-                    tokens,
+                let op = RtPreProcessArg {
+                    op: PreProcessArg { tokens },
                     max_context_size: req.max_context_len,
                 };
                 match h.start_pre_process(op) {
@@ -585,7 +585,7 @@ impl Stepper {
                         }
                     })
                     .collect();
-                let op = ProcessArgWithShm {
+                let op = RtProcessArg {
                     op: ProcessArg { fork_group },
                     logit_offset,
                     logit_size,
