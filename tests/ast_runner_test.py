@@ -21,7 +21,7 @@ def greedy_query(prompt: str, steps: list):
         prompt=prompt,
         aici_module=ast_module,
         aici_arg={"steps": steps},
-        temperature=0.001,
+        temperature=0,
         max_tokens=200,
         n=1,
     )

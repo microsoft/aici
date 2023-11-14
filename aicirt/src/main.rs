@@ -546,9 +546,15 @@ impl Stepper {
 
         // first, execute forks
         let mut parents = HashMap::new();
+        let mut child_lists = HashMap::new();
         for op in req.ops.iter() {
             let parent_id = self.mk_instance(&op, false)?;
-            parents.insert(op.id(), parent_id);
+            let id = op.id();
+            child_lists
+                .entry(parent_id)
+                .or_insert_with(Vec::new)
+                .push(id);
+            parents.insert(id, parent_id);
         }
 
         let numops = req.ops.len();
@@ -571,16 +577,12 @@ impl Stepper {
             let instid = op.id();
             if let Ok(h) = self.get_worker(instid) {
                 let par = *parents.get(&instid).unwrap();
-                let fork_group = parents
+                let fork_group = child_lists
+                    .get(&par)
+                    .unwrap()
                     .iter()
-                    .filter_map(|(k, v)| {
-                        if *v == par {
-                            Some(SeqId(*k as u32))
-                        } else {
-                            None
-                        }
-                    })
-                    .collect();
+                    .map(|id| SeqId(*id as u32))
+                    .collect::<Vec<_>>();
                 let op = RtProcessArg {
                     op: ProcessArg { fork_group },
                     logit_offset,
