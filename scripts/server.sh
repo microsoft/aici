@@ -23,5 +23,6 @@ python harness/vllm_server.py \
     --port 8080 --host 127.0.0.1
 
 #    --aici-rtarg="--wasm-max-step-time=50" \
+#    --aici-rtarg="--wasm-max-pre-step-time=2" \
 #    --aici-rtarg="--wasm-max-init-time=1000" \
 #    --aici-rtarg="--wasm-max-memory=64" \

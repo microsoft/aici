@@ -17,6 +17,7 @@ pub type ModuleInstId = usize;
 #[derive(Debug, Clone)]
 pub struct AiciLimits {
     pub max_memory_bytes: usize,
+    pub max_pre_step_ms: u64,
     pub max_step_ms: u64,
     pub max_init_ms: u64,
     pub logit_memory_bytes: usize,

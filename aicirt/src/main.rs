@@ -85,6 +85,10 @@ struct Cli {
     #[arg(long, default_value = "64")]
     wasm_max_memory: usize,
 
+    /// Maximum time WASM module can execute step preparation in milliseconds
+    #[arg(long, default_value = "2")]
+    wasm_max_pre_step_time: u64,
+
     /// Maximum time WASM module can execute step in milliseconds
     #[arg(long, default_value = "50")]
     wasm_max_step_time: u64,
@@ -491,7 +495,8 @@ impl Stepper {
             idx += 1;
         }
 
-        let deadline = Instant::now() + std::time::Duration::from_millis(self.limits.max_step_ms);
+        let deadline =
+            Instant::now() + std::time::Duration::from_millis(self.limits.max_pre_step_ms);
 
         let mut all_masks = Vec::new();
         let mut curr_req_masks = Vec::new();
@@ -881,6 +886,7 @@ fn main() -> () {
         max_memory_bytes: cli.wasm_max_memory * MEGABYTE,
         max_init_ms: cli.wasm_max_init_time,
         max_step_ms: cli.wasm_max_step_time,
+        max_pre_step_ms: cli.wasm_max_pre_step_time,
         logit_memory_bytes: cli.bin_size * MEGABYTE,
     };
 
