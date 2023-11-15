@@ -278,7 +278,7 @@ impl Debug for StepState {
         if self.max_words < 10000 {
             write!(f, " word:{}/{}", self.word_idx, self.max_words)?;
         }
-        if self.max_bytes < 10000 {
+        if self.max_bytes < 100000 {
             write!(f, " byte:{}/{}", self.bytes.len(), self.max_bytes)?;
         }
         Ok(())

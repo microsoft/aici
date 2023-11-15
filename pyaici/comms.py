@@ -155,12 +155,10 @@ class CmdChannel:
         if resp["type"] != "ok":
             info = ""
             if resp["type"] == "error" and "error" in resp:
-                info = resp['error'][0:2000]
+                info = resp["error"][0:2000]
             else:
                 info = json.dumps(resp)[0:2000]
-            raise ChildProcessError(
-                f"Bad response to async {op}: {info}"
-            )
+            raise ChildProcessError(f"Bad response to async {op}: {info}")
 
         return resp
 
@@ -236,6 +234,7 @@ class AiciRunner:
         self.vocab_size = -1
         self.batch_size = -1
         self.last_response = {}
+        self.last_pre_response = {}
         self.disable_attn_mask = False
         self.curr_attn_mask = None
 
@@ -466,9 +465,10 @@ class AiciRunner:
     def process_forks(self):
         assert self.logit_pending
         self.logit_pending = False
-        self.last_response = self.cmd.expect("recv")["data"]
-        fork_map: list[int] = self.last_response["fork_map"]
-        del self.last_response["fork_map"]
+        response = self.cmd.expect("recv")["data"]
+        fork_map: list[int] = response["fork_map"]
+        del response["fork_map"]
+        self.last_pre_response = response
         n = len(fork_map)
         if self.disable_attn_mask:
             self.disable_attn_mask = False
@@ -508,6 +508,21 @@ class AiciRunner:
         """
         self.cmd.send({"op": "stop"})
         self.proc.wait()
+
+    def full_response_by_seq_id(self, seq_id: int) -> Dict[str, Any]:
+        """
+        Get the response for a given batch entry ID.
+        """
+        pre: dict[str, str] = self.last_pre_response.get(str(seq_id), None)
+        r: dict[str, str] = self.last_response.get(str(seq_id), None)
+        if pre is not None:
+            if r is None:
+                r = pre
+            else:
+                logs = pre.get("logs", "") + r.get("logs", "")
+                r = {**pre, **r}
+                r["logs"] = logs
+        return r
 
     def response_by_seq_id(self, seq_id: int) -> Dict[str, Any]:
         """
