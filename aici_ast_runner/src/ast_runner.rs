@@ -31,6 +31,8 @@ use aici_abi::{
     TokenId,
 };
 
+const LOG_ADVANCE: bool = false;
+
 //
 // The JSON AST
 //
@@ -274,7 +276,6 @@ pub struct Runner {
     prev_state_idx: usize,
     state_idx: usize,
     states: Vec<StepState>,
-    log_advance: bool,
 }
 
 impl Debug for StepState {
@@ -644,7 +645,6 @@ impl Runner {
             tokens: Vec::new(),
             vars: host::VariableStorage::new(),
             states,
-            log_advance: true,
         }
     }
 
@@ -671,7 +671,7 @@ impl Runner {
 
     fn advance(&mut self, token: TokenId) {
         let bytes = self.trie.token(token);
-        if self.log_advance {
+        if LOG_ADVANCE {
             wprintln!(
                 "advance {} {:?} {:?}",
                 token,
@@ -716,7 +716,7 @@ impl Runner {
             self.state_idx += 1;
         }
 
-        if self.log_advance {
+        if LOG_ADVANCE {
             wprintln!(" => {:?}", self.curr_state());
         }
     }
@@ -809,13 +809,13 @@ impl AiciVm for Runner {
 
         let tokens = arg.tokens;
         let ntok = tokens.len();
-        if ntok > 1 && self.log_advance {
+        if ntok > 1 && LOG_ADVANCE {
             wprintln!("<<< {} tokens", ntok);
         }
         for token in tokens {
             self.advance(token);
         }
-        if ntok > 1 && self.log_advance {
+        if ntok > 1 && LOG_ADVANCE {
             wprintln!(">>>");
         }
 
