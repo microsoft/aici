@@ -34,14 +34,19 @@ def expect(expected: Union[list[str], str], prompt: str, steps: list):
     if isinstance(expected, str):
         expected = [expected]
     res = greedy_query(prompt, steps)
+    if expected[-1] == "*":
+        expected.pop()
+        res = res[0 : len(expected)]
     if len(res) != len(expected):
         pytest.fail(f"query output length mismatch {len(res)} != {len(expected)}")
     for i in range(len(res)):
-        if res[i] != expected[i]:
+        # ░ is used as a placeholder; will be removed
+        r = res[i].replace("░", "")
+        if r != expected[i]:
             if len(res[i]) > 40:
-                print(f'"""{res[i]}"""')
+                print(f'"""{r}"""')
             else:
-                print(ujson.dumps(res[i]))
+                print(ujson.dumps(r))
             pytest.fail(f"query output mismatch at #{i}")
 
 
@@ -191,6 +196,38 @@ def test_fork_1():
                 [
                     ast.fixed(" Spanish is"),
                     ast.gen(max_tokens=5),
+                ],
+            ),
+        ],
+    )
+
+
+def test_wait_1():
+    expect(
+        [
+            """The word 'hello' in
+french: 'bonjour'
+spanish: 'hola'
+""",
+            "*",
+        ],
+        "",
+        [
+            ast.fixed("The word 'hello' in"),
+            ast.fork(
+                [
+                    ast.wait_vars("french", "spanish"),
+                    ast.fixed(
+                        "\nfrench:{{french}}\nspanish:{{spanish}}\n", expand_vars=True
+                    ),
+                ],
+                [
+                    ast.fixed(" Spanish is"),
+                    ast.gen(rx=r" '[^']*'", max_tokens=15, set_var="spanish"),
+                ],
+                [
+                    ast.fixed(" French is"),
+                    ast.gen(rx=r" '[^']*'", max_tokens=15, set_var="french"),
                 ],
             ),
         ],
