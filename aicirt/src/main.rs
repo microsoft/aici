@@ -501,6 +501,7 @@ impl Stepper {
         let mut all_masks = Vec::new();
         let mut curr_req_masks = Vec::new();
         let mut curr_req_id = "".to_string();
+        let mut suspend_ids = Vec::new();
 
         for (op_idx, id) in used_ids {
             let h = self.get_worker(id).unwrap();
@@ -513,7 +514,11 @@ impl Stepper {
                 Ok(mut data) => {
                     map.insert(id.to_string(), data.json);
                     let len = data.attn_masks.len();
-                    if len >= 1 {
+                    if data.suspend {
+                        suspend_ids.push(op_idx);
+                        assert!(len == 1);
+                        assert!(data.attn_masks[0].len() == 0);
+                    } else if len >= 1 {
                         // first mask goes in place of the current sequence
                         all_masks.push((op_idx, data.attn_masks.remove(0)));
 
@@ -542,6 +547,7 @@ impl Stepper {
         }
 
         map.insert("fork_map".to_string(), serde_json::to_value(fork_map)?);
+        map.insert("suspend_ids".to_string(), serde_json::to_value(suspend_ids)?);
 
         Ok(Value::Object(map))
     }

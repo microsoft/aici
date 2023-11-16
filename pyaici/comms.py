@@ -467,7 +467,9 @@ class AiciRunner:
         self.logit_pending = False
         response = self.cmd.expect("recv")["data"]
         fork_map: list[int] = response["fork_map"]
+        suspend_ids: list[int] = response["suspend_ids"]
         del response["fork_map"]
+        del response["suspend_ids"]
         self.last_pre_response = response
         n = len(fork_map)
         if self.disable_attn_mask:
@@ -478,7 +480,7 @@ class AiciRunner:
         ).reshape([n, self.max_context_len])
         # need to clone it before sending "process" req
         self.curr_attn_mask = mask.copy()
-        return fork_map
+        return fork_map, suspend_ids
 
     def flush_logit_bias(self):
         """

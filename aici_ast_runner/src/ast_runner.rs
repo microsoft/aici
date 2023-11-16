@@ -35,8 +35,14 @@ use aici_abi::{
 // The JSON AST
 //
 
-#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Serialize, Deserialize, Clone, PartialEq, Eq, Hash)]
 pub struct VarName(String);
+
+impl Debug for VarName {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "${}", self.0)
+    }
+}
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq, Hash)]
 pub struct TagName(String);
@@ -114,6 +120,9 @@ pub enum Step {
     /// You can use `Stop` on some branches to prevent this.
     Fork { branches: Vec<Vec<Step>> },
 
+    /// Wait for all listed variables to be set.
+    Wait { vars: Vec<VarName> },
+
     /// Stop the sequence (makes most sense in a Fork).
     Stop {},
 }
@@ -121,10 +130,10 @@ pub enum Step {
 impl Debug for StepAttributes {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         if let Some(var) = &self.append_to_var {
-            write!(f, ", ${} += out", var.0)?;
+            write!(f, ", {var:?} += out")?;
         }
         if let Some(var) = &self.set_var {
-            write!(f, ", ${} := out", var.0)?;
+            write!(f, ", {var:?} := out")?;
         }
         if let Some(tag) = &self.tag {
             write!(f, ", tag:{:?}", tag)?;
@@ -137,6 +146,7 @@ impl std::fmt::Display for Step {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Step::Fork { branches } => write!(f, "Fork({})", branches.len()),
+            Step::Wait { vars } => write!(f, "Wait({})", vars.len()),
             Step::Stop {} => write!(f, "Stop"),
             Step::Fixed {
                 text, expand_vars, ..
@@ -149,9 +159,7 @@ impl std::fmt::Display for Step {
                 )
             }
             Step::Choose { options, .. } => write!(f, "Choose({})", options.len()),
-            Step::Gen { .. } => {
-                write!(f, "Gen()")
-            }
+            Step::Gen { .. } => write!(f, "Gen()"),
         }
     }
 }
@@ -169,6 +177,7 @@ impl Debug for Step {
                 }
                 write!(f, "}}")
             }
+            Step::Wait { vars } => write!(f, "Wait({:?})", vars),
             Step::Stop {} => write!(f, "Stop"),
             Step::Fixed {
                 text,
@@ -231,6 +240,7 @@ enum StepSpecific {
     Gen { rx: RxStackRecognizer },
     Cfg { cfg: CfgParser },
     Fork { branches: Vec<Vec<Step>> },
+    Wait { vars: Vec<VarName> },
     Stop,
 }
 struct StepState {
@@ -314,6 +324,12 @@ impl StepState {
     fn from_ast(s: &Step) -> StepState {
         match s {
             Step::Stop {} => Self::from_specific(s, &StepAttributes::default(), StepSpecific::Stop),
+
+            Step::Wait { vars } => Self::from_specific(
+                s,
+                &StepAttributes::default(),
+                StepSpecific::Wait { vars: vars.clone() },
+            ),
 
             Step::Fork { branches } => {
                 assert!(branches.len() > 1, "more than one branch required in fork");
@@ -416,6 +432,7 @@ impl StepState {
             || (self.stop_at.is_some() && self.stop_at.as_ref().unwrap().is_empty())
             || match &mut self.specific {
                 StepSpecific::Fork { .. } => false,
+                StepSpecific::Wait { .. } => false,
                 StepSpecific::Stop => false,
                 StepSpecific::ExpandOptions { texts } => {
                     assert!(self.tokens.len() == 0);
@@ -503,6 +520,9 @@ impl StepState {
             StepSpecific::Fork { .. } => {
                 panic!("advance on fork")
             }
+            StepSpecific::Wait { .. } => {
+                panic!("advance on wait")
+            }
             StepSpecific::Stop => {}
             StepSpecific::Options { tokens } => {
                 tokens.retain(has_token_at(token, self.tokens.len() - 1))
@@ -527,6 +547,7 @@ impl StepState {
         match &mut self.specific {
             StepSpecific::ExpandOptions { .. } => false,
             StepSpecific::Fork { .. } => false,
+            StepSpecific::Wait { .. } => false,
             StepSpecific::Stop => false,
             StepSpecific::Options { tokens } => {
                 tokens.iter().any(has_token_at(token, self.tokens.len()))
@@ -542,6 +563,7 @@ impl StepState {
             String::from_utf8_lossy(&self.bytes)
         );
         if let Some(v) = self.attrs.append_to_var.as_ref() {
+            wprintln!("  append to {:?}", v.0);
             vars.append(&v.0, self.bytes.clone());
         }
         if let Some(v) = self.attrs.set_var.as_ref() {
@@ -583,9 +605,8 @@ impl StepState {
                 toks.allow_token(trie.special_token(SpecialToken::EndOfSentence));
             }
             StepSpecific::ExpandOptions { .. } => {}
-            StepSpecific::Fork { .. } => {
-                // don't allow anything else
-            }
+            StepSpecific::Wait { .. } => {}
+            StepSpecific::Fork { .. } => {}
             StepSpecific::Options { tokens } => {
                 for v in tokens {
                     if self.tokens.len() < v.len() {
@@ -623,26 +644,29 @@ impl Runner {
             tokens: Vec::new(),
             vars: host::VariableStorage::new(),
             states,
-            log_advance: false,
+            log_advance: true,
         }
     }
 
     fn stop(&mut self, info: &str) {
+        wprintln!("stop: {}", info);
+        self.finish_states();
         self.state_idx = self.states.len() - 1;
-        wprintln!("stop: {}", info)
+        // don't finish the states
+        self.prev_state_idx = self.state_idx;
     }
 
-    fn should_fork(&mut self) -> bool {
-        if !self.states[self.state_idx].allows_eos() {
-            return false;
-        }
+    fn can_move_to_next_state(&mut self) -> bool {
+        self.states[self.state_idx].allows_eos()
+    }
+
+    fn next_state(&self) -> Option<&StepSpecific> {
         let idx = self.state_idx + 1;
         if idx < self.states.len() {
-            if let StepSpecific::Fork { .. } = &self.states[idx].specific {
-                return true;
-            }
+            Some(&self.states[idx].specific)
+        } else {
+            None
         }
-        false
     }
 
     fn advance(&mut self, token: TokenId) {
@@ -687,6 +711,10 @@ impl Runner {
                 .clone()
                 .unwrap_or(TagName("other".to_string())),
         });
+
+        while self.states[self.state_idx].forces_eos() {
+            self.state_idx += 1;
+        }
 
         if self.log_advance {
             wprintln!(" => {:?}", self.curr_state());
@@ -737,6 +765,21 @@ impl Runner {
         }
     }
 
+    fn maybe_wait(&mut self) -> bool {
+        if let StepSpecific::Wait { vars } = &self.curr_state().specific {
+            if vars.iter().any(|name| self.vars.get(&name.0).is_none()) {
+                wprintln!("wait {vars:?} suspend");
+                true
+            } else {
+                wprintln!("wait {vars:?} done");
+                self.state_idx += 1;
+                false
+            }
+        } else {
+            false
+        }
+    }
+
     fn finish_states(&mut self) {
         while self.prev_state_idx < self.state_idx {
             self.states[self.prev_state_idx].finish(&self.vars);
@@ -757,6 +800,13 @@ impl AiciVm for Runner {
     }
 
     fn pre_process(&mut self, arg: PreProcessArg) -> PreProcessResult {
+        self.finish_states();
+
+        if self.maybe_wait() {
+            // just ignore the token
+            return PreProcessResult::suspend();
+        }
+
         let tokens = arg.tokens;
         let ntok = tokens.len();
         if ntok > 1 && self.log_advance {
@@ -769,22 +819,27 @@ impl AiciVm for Runner {
             wprintln!(">>>");
         }
 
-        if self.should_fork() {
-            self.state_idx += 1;
-            if let StepSpecific::Fork { branches } = &self.curr_state().specific {
-                let attention_masks = branches
-                    .iter()
-                    .map(|b| StepState::from_ast(&b[0]).attention_mask(&self.trie, &self.tokens))
-                    .collect::<Vec<_>>();
-                PreProcessResult { attention_masks }
-            } else {
-                panic!();
+        self.finish_states();
+
+        if self.maybe_wait() {
+            return PreProcessResult::suspend();
+        }
+
+        if self.can_move_to_next_state() {
+            if let Some(StepSpecific::Fork { .. }) = self.next_state() {
+                self.state_idx += 1;
             }
+        }
+
+        if let StepSpecific::Fork { branches } = &self.curr_state().specific {
+            let attention_masks = branches
+                .iter()
+                .map(|b| StepState::from_ast(&b[0]).attention_mask(&self.trie, &self.tokens))
+                .collect::<Vec<_>>();
+            PreProcessResult::new(attention_masks)
         } else {
             let mask = self.curr_state().attention_mask(&self.trie, &self.tokens);
-            PreProcessResult {
-                attention_masks: vec![mask],
-            }
+            PreProcessResult::new(vec![mask])
         }
     }
 
@@ -806,6 +861,14 @@ impl AiciVm for Runner {
             } else {
                 panic!("current step not a fork");
             }
+        }
+
+        if self.maybe_wait() {
+            // this is a bit late in the game, but it's the best we can do
+            return ProcessResult::Splice {
+                backtrack: 0,
+                ff_tokens: tokenize("░"),
+            };
         }
 
         self.compute()

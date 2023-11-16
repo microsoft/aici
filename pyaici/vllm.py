@@ -30,6 +30,7 @@ def install(runner: AiciRunner):
             ff_seqs = [seq for seq in seqs if seq.data.num_pending_ff_tokens > 0]
             is_ff = len(ff_seqs) > 0
             if is_ff:
+                # print("FF", [(seq.seq_id, seq.data.num_pending_ff_tokens, seq.skip_round) for seq in seqs])
                 assert scheduler_outputs.prompt_run
                 seqs = ff_seqs
             elif scheduler_outputs.prompt_run:
@@ -37,7 +38,13 @@ def install(runner: AiciRunner):
             for seq in seqs:
                 steps.append((seq_group, seq))
                 id = seq.seq_id
-                if seq.data.num_pending_ff_tokens:
+
+                if seq.skip_round:
+                    seq.skip_round = False
+                    num_gen += 1
+                    max_context_len = max(max_context_len, seq.get_len())
+                    runner.step_add_tokens(id, [])
+                elif seq.data.num_pending_ff_tokens:
                     toks = seq.get_token_ids()
                     max_context_len = max(max_context_len, len(toks))
                     runner.step_add_tokens(
@@ -70,7 +77,7 @@ def install(runner: AiciRunner):
         if not sent:
             return
 
-        fork_map = runner.process_forks()
+        fork_map, suspend_ids = runner.process_forks()
         used = [False for _ in steps]
 
         for _op_idx, parent_idx in enumerate(fork_map):
@@ -83,11 +90,18 @@ def install(runner: AiciRunner):
                 seq_group.sampling_params.dynamic_forks = True
                 scheduler.fork_seq(seq, copy)
                 clone_id = seq.seq_id
-                copy.data.parent_id = None # don't clone it again in the next step
+                copy.data.parent_id = None  # don't clone it again in the next step
                 seq = copy
             else:
                 used[parent_idx] = True
             runner.step_add_tokens(seq.seq_id, tokens=[], clone_id=clone_id)
+
+        for id in suspend_ids:
+            seq_group, seq = steps[id]
+            assert not used[id]
+            # print("SUSP", seq.seq_id)
+            used[id] = True
+            seq.skip_round = True
 
         runner.step_finish2()
 

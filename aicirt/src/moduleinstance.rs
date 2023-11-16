@@ -257,6 +257,7 @@ impl ModuleInstance {
         }
         Ok(RtPreProcessResult {
             json: json!({}),
+            suspend: res.suspend,
             attn_masks: res.attention_masks,
         })
     }
@@ -325,18 +326,13 @@ impl ModuleInstance {
 
     pub fn pre_process(&mut self, op: RtPreProcessArg) -> RtPreProcessResult {
         let t0 = Instant::now();
-
-        let mut attn_masks = Vec::new();
-
-        let json = match self.do_pre_process(op) {
-            Err(e) => self.json_result(t0, Err(e)),
-            Ok(res) => {
-                attn_masks = res.attn_masks;
-                self.json_result(t0, Ok(res.json))
+        match self.do_pre_process(op) {
+            Err(e) => RtPreProcessResult::just_json(self.json_result(t0, Err(e))),
+            Ok(mut res) => {
+                res.json = self.json_result(t0, Ok(res.json));
+                res
             }
-        };
-
-        RtPreProcessResult { json, attn_masks }
+        }
     }
 
     pub fn process(&mut self, op: RtProcessArg, shm: &Shm) -> Value {

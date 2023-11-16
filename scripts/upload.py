@@ -67,17 +67,20 @@ def main():
             ast.fixed("The word 'hello' in"),
             ast.fork(
                 [
-                    ast.fixed(" French is"),
-                    ast.gen(rx=r" '[^']*'",max_tokens=5,set_var="french"),
+                    ast.wait_vars("french", "spanish"),
+                    ast.fixed(
+                        "\nfrench:{{french}}\nspanish:{{spanish}}\n", expand_vars=True
+                    ),
                 ],
                 [
                     ast.fixed(" Spanish is"),
-                    ast.gen(rx=r" '[^']*'",max_tokens=5,set_var="spanish"),
-                    ast.stop(),
+                    ast.gen(rx=r" '[^']*'", max_tokens=15, set_var="spanish"),
+                ],
+                [
+                    ast.fixed(" French is"),
+                    ast.gen(rx=r" '[^']*'", max_tokens=15, set_var="french"),
                 ],
             ),
-            ast.fixed("\nsomething\n"),
-            ast.fixed("\nfrench:{{french}}\nspanish:{{spanish}}\n", expand_vars=True),
         ]
     }
 

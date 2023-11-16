@@ -30,9 +30,7 @@ impl<R: Recognizer + Clone> AiciVm for AiciRecognizer<R> {
             }
             self.rec.collapse();
         }
-        crate::PreProcessResult {
-            attention_masks: vec![vec![]],
-        }
+        crate::PreProcessResult::continue_()
     }
 
     fn process(&mut self, _arg: ProcessArg) -> ProcessResult {

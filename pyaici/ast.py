@@ -50,6 +50,13 @@ def fork(*branches: list[dict]):
     }
 
 
+def wait_vars(*vars: str):
+    """
+    Wait until all variables are set.
+    """
+    return {"Wait": {"vars": list(vars)}}
+
+
 def fixed(text: str, expand_vars=False, tag: Optional[str] = None):
     """
     Generate fixed text. Same as `choose([text])`.

@@ -141,7 +141,18 @@ enum SeqCmd {
 #[derive(Serialize, Deserialize, Debug)]
 pub struct RtPreProcessResult {
     pub json: JSON,
+    pub suspend: bool,
     pub attn_masks: Vec<Vec<f32>>,
+}
+
+impl RtPreProcessResult {
+    pub fn just_json(json: JSON) -> Self {
+        RtPreProcessResult {
+            json,
+            suspend: false,
+            attn_masks: Vec::new(),
+        }
+    }
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -152,6 +163,7 @@ enum SeqResp {
     Ok {},
     PreProcess {
         json: String,
+        suspend: bool,
         attn_masks: Vec<Vec<f32>>,
     },
     Process {
@@ -303,6 +315,7 @@ impl SeqCtx {
                 let res = self.mutinst().pre_process(data);
                 Ok(SeqResp::PreProcess {
                     json: serde_json::to_string(&res.json)?,
+                    suspend: res.suspend,
                     attn_masks: res.attn_masks,
                 })
             }
@@ -432,8 +445,13 @@ impl SeqWorkerHandle {
 
     pub fn check_pre_process(&self, timeout: Duration) -> Result<RtPreProcessResult> {
         match self.handle.recv_with_timeout(timeout) {
-            Ok(SeqResp::PreProcess { json, attn_masks }) => Ok(RtPreProcessResult {
+            Ok(SeqResp::PreProcess {
+                json,
+                suspend,
+                attn_masks,
+            }) => Ok(RtPreProcessResult {
                 json: serde_json::from_str(&json)?,
+                suspend,
                 attn_masks,
             }),
             Ok(r) => Err(anyhow!("unexpected response (pre_process) {r:?}")),

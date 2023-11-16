@@ -34,6 +34,29 @@ pub struct PreProcessResult {
     /// Attention mask of length 0 is equivalent [1.0, ..., 1.0].
     /// Otherwise, length of the mask should be the same as the number of prompt + generated tokens.
     pub attention_masks: Vec<Vec<f32>>,
+
+    pub suspend: bool,
+}
+
+impl PreProcessResult {
+    pub fn new(attention_masks: Vec<Vec<f32>>) -> Self {
+        PreProcessResult {
+            attention_masks,
+            suspend: false,
+        }
+    }
+    pub fn continue_() -> Self {
+        PreProcessResult::new(vec![vec![]])
+    }
+    pub fn suspend() -> Self {
+        PreProcessResult {
+            attention_masks: vec![vec![]],
+            suspend: true,
+        }
+    }
+    pub fn stop() -> Self {
+        PreProcessResult::new(vec![])
+    }
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -75,9 +98,7 @@ pub trait AiciVm {
 
     /// Called after tokens are appended, before process().
     fn pre_process(&mut self, _arg: PreProcessArg) -> PreProcessResult {
-        PreProcessResult {
-            attention_masks: vec![vec![]],
-        }
+        PreProcessResult::continue_()
     }
 
     /// This is the main entry point for the module.
@@ -108,7 +129,6 @@ pub trait AiciVm {
         let res_bytes = serde_json::to_vec(&res).unwrap();
         host::return_process_result(&res_bytes);
     }
-
 }
 
 /// Expose method as extern "C", usage:
