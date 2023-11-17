@@ -27,3 +27,8 @@ LLMEngine.step()
         json_output = ...
         return json_output
 ```
+
+Thoughts:
+- expose Scheduler._schedule() and call it from LLMEngine; move initiate_step to LLMEngine
+- return logits from Sampler.forward() and call _sample() from LLMEngine; move apply_dynamic_logit_bias to LLMEngine
+- pass attn_mask to execute model from LLMEngine
