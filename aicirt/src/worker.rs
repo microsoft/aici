@@ -10,6 +10,8 @@ use libc::pid_t;
 use log::debug;
 use serde::{Deserialize, Serialize};
 
+use crate::bench::{TimerRef, TimerSet};
+use crate::with_timer;
 use crate::{
     hostimpl::{AiciLimits, ModuleInstId},
     moduleinstance::{ModuleInstance, WasmContext},
@@ -312,7 +314,7 @@ impl SeqCtx {
                 ok()
             }
             SeqCmd::PreProcess { data } => {
-                let res = self.mutinst().pre_process(data);
+                let res = with_timer!(self.pre_timer, self.mutinst().pre_process(data));
                 Ok(SeqResp::PreProcess {
                     json: serde_json::to_string(&res.json)?,
                     suspend: res.suspend,
@@ -385,6 +387,7 @@ struct SeqCtx {
     inst_id: ModuleInstId,
     modinst: Option<ModuleInstance>,
     shm: Rc<Shm>,
+    pre_timer: TimerRef,
 }
 
 pub struct SeqWorkerHandle {
@@ -443,8 +446,13 @@ impl SeqWorkerHandle {
         Ok(())
     }
 
-    pub fn check_pre_process(&self, timeout: Duration) -> Result<RtPreProcessResult> {
-        match self.handle.recv_with_timeout(timeout) {
+    pub fn check_pre_process(
+        &self,
+        timeout: Duration,
+        timer: &TimerRef,
+    ) -> Result<RtPreProcessResult> {
+        let r = timer.with(|| self.handle.recv_with_timeout(timeout));
+        match r {
             Ok(SeqResp::PreProcess {
                 json,
                 suspend,
@@ -584,6 +592,7 @@ fn forker_dispatcher(
                         cmd_resp.send(ForkerResp(handle)).unwrap();
                     }
                     ForkResult::Child { cmd, cmd_resp } => {
+                        let pre_timer = wasm_ctx.timers.new_timer("pre_outer");
                         let mut w_ctx = SeqCtx {
                             id: cmd_id,
                             cmd,
@@ -593,6 +602,7 @@ fn forker_dispatcher(
                             query: Some(query_handle),
                             inst_id: 424242,
                             modinst: None,
+                            pre_timer,
                         };
                         w_ctx.dispatch_loop()
                     }
@@ -623,19 +633,17 @@ pub fn stop_process() -> ! {
 }
 
 pub fn bench_ipc() {
+    let timers = TimerSet::new();
     match fork_child().unwrap() {
         ForkResult::Parent { handle } => {
-            let t0 = std::time::Instant::now();
-            let mut sum = 0;
-            let mut sum1 = 0;
-            let cnt = 10_000;
+            let cnt = 100;
+            let timer = timers.new_timer("ipc");
             for idx in 0..cnt {
-                sum1 += idx * 2;
-                let r = handle.send_cmd(idx).unwrap();
-                sum += r;
+                let r = timer.with(|| handle.send_cmd(idx).unwrap());
+                assert!(r == 2 * idx);
+                std::thread::sleep(Duration::from_millis(5));
             }
-            assert!(sum == sum1);
-            println!("ipc_channel {:?}", t0.elapsed() / cnt);
+            println!("ipc_channel {}", timers);
             handle.kill();
         }
         ForkResult::Child { cmd, cmd_resp } => loop {

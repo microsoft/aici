@@ -36,6 +36,32 @@ impl MessageChannel {
         Ok(())
     }
 
+    #[allow(dead_code)]
+    pub fn busy_send(&self, msg: &[u8]) -> Result<()> {
+        self.shm.fits_msg(msg)?;
+        loop {
+            let len = self.shm.read_len()?;
+            if len != 0 {
+                std::hint::spin_loop();
+                continue;
+            }
+            return Ok(self.shm.write_msg(msg).unwrap());
+        }
+    }
+
+    #[allow(dead_code)]
+    pub fn busy_recv(&self) -> Result<Vec<u8>> {
+        loop {
+            let len = self.shm.read_len()?;
+            if len == 0 {
+                std::hint::spin_loop();
+                continue;
+            }
+            let res = self.shm.read_msg();
+            return res;
+        }
+    }
+
     pub fn recv(&self) -> Result<Vec<u8>> {
         self.read_sem.wait()?;
         let res = self.shm.read_msg();

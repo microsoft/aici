@@ -10,6 +10,7 @@ use std::sync::Arc;
 use std::time::Instant;
 use wasmtime;
 
+use crate::bench::TimerSet;
 use crate::hostimpl::{
     setup_linker, AiciLimits, GlobalInfo, ModuleData, ModuleInstId, LOGIT_BIAS_ALLOW,
 };
@@ -22,6 +23,7 @@ pub struct WasmContext {
     pub linker: Arc<wasmtime::Linker<ModuleData>>,
     pub globals: GlobalInfo,
     pub limits: AiciLimits,
+    pub timers: TimerSet,
 }
 
 impl WasmContext {
@@ -85,6 +87,7 @@ impl WasmContext {
             linker,
             globals,
             limits,
+            timers: TimerSet::new(),
         })
     }
 }
