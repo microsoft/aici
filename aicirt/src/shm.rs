@@ -79,23 +79,22 @@ impl Shm {
         self.fits_msg(msg)?;
 
         let msg_len = msg.len() as u32;
-        let len_bytes = msg_len.to_le_bytes();
 
         unsafe {
-            ptr::copy_nonoverlapping(len_bytes.as_ptr(), self.addr as *mut u8, 4);
             ptr::copy_nonoverlapping(msg.as_ptr(), (self.addr as *mut u8).add(4), msg.len());
+            ptr::write_volatile(self.addr as *mut u32, msg_len);
         }
 
         Ok(())
     }
 
-    pub fn read_msg(&self) -> Result<Vec<u8>> {
-        let mut len_bytes = [0u8; 4];
-        unsafe {
-            ptr::copy_nonoverlapping(self.addr as *const u8, len_bytes.as_mut_ptr(), 4);
-        }
+    pub fn read_len(&self) -> Result<usize> {
+        Ok(unsafe { ptr::read_volatile(self.addr as *const u32) } as usize)
+    }
 
-        let msg_len = u32::from_le_bytes(len_bytes) as usize;
+    pub fn read_msg(&self) -> Result<Vec<u8>> {
+        std::sync::atomic::fence(std::sync::atomic::Ordering::SeqCst);
+        let msg_len = self.read_len()?;
 
         if msg_len > self.size - 4 {
             return Err(anyhow!(
@@ -107,7 +106,10 @@ impl Shm {
 
         let mut res = vec![0u8; msg_len];
         unsafe {
+            std::sync::atomic::fence(std::sync::atomic::Ordering::SeqCst);
             ptr::copy_nonoverlapping((self.addr as *const u8).add(4), res.as_mut_ptr(), msg_len);
+            std::sync::atomic::fence(std::sync::atomic::Ordering::SeqCst);
+            ptr::write_volatile(self.addr as *mut u32, 0);
         };
 
         Ok(res)

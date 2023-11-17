@@ -37,6 +37,11 @@ impl MessageChannel {
     }
 
     #[allow(dead_code)]
+    pub fn busy_reset(&self) {
+        unsafe { std::ptr::write_volatile(self.shm.ptr_at(0) as *mut u32, 0) };
+    }
+
+    #[allow(dead_code)]
     pub fn busy_send(&self, msg: &[u8]) -> Result<()> {
         self.shm.fits_msg(msg)?;
         loop {

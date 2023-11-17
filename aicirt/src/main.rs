@@ -1,3 +1,4 @@
+mod bench;
 mod hostimpl;
 mod moduleinstance;
 mod msgchannel;
@@ -12,6 +13,7 @@ use aici_tokenizers::find_tokenizer;
 use anyhow::{anyhow, ensure, Result};
 use base64;
 use base64::Engine as _;
+use bench::{TimerRef, TimerSet};
 use clap::Parser;
 use hex;
 use hostimpl::GlobalInfo;
@@ -23,7 +25,7 @@ use std::collections::HashMap;
 use std::fs;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
-use std::time::Instant;
+use std::time::{Duration, Instant};
 use thread_priority::*;
 use worker::{fork_child, RtPreProcessArg, SeqWorkerHandle};
 
@@ -134,6 +136,8 @@ struct Stepper {
     // for debugging
     shm: Shm,
     token_bytes: Vec<Vec<u8>>,
+    pre_timer: TimerRef,
+    pre_recv_timer: TimerRef,
 }
 
 fn is_hex_string(s: &str) -> bool {
@@ -403,6 +407,8 @@ impl Stepper {
             globals: reg.wasm_ctx.globals.clone(),
             shm,
             token_bytes,
+            pre_timer: reg.wasm_ctx.timers.new_timer("pre"),
+            pre_recv_timer: reg.wasm_ctx.timers.new_timer("pre_recv"),
         })
     }
 
@@ -510,7 +516,7 @@ impl Stepper {
                 curr_req_id = h.req_id.clone();
             }
             let timeout = deadline.saturating_duration_since(Instant::now());
-            match h.check_pre_process(timeout) {
+            match h.check_pre_process(timeout, &self.pre_recv_timer) {
                 Ok(mut data) => {
                     map.insert(id.to_string(), data.json);
                     let len = data.attn_masks.len();
@@ -547,7 +553,10 @@ impl Stepper {
         }
 
         map.insert("fork_map".to_string(), serde_json::to_value(fork_map)?);
-        map.insert("suspend_ids".to_string(), serde_json::to_value(suspend_ids)?);
+        map.insert(
+            "suspend_ids".to_string(),
+            serde_json::to_value(suspend_ids)?,
+        );
 
         Ok(Value::Object(map))
     }
@@ -666,7 +675,10 @@ impl Exec for Stepper {
     fn exec(&mut self, json: Value) -> Result<Value> {
         match json["op"].as_str() {
             Some("tokens") => Ok(json!({ "vocab_size": self.globals.tokrx_info.vocab_size })),
-            Some("pre_process") => self.aici_pre_process(serde_json::from_value(json)?),
+            Some("pre_process") => {
+                let json = serde_json::from_value(json)?;
+                with_timer!(self.pre_timer, { self.aici_pre_process(json) })
+            }
             Some("process") => self.aici_process(serde_json::from_value(json)?),
             _ => return Err(anyhow!("bad op")),
         }
@@ -757,6 +769,12 @@ impl CmdRespChannel {
         Ok(Self { cmd_ch, resp_ch })
     }
 
+    #[allow(dead_code)]
+    pub fn busy_reset(&self) {
+        self.cmd_ch.busy_reset();
+        self.resp_ch.lock().unwrap().busy_reset();
+    }
+
     pub fn respond(&self, json: Value) {
         self.resp_ch
             .lock()
@@ -781,31 +799,35 @@ impl CmdRespChannel {
 fn bench_cmd_resp(cli: &Cli) {
     match fork_child::<u8, u8>().unwrap() {
         worker::ForkResult::Parent { handle } => {
-            let t0 = Instant::now();
             let ch = CmdRespChannel::new("", cli).unwrap();
+            ch.busy_reset();
             let resp_ch = ch.resp_ch.lock().unwrap();
-            let cnt = 10_000;
-            let mut sum0 = 0u64;
-            let mut sum1 = 0u64;
+            let timers = TimerSet::new();
+            let timer = timers.new_timer("cmdresp");
+            let cnt = 100;
             for idx in 0..cnt {
                 let q = (idx & 0xf0) as u8;
-                sum0 += q as u64 + 1;
                 let v = vec![q];
-                ch.cmd_ch.send(&v).unwrap();
-                let resp = resp_ch.recv().unwrap();
-                sum1 += resp[0] as u64;
+                let resp = timer.with(|| {
+                    ch.cmd_ch.busy_send(&v).unwrap();
+                    resp_ch.busy_recv().unwrap()
+                });
+                assert!(resp[0] == v[0] + 1, "failed at idx={} {}", idx, resp[0]);
+                std::thread::sleep(Duration::from_millis(10));
             }
-            assert!(sum0 == sum1);
-            println!("MessageChannel {:?}", t0.elapsed() / cnt);
+            println!("MessageChannel {}", timers);
             handle.kill();
         }
         worker::ForkResult::Child { .. } => {
             let ch = CmdRespChannel::new("", cli).unwrap();
             let resp_ch = ch.resp_ch.lock().unwrap();
             loop {
-                let mut msg = ch.recv();
-                msg[0] += 1;
-                resp_ch.send(&msg).unwrap();
+                let msg = ch.cmd_ch.busy_recv().unwrap();
+                let resp = vec![msg[0] + 1, 12];
+                for _ in 0..20 {
+                    std::hint::black_box(());
+                }
+                resp_ch.busy_send(&resp).unwrap();
             }
         }
     }
@@ -815,7 +837,7 @@ fn set_priority(pri: ThreadPriority) {
     set_thread_priority_and_policy(
         thread_native_id(),
         pri,
-        ThreadSchedulePolicy::Realtime(RealtimeThreadSchedulePolicy::RoundRobin),
+        ThreadSchedulePolicy::Realtime(RealtimeThreadSchedulePolicy::Fifo),
     )
     .unwrap();
 }
