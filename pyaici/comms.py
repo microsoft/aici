@@ -23,6 +23,23 @@ from typing import List, Union, Dict, Any
 DEFAULT_SHM_PREF = "/aici0-"
 
 
+class BenchTimer:
+    def __init__(self, name: str) -> None:
+        self.name = name
+        self.elapsed = 0
+        self.num = 0
+
+    def __enter__(self):
+        self.t0 = time.time()
+        return self
+
+    def __exit__(self, *args):
+        self.elapsed += time.time() - self.t0
+        self.num += 1
+        if self.num % 30 == 0:
+            print(f"{self.name}: {self.elapsed*1000000/self.num:.0f}us ({self.num})")
+
+
 def mkshm(name, size):
     shm_name = name + "-shm"
     # clean up just in case
@@ -63,6 +80,9 @@ class MessageChannel:
             read_sem_name, flags=posix_ipc.O_CREAT, initial_value=0
         )
 
+        self.aq_timer = BenchTimer("aq_" + name)
+        self.track = False
+
     def send_bytes(self, msg_bytes):
         self.write_sem.acquire()
         self.map_file.seek(0)
@@ -74,7 +94,12 @@ class MessageChannel:
         self.send_bytes(json.dumps(obj).encode())
 
     def recv(self):
-        self.read_sem.acquire()
+        if self.track:
+            self.track = False
+            with self.aq_timer:
+                self.read_sem.acquire()
+        else:
+            self.read_sem.acquire()
         self.map_file.seek(0)
         msg_len_bytes = self.map_file.read(4)
         msg_len = struct.unpack("<I", msg_len_bytes)[0]
@@ -247,6 +272,8 @@ class AiciRunner:
         self.last_ops = None
         self.max_context_len = -1
 
+        self.wasm_pre_timer = BenchTimer("wasm_pre")
+
         self.cmd = CmdChannel(
             pref=pref, suff="", json_size=json_size, trace_file=self.trace_file
         )
@@ -288,12 +315,18 @@ class AiciRunner:
         AiciRunner.instance = self
 
     def bench(self):
-        cnt = 10000
+        cnt = 100
         start = time.time()
         sum = 0
+        timer = BenchTimer("ping")
+        
         for i in range(cnt):
-            r = self.cmd.exec("ping")
-            sum += r["data"]["pong"]
+            with timer:
+                r = self.cmd.exec("ping")
+                sum += r["data"]["pong"]
+            if False:
+                for _ in range(1000000):
+                    pass
         assert sum == cnt
         dur = (time.time() - start) * 1_000_000 / cnt
         print(f"py MessageChannel: {dur:.2f} us")
@@ -449,12 +482,17 @@ class AiciRunner:
         if len(cmd["freed"]) == 0 and self.batch_size == 0:
             # nothing to do
             self.step_reset()
-            return False
+            return None, None
         assert not self.logit_pending
-        self.logit_pending = True
-        self.cmd.send(cmd)
+
         self.step_reset()
-        return True
+
+        with self.wasm_pre_timer:
+            self.cmd.resp_ch.track = True
+            self.cmd.send(cmd)
+            response = self.cmd.expect("recv")["data"]
+
+        return self._process_forks(response)
 
     def recv_attention_mask(self):
         mask = self.curr_attn_mask
@@ -462,10 +500,7 @@ class AiciRunner:
         assert mask is not None
         return mask
 
-    def process_forks(self):
-        assert self.logit_pending
-        self.logit_pending = False
-        response = self.cmd.expect("recv")["data"]
+    def _process_forks(self, response):
         fork_map: list[int] = response["fork_map"]
         suspend_ids: list[int] = response["suspend_ids"]
         del response["fork_map"]

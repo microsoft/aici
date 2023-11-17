@@ -7,11 +7,20 @@ from vllm.sequence import SequenceGroupMetadata, SequenceGroup, SequenceStatus, 
 from vllm.core.scheduler import Scheduler, SchedulerOutputs
 from vllm.utils import Counter
 
-from .comms import AiciRunner
+from .comms import AiciRunner, BenchTimer
 
 
 def install(runner: AiciRunner):
+    timer = BenchTimer("initiate_step")
     def initiate_step(
+        scheduler: Scheduler,
+        counter: Counter,
+        scheduler_outputs: SchedulerOutputs,
+    ):
+        with timer:
+            return do_initiate_step(scheduler, counter, scheduler_outputs)
+
+    def do_initiate_step(
         scheduler: Scheduler,
         counter: Counter,
         scheduler_outputs: SchedulerOutputs,
@@ -73,11 +82,9 @@ def install(runner: AiciRunner):
         if num_gen == 0:
             runner.disable_attn_mask = True
 
-        sent = runner.step_finish(max_context_len)
-        if not sent:
+        fork_map, suspend_ids = runner.step_finish(max_context_len)
+        if fork_map is None:
             return
-
-        fork_map, suspend_ids = runner.process_forks()
         used = [False for _ in steps]
 
         for _op_idx, parent_idx in enumerate(fork_map):
