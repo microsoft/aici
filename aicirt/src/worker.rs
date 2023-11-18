@@ -1,5 +1,6 @@
 use std::fmt::Debug;
 use std::rc::Rc;
+use std::time::Instant;
 use std::{collections::HashMap, path::PathBuf, time::Duration};
 
 use aici_abi::host::{StorageCmd, StorageOp, StorageResp};
@@ -40,6 +41,7 @@ pub struct ProcessHandle<Cmd, Resp> {
     pid: pid_t,
     cmd: IpcSender<Cmd>,
     cmd_resp: IpcReceiver<Resp>,
+    busy_wait_duration: Duration,
 }
 
 pub enum ForkResult<Cmd, Resp> {
@@ -52,7 +54,7 @@ pub enum ForkResult<Cmd, Resp> {
     },
 }
 
-pub fn fork_child<Cmd, Resp>() -> Result<ForkResult<Cmd, Resp>>
+pub fn fork_child<Cmd, Resp>(limits: &AiciLimits) -> Result<ForkResult<Cmd, Resp>>
 where
     Cmd: for<'d> Deserialize<'d> + Serialize,
     Resp: for<'d> Deserialize<'d> + Serialize,
@@ -83,7 +85,12 @@ where
         let (_, (cmd, cmd_resp)) = server.accept().unwrap();
 
         Ok(ForkResult::Parent {
-            handle: ProcessHandle { pid, cmd, cmd_resp },
+            handle: ProcessHandle {
+                pid,
+                cmd,
+                cmd_resp,
+                busy_wait_duration: limits.busy_wait_duration,
+            },
         })
     }
 }
@@ -249,7 +256,7 @@ impl SeqCtx {
     fn dispatch_one(&mut self, cmd: SeqCmd) -> Result<SeqResp> {
         match cmd {
             SeqCmd::Fork { inst_id } => {
-                match fork_child()? {
+                match fork_child(&self.wasm_ctx.limits)? {
                     ForkResult::Parent { handle } => {
                         let group_ch = match self.group_cmd(GroupCmd::NewChannel {}) {
                             GroupResp::NewChannel { channel } => channel,
@@ -358,7 +365,7 @@ impl SeqCtx {
 
     fn dispatch_loop(&mut self) -> ! {
         loop {
-            let cmd = self.cmd.recv().unwrap();
+            let cmd = busy_recv(&self.cmd, &self.wasm_ctx.limits.busy_wait_duration).unwrap();
             debug!("seq recv {cmd:?}");
             let resp = match self.dispatch_one(cmd) {
                 Ok(v) => v,
@@ -375,6 +382,7 @@ struct GroupCtx {
     variables: HashMap<String, (u64, Vec<u8>)>,
     workers: HashMap<u64, IpcSender<GroupResp>>,
     cb_set: IpcReceiverSet,
+    limits: AiciLimits,
 }
 
 struct SeqCtx {
@@ -539,6 +547,7 @@ impl GroupCtx {
                         pid: 0,
                         cmd: query0,
                         cmd_resp: query_resp1,
+                        busy_wait_duration: self.limits.busy_wait_duration,
                     },
                 }
             }
@@ -581,13 +590,13 @@ fn forker_dispatcher(
 ) -> ! {
     // TODO we should waitpid() children here, so they don't become zombies
     loop {
-        let cmd = cmdch.recv().unwrap();
+        let cmd = busy_recv(&cmdch, &wasm_ctx.limits.busy_wait_duration).unwrap();
         let cmd_id = cmd.id;
 
-        match fork_child().unwrap() {
+        match fork_child(&wasm_ctx.limits).unwrap() {
             ForkResult::Parent { handle } => {
                 let query_handle = handle;
-                match fork_child().unwrap() {
+                match fork_child(&wasm_ctx.limits).unwrap() {
                     ForkResult::Parent { handle } => {
                         cmd_resp.send(ForkerResp(handle)).unwrap();
                     }
@@ -613,6 +622,7 @@ fn forker_dispatcher(
                     variables: HashMap::new(),
                     workers: HashMap::new(),
                     cb_set: IpcReceiverSet::new().unwrap(),
+                    limits: wasm_ctx.limits,
                 };
                 grp_ctx.add_worker(cmd, cmd_resp);
                 grp_ctx.dispatch_loop()
@@ -632,9 +642,32 @@ pub fn stop_process() -> ! {
     panic!("didn't die");
 }
 
-pub fn bench_ipc() {
+fn busy_recv<T>(cmd: &IpcReceiver<T>, wait_duration: &Duration) -> Result<T>
+where
+    T: for<'de> Deserialize<'de> + Serialize,
+{
+    let deadline = Instant::now() + *wait_duration;
+    loop {
+        match cmd.try_recv() {
+            Ok(r) => return Ok(r),
+            Err(ipc_channel::ipc::TryRecvError::Empty) => {
+                if Instant::now() > deadline {
+                    return match cmd.recv() {
+                        Ok(v) => Ok(v),
+                        Err(e) => Err(e.into()),
+                    };
+                }
+                std::hint::spin_loop()
+            }
+            Err(e) => return Err(e.into()),
+        }
+    }
+}
+
+pub fn bench_ipc(limits: &AiciLimits) {
+    let dur = Duration::from_millis(200);
     let timers = TimerSet::new();
-    match fork_child().unwrap() {
+    match fork_child(limits).unwrap() {
         ForkResult::Parent { handle } => {
             let cnt = 100;
             let timer = timers.new_timer("ipc");
@@ -647,7 +680,8 @@ pub fn bench_ipc() {
             handle.kill();
         }
         ForkResult::Child { cmd, cmd_resp } => loop {
-            let r = cmd.recv().unwrap();
+            let r = busy_recv(&cmd, &dur).unwrap();
+            // let r = cmd.recv().unwrap();
             cmd_resp.send(2 * r).unwrap();
         },
     }
@@ -664,7 +698,7 @@ impl WorkerForker {
 
         let limits = wasm_ctx.limits.clone();
 
-        match fork_child().unwrap() {
+        match fork_child(&limits).unwrap() {
             ForkResult::Parent { handle } => {
                 unsafe { libc::signal(libc::SIGUSR1, clean_exit as usize) };
                 WorkerForker {

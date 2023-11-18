@@ -1,5 +1,6 @@
 use std::ffi::CString;
 use std::io;
+use std::time::{Duration, Instant};
 
 use anyhow::Result;
 use log::info;
@@ -31,6 +32,28 @@ impl Semaphore {
             return Self::last_error();
         }
         Ok(())
+    }
+
+    pub fn busy_wait(&self, wait_duration: &Duration) -> Result<()> {
+        let deadline = Instant::now() + *wait_duration;
+        loop {
+            let ret = unsafe { libc::sem_trywait(self.sem) };
+            if ret < 0 {
+                let last_error = unsafe { *libc::__errno_location() };
+                if last_error == libc::EAGAIN {
+                    if Instant::now() > deadline {
+                        return self.wait();
+                    } else {
+                        // std::hint::spin_loop();
+                        continue;
+                    }
+                } else {
+                    return Self::last_error();
+                }
+            } else {
+                return Ok(());
+            }
+        }
     }
 
     pub fn post(&self) -> Result<()> {

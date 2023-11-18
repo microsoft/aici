@@ -12,7 +12,7 @@ TOK=codellama
 
 (cd aicirt && cargo build --release)
 
-RUST_LOG=info \
+X_RUST_LOG=info \
 PYTHONPATH=.:vllm \
 python harness/vllm_server.py \
     --aici-rt ./aicirt/target/release/aicirt \

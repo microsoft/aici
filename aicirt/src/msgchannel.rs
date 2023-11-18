@@ -1,5 +1,6 @@
-use anyhow::Result;
+use std::time::Duration;
 
+use anyhow::Result;
 use crate::semaphore::Semaphore;
 use crate::shm::Shm;
 
@@ -67,8 +68,8 @@ impl MessageChannel {
         }
     }
 
-    pub fn recv(&self) -> Result<Vec<u8>> {
-        self.read_sem.wait()?;
+    pub fn recv(&self, busy_wait_duration: &Duration) -> Result<Vec<u8>> {
+        self.read_sem.busy_wait(busy_wait_duration)?;
         let res = self.shm.read_msg();
         self.write_sem.post()?;
         res

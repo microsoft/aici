@@ -4,7 +4,7 @@ use aici_abi::{
 };
 use anyhow::{anyhow, Result};
 use log::{info, warn};
-use std::{rc::Rc, sync::Arc};
+use std::{rc::Rc, sync::Arc, time::Duration};
 use tokenizers::Tokenizer;
 
 use crate::{
@@ -21,6 +21,7 @@ pub struct AiciLimits {
     pub max_step_ms: u64,
     pub max_init_ms: u64,
     pub logit_memory_bytes: usize,
+    pub busy_wait_duration: Duration,
 }
 
 // this is available to functions called from wasm

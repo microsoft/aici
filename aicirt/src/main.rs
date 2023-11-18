@@ -83,6 +83,10 @@ struct Cli {
     #[arg(long, default_value = "16")]
     bin_size: usize,
 
+    /// How many milliseconds to spin-wait for a message over IPC and SHM.
+    #[arg(long, default_value = "200")]
+    busy_wait_time: u64,
+
     /// Maximum size of WASM module memory in megabytes
     #[arg(long, default_value = "64")]
     wasm_max_memory: usize,
@@ -755,6 +759,7 @@ trait Exec {
 struct CmdRespChannel {
     cmd_ch: MessageChannel,
     resp_ch: Arc<Mutex<MessageChannel>>,
+    busy_wait_duration: Duration,
 }
 
 impl CmdRespChannel {
@@ -766,7 +771,11 @@ impl CmdRespChannel {
             cli.json_size * MEGABYTE,
         )?));
 
-        Ok(Self { cmd_ch, resp_ch })
+        Ok(Self {
+            cmd_ch,
+            resp_ch,
+            busy_wait_duration: Duration::from_millis(cli.busy_wait_time),
+        })
     }
 
     #[allow(dead_code)]
@@ -784,7 +793,7 @@ impl CmdRespChannel {
     }
 
     pub fn recv(&self) -> Vec<u8> {
-        self.cmd_ch.recv().unwrap()
+        self.cmd_ch.recv(&self.busy_wait_duration).unwrap()
     }
 
     pub fn dispatch_loop(&self, mut exec: impl Exec) -> ! {
@@ -796,14 +805,14 @@ impl CmdRespChannel {
     }
 }
 
-fn bench_cmd_resp(cli: &Cli) {
-    match fork_child::<u8, u8>().unwrap() {
+fn bench_cmd_resp_busy(cli: &Cli, limits: &AiciLimits) {
+    match fork_child::<u8, u8>(limits).unwrap() {
         worker::ForkResult::Parent { handle } => {
             let ch = CmdRespChannel::new("", cli).unwrap();
             ch.busy_reset();
             let resp_ch = ch.resp_ch.lock().unwrap();
             let timers = TimerSet::new();
-            let timer = timers.new_timer("cmdresp");
+            let timer = timers.new_timer("cmdresp_busy");
             let cnt = 100;
             for idx in 0..cnt {
                 let q = (idx & 0xf0) as u8;
@@ -828,6 +837,40 @@ fn bench_cmd_resp(cli: &Cli) {
                     std::hint::black_box(());
                 }
                 resp_ch.busy_send(&resp).unwrap();
+            }
+        }
+    }
+}
+
+fn bench_cmd_resp(cli: &Cli, limits: &AiciLimits) {
+    let wait_time = limits.busy_wait_duration;
+    match fork_child::<u8, u8>(limits).unwrap() {
+        worker::ForkResult::Parent { handle } => {
+            let ch = CmdRespChannel::new("", cli).unwrap();
+            let resp_ch = ch.resp_ch.lock().unwrap();
+            let timers = TimerSet::new();
+            let timer = timers.new_timer("cmdresp_sem");
+            let cnt = 100;
+            for idx in 0..cnt {
+                let q = (idx & 0xf0) as u8;
+                let v = vec![q];
+                let resp = timer.with(|| {
+                    ch.cmd_ch.send(&v).unwrap();
+                    resp_ch.recv(&wait_time).unwrap()
+                });
+                assert!(resp[0] == v[0] + 1, "failed at idx={} {}", idx, resp[0]);
+                std::thread::sleep(Duration::from_millis(10));
+            }
+            println!("MessageChannel {}", timers);
+            handle.kill();
+        }
+        worker::ForkResult::Child { .. } => {
+            let ch = CmdRespChannel::new("", cli).unwrap();
+            let resp_ch = ch.resp_ch.lock().unwrap();
+            loop {
+                let msg = ch.cmd_ch.recv(&wait_time).unwrap();
+                let resp = vec![msg[0] + 1, 12];
+                resp_ch.send(&resp).unwrap();
             }
         }
     }
@@ -904,19 +947,21 @@ fn main() -> () {
         std::process::exit(1);
     }
 
-    if cli.bench {
-        bench_ipc();
-        bench_cmd_resp(&cli);
-        return ();
-    }
-
     let limits = AiciLimits {
         max_memory_bytes: cli.wasm_max_memory * MEGABYTE,
         max_init_ms: cli.wasm_max_init_time,
         max_step_ms: cli.wasm_max_step_time,
         max_pre_step_ms: cli.wasm_max_pre_step_time,
         logit_memory_bytes: cli.bin_size * MEGABYTE,
+        busy_wait_duration: Duration::from_millis(cli.busy_wait_time),
     };
+
+    if cli.bench {
+        bench_ipc(&limits);
+        bench_cmd_resp_busy(&cli, &limits);
+        bench_cmd_resp(&cli, &limits);
+        return ();
+    }
 
     let tokenizer = find_tokenizer(&cli.tokenizer).unwrap();
     let token_bytes = tokenizer.token_bytes();

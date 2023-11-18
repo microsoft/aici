@@ -24,10 +24,11 @@ DEFAULT_SHM_PREF = "/aici0-"
 
 
 class BenchTimer:
-    def __init__(self, name: str) -> None:
+    def __init__(self, name: str, mod = 30) -> None:
         self.name = name
         self.elapsed = 0
         self.num = 0
+        self.mod = mod
 
     def __enter__(self):
         self.t0 = time.time()
@@ -36,7 +37,7 @@ class BenchTimer:
     def __exit__(self, *args):
         self.elapsed += time.time() - self.t0
         self.num += 1
-        if self.num % 30 == 0:
+        if self.num % self.mod == 0:
             print(f"{self.name}: {self.elapsed*1000000/self.num:.0f}us ({self.num})")
 
 
@@ -93,13 +94,23 @@ class MessageChannel:
     def send_json(self, obj):
         self.send_bytes(json.dumps(obj).encode())
 
+    def _acquire_read(self):
+        num = 0
+        while True:
+            try:
+                self.read_sem.acquire(0)
+                return
+            except posix_ipc.BusyError:
+                num += 1
+                continue
+
     def recv(self):
         if self.track:
             self.track = False
             with self.aq_timer:
-                self.read_sem.acquire()
+                self._acquire_read()
         else:
-            self.read_sem.acquire()
+            self._acquire_read()
         self.map_file.seek(0)
         msg_len_bytes = self.map_file.read(4)
         msg_len = struct.unpack("<I", msg_len_bytes)[0]
@@ -315,18 +326,18 @@ class AiciRunner:
         AiciRunner.instance = self
 
     def bench(self):
-        cnt = 100
+        cnt = 300
         start = time.time()
         sum = 0
-        timer = BenchTimer("ping")
+        timer = BenchTimer("ping", 20)
         
         for i in range(cnt):
             with timer:
                 r = self.cmd.exec("ping")
                 sum += r["data"]["pong"]
-            if False:
-                for _ in range(1000000):
-                    pass
+            time.sleep(0.05)
+            # for _ in range(1_000_000):
+            #     pass
         assert sum == cnt
         dur = (time.time() - start) * 1_000_000 / cnt
         print(f"py MessageChannel: {dur:.2f} us")
