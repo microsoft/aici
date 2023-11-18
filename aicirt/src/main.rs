@@ -382,7 +382,7 @@ impl ModuleRegistry {
 
     pub fn dispatch_loop(&self, ch: CmdRespChannel) -> ! {
         loop {
-            let msg = ch.recv();
+            let msg = ch.cmd_ch.busy_recv().unwrap();
             let mut s2 = self.clone();
             let resp_lck = ch.resp_ch.clone();
             rayon::spawn(move || {
@@ -390,7 +390,7 @@ impl ModuleRegistry {
                 resp_lck
                     .lock()
                     .unwrap()
-                    .send(serde_json::to_vec(&r).unwrap().as_slice())
+                    .busy_send(serde_json::to_vec(&r).unwrap().as_slice())
                     .unwrap();
             });
         }
@@ -788,7 +788,7 @@ impl CmdRespChannel {
         self.resp_ch
             .lock()
             .unwrap()
-            .send(serde_json::to_vec(&json).unwrap().as_slice())
+            .busy_send(serde_json::to_vec(&json).unwrap().as_slice())
             .unwrap();
     }
 
@@ -798,7 +798,7 @@ impl CmdRespChannel {
 
     pub fn dispatch_loop(&self, mut exec: impl Exec) -> ! {
         loop {
-            let msg = self.recv();
+            let msg = self.cmd_ch.busy_recv().unwrap();
             let val = exec.exec_wrapped(&msg);
             self.respond(val)
         }

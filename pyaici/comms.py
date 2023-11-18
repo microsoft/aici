@@ -24,7 +24,7 @@ DEFAULT_SHM_PREF = "/aici0-"
 
 
 class BenchTimer:
-    def __init__(self, name: str, mod = 30) -> None:
+    def __init__(self, name: str, mod=30) -> None:
         self.name = name
         self.elapsed = 0
         self.num = 0
@@ -73,6 +73,8 @@ class MessageChannel:
         self.size = size
         self.map_file = mkshm(name, size)
 
+        self._clear_len()
+
         self.write_sem = posix_ipc.Semaphore(
             write_sem_name, flags=posix_ipc.O_CREAT, initial_value=1
         )
@@ -84,12 +86,17 @@ class MessageChannel:
         self.aq_timer = BenchTimer("aq_" + name)
         self.track = False
 
+    def _read_len(self):
+        return struct.unpack("<I", self.map_file[0:4])[0]
+
     def send_bytes(self, msg_bytes):
-        self.write_sem.acquire()
-        self.map_file.seek(0)
-        self.map_file.write(struct.pack("<I", len(msg_bytes)))
-        self.map_file.write(msg_bytes)
-        self.read_sem.release()
+        while self._read_len() != 0:
+            pass
+        self.map_file[4 : 4 + len(msg_bytes)] = msg_bytes
+        self.map_file[0:4] = struct.pack("<I", len(msg_bytes))
+
+    def _clear_len(self):
+        self.map_file[0:4] = struct.pack("<I", 0)
 
     def send_json(self, obj):
         self.send_bytes(json.dumps(obj).encode())
@@ -108,17 +115,11 @@ class MessageChannel:
                     continue
 
     def recv(self):
-        if self.track:
-            self.track = False
-            with self.aq_timer:
-                self._acquire_read()
-        else:
-            self._acquire_read()
-        self.map_file.seek(0)
-        msg_len_bytes = self.map_file.read(4)
-        msg_len = struct.unpack("<I", msg_len_bytes)[0]
-        msg = self.map_file.read(msg_len)
-        self.write_sem.release()
+        msg_len = self._read_len()
+        while msg_len == 0:
+            msg_len = self._read_len()
+        msg = self.map_file[4 : 4 + msg_len]
+        self._clear_len()
         return msg
 
     def recv_json(self):
@@ -334,7 +335,7 @@ class AiciRunner:
         start = time.time()
         sum = 0
         timer = BenchTimer("ping", 100000)
-        
+
         for i in range(cnt):
             with timer:
                 pass
