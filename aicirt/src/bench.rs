@@ -91,6 +91,13 @@ impl Display for TimerSet {
     }
 }
 
+impl Display for TimerRef {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let inner = self.set.inner.lock().unwrap();
+        write!(f, "{}", inner.timers[self.idx])
+    }
+}
+
 impl Display for TimerImpl {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let average = self.elapsed.as_micros() as f64 / self.num as f64;

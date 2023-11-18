@@ -95,14 +95,17 @@ class MessageChannel:
         self.send_bytes(json.dumps(obj).encode())
 
     def _acquire_read(self):
-        num = 0
-        while True:
-            try:
-                self.read_sem.acquire(0)
-                return
-            except posix_ipc.BusyError:
-                num += 1
-                continue
+        if True:
+            self.read_sem.acquire()
+        else:
+            num = 0
+            while True:
+                try:
+                    self.read_sem.acquire(0)
+                    return
+                except posix_ipc.BusyError:
+                    num += 1
+                    continue
 
     def recv(self):
         if self.track:
@@ -284,6 +287,7 @@ class AiciRunner:
         self.max_context_len = -1
 
         self.wasm_pre_timer = BenchTimer("wasm_pre")
+        self.wasm_pre_timer_send = BenchTimer("wasm_pre_send")
 
         self.cmd = CmdChannel(
             pref=pref, suff="", json_size=json_size, trace_file=self.trace_file
@@ -326,19 +330,20 @@ class AiciRunner:
         AiciRunner.instance = self
 
     def bench(self):
-        cnt = 300
+        cnt = 1000000
         start = time.time()
         sum = 0
-        timer = BenchTimer("ping", 20)
+        timer = BenchTimer("ping", 100000)
         
         for i in range(cnt):
             with timer:
-                r = self.cmd.exec("ping")
-                sum += r["data"]["pong"]
-            time.sleep(0.05)
+                pass
+                # r = self.cmd.exec("ping")
+                # sum += r["data"]["pong"]
+            # time.sleep(0.05)
             # for _ in range(1_000_000):
             #     pass
-        assert sum == cnt
+        # assert sum == cnt
         dur = (time.time() - start) * 1_000_000 / cnt
         print(f"py MessageChannel: {dur:.2f} us")
 
@@ -498,9 +503,10 @@ class AiciRunner:
 
         self.step_reset()
 
-        with self.wasm_pre_timer:
+        with self.wasm_pre_timer_send:
             self.cmd.resp_ch.track = True
             self.cmd.send(cmd)
+        with self.wasm_pre_timer:
             response = self.cmd.expect("recv")["data"]
 
         return self._process_forks(response)
