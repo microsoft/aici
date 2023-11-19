@@ -24,7 +24,7 @@ DEFAULT_SHM_PREF = "/aici0-"
 
 
 class BenchTimer:
-    def __init__(self, name: str, mod = 30) -> None:
+    def __init__(self, name: str, mod=30) -> None:
         self.name = name
         self.elapsed = 0
         self.num = 0
@@ -86,38 +86,22 @@ class MessageChannel:
 
     def send_bytes(self, msg_bytes):
         self.write_sem.acquire()
-        self.map_file.seek(0)
-        self.map_file.write(struct.pack("<I", len(msg_bytes)))
-        self.map_file.write(msg_bytes)
+        self.map_file[0:4] = struct.pack("<I", len(msg_bytes))
+        self.map_file[4 : 4 + len(msg_bytes)] = msg_bytes
         self.read_sem.release()
 
     def send_json(self, obj):
         self.send_bytes(json.dumps(obj).encode())
 
-    def _acquire_read(self):
-        if True:
-            self.read_sem.acquire()
-        else:
-            num = 0
-            while True:
-                try:
-                    self.read_sem.acquire(0)
-                    return
-                except posix_ipc.BusyError:
-                    num += 1
-                    continue
-
     def recv(self):
         if self.track:
             self.track = False
             with self.aq_timer:
-                self._acquire_read()
+                self.read_sem.acquire()
         else:
-            self._acquire_read()
-        self.map_file.seek(0)
-        msg_len_bytes = self.map_file.read(4)
-        msg_len = struct.unpack("<I", msg_len_bytes)[0]
-        msg = self.map_file.read(msg_len)
+            self.read_sem.acquire()
+        msg_len = struct.unpack("<I", self.map_file[0:4])[0]
+        msg = self.map_file[4 : 4 + msg_len]
         self.write_sem.release()
         return msg
 
@@ -334,7 +318,7 @@ class AiciRunner:
         start = time.time()
         sum = 0
         timer = BenchTimer("ping", 100000)
-        
+
         for i in range(cnt):
             with timer:
                 pass
