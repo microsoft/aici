@@ -4,6 +4,7 @@
     },
     "python.formatting.provider": "none",
     "rust-analyzer.linkedProjects": [
+        "infer/Cargo.toml",
         "aicirt/Cargo.toml",
         "aici_abi/Cargo.toml",
         "aici_tokenizers/Cargo.toml",
