@@ -32,7 +32,9 @@ def ask_completion(*args, **kwargs):
 
 def main():
     arg = {
-        "steps": pyaici.ast.json_to_steps(
+        "steps": 
+        [ast.fixed("Here's some JSON about J.R.Hacker from Seattle:\n")] +
+        ast.json_to_steps(
             {
                 "name": "",
                 "valid": True,
@@ -44,7 +46,7 @@ def main():
             }
         )
     }
-    arg = {
+    _arg = {
         "steps": [
             ast.fixed(" French is", tag="lang"),
             ast.gen(max_tokens=5, mask_tags=["lang"]),
@@ -62,7 +64,7 @@ def main():
             ast.gen(max_tokens=20),
         ]
     }
-    arg = {
+    _arg = {
         "steps": [
             ast.fixed("The word 'hello' in"),
             ast.fork(

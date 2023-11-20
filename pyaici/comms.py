@@ -39,6 +39,8 @@ class BenchTimer:
         self.num += 1
         if self.num % self.mod == 0:
             print(f"{self.name}: {self.elapsed*1000000/self.num:.0f}us ({self.num})")
+            self.elapsed = 0
+            self.num = 0
 
 
 def mkshm(name, size):
@@ -72,6 +74,7 @@ class MessageChannel:
 
         self.size = size
         self.map_file = mkshm(name, size)
+        self.busy_mode = False
 
         self.write_sem = posix_ipc.Semaphore(
             write_sem_name, flags=posix_ipc.O_CREAT, initial_value=1
@@ -93,13 +96,27 @@ class MessageChannel:
     def send_json(self, obj):
         self.send_bytes(json.dumps(obj).encode())
 
+
+    def _acquire_read(self):
+        if not self.busy_mode:
+            self.read_sem.acquire()
+        else:
+            num = 0
+            while True:
+                try:
+                    self.read_sem.acquire(0)
+                    return
+                except posix_ipc.BusyError:
+                    num += 1
+                    continue
+
     def recv(self):
         if self.track:
             self.track = False
             with self.aq_timer:
-                self.read_sem.acquire()
+                self._acquire_read()
         else:
-            self.read_sem.acquire()
+            self._acquire_read()
         msg_len = struct.unpack("<I", self.map_file[0:4])[0]
         msg = self.map_file[4 : 4 + msg_len]
         self.write_sem.release()
@@ -276,6 +293,7 @@ class AiciRunner:
         self.cmd = CmdChannel(
             pref=pref, suff="", json_size=json_size, trace_file=self.trace_file
         )
+        self.cmd.resp_ch.busy_mode = True
         self.side_cmd = CmdChannel(
             pref=pref, suff="-side", json_size=json_size, trace_file=self.trace_file
         )
@@ -314,20 +332,23 @@ class AiciRunner:
         AiciRunner.instance = self
 
     def bench(self):
-        cnt = 1000000
+        cnt = 100
         start = time.time()
         sum = 0
-        timer = BenchTimer("ping", 100000)
+        timer = BenchTimer("ping")
+
+        import threading
+        for thread in threading.enumerate():
+            print(thread.name)
 
         for i in range(cnt):
             with timer:
-                pass
-                # r = self.cmd.exec("ping")
-                # sum += r["data"]["pong"]
-            # time.sleep(0.05)
+                r = self.cmd.exec("ping")
+                sum += r["data"]["pong"]
+            time.sleep(0.05)
             # for _ in range(1_000_000):
             #     pass
-        # assert sum == cnt
+        assert sum == cnt
         dur = (time.time() - start) * 1_000_000 / cnt
         print(f"py MessageChannel: {dur:.2f} us")
 
