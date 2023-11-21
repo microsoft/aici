@@ -115,7 +115,7 @@ impl ModuleData {
         self.set_blob(BlobId::PROCESS_ARG, bytes);
     }
 
-    pub fn set_process_data(&mut self, data: RtMidProcessArg, shm: &Shm) {
+    pub fn set_mid_process_data(&mut self, data: RtMidProcessArg, shm: &Shm) {
         let bytes = serde_json::to_vec(&data.op).unwrap();
         self.set_process_arg(bytes);
         let nument = self.globals.tokrx_info.vocab_size as usize;

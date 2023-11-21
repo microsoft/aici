@@ -1,5 +1,5 @@
 use aici_abi::toktree::TokTrie;
-use aici_abi::{InitPromptArg, PostProcessResult, PreProcessResult, MidProcessResult, TokenId};
+use aici_abi::{InitPromptArg, MidProcessResult, PostProcessResult, PreProcessResult, TokenId};
 use aici_tokenizers::Tokenizer;
 use anyhow::{anyhow, ensure, Result};
 use log::warn;
@@ -16,7 +16,7 @@ use crate::hostimpl::{
 };
 use crate::shm::Shm;
 use crate::worker::{
-    GroupHandle, RtPostProcessArg, RtPreProcessArg, RtPreProcessResult, RtMidProcessArg,
+    GroupHandle, RtMidProcessArg, RtPostProcessArg, RtPreProcessArg, RtPreProcessResult,
 };
 
 #[derive(Clone)]
@@ -268,7 +268,7 @@ impl ModuleInstance {
     }
 
     fn do_mid_process(&mut self, op: RtMidProcessArg, shm: &Shm) -> Result<Value> {
-        self.store.data_mut().set_process_data(op, shm);
+        self.store.data_mut().set_mid_process_data(op, shm);
         self.call_func::<WasmAici, ()>("aici_mid_process", self.handle)?;
         match self.proc_result()? {
             MidProcessResult::SampleWithBias => Ok(json!({})),
@@ -302,8 +302,8 @@ impl ModuleInstance {
     fn do_post_process(&mut self, rtarg: RtPostProcessArg) -> Result<Value> {
         self.store.data_mut().set_post_process_data(rtarg.op);
         self.call_func::<WasmAici, ()>("aici_post_process", self.handle)?;
-        let res: PostProcessResult = self.proc_result()?;
-        Ok(serde_json::to_value(res)?)
+        let _res: PostProcessResult = self.proc_result()?;
+        Ok(json!({}))
     }
 
     fn json_result(&mut self, t0: Instant, res: Result<Value>) -> Value {
