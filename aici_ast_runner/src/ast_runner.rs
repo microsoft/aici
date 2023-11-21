@@ -24,11 +24,10 @@ use crate::rx::RecRx;
 use aici_abi::{
     aici_expose_all,
     bytes::limit_str,
-    host::{self, tokenize},
     svob::SimpleVob,
     toktree::{Recognizer, SpecialToken, TokTrie},
     wprintln, AiciVm, InitPromptArg, MidProcessArg, MidProcessResult, PostProcessArg,
-    PostProcessResult, PreProcessArg, PreProcessResult, TokenId,
+    PostProcessResult, PreProcessArg, PreProcessResult, TokenId, VariableStorage, tokenize,
 };
 
 const LOG_ADVANCE: bool = false;
@@ -280,7 +279,7 @@ struct TokenInfo {
 
 struct RunnerCtx {
     trie: TokTrie,
-    vars: host::VariableStorage,
+    vars: VariableStorage,
     tokens: Vec<TokenInfo>,
     bytes: Vec<u8>,
 }
@@ -588,7 +587,7 @@ impl StepState {
         }
     }
 
-    fn concretize(&mut self, vars: &host::VariableStorage) {
+    fn concretize(&mut self, vars: &VariableStorage) {
         match &mut self.specific {
             StepSpecific::ExpandOptions { texts } => {
                 let re = regex_automata::meta::Regex::new(r"\{\{[a-zA-Z0-9_]+\}\}").unwrap();
@@ -659,7 +658,7 @@ impl Runner {
                 trie: TokTrie::from_host(),
                 tokens: Vec::new(),
                 bytes: Vec::new(),
-                vars: host::VariableStorage::new(),
+                vars: VariableStorage::new(),
             },
             state_idx: 0,
             prev_state_idx: 0,
@@ -781,8 +780,7 @@ impl Runner {
                 ff_tokens,
             }
         } else {
-            host::return_logit_bias(&allowed_tokens);
-            MidProcessResult::SampleWithBias
+            MidProcessResult::SampleWithBias { allowed_tokens }
         }
     }
 
@@ -879,7 +877,7 @@ impl AiciVm for Runner {
             let st = self.states.remove(self.state_idx);
             if let StepSpecific::Fork { mut branches } = st.specific {
                 assert!(arg.fork_group.len() == branches.len());
-                let my_id = host::self_seq_id();
+                let my_id = aici_abi::self_seq_id();
                 let idx = arg.fork_group.iter().position(|id| *id == my_id).unwrap();
                 let branch = branches.remove(idx);
                 self.states.splice(self.state_idx..self.state_idx, branch);
@@ -906,7 +904,7 @@ fn main() {
 }
 
 fn runner_from_env() -> Runner {
-    let a = host::arg_bytes();
+    let a = aici_abi:: arg_bytes();
     match serde_json::from_slice(&a) {
         Ok(p) => Runner::new(p),
         Err(e) => {

@@ -271,7 +271,7 @@ impl ModuleInstance {
         self.store.data_mut().set_mid_process_data(op, shm);
         self.call_func::<WasmAici, ()>("aici_mid_process", self.handle)?;
         match self.proc_result()? {
-            MidProcessResult::SampleWithBias => Ok(json!({})),
+            MidProcessResult::SampleWithBias { .. } => Ok(json!({})),
             MidProcessResult::Splice {
                 backtrack: 0,
                 mut ff_tokens,

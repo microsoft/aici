@@ -1,8 +1,24 @@
+use std::fmt::Debug;
+
 use crate::TokenId;
 
 #[derive(Clone)]
 pub struct SimpleVob {
     data: Vec<u32>,
+}
+
+impl Debug for SimpleVob {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("SimpleVob")
+            .field("len", &self.len())
+            .finish()
+    }
+}
+
+impl Default for SimpleVob {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 const BITS: usize = 32;

@@ -1,9 +1,8 @@
 use std::fmt::Debug;
 
 use crate::{
-    host,
     toktree::{Recognizer, SpecialToken, TokTrie},
-    AiciVm, PostProcessArg, PostProcessResult, MidProcessArg, MidProcessResult,
+    AiciVm, MidProcessArg, MidProcessResult, PostProcessArg, PostProcessResult,
 };
 
 pub struct AiciRecognizer<R: Recognizer> {
@@ -24,8 +23,9 @@ impl<R: Recognizer + Clone> AiciVm for AiciRecognizer<R> {
     fn mid_process(&mut self, _arg: MidProcessArg) -> MidProcessResult {
         let mut set = self.trie.alloc_token_set();
         self.trie.compute_bias(&mut self.rec, &mut set);
-        host::return_logit_bias(&set);
-        MidProcessResult::SampleWithBias
+        MidProcessResult::SampleWithBias {
+            allowed_tokens: set,
+        }
     }
 
     fn post_process(&mut self, arg: PostProcessArg) -> PostProcessResult {

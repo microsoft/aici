@@ -1,13 +1,19 @@
 use serde::{Deserialize, Serialize};
+use svob::SimpleVob;
 
 pub mod bytes;
-pub mod host;
+mod host;
 pub mod recognizer;
 pub mod rng;
 pub mod svob;
 pub mod toktree;
 
 pub type TokenId = bytes::TokenId;
+
+pub use host::{
+    _print, arg_bytes, self_seq_id, stdout, tokenize, StorageCmd, StorageOp, StorageResp,
+    VariableStorage,
+};
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct InitPromptArg {
@@ -46,8 +52,11 @@ pub enum MidProcessResult {
     /// Similar to strong bias to EOS.
     Stop,
 
-    /// Sample next token in the current sequence, using bias set with `return_logit_bias()`
-    SampleWithBias,
+    /// Sample next token in the current sequence
+    SampleWithBias {
+        #[serde(skip)]
+        allowed_tokens: SimpleVob,
+    },
 
     /// First pop `backtrack` tokens,
     /// then force next tokens to be generated to be `ff_tokens`.
@@ -131,6 +140,12 @@ pub trait AiciVm {
     fn aici_mid_process(&mut self) {
         let arg: MidProcessArg = serde_json::from_slice(&host::process_arg_bytes()).unwrap();
         let res = self.mid_process(arg);
+        match &res {
+            MidProcessResult::SampleWithBias { allowed_tokens } => {
+                host::return_logit_bias(allowed_tokens);
+            }
+            _ => {}
+        }
         let res_bytes = serde_json::to_vec(&res).unwrap();
         host::return_process_result(&res_bytes);
     }
@@ -210,17 +225,17 @@ macro_rules! include_bytes_aligned {
 #[macro_export]
 macro_rules! wprintln {
     () => {
-        $crate::host::_print("\n")
+        $crate::_print("\n")
     };
     ($($arg:tt)*) => {{
-        $crate::host::_print(&format!($($arg)*));
-        $crate::host::_print("\n");
+        $crate::_print(&format!($($arg)*));
+        $crate::_print("\n");
     }};
 }
 
 #[macro_export]
 macro_rules! wprint {
     ($($arg:tt)*) => {{
-        $crate::host::_print(&format!($($arg)*));
+        $crate::_print(&format!($($arg)*));
     }};
 }
