@@ -8,7 +8,7 @@ mod worker;
 
 use aici_abi::bytes::limit_str;
 use aici_abi::toktree::TokTrie;
-use aici_abi::{PostProcessArg, PreProcessArg, MidProcessArg, SeqId, TokenId};
+use aici_abi::{MidProcessArg, PostProcessArg, PreProcessArg, SeqId, TokenId};
 use aici_tokenizers::find_tokenizer;
 use anyhow::{anyhow, ensure, Result};
 use base64;
@@ -473,50 +473,6 @@ impl Stepper {
         Ok(())
     }
 
-    fn aici_post_process(&mut self, req: AiciPostProcessReq) -> Result<Value> {
-        // this if forking due to n= parameter in sampling
-        // in general, we want to avoid that and instead use forking in the program,
-        // as it is executed with a long time limit
-        for op in req.ops.iter() {
-            self.maybe_fork(op.id, op.clone_id)?;
-        }
-
-        let mut used_ids = Vec::new();
-        let mut map = serde_json::Map::new();
-
-        for op in req.ops.into_iter() {
-            let instid = op.id;
-            if let Ok(h) = self.get_worker(instid) {
-                let tokens = op.tokens;
-                let op = RtPostProcessArg {
-                    op: PostProcessArg { tokens },
-                };
-                match h.start_post_process(op) {
-                    Ok(_) => used_ids.push(instid),
-                    Err(e) => self.worker_error(instid, &mut map, e),
-                };
-            } else {
-                warn!("invalid id {}", instid);
-            }
-        }
-
-        let deadline =
-            Instant::now() + std::time::Duration::from_millis(self.limits.max_pre_step_ms);
-
-        for id in used_ids {
-            let h = self.get_worker(id).unwrap();
-            let timeout = deadline.saturating_duration_since(Instant::now());
-            match h.check_post_process(timeout) {
-                Ok(data) => {
-                    map.insert(id.to_string(), data);
-                }
-                Err(e) => self.worker_error(id, &mut map, e),
-            }
-        }
-
-        Ok(Value::Object(map))
-    }
-
     fn aici_pre_process(&mut self, req: AiciPreProcessReq) -> Result<Value> {
         for id in req.freed {
             info!("free module {}", id);
@@ -529,7 +485,7 @@ impl Stepper {
         }
 
         let mut used_ids = Vec::new();
-        let mut map = serde_json::Map::new();
+        let mut outputs = serde_json::Map::new();
         let block_elts = req.max_context_len;
         let mut idx = 0;
 
@@ -542,7 +498,7 @@ impl Stepper {
                 };
                 match h.start_pre_process(op) {
                     Ok(_) => used_ids.push((idx, instid)),
-                    Err(e) => self.worker_error(instid, &mut map, e),
+                    Err(e) => self.worker_error(instid, &mut outputs, e),
                 };
             } else {
                 warn!("invalid id {}", instid);
@@ -567,7 +523,7 @@ impl Stepper {
             let timeout = deadline.saturating_duration_since(Instant::now());
             match h.check_pre_process(timeout, &self.pre_recv_timer) {
                 Ok(mut data) => {
-                    map.insert(id.to_string(), data.json);
+                    outputs.insert(id.to_string(), data.json);
                     let len = data.attn_masks.len();
                     if data.suspend {
                         suspend_ids.push(op_idx);
@@ -583,7 +539,7 @@ impl Stepper {
                         }
                     }
                 }
-                Err(e) => self.worker_error(id, &mut map, e),
+                Err(e) => self.worker_error(id, &mut outputs, e),
             }
         }
 
@@ -601,13 +557,13 @@ impl Stepper {
             fork_map.push(op_idx);
         }
 
-        map.insert("fork_map".to_string(), serde_json::to_value(fork_map)?);
-        map.insert(
+        outputs.insert("fork_map".to_string(), serde_json::to_value(fork_map)?);
+        outputs.insert(
             "suspend_ids".to_string(),
             serde_json::to_value(suspend_ids)?,
         );
 
-        Ok(Value::Object(map))
+        Ok(Value::Object(outputs))
     }
 
     fn aici_mid_process(&mut self, req: AiciProcessReq) -> Result<Value> {
@@ -636,7 +592,7 @@ impl Stepper {
 
         let mut logit_offset = 0;
         let mut used_ids = Vec::new();
-        let mut map = serde_json::Map::new();
+        let mut outputs = serde_json::Map::new();
 
         // initialize shm
         let slice = self.shm.slice_at_byte_offset::<f32>(0, numops * block_elts);
@@ -659,7 +615,7 @@ impl Stepper {
                 };
                 match h.start_process(op) {
                     Ok(_) => used_ids.push((logit_offset, instid)),
-                    Err(e) => self.worker_error(instid, &mut map, e),
+                    Err(e) => self.worker_error(instid, &mut outputs, e),
                 };
             } else {
                 warn!("invalid id {}", instid);
@@ -674,7 +630,7 @@ impl Stepper {
             let timeout = deadline.saturating_duration_since(Instant::now());
             match h.check_process(timeout) {
                 Ok(data) => {
-                    map.insert(id.to_string(), data);
+                    outputs.insert(id.to_string(), data);
                     if log::log_enabled!(log::Level::Debug) {
                         let slice = self.logit_bias_at_byte_offset(off);
                         let allow_set = slice
@@ -695,11 +651,55 @@ impl Stepper {
                         debug!("logits: {} allow; tokens: {}", allow_set.len(), list);
                     }
                 }
-                Err(e) => self.worker_error(id, &mut map, e),
+                Err(e) => self.worker_error(id, &mut outputs, e),
             }
         }
 
-        Ok(Value::Object(map))
+        Ok(Value::Object(outputs))
+    }
+
+    fn aici_post_process(&mut self, req: AiciPostProcessReq) -> Result<Value> {
+        // this if forking due to n= parameter in sampling
+        // in general, we want to avoid that and instead use forking in the program,
+        // as it is executed with a long time limit
+        for op in req.ops.iter() {
+            self.maybe_fork(op.id, op.clone_id)?;
+        }
+
+        let mut used_ids = Vec::new();
+        let mut outputs = serde_json::Map::new();
+
+        for op in req.ops.into_iter() {
+            let instid = op.id;
+            if let Ok(h) = self.get_worker(instid) {
+                let tokens = op.tokens;
+                let op = RtPostProcessArg {
+                    op: PostProcessArg { tokens },
+                };
+                match h.start_post_process(op) {
+                    Ok(_) => used_ids.push(instid),
+                    Err(e) => self.worker_error(instid, &mut outputs, e),
+                };
+            } else {
+                warn!("invalid id {}", instid);
+            }
+        }
+
+        let deadline =
+            Instant::now() + std::time::Duration::from_millis(self.limits.max_pre_step_ms);
+
+        for id in used_ids {
+            let h = self.get_worker(id).unwrap();
+            let timeout = deadline.saturating_duration_since(Instant::now());
+            match h.check_post_process(timeout) {
+                Ok(data) => {
+                    outputs.insert(id.to_string(), data);
+                }
+                Err(e) => self.worker_error(id, &mut outputs, e),
+            }
+        }
+
+        Ok(Value::Object(outputs))
     }
 
     fn logit_bias_at_byte_offset(&self, off: usize) -> &'static mut [f32] {
