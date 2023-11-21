@@ -268,8 +268,8 @@ struct StepState {
     attrs: StepAttributes,
 
     // state so far for this step
-    tokens: Vec<TokenId>,
-    bytes: Vec<u8>,
+    num_tokens: usize,
+    num_bytes: usize,
     word_idx: usize,
 }
 
@@ -278,10 +278,15 @@ struct TokenInfo {
     tag: TagName,
 }
 
-pub struct Runner {
+struct RunnerCtx {
     trie: TokTrie,
     vars: host::VariableStorage,
     tokens: Vec<TokenInfo>,
+    bytes: Vec<u8>,
+}
+
+pub struct Runner {
+    ctx: RunnerCtx,
     prev_state_idx: usize,
     state_idx: usize,
     states: Vec<StepState>,
@@ -289,7 +294,7 @@ pub struct Runner {
 
 impl Debug for StepState {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "[{}] tok:{}/", self.ast, self.tokens.len())?;
+        write!(f, "[{}] tok:{}/", self.ast, self.num_tokens)?;
         if self.max_tokens > 10000 {
             write!(f, "inf")?;
         } else {
@@ -299,7 +304,7 @@ impl Debug for StepState {
             write!(f, " word:{}/{}", self.word_idx, self.max_words)?;
         }
         if self.max_bytes < 100000 {
-            write!(f, " byte:{}/{}", self.bytes.len(), self.max_bytes)?;
+            write!(f, " byte:{}/{}", self.num_bytes, self.max_bytes)?;
         }
         Ok(())
     }
@@ -320,14 +325,14 @@ impl StepState {
             ast: ast.clone(),
             attrs: attrs.clone(),
             specific,
-            word_idx: 0,
             stop_at: None,
-            tokens: Vec::new(),
-            bytes: Vec::new(),
             max_words: usize::MAX,
             max_bytes: usize::MAX,
             max_tokens: usize::MAX,
             mask_tags: Vec::new(),
+            word_idx: 0,
+            num_tokens: 0,
+            num_bytes: 0,
         }
     }
 
@@ -426,10 +431,10 @@ impl StepState {
             StepSpecific::Options { tokens } => {
                 let tt = tokens
                     .iter()
-                    .filter(|t| t.len() >= self.tokens.len() + 2)
+                    .filter(|t| t.len() >= self.num_tokens + 2)
                     .collect::<Vec<_>>();
                 if tt.len() == 1 {
-                    Some(tt[0][self.tokens.len()..].to_vec())
+                    Some(tt[0][self.num_tokens..].to_vec())
                 } else {
                     None
                 }
@@ -439,8 +444,8 @@ impl StepState {
     }
 
     fn check_eos(&mut self, optional: bool) -> bool {
-        self.tokens.len() >= self.max_tokens
-            || self.bytes.len() >= self.max_bytes
+        self.num_tokens >= self.max_tokens
+            || self.num_bytes >= self.max_bytes
             || self.word_idx >= self.max_words
             || (self.stop_at.is_some() && self.stop_at.as_ref().unwrap().is_empty())
             || match &mut self.specific {
@@ -448,7 +453,7 @@ impl StepState {
                 StepSpecific::Wait { .. } => false,
                 StepSpecific::Stop => false,
                 StepSpecific::ExpandOptions { texts } => {
-                    assert!(self.tokens.len() == 0);
+                    assert!(self.num_tokens == 0);
                     if optional {
                         texts.iter().any(|t| t.len() == 0)
                     } else {
@@ -457,9 +462,9 @@ impl StepState {
                 }
                 StepSpecific::Options { tokens } => {
                     if optional {
-                        tokens.iter().any(|t| self.tokens.len() >= t.len())
+                        tokens.iter().any(|t| self.num_tokens >= t.len())
                     } else {
-                        tokens.iter().all(|t| self.tokens.len() >= t.len())
+                        tokens.iter().all(|t| self.num_tokens >= t.len())
                     }
                 }
                 StepSpecific::Cfg { cfg } => {
@@ -481,17 +486,17 @@ impl StepState {
         self.check_eos(false)
     }
 
-    fn attention_mask(&self, trie: &TokTrie, all_tokens: &Vec<TokenInfo>) -> Vec<f32> {
+    fn attention_mask(&self, ctx: &RunnerCtx) -> Vec<f32> {
         if self.mask_tags.len() == 0 {
             vec![]
         } else {
-            let mut mask = vec![1.0f32; all_tokens.len()];
-            for (idx, tok) in all_tokens.iter().enumerate() {
+            let mut mask = vec![1.0f32; ctx.tokens.len()];
+            for (idx, tok) in ctx.tokens.iter().enumerate() {
                 if self.mask_tags.contains(&tok.tag) {
                     wprintln!(
                         "masking t[{}] = {:?} tag={:?}",
                         idx,
-                        trie.token_str(tok.id),
+                        ctx.trie.token_str(tok.id),
                         tok.tag
                     );
                     mask[idx] = 0.0;
@@ -501,14 +506,14 @@ impl StepState {
         }
     }
 
-    fn advance(&mut self, trie: &TokTrie, token: TokenId) {
-        self.tokens.push(token);
+    fn advance(&mut self, runner: &RunnerCtx, token: TokenId) {
+        let nbytes = runner.trie.token(token).len();
+        self.num_tokens += 1;
+        self.num_bytes += nbytes;
+        let sidx = runner.bytes.len() - nbytes;
 
-        let bytes = trie.token(token);
-        let sidx = self.bytes.len();
-        self.bytes.extend_from_slice(bytes);
-        for idx in sidx.saturating_sub(1)..self.bytes.len().saturating_sub(1) {
-            if !is_boundry(self.bytes[idx]) && is_boundry(self.bytes[idx + 1]) {
+        for idx in sidx.saturating_sub(1)..runner.bytes.len().saturating_sub(1) {
+            if !is_boundry(runner.bytes[idx]) && is_boundry(runner.bytes[idx + 1]) {
                 self.word_idx += 1;
                 break;
             }
@@ -517,7 +522,7 @@ impl StepState {
         if let Some(stop) = &self.stop_at {
             let slen = stop.len();
             if slen > 0 {
-                let pos = self.bytes[sidx.saturating_sub(slen)..]
+                let pos = runner.bytes[sidx.saturating_sub(slen)..]
                     .windows(stop.len())
                     .position(|w| w == stop.as_bytes());
                 if pos.is_some() {
@@ -538,10 +543,10 @@ impl StepState {
             }
             StepSpecific::Stop => {}
             StepSpecific::Options { tokens } => {
-                tokens.retain(has_token_at(token, self.tokens.len() - 1))
+                tokens.retain(has_token_at(token, self.num_tokens - 1))
             }
-            StepSpecific::Cfg { cfg } => trie.append_token(cfg, token),
-            StepSpecific::Gen { rx } => trie.append_token(rx, token),
+            StepSpecific::Cfg { cfg } => runner.trie.append_token(cfg, token),
+            StepSpecific::Gen { rx } => runner.trie.append_token(rx, token),
         }
 
         fn is_boundry(b: u8) -> bool {
@@ -563,24 +568,23 @@ impl StepState {
             StepSpecific::Wait { .. } => false,
             StepSpecific::Stop => false,
             StepSpecific::Options { tokens } => {
-                tokens.iter().any(has_token_at(token, self.tokens.len()))
+                tokens.iter().any(has_token_at(token, self.num_tokens))
             }
             StepSpecific::Cfg { cfg } => trie.token_allowed(cfg, token),
             StepSpecific::Gen { rx } => trie.token_allowed(rx, token),
         }
     }
 
-    fn finish(&mut self, vars: &host::VariableStorage) {
-        wprintln!(
-            "finish: {self:?} {:?}",
-            String::from_utf8_lossy(&self.bytes)
-        );
+    fn finish(&mut self, runner: &RunnerCtx) {
+        let sidx = runner.bytes.len() - self.num_bytes;
+        let my_bytes = runner.bytes[sidx..].to_vec();
+        wprintln!("finish: {self:?} {:?}", String::from_utf8_lossy(&my_bytes));
         if let Some(v) = self.attrs.append_to_var.as_ref() {
             wprintln!("  append to {:?}", v.0);
-            vars.append(&v.0, self.bytes.clone());
+            runner.vars.append(&v.0, my_bytes.clone());
         }
         if let Some(v) = self.attrs.set_var.as_ref() {
-            vars.set(&v.0, self.bytes.clone());
+            runner.vars.set(&v.0, my_bytes);
         }
     }
 
@@ -622,8 +626,8 @@ impl StepState {
             StepSpecific::Fork { .. } => {}
             StepSpecific::Options { tokens } => {
                 for v in tokens {
-                    if self.tokens.len() < v.len() {
-                        toks.allow_token(v[self.tokens.len()]);
+                    if self.num_tokens < v.len() {
+                        toks.allow_token(v[self.num_tokens]);
                     }
                 }
             }
@@ -651,11 +655,14 @@ impl Runner {
         }
 
         Self {
-            trie: TokTrie::from_host(),
+            ctx: RunnerCtx {
+                trie: TokTrie::from_host(),
+                tokens: Vec::new(),
+                bytes: Vec::new(),
+                vars: host::VariableStorage::new(),
+            },
             state_idx: 0,
             prev_state_idx: 0,
-            tokens: Vec::new(),
-            vars: host::VariableStorage::new(),
             states,
         }
     }
@@ -682,7 +689,7 @@ impl Runner {
     }
 
     fn advance(&mut self, token: TokenId) {
-        let bytes = self.trie.token(token);
+        let bytes = self.ctx.trie.token(token);
         if LOG_ADVANCE {
             wprintln!(
                 "advance {} {:?} {:?}",
@@ -695,7 +702,7 @@ impl Runner {
         // skip as many states as we can (that allow EOS), and find the last one that allows the token
         let mut last_idx = usize::MAX;
         for idx in self.state_idx..self.states.len() {
-            if self.states[idx].allows_token(&self.trie, token) {
+            if self.states[idx].allows_token(&self.ctx.trie, token) {
                 last_idx = idx;
             }
             if !self.states[idx].allows_eos() {
@@ -712,9 +719,7 @@ impl Runner {
             self.state_idx = last_idx;
         }
 
-        self.states[self.state_idx].advance(&self.trie, token);
-
-        self.tokens.push(TokenInfo {
+        self.ctx.tokens.push(TokenInfo {
             id: token,
             tag: self
                 .curr_state()
@@ -723,6 +728,11 @@ impl Runner {
                 .clone()
                 .unwrap_or(TagName("other".to_string())),
         });
+
+        let bytes = self.ctx.trie.token(token);
+        self.ctx.bytes.extend_from_slice(bytes);
+
+        self.states[self.state_idx].advance(&self.ctx, token);
 
         while self.states[self.state_idx].forces_eos() {
             self.state_idx += 1;
@@ -738,13 +748,13 @@ impl Runner {
     }
 
     fn compute(&mut self) -> MidProcessResult {
-        let mut allowed_tokens = self.trie.alloc_token_set();
+        let mut allowed_tokens = self.ctx.trie.alloc_token_set();
         let mut ff_tokens = None;
         let mut can_ff = true;
         let mut all_eos = true;
 
         for state in &mut self.states[self.state_idx..] {
-            state.concretize(&self.vars);
+            state.concretize(&self.ctx.vars);
             if state.forces_eos() {
                 if all_eos {
                     self.state_idx += 1;
@@ -752,7 +762,7 @@ impl Runner {
                 continue;
             }
             all_eos = false;
-            state.apply_to(&self.trie, &mut allowed_tokens);
+            state.apply_to(&self.ctx.trie, &mut allowed_tokens);
             if can_ff {
                 ff_tokens = state.ff_state_tokens();
             } else {
@@ -779,7 +789,7 @@ impl Runner {
 
     fn maybe_wait(&mut self) -> bool {
         if let StepSpecific::Wait { vars } = &self.curr_state().specific {
-            if vars.iter().any(|name| self.vars.get(&name.0).is_none()) {
+            if vars.iter().any(|name| self.ctx.vars.get(&name.0).is_none()) {
                 wprintln!("wait {vars:?} suspend");
                 true
             } else {
@@ -794,7 +804,7 @@ impl Runner {
 
     fn finish_states(&mut self) {
         while self.prev_state_idx < self.state_idx {
-            self.states[self.prev_state_idx].finish(&self.vars);
+            self.states[self.prev_state_idx].finish(&self.ctx);
             self.prev_state_idx += 1;
         }
     }
@@ -804,7 +814,7 @@ impl AiciVm for Runner {
     fn init_prompt(&mut self, arg: InitPromptArg) {
         wprintln!("prompt: {:?}", arg.prompt);
         for t in arg.prompt {
-            self.tokens.push(TokenInfo {
+            self.ctx.tokens.push(TokenInfo {
                 id: t,
                 tag: TagName("prompt".to_string()),
             })
@@ -853,11 +863,11 @@ impl AiciVm for Runner {
         if let StepSpecific::Fork { branches } = &self.curr_state().specific {
             let attention_masks = branches
                 .iter()
-                .map(|b| b[0].attention_mask(&self.trie, &self.tokens))
+                .map(|b| b[0].attention_mask(&self.ctx))
                 .collect::<Vec<_>>();
             PreProcessResult::new(attention_masks)
         } else {
-            let mask = self.curr_state().attention_mask(&self.trie, &self.tokens);
+            let mask = self.curr_state().attention_mask(&self.ctx);
             PreProcessResult::new(vec![mask])
         }
     }
