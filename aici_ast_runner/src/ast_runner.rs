@@ -25,9 +25,10 @@ use aici_abi::{
     aici_expose_all,
     bytes::limit_str,
     svob::SimpleVob,
+    tokenize,
     toktree::{Recognizer, SpecialToken, TokTrie},
     wprintln, AiciVm, InitPromptArg, MidProcessArg, MidProcessResult, PostProcessArg,
-    PostProcessResult, PreProcessArg, PreProcessResult, TokenId, VariableStorage, tokenize,
+    PostProcessResult, PreProcessArg, PreProcessResult, TokenId, VariableStorage,
 };
 
 const LOG_ADVANCE: bool = false;
@@ -67,6 +68,9 @@ pub struct StepAttributes {
 
     /// For attention masking
     tag: Option<TagName>,
+
+    /// Label this step, so that it can be backtracked to later.
+    label: Option<LabelName>,
 }
 
 #[derive(Serialize, Deserialize, Clone)]
@@ -75,6 +79,9 @@ pub enum Step {
     Fixed {
         /// Text to generate.
         text: String,
+
+        /// First backtrack to this label, and then generate text.
+        following: Option<LabelName>,
 
         /// Expand variables `{{var_name}}` in the `text`.
         /// Expansion occurs atomically, when the step is executed.
@@ -193,11 +200,16 @@ impl Debug for Step {
                 text,
                 expand_vars,
                 attrs,
+                following,
             } => {
                 write!(
                     f,
-                    "Fixed({}{text:?}{attrs:?})",
-                    if *expand_vars { "f" } else { "" }
+                    "Fixed({}{text:?}{attrs:?}){}",
+                    if *expand_vars { "f" } else { "" },
+                    following
+                        .as_ref()
+                        .map(|l| format!(" following:{}", l.0))
+                        .unwrap_or_default(),
                 )
             }
             Step::Choose { options, attrs } => write!(f, "Choose({options:?}{attrs:?})"),
@@ -367,6 +379,7 @@ impl StepState {
                 text,
                 expand_vars,
                 attrs,
+                following,
             } => Self::from_specific(
                 s,
                 attrs,
@@ -531,15 +544,9 @@ impl StepState {
         }
 
         match &mut self.specific {
-            StepSpecific::ExpandOptions { .. } => {
-                panic!("advance on ExpandOptions")
-            }
-            StepSpecific::Fork { .. } => {
-                panic!("advance on fork")
-            }
-            StepSpecific::Wait { .. } => {
-                panic!("advance on wait")
-            }
+            StepSpecific::ExpandOptions { .. } => panic!("advance on ExpandOptions"),
+            StepSpecific::Fork { .. } => panic!("advance on fork"),
+            StepSpecific::Wait { .. } => panic!("advance on wait"),
             StepSpecific::Stop => {}
             StepSpecific::Options { tokens } => {
                 tokens.retain(has_token_at(token, self.num_tokens - 1))
@@ -904,7 +911,7 @@ fn main() {
 }
 
 fn runner_from_env() -> Runner {
-    let a = aici_abi:: arg_bytes();
+    let a = aici_abi::arg_bytes();
     match serde_json::from_slice(&a) {
         Ok(p) => Runner::new(p),
         Err(e) => {
