@@ -100,26 +100,20 @@ impl PreProcessResult {
 }
 
 pub trait AiciVm {
-    /// Called with the initial prompt. Has long time limit.
+    /// Called with the initial prompt. ~1000ms time limit.
     /// By default ignore prompt.
     fn init_prompt(&mut self, _arg: InitPromptArg) {}
 
-    /// Called before process(), can return attention masks. Has short time limit.
+    /// Called before mid_process(), can return attention masks. ~1ms time limit.
     /// Should be stateless.
     fn pre_process(&mut self, _arg: PreProcessArg) -> PreProcessResult {
         PreProcessResult::continue_()
     }
 
-    /// This is the main entry point for the module.
-    /// Following calls are issued:
-    /// * `Append { tokens: [] }` - to generate bias for the first token of the output
-    /// And then any combination of:
-    /// * `Append { tokens: [t] }` - when a token `t` is sampled
-    /// * `Append { tokens: [t...] }` - after fast-forward
-    /// Either way, a bias should be eventually generated.
+    /// This is the main entry point for the module. ~20ms time limit.
     fn mid_process(&mut self, arg: MidProcessArg) -> MidProcessResult;
 
-    /// Called after tokens are appended, before process().
+    /// Called after tokens are appended, after mid_process(). ~1ms time limit.
     fn post_process(&mut self, _arg: PostProcessArg) -> PostProcessResult {
         PostProcessResult {}
     }
