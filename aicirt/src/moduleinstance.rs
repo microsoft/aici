@@ -306,7 +306,7 @@ impl ModuleInstance {
         Ok(json!({}))
     }
 
-    fn json_result(&mut self, t0: Instant, res: Result<Value>) -> Value {
+    fn json_result(&mut self, lbl: &str, t0: Instant, res: Result<Value>) -> Value {
         let mut m = match &res {
             Ok(v) => v.as_object().unwrap().clone(),
             Err(_) => serde_json::Map::new(),
@@ -323,7 +323,7 @@ impl ModuleInstance {
 
             Err(e) => {
                 let suffix = format!("\nError: {:?}", e);
-                warn!("exec error:{}", suffix);
+                warn!("exec error ({lbl}):{}", suffix);
                 json!({
                     "type": "error",
                     "logs": logs + &suffix,
@@ -339,9 +339,9 @@ impl ModuleInstance {
     pub fn pre_process(&mut self, op: RtPreProcessArg) -> RtPreProcessResult {
         let t0 = Instant::now();
         match self.do_pre_process(op) {
-            Err(e) => RtPreProcessResult::just_json(self.json_result(t0, Err(e))),
+            Err(e) => RtPreProcessResult::just_json(self.json_result("pre0", t0, Err(e))),
             Ok(mut res) => {
-                res.json = self.json_result(t0, Ok(res.json));
+                res.json = self.json_result("pre", t0, Ok(res.json));
                 res
             }
         }
@@ -350,13 +350,13 @@ impl ModuleInstance {
     pub fn mid_process(&mut self, op: RtMidProcessArg, shm: &Shm) -> Value {
         let t0 = Instant::now();
         let res = self.do_mid_process(op, shm);
-        self.json_result(t0, res)
+        self.json_result("mid", t0, res)
     }
 
     pub fn post_process(&mut self, op: RtPostProcessArg) -> Value {
         let t0 = Instant::now();
         let res = self.do_post_process(op);
-        self.json_result(t0, res)
+        self.json_result("post", t0, res)
     }
 
     pub fn tokenize(&mut self, s: &str) -> Result<Vec<u32>> {
