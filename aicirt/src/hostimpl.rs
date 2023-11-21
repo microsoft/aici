@@ -1,6 +1,6 @@
 use aici_abi::{
     bytes::{clone_vec_as_bytes, vec_from_bytes, TokRxInfo},
-    PreProcessArg,
+    PreProcessArg, PostProcessArg,
 };
 use anyhow::{anyhow, Result};
 use log::{info, warn};
@@ -127,6 +127,11 @@ impl ModuleData {
     }
 
     pub fn set_pre_process_data(&mut self, data: PreProcessArg) {
+        let bytes = serde_json::to_vec(&data).unwrap();
+        self.set_process_arg(bytes);
+    }
+
+    pub fn set_post_process_data(&mut self, data: PostProcessArg) {
         let bytes = serde_json::to_vec(&data).unwrap();
         self.set_process_arg(bytes);
     }

@@ -27,8 +27,8 @@ use aici_abi::{
     host::{self, tokenize},
     svob::SimpleVob,
     toktree::{Recognizer, SpecialToken, TokTrie},
-    wprintln, AiciVm, InitPromptArg, PreProcessArg, PreProcessResult, ProcessArg, ProcessResult,
-    TokenId,
+    wprintln, AiciVm, InitPromptArg, PostProcessArg, PostProcessResult, PreProcessArg,
+    PreProcessResult, ProcessArg, ProcessResult, TokenId,
 };
 
 const LOG_ADVANCE: bool = false;
@@ -799,12 +799,12 @@ impl AiciVm for Runner {
         }
     }
 
-    fn pre_process(&mut self, arg: PreProcessArg) -> PreProcessResult {
+    fn post_process(&mut self, arg: PostProcessArg) -> PostProcessResult {
         self.finish_states();
 
-        if self.maybe_wait() {
-            // just ignore the token
-            return PreProcessResult::suspend();
+        // if in wait state, don't do anything...
+        if let StepSpecific::Wait { .. } = &self.curr_state().specific {
+            return PostProcessResult {};
         }
 
         let tokens = arg.tokens;
@@ -821,10 +821,17 @@ impl AiciVm for Runner {
 
         self.finish_states();
 
+        PostProcessResult {}
+    }
+
+    fn pre_process(&mut self, _arg: PreProcessArg) -> PreProcessResult {
+        self.finish_states();
+
         if self.maybe_wait() {
             return PreProcessResult::suspend();
         }
 
+        // moving to Fork state is greedy
         if self.can_move_to_next_state() {
             if let Some(StepSpecific::Fork { .. }) = self.next_state() {
                 self.state_idx += 1;

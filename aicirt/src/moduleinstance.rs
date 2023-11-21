@@ -1,5 +1,5 @@
 use aici_abi::toktree::TokTrie;
-use aici_abi::{InitPromptArg, PreProcessResult, ProcessResult, TokenId};
+use aici_abi::{InitPromptArg, PostProcessResult, PreProcessResult, ProcessResult, TokenId};
 use aici_tokenizers::Tokenizer;
 use anyhow::{anyhow, ensure, Result};
 use log::warn;
@@ -15,7 +15,9 @@ use crate::hostimpl::{
     setup_linker, AiciLimits, GlobalInfo, ModuleData, ModuleInstId, LOGIT_BIAS_ALLOW,
 };
 use crate::shm::Shm;
-use crate::worker::{GroupHandle, RtPreProcessArg, RtPreProcessResult, RtProcessArg};
+use crate::worker::{
+    GroupHandle, RtPostProcessArg, RtPreProcessArg, RtPreProcessResult, RtProcessArg,
+};
 
 #[derive(Clone)]
 pub struct WasmContext {
@@ -297,6 +299,13 @@ impl ModuleInstance {
         }
     }
 
+    fn do_post_process(&mut self, rtarg: RtPostProcessArg) -> Result<Value> {
+        self.store.data_mut().set_post_process_data(rtarg.op);
+        self.call_func::<WasmAici, ()>("aici_post_process", self.handle)?;
+        let res: PostProcessResult = self.proc_result()?;
+        Ok(serde_json::to_value(res)?)
+    }
+
     fn json_result(&mut self, t0: Instant, res: Result<Value>) -> Value {
         let mut m = match &res {
             Ok(v) => v.as_object().unwrap().clone(),
@@ -341,6 +350,12 @@ impl ModuleInstance {
     pub fn process(&mut self, op: RtProcessArg, shm: &Shm) -> Value {
         let t0 = Instant::now();
         let res = self.do_process(op, shm);
+        self.json_result(t0, res)
+    }
+
+    pub fn post_process(&mut self, op: RtPostProcessArg) -> Value {
+        let t0 = Instant::now();
+        let res = self.do_post_process(op);
         self.json_result(t0, res)
     }
 

@@ -4,7 +4,7 @@ use std::time::Instant;
 use std::{collections::HashMap, path::PathBuf, time::Duration};
 
 use aici_abi::host::{StorageCmd, StorageOp, StorageResp};
-use aici_abi::{PreProcessArg, ProcessArg, TokenId};
+use aici_abi::{PostProcessArg, PreProcessArg, ProcessArg, TokenId};
 use anyhow::{anyhow, Result};
 use ipc_channel::ipc::{self, IpcOneShotServer, IpcReceiver, IpcReceiverSet, IpcSender};
 use libc::pid_t;
@@ -118,6 +118,11 @@ pub struct RtPreProcessArg {
 }
 
 #[derive(Serialize, Deserialize, Debug)]
+pub struct RtPostProcessArg {
+    pub op: PostProcessArg,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
 struct ForkerResp(SeqHandle);
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -143,6 +148,9 @@ enum SeqCmd {
     },
     Process {
         data: RtProcessArg,
+    },
+    PostProcess {
+        data: RtPostProcessArg,
     },
     RunMain {},
 }
@@ -176,6 +184,9 @@ enum SeqResp {
         attn_masks: Vec<Vec<f32>>,
     },
     Process {
+        json: String,
+    },
+    PostProcess {
         json: String,
     },
     Error {
@@ -335,6 +346,12 @@ impl SeqCtx {
                     json: serde_json::to_string(&res)?,
                 })
             }
+            SeqCmd::PostProcess { data } => {
+                let res = self.mutinst().post_process(data);
+                Ok(SeqResp::PostProcess {
+                    json: serde_json::to_string(&res)?,
+                })
+            }
             SeqCmd::RunMain {} => {
                 self.mutinst().run_main()?;
                 ok()
@@ -444,6 +461,11 @@ impl SeqWorkerHandle {
         }
     }
 
+    pub fn start_post_process(&self, data: RtPostProcessArg) -> Result<()> {
+        self.handle.just_send(SeqCmd::PostProcess { data })?;
+        Ok(())
+    }
+
     pub fn start_pre_process(&self, data: RtPreProcessArg) -> Result<()> {
         self.handle.just_send(SeqCmd::PreProcess { data })?;
         Ok(())
@@ -479,6 +501,14 @@ impl SeqWorkerHandle {
         match self.handle.recv_with_timeout(timeout) {
             Ok(SeqResp::Process { json }) => Ok(serde_json::from_str(&json)?),
             Ok(r) => Err(anyhow!("unexpected response (process) {r:?}")),
+            Err(e) => Err(e.into()),
+        }
+    }
+
+    pub fn check_post_process(&self, timeout: Duration) -> Result<JSON> {
+        match self.handle.recv_with_timeout(timeout) {
+            Ok(SeqResp::PostProcess { json }) => Ok(serde_json::from_str(&json)?),
+            Ok(r) => Err(anyhow!("unexpected response (post_process) {r:?}")),
             Err(e) => Err(e.into()),
         }
     }
