@@ -34,14 +34,14 @@ pub struct PreProcessResult {
 }
 
 #[derive(Serialize, Deserialize, Debug)]
-pub struct ProcessArg {
+pub struct MidProcessArg {
     /// fork_group.len() == attention_masks.len().
     /// Use host::self_seq_id() to get the ID of the current sequence.
     pub fork_group: Vec<SeqId>,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
-pub enum ProcessResult {
+pub enum MidProcessResult {
     /// Stop the current sequence.
     /// Similar to strong bias to EOS.
     Stop,
@@ -115,7 +115,7 @@ pub trait AiciVm {
     /// * `Append { tokens: [t] }` - when a token `t` is sampled
     /// * `Append { tokens: [t...] }` - after fast-forward
     /// Either way, a bias should be eventually generated.
-    fn process(&mut self, arg: ProcessArg) -> ProcessResult;
+    fn mid_process(&mut self, arg: MidProcessArg) -> MidProcessResult;
 
     /// Called after tokens are appended, before process().
     fn post_process(&mut self, _arg: PostProcessArg) -> PostProcessResult {
@@ -135,9 +135,9 @@ pub trait AiciVm {
         host::return_process_result(&res_bytes);
     }
 
-    fn aici_process(&mut self) {
-        let arg: ProcessArg = serde_json::from_slice(&host::process_arg_bytes()).unwrap();
-        let res = self.process(arg);
+    fn aici_mid_process(&mut self) {
+        let arg: MidProcessArg = serde_json::from_slice(&host::process_arg_bytes()).unwrap();
+        let res = self.mid_process(arg);
         let res_bytes = serde_json::to_vec(&res).unwrap();
         host::return_process_result(&res_bytes);
     }
@@ -178,7 +178,7 @@ macro_rules! expose {
 macro_rules! aici_expose_all {
     ($struct_name:ident, $new:expr) => {
         $crate::expose!($struct_name::aici_pre_process() -> ());
-        $crate::expose!($struct_name::aici_process() -> ());
+        $crate::expose!($struct_name::aici_mid_process() -> ());
         $crate::expose!($struct_name::aici_post_process() -> ());
         $crate::expose!($struct_name::aici_init_prompt() -> ());
 

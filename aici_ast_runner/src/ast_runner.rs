@@ -28,7 +28,7 @@ use aici_abi::{
     svob::SimpleVob,
     toktree::{Recognizer, SpecialToken, TokTrie},
     wprintln, AiciVm, InitPromptArg, PostProcessArg, PostProcessResult, PreProcessArg,
-    PreProcessResult, ProcessArg, ProcessResult, TokenId,
+    PreProcessResult, MidProcessArg, MidProcessResult, TokenId,
 };
 
 const LOG_ADVANCE: bool = false;
@@ -725,7 +725,7 @@ impl Runner {
         &self.states[self.state_idx]
     }
 
-    fn compute(&mut self) -> ProcessResult {
+    fn compute(&mut self) -> MidProcessResult {
         let mut allowed_tokens = self.trie.alloc_token_set();
         let mut ff_tokens = None;
         let mut can_ff = true;
@@ -755,13 +755,13 @@ impl Runner {
         self.finish_states();
 
         if let Some(ff_tokens) = ff_tokens {
-            ProcessResult::Splice {
+            MidProcessResult::Splice {
                 backtrack: 0,
                 ff_tokens,
             }
         } else {
             host::return_logit_bias(&allowed_tokens);
-            ProcessResult::SampleWithBias
+            MidProcessResult::SampleWithBias
         }
     }
 
@@ -850,7 +850,7 @@ impl AiciVm for Runner {
         }
     }
 
-    fn process(&mut self, arg: ProcessArg) -> ProcessResult {
+    fn mid_process(&mut self, arg: MidProcessArg) -> MidProcessResult {
         self.finish_states();
 
         if arg.fork_group.len() > 1 {
@@ -872,7 +872,7 @@ impl AiciVm for Runner {
 
         if self.maybe_wait() {
             // this is a bit late in the game, but it's the best we can do
-            return ProcessResult::Splice {
+            return MidProcessResult::Splice {
                 backtrack: 0,
                 ff_tokens: tokenize("░"),
             };

@@ -1,5 +1,5 @@
 use aici_abi::toktree::TokTrie;
-use aici_abi::{InitPromptArg, PostProcessResult, PreProcessResult, ProcessResult, TokenId};
+use aici_abi::{InitPromptArg, PostProcessResult, PreProcessResult, MidProcessResult, TokenId};
 use aici_tokenizers::Tokenizer;
 use anyhow::{anyhow, ensure, Result};
 use log::warn;
@@ -16,7 +16,7 @@ use crate::hostimpl::{
 };
 use crate::shm::Shm;
 use crate::worker::{
-    GroupHandle, RtPostProcessArg, RtPreProcessArg, RtPreProcessResult, RtProcessArg,
+    GroupHandle, RtPostProcessArg, RtPreProcessArg, RtPreProcessResult, RtMidProcessArg,
 };
 
 #[derive(Clone)]
@@ -267,12 +267,12 @@ impl ModuleInstance {
         })
     }
 
-    fn do_process(&mut self, op: RtProcessArg, shm: &Shm) -> Result<Value> {
+    fn do_mid_process(&mut self, op: RtMidProcessArg, shm: &Shm) -> Result<Value> {
         self.store.data_mut().set_process_data(op, shm);
-        self.call_func::<WasmAici, ()>("aici_process", self.handle)?;
+        self.call_func::<WasmAici, ()>("aici_mid_process", self.handle)?;
         match self.proc_result()? {
-            ProcessResult::SampleWithBias => Ok(json!({})),
-            ProcessResult::Splice {
+            MidProcessResult::SampleWithBias => Ok(json!({})),
+            MidProcessResult::Splice {
                 backtrack: 0,
                 mut ff_tokens,
             } if ff_tokens.len() >= 1 => {
@@ -347,9 +347,9 @@ impl ModuleInstance {
         }
     }
 
-    pub fn process(&mut self, op: RtProcessArg, shm: &Shm) -> Value {
+    pub fn mid_process(&mut self, op: RtMidProcessArg, shm: &Shm) -> Value {
         let t0 = Instant::now();
-        let res = self.do_process(op, shm);
+        let res = self.do_mid_process(op, shm);
         self.json_result(t0, res)
     }
 

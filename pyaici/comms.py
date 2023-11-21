@@ -465,7 +465,7 @@ class AiciRunner:
 
     def step_finish_mid(self):
         cmd = {
-            "op": "process",
+            "op": "mid_process",
             "ops": self.gen_q,
         }
         self.last_ops = cmd["ops"]
@@ -531,7 +531,7 @@ class AiciRunner:
         mask = np.frombuffer(
             self.bin_shm, dtype=np.float32, offset=0, count=n * self.max_context_len
         ).reshape([n, self.max_context_len])
-        # need to clone it before sending "process" req
+        # need to clone it before sending "mid_process" req
         self.curr_attn_mask = mask.copy()
         return fork_map, suspend_ids
 

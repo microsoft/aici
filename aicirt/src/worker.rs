@@ -4,7 +4,7 @@ use std::time::Instant;
 use std::{collections::HashMap, path::PathBuf, time::Duration};
 
 use aici_abi::host::{StorageCmd, StorageOp, StorageResp};
-use aici_abi::{PostProcessArg, PreProcessArg, ProcessArg, TokenId};
+use aici_abi::{PostProcessArg, PreProcessArg, MidProcessArg, TokenId};
 use anyhow::{anyhow, Result};
 use ipc_channel::ipc::{self, IpcOneShotServer, IpcReceiver, IpcReceiverSet, IpcSender};
 use libc::pid_t;
@@ -105,8 +105,8 @@ struct ForkerCmd {
 }
 
 #[derive(Serialize, Deserialize, Debug)]
-pub struct RtProcessArg {
-    pub op: ProcessArg,
+pub struct RtMidProcessArg {
+    pub op: MidProcessArg,
     pub logit_offset: usize,
     pub logit_size: usize, // bytes
 }
@@ -146,8 +146,8 @@ enum SeqCmd {
     PreProcess {
         data: RtPreProcessArg,
     },
-    Process {
-        data: RtProcessArg,
+    MidProcess {
+        data: RtMidProcessArg,
     },
     PostProcess {
         data: RtPostProcessArg,
@@ -183,7 +183,7 @@ enum SeqResp {
         suspend: bool,
         attn_masks: Vec<Vec<f32>>,
     },
-    Process {
+    MidProcess {
         json: String,
     },
     PostProcess {
@@ -339,10 +339,10 @@ impl SeqCtx {
                     attn_masks: res.attn_masks,
                 })
             }
-            SeqCmd::Process { data } => {
+            SeqCmd::MidProcess { data } => {
                 let shm = self.shm.clone();
-                let res = self.mutinst().process(data, &shm);
-                Ok(SeqResp::Process {
+                let res = self.mutinst().mid_process(data, &shm);
+                Ok(SeqResp::MidProcess {
                     json: serde_json::to_string(&res)?,
                 })
             }
@@ -471,8 +471,8 @@ impl SeqWorkerHandle {
         Ok(())
     }
 
-    pub fn start_process(&self, data: RtProcessArg) -> Result<()> {
-        self.handle.just_send(SeqCmd::Process { data })?;
+    pub fn start_process(&self, data: RtMidProcessArg) -> Result<()> {
+        self.handle.just_send(SeqCmd::MidProcess { data })?;
         Ok(())
     }
 
@@ -499,7 +499,7 @@ impl SeqWorkerHandle {
 
     pub fn check_process(&self, timeout: Duration) -> Result<JSON> {
         match self.handle.recv_with_timeout(timeout) {
-            Ok(SeqResp::Process { json }) => Ok(serde_json::from_str(&json)?),
+            Ok(SeqResp::MidProcess { json }) => Ok(serde_json::from_str(&json)?),
             Ok(r) => Err(anyhow!("unexpected response (process) {r:?}")),
             Err(e) => Err(e.into()),
         }

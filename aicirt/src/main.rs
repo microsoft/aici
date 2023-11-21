@@ -8,7 +8,7 @@ mod worker;
 
 use aici_abi::bytes::limit_str;
 use aici_abi::toktree::TokTrie;
-use aici_abi::{PostProcessArg, PreProcessArg, ProcessArg, SeqId, TokenId};
+use aici_abi::{PostProcessArg, PreProcessArg, MidProcessArg, SeqId, TokenId};
 use aici_tokenizers::find_tokenizer;
 use anyhow::{anyhow, ensure, Result};
 use base64;
@@ -33,7 +33,7 @@ use crate::hostimpl::*;
 use crate::moduleinstance::*;
 use crate::msgchannel::MessageChannel;
 use crate::shm::Shm;
-use crate::worker::{bench_ipc, RtProcessArg, WorkerForker};
+use crate::worker::{bench_ipc, RtMidProcessArg, WorkerForker};
 
 // Both of these are percentage of available cores
 const BG_THREADS_FRACTION: usize = 50;
@@ -610,7 +610,7 @@ impl Stepper {
         Ok(Value::Object(map))
     }
 
-    fn aici_process(&mut self, req: AiciProcessReq) -> Result<Value> {
+    fn aici_mid_process(&mut self, req: AiciProcessReq) -> Result<Value> {
         let block_elts = self.globals.tokrx_info.vocab_size as usize;
 
         // first, execute forks
@@ -652,8 +652,8 @@ impl Stepper {
                     .iter()
                     .map(|id| SeqId(*id as u32))
                     .collect::<Vec<_>>();
-                let op = RtProcessArg {
-                    op: ProcessArg { fork_group },
+                let op = RtMidProcessArg {
+                    op: MidProcessArg { fork_group },
                     logit_offset,
                     logit_size,
                 };
@@ -728,7 +728,7 @@ impl Exec for Stepper {
                 let json = serde_json::from_value(json)?;
                 with_timer!(self.pre_timer, { self.aici_pre_process(json) })
             }
-            Some("process") => self.aici_process(serde_json::from_value(json)?),
+            Some("mid_process") => self.aici_mid_process(serde_json::from_value(json)?),
             Some("post_process") => self.aici_post_process(serde_json::from_value(json)?),
             _ => return Err(anyhow!("bad op")),
         }
