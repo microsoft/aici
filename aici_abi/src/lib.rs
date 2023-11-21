@@ -60,6 +60,7 @@ pub enum MidProcessResult {
 
     /// First pop `backtrack` tokens,
     /// then force next tokens to be generated to be `ff_tokens`.
+    /// `backtrack` count includes the token about to be generated from this step.
     /// `backtrack` can be 0, and `ff_tokens` can be empty but not both.
     Splice {
         backtrack: u32,
