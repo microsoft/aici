@@ -56,13 +56,6 @@ pub enum MidProcessResult {
         backtrack: u32,
         ff_tokens: Vec<TokenId>,
     },
-
-    /// Wait until all listed variables are available for reading,
-    /// and all listed sequences have finished executing.
-    WaitAll {
-        variables: Vec<String>,
-        finished: Vec<SeqId>,
-    },
 }
 
 #[derive(Serialize, Deserialize, Debug)]
