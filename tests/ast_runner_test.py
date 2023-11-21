@@ -231,9 +231,10 @@ spanish: 'hola'
             ast.fixed("The word 'hello' in"),
             ast.fork(
                 [
+                    ast.fixed("\n"),
                     ast.wait_vars("french", "spanish"),
                     ast.fixed(
-                        "\nfrench:{{french}}\nspanish:{{spanish}}\n", expand_vars=True
+                        "french:{{french}}\nspanish:{{spanish}}\n", expand_vars=True
                     ),
                 ],
                 [

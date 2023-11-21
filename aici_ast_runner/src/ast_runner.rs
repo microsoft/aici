@@ -27,8 +27,8 @@ use aici_abi::{
     host::{self, tokenize},
     svob::SimpleVob,
     toktree::{Recognizer, SpecialToken, TokTrie},
-    wprintln, AiciVm, InitPromptArg, PostProcessArg, PostProcessResult, PreProcessArg,
-    PreProcessResult, MidProcessArg, MidProcessResult, TokenId,
+    wprintln, AiciVm, InitPromptArg, MidProcessArg, MidProcessResult, PostProcessArg,
+    PostProcessResult, PreProcessArg, PreProcessResult, TokenId,
 };
 
 const LOG_ADVANCE: bool = false;
@@ -43,6 +43,15 @@ pub struct VarName(String);
 impl Debug for VarName {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "${}", self.0)
+    }
+}
+
+#[derive(Serialize, Deserialize, Clone, PartialEq, Eq, Hash)]
+pub struct LabelName(String);
+
+impl Debug for LabelName {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}:", self.0)
     }
 }
 
@@ -241,7 +250,7 @@ enum StepSpecific {
     ExpandOptions { texts: Vec<String> },
     Gen { rx: RxStackRecognizer },
     Cfg { cfg: CfgParser },
-    Fork { branches: Vec<Vec<Step>> },
+    Fork { branches: Vec<Vec<StepState>> },
     Wait { vars: Vec<VarName> },
     Stop,
 }
@@ -342,7 +351,10 @@ impl StepState {
                     s,
                     &StepAttributes::default(),
                     StepSpecific::Fork {
-                        branches: branches.clone(),
+                        branches: branches
+                            .iter()
+                            .map(|b| b.iter().map(|s| Self::from_ast(s)).collect())
+                            .collect(),
                     },
                 )
             }
@@ -841,7 +853,7 @@ impl AiciVm for Runner {
         if let StepSpecific::Fork { branches } = &self.curr_state().specific {
             let attention_masks = branches
                 .iter()
-                .map(|b| StepState::from_ast(&b[0]).attention_mask(&self.trie, &self.tokens))
+                .map(|b| b[0].attention_mask(&self.trie, &self.tokens))
                 .collect::<Vec<_>>();
             PreProcessResult::new(attention_masks)
         } else {
@@ -855,16 +867,13 @@ impl AiciVm for Runner {
 
         if arg.fork_group.len() > 1 {
             wprintln!("fork group: {:?}", arg.fork_group);
-            if let StepSpecific::Fork { branches } = &self.curr_state().specific {
+            let st = self.states.remove(self.state_idx);
+            if let StepSpecific::Fork { mut branches } = st.specific {
                 assert!(arg.fork_group.len() == branches.len());
                 let my_id = host::self_seq_id();
                 let idx = arg.fork_group.iter().position(|id| *id == my_id).unwrap();
-                let branch = branches[idx]
-                    .iter()
-                    .map(StepState::from_ast)
-                    .collect::<Vec<_>>();
-                self.states
-                    .splice(self.state_idx..(self.state_idx + 1), branch);
+                let branch = branches.remove(idx);
+                self.states.splice(self.state_idx..self.state_idx, branch);
             } else {
                 panic!("current step not a fork");
             }
