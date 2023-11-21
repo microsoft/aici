@@ -729,7 +729,6 @@ impl Runner {
                 .unwrap_or(TagName("other".to_string())),
         });
 
-        let bytes = self.ctx.trie.token(token);
         self.ctx.bytes.extend_from_slice(bytes);
 
         self.states[self.state_idx].advance(&self.ctx, token);
