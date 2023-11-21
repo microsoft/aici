@@ -14,16 +14,19 @@ def wrap(text):
     return pyaici.util.codellama_prompt(text)
 
 
-def greedy_query(prompt: str, steps: list):
+def greedy_query(prompt: str, steps: list, n=1):
     ast_module = pyaici.rest.ast_module
+    temperature = 0
+    if n > 1:
+        temperature = 0.8
     assert ast_module
     res = pyaici.rest.completion(
         prompt=prompt,
         aici_module=ast_module,
         aici_arg={"steps": steps},
-        temperature=0,
+        temperature=temperature,
         max_tokens=200,
-        n=1,
+        n=n,
     )
     if res["error"]:
         pytest.fail(res["error"])
@@ -94,6 +97,17 @@ int fib(int n) {
     )
 
 
+json_template = {
+    "name": "",
+    "valid": True,
+    "description": "",
+    "type": "foo|bar|baz|something|else",
+    "address": {"street": "", "city": "", "state": "[A-Z][A-Z]"},
+    "age": 1,
+    "fraction": 1.5,
+}
+
+
 def test_json():
     expect(
         """{
@@ -110,18 +124,19 @@ def test_json():
 "fraction":0.5
 }""",
         wrap("Write about J. Random Hacker from Seattle"),
-        ast.json_to_steps(
-            {
-                "name": "",
-                "valid": True,
-                "description": "",
-                "type": "foo|bar|baz|something|else",
-                "address": {"street": "", "city": "", "state": "[A-Z][A-Z]"},
-                "age": 1,
-                "fraction": 1.5,
-            }
-        ),
+        ast.json_to_steps(json_template),
     )
+
+
+def test_json_N():
+    results = greedy_query(
+        wrap("About J.R.R.Tolkien"), ast.json_to_steps(json_template), n=5
+    )
+    assert len(results) == 5
+    for r in results:
+        obj = ujson.loads(r)
+        for key in json_template.keys():
+            assert key in obj
 
 
 def test_ff_0():
