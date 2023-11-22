@@ -788,14 +788,9 @@ impl Runner {
 
     fn try_backtrack(&mut self) -> MidProcessResult {
         for idx in self.state_idx..self.states.len() {
-            let state = &mut self.states[idx];
-            if !state.allows_eos() {
-                break;
-            }
-            state.concretize(&self.ctx.vars);
+            self.states[idx].concretize(&self.ctx.vars);
 
             let state = &self.states[idx];
-
             if let Some(label) = &state.following {
                 if let StepSpecific::Options { tokens } = &state.specific {
                     assert!(tokens.len() == 1);
@@ -814,6 +809,10 @@ impl Runner {
                 } else {
                     panic!("following on non-options");
                 }
+            }
+
+            if !self.states[idx].allows_eos() {
+                break;
             }
         }
 

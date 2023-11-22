@@ -32,9 +32,8 @@ def ask_completion(*args, **kwargs):
 
 def main():
     arg = {
-        "steps": 
-        [ast.fixed("Here's some JSON about J.R.Hacker from Seattle:\n")] +
-        ast.json_to_steps(
+        "steps": [ast.fixed("Here's some JSON about J.R.Hacker from Seattle:\n")]
+        + ast.json_to_steps(
             {
                 "name": "",
                 "valid": True,
@@ -83,6 +82,17 @@ def main():
                     ast.gen(rx=r" '[^']*'", max_tokens=15, set_var="french"),
                 ],
             ),
+        ]
+    }
+
+    arg = {
+        "steps": [
+            ast.fixed("The word 'hello'"),
+            ast.label("lang", ast.fixed(" in French is translated as")),
+            ast.gen(rx=r" '[^']*'", max_tokens=15, set_var="french"),
+            ast.fixed(" or", following="lang"),
+            ast.gen(rx=r" '[^']*'", max_tokens=15, set_var="blah"),
+            ast.fixed("\nResults: {{french}} {{blah}}", expand_vars=True),
         ]
     }
 
