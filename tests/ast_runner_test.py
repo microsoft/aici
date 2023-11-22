@@ -45,7 +45,11 @@ def expect(expected: Union[list[str], str], prompt: str, steps: list):
     for i in range(len(res)):
         # ░ is used as a placeholder; will be removed
         r = res[i].replace("░", "")
-        if r != expected[i]:
+        e = expected[i]
+        if e.startswith("<...>") and len(r) > len(e) - 5:
+            e = e[5:]
+            r = r[-len(e) :]
+        if r != e:
             if len(res[i]) > 40:
                 print(f'"""{r}"""')
             else:
@@ -215,6 +219,27 @@ def test_fork_1():
             ),
         ],
     )
+
+
+def test_backtrack_1():
+    for french in [
+        " in French is translated as",
+        " French",
+        " in French is",
+        " in Paris is",
+    ]:
+        expect(
+            "<...>Results: 'bonjour' 'hi'",
+            "",
+            [
+                ast.fixed("The word 'hello'"),
+                ast.label("lang", ast.fixed(french)),
+                ast.gen(rx=r" '[^']*'", max_tokens=15, set_var="french"),
+                ast.fixed(" or", following="lang"),
+                ast.gen(rx=r" '[^']*'", max_tokens=15, set_var="blah"),
+                ast.fixed("\nResults:{{french}}{{blah}}", expand_vars=True),
+            ],
+        )
 
 
 def test_wait_1():
