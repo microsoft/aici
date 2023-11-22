@@ -29,3 +29,9 @@ RUN cd /tmp && \
     cd wabt-1.0.33 && make gcc-release && cp -v bin/wasm-* /usr/bin && cd .. && rm -rf wabt-1.0.33
 
 RUN pip install -U flash-attn
+
+# need git 2.41 for GCM/Github EMU account switching
+# https://askubuntu.com/questions/568591/how-do-i-install-the-latest-version-of-git-with-apt
+RUN apt-get install -y software-properties-common
+RUN apt-add-repository ppa:git-core/ppa
+RUN apt-get update && apt-get install -y git
