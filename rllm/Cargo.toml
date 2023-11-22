@@ -33,7 +33,7 @@ futures = "0.3.29"
 tokio = { version = "1.33.0", features = ["sync"] }
 
 [features]
-default = []
+default = ["cuda", "cudnn", "flash-attn", "nccl"]
 accelerate = ["dep:accelerate-src", "candle-core/accelerate", "candle-nn/accelerate", "candle-transformers/accelerate"]
 cuda = ["candle-core/cuda", "candle-nn/cuda", "candle-transformers/cuda"]
 cudnn = ["candle-core/cudnn"]

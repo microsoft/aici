@@ -40,7 +40,7 @@ pub fn get_model_loader<'a>(selected_model: ModelSelected) -> (Box<dyn ModelLoad
                 repeat_last_n,
                 use_flash_attn,
             ))),
-            "meta-llama/Llama-2-7b-hf".to_string(),
+            "NousResearch/Llama-2-7b-hf".to_string(),
         ),
         ModelSelected::Mistral {
             repeat_penalty,

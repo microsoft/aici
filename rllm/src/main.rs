@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 use std::sync::Mutex;
 
+use actix_web::body::MessageBody;
 use actix_web::web::Data;
 use actix_web::{http::header::ContentType, test, App};
 use candle_core::{DType, Device};
@@ -26,14 +27,16 @@ struct Args {
 async fn main() -> Result<(), APIError> {
     let args = Args::parse();
 
+    let device = Device::new_cuda(0).unwrap();
+
     let (loader, model_id) = get_model_loader(args.command);
     let paths = loader.download_model(model_id, None, args.hf_token)?;
-    let model = loader.load_model(paths, DType::F16, Device::Cpu)?;
+    let model = loader.load_model(paths, DType::F16, device.clone())?;
 
     let server_data = OpenAIServerData {
         pipeline_config: model.1,
         model: Mutex::new(model.0),
-        device: Device::Cpu,
+        device,
     };
 
     let app = test::init_service(
@@ -83,6 +86,8 @@ async fn main() -> Result<(), APIError> {
 
     let resp = test::call_service(&app, req).await;
     println!("{:?}", resp.status());
-    println!("{:?}", resp.into_body());
+    let b = resp.into_body().try_into_bytes().unwrap().to_vec();
+    let b = String::from_utf8_lossy(&b);
+    println!("{}", b);
     Ok(())
 }
