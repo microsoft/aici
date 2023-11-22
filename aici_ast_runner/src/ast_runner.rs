@@ -897,6 +897,13 @@ impl AiciVm for Runner {
     fn post_process(&mut self, arg: PostProcessArg) -> PostProcessResult {
         self.finish_states();
 
+        if arg.backtrack > 0 {
+            self.ctx.tokens.drain(arg.backtrack as usize..);
+            let state = self.curr_state();
+            assert!(state.following.is_some());
+            assert!(state.num_tokens == 0);
+        }
+
         // if in wait state, don't do anything...
         if let StepSpecific::Wait { .. } = &self.curr_state().specific {
             return PostProcessResult {};

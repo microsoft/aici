@@ -74,6 +74,9 @@ pub struct PostProcessArg {
     /// `tokens` is typically just this one token, except for the
     /// cases when fast-forward tokens are used.
     pub tokens: Vec<TokenId>,
+
+    /// Typically 0.
+    pub backtrack: u32,
 }
 
 #[derive(Serialize, Deserialize, Debug)]

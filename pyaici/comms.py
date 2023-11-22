@@ -451,8 +451,8 @@ class AiciRunner:
             obj["clone_id"] = clone_id
         self.gen_q.append(obj)
 
-    def step_add_post(self, id: int, tokens: list[int], clone_id: int = None):
-        obj = {"id": id, "tokens": tokens}
+    def step_add_post(self, id: int, backtrack:int, tokens: list[int], clone_id: int = None):
+        obj = {"id": id, "tokens": tokens, "backtrack": backtrack}
         if clone_id is not None:
             obj["clone_id"] = clone_id
         self.gen_q.append(obj)

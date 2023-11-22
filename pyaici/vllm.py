@@ -6,6 +6,7 @@ from vllm.sampling_params import SamplingParams
 from vllm.sequence import SequenceGroupMetadata, SequenceGroup, SequenceStatus, Sequence
 from vllm.core.scheduler import Scheduler, SchedulerOutputs
 from vllm.utils import Counter
+from vllm.core.block_manager import BlockSpaceManager
 
 from .comms import AiciRunner, BenchTimer
 
@@ -114,14 +115,23 @@ def install(runner: AiciRunner):
         return torch.from_numpy(runner.recv_attention_mask())
 
     def append_ff_tokens(
-        _seq_group: SequenceGroup, child_seqs: List[Tuple[Sequence, Sequence]]
+        block_manager: BlockSpaceManager,
+        _seq_group: SequenceGroup,
+        child_seqs: List[Tuple[Sequence, Sequence]],
     ):
         for seq, parent in child_seqs:
             assert not seq.skip_round
             # lookup by parent - the child wasn't born yet when response was generated
             resp = runner.response_by_seq_id(parent.seq_id)
-            ff: List[int] = resp and resp.get("ff_tokens", None)
-            toks = [seq.data.output_token_ids[-1]]
+            backtrack: int = resp.get("backtrack", 0)
+            ff: List[int] = resp.get("ff_tokens", None)
+            if backtrack:
+                assert seq is parent
+                seq.backtrack(backtrack)
+                block_manager.trim_physical_blocks(seq)
+                toks = []
+            else:
+                toks = [seq.data.output_token_ids[-1]]
             if ff:
                 # print("FF", seq.seq_id, ff, resp)
                 seq.pending_ff_tokens = ff.copy()
@@ -129,7 +139,7 @@ def install(runner: AiciRunner):
             clone_id = None
             if parent is not seq:
                 clone_id = parent.seq_id
-            runner.step_add_post(seq.seq_id, toks, clone_id)
+            runner.step_add_post(seq.seq_id, backtrack, toks, clone_id)
 
     def finish_sampling():
         runner.step_finish_post()

@@ -286,18 +286,22 @@ impl ModuleInstance {
                 }) {
                     bail!("ff_token out of range ({val} >= {vocab_size} at {idx})")
                 } else {
-                    if ff_tokens.len() == 0 {
-                        if backtrack == 0 {
+                    if backtrack == 0 {
+                        if ff_tokens.len() == 0 {
                             bail!("empty Splice (both backtrack == 0 and ff_tokens == [])")
                         }
+                        // first token will be sampled; next tokens will be passed via "ff_tokens"
+                        let t0 = ff_tokens.remove(0);
+                        self.store.data_mut().logit_ptr[t0 as usize] = LOGIT_BIAS_ALLOW;
+                    } else {
+                        // we don't really care about biases, as we're going to backtrack this token anyways
+                        // but just in case, allow all
                         self.store
                             .data_mut()
                             .logit_ptr
                             .iter_mut()
                             .for_each(|v| *v = LOGIT_BIAS_ALLOW);
-                    } else {
-                        let t0 = ff_tokens.remove(0);
-                        self.store.data_mut().logit_ptr[t0 as usize] = LOGIT_BIAS_ALLOW;
+                        // don't remove anything from ff_tokens - they all need to be appended after backtracking
                     }
                     Ok(json!({
                         "ff_tokens": ff_tokens,

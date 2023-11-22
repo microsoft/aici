@@ -181,6 +181,8 @@ pub struct AiciMidOp {
 pub struct AiciPostOp {
     id: ModuleInstId,
     tokens: Vec<Token>,
+    #[serde(default)]
+    backtrack: u32,
     clone_id: Option<ModuleInstId>,
 }
 
@@ -674,7 +676,10 @@ impl Stepper {
             if let Ok(h) = self.get_worker(instid) {
                 let tokens = op.tokens;
                 let op = RtPostProcessArg {
-                    op: PostProcessArg { tokens },
+                    op: PostProcessArg {
+                        tokens,
+                        backtrack: op.backtrack,
+                    },
                 };
                 match h.start_post_process(op) {
                     Ok(_) => used_ids.push(instid),
