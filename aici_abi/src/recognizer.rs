@@ -1,9 +1,8 @@
 use std::fmt::Debug;
 
 use crate::{
-    host,
     toktree::{Recognizer, SpecialToken, TokTrie},
-    AiciVm, ProcessArg, ProcessResult,
+    AiciVm, MidProcessArg, MidProcessResult, PostProcessArg, PostProcessResult,
 };
 
 pub struct AiciRecognizer<R: Recognizer> {
@@ -21,7 +20,15 @@ impl<R: Recognizer> AiciRecognizer<R> {
 }
 
 impl<R: Recognizer + Clone> AiciVm for AiciRecognizer<R> {
-    fn pre_process(&mut self, arg: crate::PreProcessArg) -> crate::PreProcessResult {
+    fn mid_process(&mut self, _arg: MidProcessArg) -> MidProcessResult {
+        let mut set = self.trie.alloc_token_set();
+        self.trie.compute_bias(&mut self.rec, &mut set);
+        MidProcessResult::SampleWithBias {
+            allowed_tokens: set,
+        }
+    }
+
+    fn post_process(&mut self, arg: PostProcessArg) -> PostProcessResult {
         for token in arg.tokens {
             let bytes = self.trie.token(token);
             // wprintln!("process {} {:?}", token, bytes);
@@ -30,14 +37,7 @@ impl<R: Recognizer + Clone> AiciVm for AiciRecognizer<R> {
             }
             self.rec.collapse();
         }
-        crate::PreProcessResult::continue_()
-    }
-
-    fn process(&mut self, _arg: ProcessArg) -> ProcessResult {
-        let mut set = self.trie.alloc_token_set();
-        self.trie.compute_bias(&mut self.rec, &mut set);
-        host::return_logit_bias(&set);
-        ProcessResult::SampleWithBias
+        PostProcessResult {}
     }
 }
 

@@ -1,7 +1,7 @@
 use aici_abi::toktree::TokTrie;
-use aici_abi::{InitPromptArg, PreProcessResult, ProcessResult, TokenId};
+use aici_abi::{InitPromptArg, MidProcessResult, PostProcessResult, PreProcessResult, TokenId};
 use aici_tokenizers::Tokenizer;
-use anyhow::{anyhow, ensure, Result};
+use anyhow::{anyhow, bail, ensure, Result};
 use log::warn;
 use serde::Deserialize;
 use serde_json::{json, Value};
@@ -15,7 +15,9 @@ use crate::hostimpl::{
     setup_linker, AiciLimits, GlobalInfo, ModuleData, ModuleInstId, LOGIT_BIAS_ALLOW,
 };
 use crate::shm::Shm;
-use crate::worker::{GroupHandle, RtPreProcessArg, RtPreProcessResult, RtProcessArg};
+use crate::worker::{
+    GroupHandle, RtMidProcessArg, RtPostProcessArg, RtPreProcessArg, RtPreProcessResult,
+};
 
 #[derive(Clone)]
 pub struct WasmContext {
@@ -265,15 +267,15 @@ impl ModuleInstance {
         })
     }
 
-    fn do_process(&mut self, op: RtProcessArg, shm: &Shm) -> Result<Value> {
-        self.store.data_mut().set_process_data(op, shm);
-        self.call_func::<WasmAici, ()>("aici_process", self.handle)?;
+    fn do_mid_process(&mut self, op: RtMidProcessArg, shm: &Shm) -> Result<Value> {
+        self.store.data_mut().set_mid_process_data(op, shm);
+        self.call_func::<WasmAici, ()>("aici_mid_process", self.handle)?;
         match self.proc_result()? {
-            ProcessResult::SampleWithBias => Ok(json!({})),
-            ProcessResult::Splice {
-                backtrack: 0,
+            MidProcessResult::SampleWithBias { .. } => Ok(json!({})),
+            MidProcessResult::Splice {
+                backtrack,
                 mut ff_tokens,
-            } if ff_tokens.len() >= 1 => {
+            } => {
                 let vocab_size = self.store.data().logit_ptr.len();
                 if let Some((idx, val)) = ff_tokens.iter().enumerate().find_map(|(idx, t)| {
                     if *t as usize >= vocab_size {
@@ -282,14 +284,28 @@ impl ModuleInstance {
                         None
                     }
                 }) {
-                    Err(anyhow!(
-                        "ff_token out of range ({val} >= {vocab_size} at {idx})"
-                    ))
+                    bail!("ff_token out of range ({val} >= {vocab_size} at {idx})")
                 } else {
-                    let t0 = ff_tokens.remove(0);
-                    self.store.data_mut().logit_ptr[t0 as usize] = LOGIT_BIAS_ALLOW;
+                    if backtrack == 0 {
+                        if ff_tokens.len() == 0 {
+                            bail!("empty Splice (both backtrack == 0 and ff_tokens == [])")
+                        }
+                        // first token will be sampled; next tokens will be passed via "ff_tokens"
+                        let t0 = ff_tokens.remove(0);
+                        self.store.data_mut().logit_ptr[t0 as usize] = LOGIT_BIAS_ALLOW;
+                    } else {
+                        // we don't really care about biases, as we're going to backtrack this token anyways
+                        // but just in case, allow all
+                        self.store
+                            .data_mut()
+                            .logit_ptr
+                            .iter_mut()
+                            .for_each(|v| *v = LOGIT_BIAS_ALLOW);
+                        // don't remove anything from ff_tokens - they all need to be appended after backtracking
+                    }
                     Ok(json!({
-                        "ff_tokens": ff_tokens
+                        "ff_tokens": ff_tokens,
+                        "backtrack": backtrack,
                     }))
                 }
             }
@@ -297,7 +313,14 @@ impl ModuleInstance {
         }
     }
 
-    fn json_result(&mut self, t0: Instant, res: Result<Value>) -> Value {
+    fn do_post_process(&mut self, rtarg: RtPostProcessArg) -> Result<Value> {
+        self.store.data_mut().set_post_process_data(rtarg.op);
+        self.call_func::<WasmAici, ()>("aici_post_process", self.handle)?;
+        let _res: PostProcessResult = self.proc_result()?;
+        Ok(json!({}))
+    }
+
+    fn json_result(&mut self, lbl: &str, t0: Instant, res: Result<Value>) -> Value {
         let mut m = match &res {
             Ok(v) => v.as_object().unwrap().clone(),
             Err(_) => serde_json::Map::new(),
@@ -314,7 +337,7 @@ impl ModuleInstance {
 
             Err(e) => {
                 let suffix = format!("\nError: {:?}", e);
-                warn!("exec error:{}", suffix);
+                warn!("exec error ({lbl}):{}", suffix);
                 json!({
                     "type": "error",
                     "logs": logs + &suffix,
@@ -330,18 +353,24 @@ impl ModuleInstance {
     pub fn pre_process(&mut self, op: RtPreProcessArg) -> RtPreProcessResult {
         let t0 = Instant::now();
         match self.do_pre_process(op) {
-            Err(e) => RtPreProcessResult::just_json(self.json_result(t0, Err(e))),
+            Err(e) => RtPreProcessResult::just_json(self.json_result("pre0", t0, Err(e))),
             Ok(mut res) => {
-                res.json = self.json_result(t0, Ok(res.json));
+                res.json = self.json_result("pre", t0, Ok(res.json));
                 res
             }
         }
     }
 
-    pub fn process(&mut self, op: RtProcessArg, shm: &Shm) -> Value {
+    pub fn mid_process(&mut self, op: RtMidProcessArg, shm: &Shm) -> Value {
         let t0 = Instant::now();
-        let res = self.do_process(op, shm);
-        self.json_result(t0, res)
+        let res = self.do_mid_process(op, shm);
+        self.json_result("mid", t0, res)
+    }
+
+    pub fn post_process(&mut self, op: RtPostProcessArg) -> Value {
+        let t0 = Instant::now();
+        let res = self.do_post_process(op);
+        self.json_result("post", t0, res)
     }
 
     pub fn tokenize(&mut self, s: &str) -> Result<Vec<u32>> {

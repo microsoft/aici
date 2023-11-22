@@ -1,4 +1,4 @@
-from typing import List, Union, Dict, Any
+from typing import List, Union, Dict, Any, Tuple
 
 import torch
 
@@ -6,12 +6,14 @@ from vllm.sampling_params import SamplingParams
 from vllm.sequence import SequenceGroupMetadata, SequenceGroup, SequenceStatus, Sequence
 from vllm.core.scheduler import Scheduler, SchedulerOutputs
 from vllm.utils import Counter
+from vllm.core.block_manager import BlockSpaceManager
 
 from .comms import AiciRunner, BenchTimer
 
 
 def install(runner: AiciRunner):
     timer = BenchTimer("initiate_step")
+
     def initiate_step(
         scheduler: Scheduler,
         counter: Counter,
@@ -47,42 +49,24 @@ def install(runner: AiciRunner):
             for seq in seqs:
                 steps.append((seq_group, seq))
                 id = seq.seq_id
+                max_context_len = max(max_context_len, seq.get_len())
 
                 if seq.skip_round:
                     seq.skip_round = False
                     num_gen += 1
-                    max_context_len = max(max_context_len, seq.get_len())
-                    runner.step_add_tokens(id, [])
+                    runner.step_add_pre(id)
                 elif seq.data.num_pending_ff_tokens:
-                    toks = seq.get_token_ids()
-                    max_context_len = max(max_context_len, len(toks))
-                    runner.step_add_tokens(
-                        id,
-                        toks[-seq.data.num_pending_ff_tokens :],
-                        clone_id=seq.data.parent_id,
-                    )
-                    seq.data.parent_id = None
+                    runner.step_add_pre(id)
                 elif scheduler_outputs.prompt_run:
-                    toks = seq.get_token_ids()
-                    max_context_len = max(max_context_len, len(toks))
-                    runner.step_add_prompt(
-                        id,
-                        prompt=toks,
-                        req_id=seq_group.request_id,
-                    )
+                    runner.step_add_pre(id, req_id=seq_group.request_id)
                 else:
                     num_gen += 1
-                    out = seq.data.output_token_ids
-                    max_context_len = max(max_context_len, seq.get_len())
-                    runner.step_add_tokens(
-                        id, tokens=[out[-1]], clone_id=seq.data.parent_id
-                    )
-                    seq.data.parent_id = None
+                    runner.step_add_pre(id)
 
         if num_gen == 0:
             runner.disable_attn_mask = True
 
-        fork_map, suspend_ids = runner.step_finish(max_context_len)
+        fork_map, suspend_ids = runner.step_finish_pre(max_context_len)
         if fork_map is None:
             return
         used = [False for _ in steps]
@@ -97,11 +81,10 @@ def install(runner: AiciRunner):
                 seq_group.sampling_params.dynamic_forks = True
                 scheduler.fork_seq(seq, copy)
                 clone_id = seq.seq_id
-                copy.data.parent_id = None  # don't clone it again in the next step
                 seq = copy
             else:
                 used[parent_idx] = True
-            runner.step_add_tokens(seq.seq_id, tokens=[], clone_id=clone_id)
+            runner.step_add_mid(seq.seq_id, clone_id=clone_id)
 
         for id in suspend_ids:
             seq_group, seq = steps[id]
@@ -110,7 +93,7 @@ def install(runner: AiciRunner):
             used[id] = True
             seq.skip_round = True
 
-        runner.step_finish2()
+        runner.step_finish_mid()
 
         for idx in range(len(steps)):
             if used[idx]:
@@ -131,15 +114,38 @@ def install(runner: AiciRunner):
     def recv_attention_mask():
         return torch.from_numpy(runner.recv_attention_mask())
 
-    def append_ff_tokens(seq_group: SequenceGroup):
-        for seq in seq_group.get_seqs():
-            resp = runner.response_by_seq_id(seq.seq_id)
-            ff = resp and resp.get("ff_tokens", None)
+    def append_ff_tokens(
+        block_manager: BlockSpaceManager,
+        _seq_group: SequenceGroup,
+        child_seqs: List[Tuple[Sequence, Sequence]],
+    ):
+        for seq, parent in child_seqs:
+            assert not seq.skip_round
+            # lookup by parent - the child wasn't born yet when response was generated
+            resp = runner.response_by_seq_id(parent.seq_id)
+            backtrack: int = resp.get("backtrack", 0)
+            ff: List[int] = resp.get("ff_tokens", None)
+            if backtrack:
+                assert seq is parent
+                seq.backtrack(backtrack)
+                block_manager.trim_physical_blocks(seq)
+                toks = []
+            else:
+                toks = [seq.data.output_token_ids[-1]]
             if ff:
                 # print("FF", seq.seq_id, ff, resp)
-                seq.pending_ff_tokens = ff
+                seq.pending_ff_tokens = ff.copy()
+                toks += ff
+            clone_id = None
+            if parent is not seq:
+                clone_id = parent.seq_id
+            runner.step_add_post(seq.seq_id, backtrack, toks, clone_id)
+
+    def finish_sampling():
+        runner.step_finish_post()
 
     SamplingParams.apply_dynamic_logit_bias = apply_dynamic_logit_bias
     SamplingParams.initiate_step = initiate_step
+    SamplingParams.finish_sampling = finish_sampling
     SamplingParams.append_ff_tokens = append_ff_tokens
     SamplingParams.recv_attention_mask = recv_attention_mask

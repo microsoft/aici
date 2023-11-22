@@ -3,8 +3,7 @@ use std::rc::Rc;
 use std::time::Instant;
 use std::{collections::HashMap, path::PathBuf, time::Duration};
 
-use aici_abi::host::{StorageCmd, StorageOp, StorageResp};
-use aici_abi::{PreProcessArg, ProcessArg, TokenId};
+use aici_abi::{PostProcessArg, PreProcessArg, MidProcessArg, TokenId, StorageCmd, StorageOp, StorageResp};
 use anyhow::{anyhow, Result};
 use ipc_channel::ipc::{self, IpcOneShotServer, IpcReceiver, IpcReceiverSet, IpcSender};
 use libc::pid_t;
@@ -105,8 +104,8 @@ struct ForkerCmd {
 }
 
 #[derive(Serialize, Deserialize, Debug)]
-pub struct RtProcessArg {
-    pub op: ProcessArg,
+pub struct RtMidProcessArg {
+    pub op: MidProcessArg,
     pub logit_offset: usize,
     pub logit_size: usize, // bytes
 }
@@ -115,6 +114,11 @@ pub struct RtProcessArg {
 pub struct RtPreProcessArg {
     pub op: PreProcessArg,
     pub max_context_size: usize, // elements
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct RtPostProcessArg {
+    pub op: PostProcessArg,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -141,8 +145,11 @@ enum SeqCmd {
     PreProcess {
         data: RtPreProcessArg,
     },
-    Process {
-        data: RtProcessArg,
+    MidProcess {
+        data: RtMidProcessArg,
+    },
+    PostProcess {
+        data: RtPostProcessArg,
     },
     RunMain {},
 }
@@ -175,7 +182,10 @@ enum SeqResp {
         suspend: bool,
         attn_masks: Vec<Vec<f32>>,
     },
-    Process {
+    MidProcess {
+        json: String,
+    },
+    PostProcess {
         json: String,
     },
     Error {
@@ -328,10 +338,16 @@ impl SeqCtx {
                     attn_masks: res.attn_masks,
                 })
             }
-            SeqCmd::Process { data } => {
+            SeqCmd::MidProcess { data } => {
                 let shm = self.shm.clone();
-                let res = self.mutinst().process(data, &shm);
-                Ok(SeqResp::Process {
+                let res = self.mutinst().mid_process(data, &shm);
+                Ok(SeqResp::MidProcess {
+                    json: serde_json::to_string(&res)?,
+                })
+            }
+            SeqCmd::PostProcess { data } => {
+                let res = self.mutinst().post_process(data);
+                Ok(SeqResp::PostProcess {
                     json: serde_json::to_string(&res)?,
                 })
             }
@@ -444,13 +460,18 @@ impl SeqWorkerHandle {
         }
     }
 
+    pub fn start_post_process(&self, data: RtPostProcessArg) -> Result<()> {
+        self.handle.just_send(SeqCmd::PostProcess { data })?;
+        Ok(())
+    }
+
     pub fn start_pre_process(&self, data: RtPreProcessArg) -> Result<()> {
         self.handle.just_send(SeqCmd::PreProcess { data })?;
         Ok(())
     }
 
-    pub fn start_process(&self, data: RtProcessArg) -> Result<()> {
-        self.handle.just_send(SeqCmd::Process { data })?;
+    pub fn start_process(&self, data: RtMidProcessArg) -> Result<()> {
+        self.handle.just_send(SeqCmd::MidProcess { data })?;
         Ok(())
     }
 
@@ -477,8 +498,16 @@ impl SeqWorkerHandle {
 
     pub fn check_process(&self, timeout: Duration) -> Result<JSON> {
         match self.handle.recv_with_timeout(timeout) {
-            Ok(SeqResp::Process { json }) => Ok(serde_json::from_str(&json)?),
+            Ok(SeqResp::MidProcess { json }) => Ok(serde_json::from_str(&json)?),
             Ok(r) => Err(anyhow!("unexpected response (process) {r:?}")),
+            Err(e) => Err(e.into()),
+        }
+    }
+
+    pub fn check_post_process(&self, timeout: Duration) -> Result<JSON> {
+        match self.handle.recv_with_timeout(timeout) {
+            Ok(SeqResp::PostProcess { json }) => Ok(serde_json::from_str(&json)?),
+            Ok(r) => Err(anyhow!("unexpected response (post_process) {r:?}")),
             Err(e) => Err(e.into()),
         }
     }

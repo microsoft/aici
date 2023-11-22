@@ -39,6 +39,8 @@ class BenchTimer:
         self.num += 1
         if self.num % self.mod == 0:
             print(f"{self.name}: {self.elapsed*1000000/self.num:.0f}us ({self.num})")
+            self.elapsed = 0
+            self.num = 0
 
 
 def mkshm(name, size):
@@ -72,6 +74,7 @@ class MessageChannel:
 
         self.size = size
         self.map_file = mkshm(name, size)
+        self.busy_mode = False
 
         self.write_sem = posix_ipc.Semaphore(
             write_sem_name, flags=posix_ipc.O_CREAT, initial_value=1
@@ -93,13 +96,26 @@ class MessageChannel:
     def send_json(self, obj):
         self.send_bytes(json.dumps(obj).encode())
 
+    def _acquire_read(self):
+        if not self.busy_mode:
+            self.read_sem.acquire()
+        else:
+            num = 0
+            while True:
+                try:
+                    self.read_sem.acquire(0)
+                    return
+                except posix_ipc.BusyError:
+                    num += 1
+                    continue
+
     def recv(self):
         if self.track:
             self.track = False
             with self.aq_timer:
-                self.read_sem.acquire()
+                self._acquire_read()
         else:
-            self.read_sem.acquire()
+            self._acquire_read()
         msg_len = struct.unpack("<I", self.map_file[0:4])[0]
         msg = self.map_file[4 : 4 + msg_len]
         self.write_sem.release()
@@ -258,6 +274,7 @@ class AiciRunner:
         self.batch_size = -1
         self.last_response = {}
         self.last_pre_response = {}
+        self.last_post_response = {}
         self.disable_attn_mask = False
         self.curr_attn_mask = None
 
@@ -269,6 +286,7 @@ class AiciRunner:
         self.logit_pending = False
         self.last_ops = None
         self.max_context_len = -1
+        self.freed_seq_ids = []
 
         self.wasm_pre_timer = BenchTimer("wasm_pre")
         self.wasm_pre_timer_send = BenchTimer("wasm_pre_send")
@@ -276,6 +294,7 @@ class AiciRunner:
         self.cmd = CmdChannel(
             pref=pref, suff="", json_size=json_size, trace_file=self.trace_file
         )
+        self.cmd.resp_ch.busy_mode = True
         self.side_cmd = CmdChannel(
             pref=pref, suff="-side", json_size=json_size, trace_file=self.trace_file
         )
@@ -314,20 +333,24 @@ class AiciRunner:
         AiciRunner.instance = self
 
     def bench(self):
-        cnt = 1000000
+        cnt = 100
         start = time.time()
         sum = 0
-        timer = BenchTimer("ping", 100000)
+        timer = BenchTimer("ping")
+
+        import threading
+
+        for thread in threading.enumerate():
+            print(thread.name)
 
         for i in range(cnt):
             with timer:
-                pass
-                # r = self.cmd.exec("ping")
-                # sum += r["data"]["pong"]
-            # time.sleep(0.05)
+                r = self.cmd.exec("ping")
+                sum += r["data"]["pong"]
+            time.sleep(0.05)
             # for _ in range(1_000_000):
             #     pass
-        # assert sum == cnt
+        assert sum == cnt
         dur = (time.time() - start) * 1_000_000 / cnt
         print(f"py MessageChannel: {dur:.2f} us")
 
@@ -406,28 +429,9 @@ class AiciRunner:
         """
         Reset any pending state for the step.
         """
-        self.prompt_q = []
         self.gen_q = []
-        self.freed_seq_ids = []
 
-    def step_add_prompt(self, id: int, prompt: List[int], req_id: str):
-        """
-        Add a batch entry to the step.
-
-        Args:
-            id (int): The user-assigned ID of the batch entry - needs to be unique.
-            prompt (List[int]): The tokens in the prompt. This ignored by aicirt.
-            req_id (str): The ID used in instantiate() previously.
-        """
-        self.prompt_q.append(
-            {
-                "id": id,
-                "_prompt": prompt,
-                "req_id": req_id,
-            }
-        )
-
-    def step_add_tokens(self, id: int, tokens: List[int], clone_id: int = None):
+    def step_add_pre(self, id: int, req_id: str = None):
         """
         Adds a generated token to the step.
 
@@ -436,7 +440,19 @@ class AiciRunner:
             tokens (list[int]): The tokens to add.
             clone_id (int, optional): The ID of the batch entry to clone if any.
         """
-        obj = {"id": id, "tokens": tokens}
+        obj = {"id": id}
+        if req_id:
+            obj["req_id"] = req_id
+        self.gen_q.append(obj)
+
+    def step_add_mid(self, id: int, clone_id: int = None):
+        obj = {"id": id}
+        if clone_id is not None:
+            obj["clone_id"] = clone_id
+        self.gen_q.append(obj)
+
+    def step_add_post(self, id: int, backtrack:int, tokens: list[int], clone_id: int = None):
+        obj = {"id": id, "tokens": tokens, "backtrack": backtrack}
         if clone_id is not None:
             obj["clone_id"] = clone_id
         self.gen_q.append(obj)
@@ -447,10 +463,10 @@ class AiciRunner:
         """
         self.freed_seq_ids.append(id)
 
-    def step_finish2(self):
+    def step_finish_mid(self):
         cmd = {
-            "op": "process",
-            "ops": self.prompt_q + self.gen_q,
+            "op": "mid_process",
+            "ops": self.gen_q,
         }
         self.last_ops = cmd["ops"]
         self.batch_size = len(self.last_ops)
@@ -465,7 +481,7 @@ class AiciRunner:
         self.step_reset()
         return True
 
-    def step_finish(self, max_context_len):
+    def step_finish_pre(self, max_context_len):
         """
         Send step data to the aicirt process.
         recv_logit_bias() (or flush_logit_bias()) needs to be called after this.
@@ -473,9 +489,10 @@ class AiciRunner:
         cmd = {
             "op": "pre_process",
             "freed": self.freed_seq_ids,
-            "ops": self.prompt_q + self.gen_q,
+            "ops": self.gen_q,
             "max_context_len": max_context_len,
         }
+        self.freed_seq_ids = []
         self.last_ops = cmd["ops"]
         self.batch_size = len(self.last_ops)
         self.max_context_len = max_context_len
@@ -514,9 +531,25 @@ class AiciRunner:
         mask = np.frombuffer(
             self.bin_shm, dtype=np.float32, offset=0, count=n * self.max_context_len
         ).reshape([n, self.max_context_len])
-        # need to clone it before sending "process" req
+        # need to clone it before sending "mid_process" req
         self.curr_attn_mask = mask.copy()
         return fork_map, suspend_ids
+
+    def step_finish_post(self):
+        cmd = {
+            "op": "post_process",
+            "ops": self.gen_q,
+        }
+        self.last_ops = cmd["ops"]
+        self.batch_size = len(self.last_ops)
+        self.step_reset()
+        if self.batch_size == 0:
+            # nothing to do
+            self.last_post_response = {}
+            return False
+        assert not self.logit_pending
+        self.last_post_response = self.cmd.exec("post_process", cmd)
+        return True
 
     def flush_logit_bias(self):
         """
@@ -553,11 +586,12 @@ class AiciRunner:
         """
         pre: dict[str, str] = self.last_pre_response.get(str(seq_id), None)
         r: dict[str, str] = self.last_response.get(str(seq_id), None)
+        post: dict[str, str] = self.last_post_response.get(str(seq_id), {})
         if pre is not None:
             if r is None:
                 r = pre
             else:
-                logs = pre.get("logs", "") + r.get("logs", "")
+                logs = pre.get("logs", "") + r.get("logs", "") + post.get("logs", "")
                 r = {**pre, **r}
                 r["logs"] = logs
         return r

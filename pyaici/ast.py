@@ -57,7 +57,12 @@ def wait_vars(*vars: str):
     return {"Wait": {"vars": list(vars)}}
 
 
-def fixed(text: str, expand_vars=False, tag: Optional[str] = None):
+def fixed(
+    text: str,
+    expand_vars=False,
+    following: Optional[str] = None,
+    tag: Optional[str] = None,
+):
     """
     Generate fixed text. Same as `choose([text])`.
     """
@@ -65,10 +70,16 @@ def fixed(text: str, expand_vars=False, tag: Optional[str] = None):
         "Fixed": {
             "text": text,
             "tag": tag,
+            "following": following,
             "expand_vars": expand_vars,
         }
     }
 
+
+def label(label: str, step: dict) -> dict:
+    k = list(step.keys())[0]
+    step[k]["label"] = label
+    return step
 
 def choose(options: list[str]):
     """

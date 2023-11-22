@@ -27,7 +27,7 @@ extern "C" {
     fn aici_host_module_arg() -> BlobId;
 
     // Return the ID of argument passed to the process() function.
-    // It's a JSON serialization of ProcessArg.
+    // It's a JSON serialization of Pre/Mid/PostProcessArg.
     fn aici_host_process_arg() -> BlobId;
 
     // Tokenize given UTF8 string. The result is only valid until next call to this function.

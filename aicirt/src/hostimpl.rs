@@ -1,6 +1,6 @@
 use aici_abi::{
     bytes::{clone_vec_as_bytes, vec_from_bytes, TokRxInfo},
-    PreProcessArg,
+    PreProcessArg, PostProcessArg,
 };
 use anyhow::{anyhow, Result};
 use log::{info, warn};
@@ -9,7 +9,7 @@ use tokenizers::Tokenizer;
 
 use crate::{
     shm::Shm,
-    worker::{GroupCmd, GroupHandle, GroupResp, RtProcessArg},
+    worker::{GroupCmd, GroupHandle, GroupResp, RtMidProcessArg},
 };
 
 pub type ModuleInstId = usize;
@@ -115,7 +115,7 @@ impl ModuleData {
         self.set_blob(BlobId::PROCESS_ARG, bytes);
     }
 
-    pub fn set_process_data(&mut self, data: RtProcessArg, shm: &Shm) {
+    pub fn set_mid_process_data(&mut self, data: RtMidProcessArg, shm: &Shm) {
         let bytes = serde_json::to_vec(&data.op).unwrap();
         self.set_process_arg(bytes);
         let nument = self.globals.tokrx_info.vocab_size as usize;
@@ -127,6 +127,11 @@ impl ModuleData {
     }
 
     pub fn set_pre_process_data(&mut self, data: PreProcessArg) {
+        let bytes = serde_json::to_vec(&data).unwrap();
+        self.set_process_arg(bytes);
+    }
+
+    pub fn set_post_process_data(&mut self, data: PostProcessArg) {
         let bytes = serde_json::to_vec(&data).unwrap();
         self.set_process_arg(bytes);
     }

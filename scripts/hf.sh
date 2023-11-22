@@ -1,5 +1,8 @@
 #!/bin/sh
 
+echo "This is outdated."
+exit 1
+
 set -e
 set -x
 (cd aici_ast_runner && ./wasm.sh cache)

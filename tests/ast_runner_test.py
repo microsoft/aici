@@ -14,16 +14,19 @@ def wrap(text):
     return pyaici.util.codellama_prompt(text)
 
 
-def greedy_query(prompt: str, steps: list):
+def greedy_query(prompt: str, steps: list, n=1):
     ast_module = pyaici.rest.ast_module
+    temperature = 0
+    if n > 1:
+        temperature = 0.8
     assert ast_module
     res = pyaici.rest.completion(
         prompt=prompt,
         aici_module=ast_module,
         aici_arg={"steps": steps},
-        temperature=0,
+        temperature=temperature,
         max_tokens=200,
-        n=1,
+        n=n,
     )
     if res["error"]:
         pytest.fail(res["error"])
@@ -42,7 +45,11 @@ def expect(expected: Union[list[str], str], prompt: str, steps: list):
     for i in range(len(res)):
         # ░ is used as a placeholder; will be removed
         r = res[i].replace("░", "")
-        if r != expected[i]:
+        e = expected[i]
+        if e.startswith("<...>") and len(r) > len(e) - 5:
+            e = e[5:]
+            r = r[-len(e) :]
+        if r != e:
             if len(res[i]) > 40:
                 print(f'"""{r}"""')
             else:
@@ -94,6 +101,17 @@ int fib(int n) {
     )
 
 
+json_template = {
+    "name": "",
+    "valid": True,
+    "description": "",
+    "type": "foo|bar|baz|something|else",
+    "address": {"street": "", "city": "", "state": "[A-Z][A-Z]"},
+    "age": 1,
+    "fraction": 1.5,
+}
+
+
 def test_json():
     expect(
         """{
@@ -110,18 +128,19 @@ def test_json():
 "fraction":0.5
 }""",
         wrap("Write about J. Random Hacker from Seattle"),
-        ast.json_to_steps(
-            {
-                "name": "",
-                "valid": True,
-                "description": "",
-                "type": "foo|bar|baz|something|else",
-                "address": {"street": "", "city": "", "state": "[A-Z][A-Z]"},
-                "age": 1,
-                "fraction": 1.5,
-            }
-        ),
+        ast.json_to_steps(json_template),
     )
+
+
+def test_json_N():
+    results = greedy_query(
+        wrap("About J.R.R.Tolkien"), ast.json_to_steps(json_template), n=5
+    )
+    assert len(results) == 5
+    for r in results:
+        obj = ujson.loads(r)
+        for key in json_template.keys():
+            assert key in obj
 
 
 def test_ff_0():
@@ -202,6 +221,27 @@ def test_fork_1():
     )
 
 
+def test_backtrack_1():
+    for french in [
+        " in French is translated as",
+        " French",
+        " in French is",
+        " in Paris is",
+    ]:
+        expect(
+            "<...>Results: 'bonjour' 'hi'",
+            "",
+            [
+                ast.fixed("The word 'hello'"),
+                ast.label("lang", ast.fixed(french)),
+                ast.gen(rx=r" '[^']*'", max_tokens=15, set_var="french"),
+                ast.fixed(" or", following="lang"),
+                ast.gen(rx=r" '[^']*'", max_tokens=15, set_var="blah"),
+                ast.fixed("\nResults:{{french}}{{blah}}", expand_vars=True),
+            ],
+        )
+
+
 def test_wait_1():
     expect(
         [
@@ -216,9 +256,10 @@ spanish: 'hola'
             ast.fixed("The word 'hello' in"),
             ast.fork(
                 [
+                    ast.fixed("\n"),
                     ast.wait_vars("french", "spanish"),
                     ast.fixed(
-                        "\nfrench:{{french}}\nspanish:{{spanish}}\n", expand_vars=True
+                        "french:{{french}}\nspanish:{{spanish}}\n", expand_vars=True
                     ),
                 ],
                 [
