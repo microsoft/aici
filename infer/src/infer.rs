@@ -277,8 +277,8 @@ fn main() -> Result<()> {
         let model = QMixFormer::new(&config, vb)?;
         (Model::Quantized(model), Device::Cpu)
     } else {
-        // let device = Device::new_cuda(0)?;
-        let device = Device::Cpu;
+        let device = Device::new_cuda(0)?;
+        // let device = Device::Cpu;
         let vb = unsafe { VarBuilder::from_mmaped_safetensors(&[filename], DType::F32, &device)? };
         let model = MixFormer::new(&config, vb)?;
         (Model::MixFormer(model), device)
