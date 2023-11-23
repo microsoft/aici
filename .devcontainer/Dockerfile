@@ -36,5 +36,5 @@ RUN apt-get install -y software-properties-common
 RUN apt-add-repository ppa:git-core/ppa
 RUN apt-get update && apt-get install -y git
 
-RUN apt-get install llvm-dev libclang-dev clang
+RUN apt-get install -y llvm-dev libclang-dev clang
 ENV CUDA_COMPUTE_CAP="80"
