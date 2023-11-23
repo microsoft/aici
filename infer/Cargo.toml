@@ -5,7 +5,13 @@ edition = "2021"
 
 
 [dependencies]
-candle-core = { git = "https://github.com/huggingface/candle.git", version = "0.3.1", features = ["cuda", "cudnn"] }
+anyhow = "1.0.75"
+candle-transformers = { git = "https://github.com/huggingface/candle.git", version = "0.3.1" }
+candle-nn = { git = "https://github.com/huggingface/candle.git", version = "0.3.1" }
+candle = { git = "https://github.com/huggingface/candle.git", version = "0.3.1", features = ["cuda", "cudnn"], package = "candle-core" }
+clap = "4.4.8"
+hf-hub = "0.3.2"
+tokenizers = { version = "0.15.0", features = ["hf-hub"] }
 
 [[bin]]
 name = "infer"

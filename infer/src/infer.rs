@@ -184,17 +184,9 @@ struct Args {
 }
 
 fn main() -> Result<()> {
-    use tracing_chrome::ChromeLayerBuilder;
-    use tracing_subscriber::prelude::*;
 
     let args = Args::parse();
-    let _guard = if args.tracing {
-        let (chrome_layer, guard) = ChromeLayerBuilder::new().build();
-        tracing_subscriber::registry().with(chrome_layer).init();
-        Some(guard)
-    } else {
-        None
-    };
+    
     println!(
         "avx: {}, neon: {}, simd128: {}, f16c: {}",
         candle::utils::with_avx(),
@@ -285,7 +277,8 @@ fn main() -> Result<()> {
         let model = QMixFormer::new(&config, vb)?;
         (Model::Quantized(model), Device::Cpu)
     } else {
-        let device = candle_examples::device(args.cpu)?;
+        // let device = Device::new_cuda(0)?;
+        let device = Device::Cpu;
         let vb = unsafe { VarBuilder::from_mmaped_safetensors(&[filename], DType::F32, &device)? };
         let model = MixFormer::new(&config, vb)?;
         (Model::MixFormer(model), device)
