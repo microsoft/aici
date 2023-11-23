@@ -146,14 +146,11 @@ struct Args {
     #[arg(long, short = 'n', default_value_t = 100)]
     sample_len: usize,
 
-    #[arg(long)]
-    model_id: Option<String>,
+    #[arg(long, default_value = "microsoft/phi-1_5")]
+    model_id: String,
 
-    #[arg(long, default_value = "1.5")]
-    model: WhichModel,
-
-    #[arg(long)]
-    revision: Option<String>,
+    #[arg(long, default_value = "refs/pr/18")]
+    revision: String,
 
     #[arg(long)]
     weight_file: Option<String>,
@@ -174,13 +171,6 @@ fn main() -> Result<()> {
     let args = Args::parse();
 
     println!(
-        "avx: {}, neon: {}, simd128: {}, f16c: {}",
-        candle::utils::with_avx(),
-        candle::utils::with_neon(),
-        candle::utils::with_simd128(),
-        candle::utils::with_f16c()
-    );
-    println!(
         "temp: {:.2} repeat-penalty: {:.2} repeat-last-n: {}",
         args.temperature.unwrap_or(0.),
         args.repeat_penalty,
@@ -189,52 +179,22 @@ fn main() -> Result<()> {
 
     let start = std::time::Instant::now();
     let api = Api::new()?;
-    let model_id = match args.model_id {
-        Some(model_id) => model_id.to_string(),
-        None => match args.model {
-            WhichModel::V1 => "microsoft/phi-1".to_string(),
-            WhichModel::V1_5 => "microsoft/phi-1_5".to_string(),
-            WhichModel::PuffinPhiV2 | WhichModel::PhiHermes => {
-                "lmz/candle-quantized-phi".to_string()
-            }
-        },
-    };
-    let revision = match args.revision {
-        Some(rev) => rev.to_string(),
-        None => match args.model {
-            WhichModel::V1 => "refs/pr/2".to_string(),
-            WhichModel::V1_5 => "refs/pr/18".to_string(),
-            WhichModel::PuffinPhiV2 | WhichModel::PhiHermes => "main".to_string(),
-        },
-    };
+    let model_id = args.model_id;
+    let revision = args.revision;
     let repo = api.repo(Repo::with_revision(model_id, RepoType::Model, revision));
     let tokenizer_filename = match args.tokenizer {
         Some(file) => std::path::PathBuf::from(file),
-        None => match args.model {
-            WhichModel::V1 | WhichModel::V1_5 => repo.get("tokenizer.json")?,
-            WhichModel::PuffinPhiV2 | WhichModel::PhiHermes => {
-                repo.get("tokenizer-puffin-phi-v2.json")?
-            }
-        },
+        None => repo.get("tokenizer.json")?,
     };
     let filename = match args.weight_file {
         Some(weight_file) => std::path::PathBuf::from(weight_file),
-        None => match args.model {
-            WhichModel::V1 | WhichModel::V1_5 => repo.get("model.safetensors")?,
-            WhichModel::PuffinPhiV2 => repo.get("model-puffin-phi-v2.safetensors")?,
-            WhichModel::PhiHermes => repo.get("model-phi-hermes-1_3B.safetensors")?,
-        },
+        None => repo.get("model.safetensors")?,
     };
     println!("retrieved the files in {:?}", start.elapsed());
     let tokenizer = Tokenizer::from_file(tokenizer_filename).map_err(E::msg)?;
 
     let start = std::time::Instant::now();
-    let config = match args.model {
-        WhichModel::V1 => Config::v1(),
-        WhichModel::V1_5 => Config::v1_5(),
-        WhichModel::PuffinPhiV2 => Config::puffin_phi_v2(),
-        WhichModel::PhiHermes => Config::phi_hermes_1_3b(),
-    };
+    let config = Config::v1_5();
 
     let device = Device::new_cuda(0)?;
     let vb = unsafe { VarBuilder::from_mmaped_safetensors(&[filename], DType::F32, &device)? };
