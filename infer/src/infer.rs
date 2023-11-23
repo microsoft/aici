@@ -1,9 +1,7 @@
-
 use anyhow::{Error as E, Result};
 use clap::{Parser, ValueEnum};
 
 use candle_transformers::models::mixformer::{Config, MixFormerSequentialForCausalLM as MixFormer};
-use candle_transformers::models::quantized_mixformer::MixFormerSequentialForCausalLM as QMixFormer;
 
 use candle::{DType, Device, Tensor};
 use candle_nn::VarBuilder;
@@ -11,13 +9,8 @@ use candle_transformers::generation::LogitsProcessor;
 use hf_hub::{api::sync::Api, Repo, RepoType};
 use tokenizers::Tokenizer;
 
-enum Model {
-    MixFormer(MixFormer),
-    Quantized(QMixFormer),
-}
-
 struct TextGeneration {
-    model: Model,
+    model: MixFormer,
     device: Device,
     tokenizer: Tokenizer,
     logits_processor: LogitsProcessor,
@@ -29,7 +22,7 @@ struct TextGeneration {
 impl TextGeneration {
     #[allow(clippy::too_many_arguments)]
     fn new(
-        model: Model,
+        model: MixFormer,
         tokenizer: Tokenizer,
         seed: u64,
         temp: Option<f64>,
@@ -77,10 +70,7 @@ impl TextGeneration {
             let context_size = if index > 0 { 1 } else { tokens.len() };
             let ctxt = &tokens[tokens.len().saturating_sub(context_size)..];
             let input = Tensor::new(ctxt, &self.device)?.unsqueeze(0)?;
-            let logits = match &mut self.model {
-                Model::MixFormer(m) => m.forward(&input)?,
-                Model::Quantized(m) => m.forward(&input)?,
-            };
+            let logits = self.model.forward(&input)?;
             let logits = logits.squeeze(0)?.to_dtype(DType::F32)?;
             let logits = if self.repeat_penalty == 1. {
                 logits
@@ -171,9 +161,6 @@ struct Args {
     #[arg(long)]
     tokenizer: Option<String>,
 
-    #[arg(long)]
-    quantized: bool,
-
     /// Penalty to be applied for repeating tokens, 1. means no penalty.
     #[arg(long, default_value_t = 1.1)]
     repeat_penalty: f32,
@@ -184,9 +171,8 @@ struct Args {
 }
 
 fn main() -> Result<()> {
-
     let args = Args::parse();
-    
+
     println!(
         "avx: {}, neon: {}, simd128: {}, f16c: {}",
         candle::utils::with_avx(),
@@ -205,33 +191,21 @@ fn main() -> Result<()> {
     let api = Api::new()?;
     let model_id = match args.model_id {
         Some(model_id) => model_id.to_string(),
-        None => {
-            if args.quantized {
+        None => match args.model {
+            WhichModel::V1 => "microsoft/phi-1".to_string(),
+            WhichModel::V1_5 => "microsoft/phi-1_5".to_string(),
+            WhichModel::PuffinPhiV2 | WhichModel::PhiHermes => {
                 "lmz/candle-quantized-phi".to_string()
-            } else {
-                match args.model {
-                    WhichModel::V1 => "microsoft/phi-1".to_string(),
-                    WhichModel::V1_5 => "microsoft/phi-1_5".to_string(),
-                    WhichModel::PuffinPhiV2 | WhichModel::PhiHermes => {
-                        "lmz/candle-quantized-phi".to_string()
-                    }
-                }
             }
-        }
+        },
     };
     let revision = match args.revision {
         Some(rev) => rev.to_string(),
-        None => {
-            if args.quantized {
-                "main".to_string()
-            } else {
-                match args.model {
-                    WhichModel::V1 => "refs/pr/2".to_string(),
-                    WhichModel::V1_5 => "refs/pr/18".to_string(),
-                    WhichModel::PuffinPhiV2 | WhichModel::PhiHermes => "main".to_string(),
-                }
-            }
-        }
+        None => match args.model {
+            WhichModel::V1 => "refs/pr/2".to_string(),
+            WhichModel::V1_5 => "refs/pr/18".to_string(),
+            WhichModel::PuffinPhiV2 | WhichModel::PhiHermes => "main".to_string(),
+        },
     };
     let repo = api.repo(Repo::with_revision(model_id, RepoType::Model, revision));
     let tokenizer_filename = match args.tokenizer {
@@ -245,22 +219,11 @@ fn main() -> Result<()> {
     };
     let filename = match args.weight_file {
         Some(weight_file) => std::path::PathBuf::from(weight_file),
-        None => {
-            if args.quantized {
-                match args.model {
-                    WhichModel::V1 => repo.get("model-v1-q4k.gguf")?,
-                    WhichModel::V1_5 => repo.get("model-q4k.gguf")?,
-                    WhichModel::PuffinPhiV2 => repo.get("model-puffin-phi-v2-q4k.gguf")?,
-                    WhichModel::PhiHermes => repo.get("model-phi-hermes-1_3B-q4k.gguf")?,
-                }
-            } else {
-                match args.model {
-                    WhichModel::V1 | WhichModel::V1_5 => repo.get("model.safetensors")?,
-                    WhichModel::PuffinPhiV2 => repo.get("model-puffin-phi-v2.safetensors")?,
-                    WhichModel::PhiHermes => repo.get("model-phi-hermes-1_3B.safetensors")?,
-                }
-            }
-        }
+        None => match args.model {
+            WhichModel::V1 | WhichModel::V1_5 => repo.get("model.safetensors")?,
+            WhichModel::PuffinPhiV2 => repo.get("model-puffin-phi-v2.safetensors")?,
+            WhichModel::PhiHermes => repo.get("model-phi-hermes-1_3B.safetensors")?,
+        },
     };
     println!("retrieved the files in {:?}", start.elapsed());
     let tokenizer = Tokenizer::from_file(tokenizer_filename).map_err(E::msg)?;
@@ -272,17 +235,11 @@ fn main() -> Result<()> {
         WhichModel::PuffinPhiV2 => Config::puffin_phi_v2(),
         WhichModel::PhiHermes => Config::phi_hermes_1_3b(),
     };
-    let (model, device) = if args.quantized {
-        let vb = candle_transformers::quantized_var_builder::VarBuilder::from_gguf(&filename)?;
-        let model = QMixFormer::new(&config, vb)?;
-        (Model::Quantized(model), Device::Cpu)
-    } else {
-        let device = Device::new_cuda(0)?;
-        // let device = Device::Cpu;
-        let vb = unsafe { VarBuilder::from_mmaped_safetensors(&[filename], DType::F32, &device)? };
-        let model = MixFormer::new(&config, vb)?;
-        (Model::MixFormer(model), device)
-    };
+
+    let device = Device::new_cuda(0)?;
+    let vb = unsafe { VarBuilder::from_mmaped_safetensors(&[filename], DType::F32, &device)? };
+    let model = MixFormer::new(&config, vb)?;
+
     println!("loaded the model in {:?}", start.elapsed());
 
     let mut pipeline = TextGeneration::new(
