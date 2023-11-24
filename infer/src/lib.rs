@@ -89,8 +89,7 @@ impl LlamaInfer {
         let tokenizer_filename = repo.get("tokenizer.json")?;
 
         let config: LlamaConfig = serde_json::from_slice(&repo.read("config.json")?)?;
-        let use_flash_attn = true;
-        let config = config.into_config(use_flash_attn);
+        let config = config.into_config();
 
         let st_index: serde_json::Value =
             serde_json::from_slice(&repo.read("model.safetensors.index.json")?)?;
