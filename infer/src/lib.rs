@@ -1,4 +1,7 @@
 pub mod llama;
+mod logits;
+
+pub use logits::LogitsProcessor;
 
 use std::{collections::HashSet, fmt::Display, path::PathBuf};
 

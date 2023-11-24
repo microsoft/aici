@@ -2,8 +2,7 @@ use anyhow::{Error, Result};
 use clap::Parser;
 
 use candle::Tensor;
-use candle_transformers::generation::LogitsProcessor;
-use rllm::{load_llama, LoaderArgs};
+use rllm::{load_llama, LoaderArgs, LogitsProcessor};
 use std::io::Write;
 
 const EOS_TOKEN: &str = "</s>";
