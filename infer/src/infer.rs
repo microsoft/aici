@@ -2,7 +2,6 @@ use anyhow::Result;
 use clap::Parser;
 
 use rllm::{LlamaInfer, LoaderArgs, LogitsProcessor};
-use std::io::Write;
 
 const DEFAULT_PROMPT: &str = "My favorite theorem is ";
 
@@ -18,11 +17,11 @@ struct Args {
     top_p: Option<f64>,
 
     /// The seed to use when generating random samples.
-    #[arg(long, default_value_t = 299792458)]
+    #[arg(long, default_value_t = 42)]
     seed: u64,
 
     /// The length of the sample to generate (in tokens).
-    #[arg(long, default_value_t = 20)]
+    #[arg(long, default_value_t = 10)]
     sample_len: usize,
 
     /// The initial prompt.
@@ -52,14 +51,13 @@ fn main() -> Result<()> {
 
     let prompt = args.prompt.as_ref().map_or(DEFAULT_PROMPT, |p| p.as_str());
 
-    print!("{prompt}");
-    std::io::stdout().flush()?;
+    println!("{prompt}");
 
     let mut logits_processor = LogitsProcessor::new(args.seed, args.temperature, args.top_p);
 
     let start_gen = std::time::Instant::now();
     let gen = infer.generate(prompt, args.sample_len, &mut logits_processor)?;
     let dt = start_gen.elapsed();
-    println!("{gen}\ntime: {dt:?}\n");
+    println!("\n{gen}\ntime: {dt:?}\n");
     Ok(())
 }

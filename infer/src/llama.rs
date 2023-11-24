@@ -3,7 +3,6 @@
 use candle::{DType, Device, IndexOp, Result, Tensor, D};
 use candle_nn::{linear_no_bias, Embedding, Linear, Module, RmsNorm, VarBuilder};
 use serde::Deserialize;
-use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
 pub const MAX_SEQ_LEN: usize = 4096;
@@ -85,12 +84,10 @@ impl Config {
 
 #[derive(Clone)]
 pub struct Cache {
-    masks: Arc<Mutex<HashMap<usize, Tensor>>>,
     #[allow(clippy::type_complexity)]
     kvs: Arc<Mutex<Vec<Option<(Tensor, Tensor)>>>>,
     cos: Tensor,
     sin: Tensor,
-    device: Device,
 }
 
 impl Cache {
@@ -112,9 +109,7 @@ impl Cache {
         let cos = idx_theta.cos()?.to_dtype(dtype)?;
         let sin = idx_theta.sin()?.to_dtype(dtype)?;
         Ok(Self {
-            masks: Arc::new(Mutex::new(HashMap::new())),
             kvs: Arc::new(Mutex::new(vec![None; config.num_hidden_layers])),
-            device: device.clone(),
             cos,
             sin,
         })
@@ -125,19 +120,6 @@ impl Cache {
         *kvs = vec![None; kvs.len()];
     }
 
-    fn mask(&self, t: usize) -> Result<Tensor> {
-        let mut masks = self.masks.lock().unwrap();
-        if let Some(mask) = masks.get(&t) {
-            Ok(mask.clone())
-        } else {
-            let mask: Vec<_> = (0..t)
-                .flat_map(|i| (0..t).map(move |j| u8::from(j > i)))
-                .collect();
-            let mask = Tensor::from_slice(&mask, (t, t), &self.device)?;
-            masks.insert(t, mask.clone());
-            Ok(mask)
-        }
-    }
 }
 
 fn embedding(cfg: &Config, vb: VarBuilder) -> Result<Embedding> {
@@ -232,16 +214,17 @@ impl CausalSelfAttention {
             let softmax_scale = 1f32 / (self.head_dim as f32).sqrt();
             flash_attn(&q, &k, &v, softmax_scale, seq_len > 1)?.transpose(1, 2)?
         } else {
-            let in_dtype = q.dtype();
-            let q = q.to_dtype(DType::F32)?;
-            let k = k.to_dtype(DType::F32)?;
-            let v = v.to_dtype(DType::F32)?;
-            let att = (q.matmul(&k.t()?)? / (self.head_dim as f64).sqrt())?;
-            let mask = self.cache.mask(seq_len)?.broadcast_as(att.shape())?;
-            let att = masked_fill(&att, &mask, f32::NEG_INFINITY)?;
-            let att = candle_nn::ops::softmax(&att, D::Minus1)?;
-            // Convert to contiguous as matmul doesn't support strided vs for now.
-            att.matmul(&v.contiguous()?)?.to_dtype(in_dtype)?
+            panic!();
+            // let in_dtype = q.dtype();
+            // let q = q.to_dtype(DType::F32)?;
+            // let k = k.to_dtype(DType::F32)?;
+            // let v = v.to_dtype(DType::F32)?;
+            // let att = (q.matmul(&k.t()?)? / (self.head_dim as f64).sqrt())?;
+            // let mask = self.cache.mask(seq_len)?.broadcast_as(att.shape())?;
+            // let att = masked_fill(&att, &mask, f32::NEG_INFINITY)?;
+            // let att = candle_nn::ops::softmax(&att, D::Minus1)?;
+            // // Convert to contiguous as matmul doesn't support strided vs for now.
+            // att.matmul(&v.contiguous()?)?.to_dtype(in_dtype)?
         };
         let y = y.transpose(1, 2)?.reshape(&[b_sz, seq_len, hidden_size])?;
         let y = self.o_proj.forward(&y)?;
@@ -282,13 +265,6 @@ impl CausalSelfAttention {
             use_flash_attn: cfg.use_flash_attn,
         })
     }
-}
-
-fn masked_fill(on_false: &Tensor, mask: &Tensor, on_true: f32) -> Result<Tensor> {
-    let shape = mask.shape();
-    let on_true = Tensor::new(on_true, on_false.device())?.broadcast_as(shape.dims())?;
-    let m = mask.where_cond(&on_true, on_false)?;
-    Ok(m)
 }
 
 struct Mlp {
