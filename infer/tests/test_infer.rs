@@ -24,30 +24,32 @@ fn expect(ctx: &mut Ctx, prompt: &str, expected: &str) {
     }
 }
 
+// this is for Llama-2-7b-hf
+const QUERIES: &'static [(&'static str, &'static str)] = &[
+    (
+        "Color green is",
+        "the color of nature, the color of the earth",
+    ),
+    (
+        "Tarski's fixed-point theorem was proven by",
+        "Alfred Tarski in 1936.",
+    ),
+    (
+        "Tarski's fixed-point theorem is about",
+        "the existence of a fixed point in a certain relation",
+    ),
+];
+
 #[test]
 fn test_infer1() {
-    // this is for Llama-2-7b-hf
     let mut ctx = Ctx::new();
 
     // make sure we get deterministic results
-    for _ in 0..3 {
-        expect(
-            &mut ctx,
-            "Color green is",
-            "the color of nature, the color of the earth",
-        );
+    for _ in 0..2 {
+        expect(&mut ctx, QUERIES[0].0, QUERIES[0].1);
     }
 
-    expect(
-        &mut ctx,
-        "Tarski's fixed-point theorem was proven by",
-        "Alfred Tarski in 1936.",
-    );
-
-    expect(
-        &mut ctx,
-        "Tarski's fixed-point theorem is about",
-        "the existence of a fixed point in a certain relation",
-    );
-
+    for idx in 0..QUERIES.len() {
+        expect(&mut ctx, QUERIES[idx].0, QUERIES[idx].1);
+    }
 }
