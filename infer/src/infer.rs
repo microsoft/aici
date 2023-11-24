@@ -1,12 +1,4 @@
-// An implementation of LLaMA https://github.com/facebookresearch/llama
-//
-// This is based on nanoGPT in a similar way to:
-// https://github.com/Lightning-AI/lit-llama/blob/main/lit_llama/model.py
-//
-// The tokenizer config can be retrieved from:
-// https://huggingface.co/hf-internal-testing/llama-tokenizer/raw/main/tokenizer.json
-
-use anyhow::{Error as E, Result};
+use anyhow::{Error, Result};
 use clap::Parser;
 
 use candle::Tensor;
@@ -20,10 +12,6 @@ const DEFAULT_PROMPT: &str = "My favorite theorem is ";
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
 struct Args {
-    /// Run on CPU rather than on GPU.
-    #[arg(long)]
-    cpu: bool,
-
     /// The temperature used to generate samples.
     #[arg(long)]
     temperature: Option<f64>,
@@ -40,10 +28,6 @@ struct Args {
     #[arg(long, default_value_t = 100)]
     sample_len: usize,
 
-    /// Disable the key-value cache.
-    #[arg(long)]
-    no_kv_cache: bool,
-
     /// The initial prompt.
     #[arg(long)]
     prompt: Option<String>,
@@ -58,14 +42,6 @@ struct Args {
     /// (same structure as huggingface online)
     #[arg(long)]
     local_weights: Option<String>,
-
-    /// Penalty to be applied for repeating tokens, 1. means no penalty.
-    #[arg(long, default_value_t = 1.0)]
-    repeat_penalty: f32,
-
-    /// The context size to consider for the repeat penalty.
-    #[arg(long, default_value_t = 64)]
-    repeat_last_n: usize,
 }
 
 fn main() -> Result<()> {
@@ -81,7 +57,7 @@ fn main() -> Result<()> {
     let prompt = args.prompt.as_ref().map_or(DEFAULT_PROMPT, |p| p.as_str());
     let mut tokens = tokenizer
         .encode(prompt, true)
-        .map_err(E::msg)?
+        .map_err(Error::msg)?
         .get_ids()
         .to_vec();
 
@@ -97,16 +73,7 @@ fn main() -> Result<()> {
         let input = Tensor::new(ctxt, &device)?.unsqueeze(0)?;
         let logits = llama.forward(&input, index_pos)?;
         let logits = logits.squeeze(0)?;
-        let logits = if args.repeat_penalty == 1. {
-            logits
-        } else {
-            let start_at = tokens.len().saturating_sub(args.repeat_last_n);
-            candle_transformers::utils::apply_repeat_penalty(
-                &logits,
-                args.repeat_penalty,
-                &tokens[start_at..],
-            )?
-        };
+
         index_pos += ctxt.len();
 
         let next_token = logits_processor.sample(&logits)?;
