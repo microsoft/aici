@@ -8,6 +8,7 @@ edition = "2021"
 anyhow = "1.0.75"
 candle-transformers = { path = "../candle/candle-transformers", features = ["cuda", "flash-attn"] }
 candle-nn = { path = "../candle/candle-nn" }
+candle-flash-attn = { path = "../candle/candle-flash-attn" }
 candle = { path = "../candle/candle-core", features = ["cuda", "cudnn"], package = "candle-core" }
 clap = "4.4.8"
 hf-hub = "0.3.2"

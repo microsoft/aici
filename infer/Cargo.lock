@@ -1285,6 +1285,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "candle-core",
+ "candle-flash-attn",
  "candle-nn",
  "candle-transformers",
  "clap",
