@@ -4,4 +4,4 @@
 	branch = hooks
 [submodule "candle"]
 	path = candle
-	url = https://github.com/huggingface/candle
+	url = https://github.com/mmoskal/candle
