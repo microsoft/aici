@@ -1,5 +1,5 @@
 use anyhow::{Error as E, Result};
-use clap::{Parser, ValueEnum};
+use clap::Parser;
 
 use candle_transformers::models::mixformer::{Config, MixFormerSequentialForCausalLM as MixFormer};
 
@@ -100,16 +100,6 @@ impl TextGeneration {
         );
         Ok(())
     }
-}
-
-#[derive(Clone, Copy, Debug, ValueEnum)]
-enum WhichModel {
-    #[value(name = "1")]
-    V1,
-    #[value(name = "1.5")]
-    V1_5,
-    PuffinPhiV2,
-    PhiHermes,
 }
 
 #[derive(Parser, Debug)]
