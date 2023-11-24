@@ -760,21 +760,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "infer"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "candle-core",
- "candle-nn",
- "candle-transformers",
- "clap",
- "hf-hub",
- "serde",
- "serde_json",
- "tokenizers",
-]
-
-[[package]]
 name = "instant"
 version = "0.1.12"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1292,6 +1277,21 @@ dependencies = [
  "spin",
  "untrusted",
  "windows-sys 0.48.0",
+]
+
+[[package]]
+name = "rllm"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "candle-core",
+ "candle-nn",
+ "candle-transformers",
+ "clap",
+ "hf-hub",
+ "serde",
+ "serde_json",
+ "tokenizers",
 ]
 
 [[package]]
