@@ -1,11 +1,9 @@
-use anyhow::{Error, Result};
+use anyhow::Result;
 use clap::Parser;
 
-use candle::Tensor;
-use rllm::{load_llama, LoaderArgs, LogitsProcessor};
+use rllm::{LlamaInfer, LoaderArgs, LogitsProcessor};
 use std::io::Write;
 
-const EOS_TOKEN: &str = "</s>";
 const DEFAULT_PROMPT: &str = "My favorite theorem is ";
 
 #[derive(Parser, Debug)]
@@ -24,7 +22,7 @@ struct Args {
     seed: u64,
 
     /// The length of the sample to generate (in tokens).
-    #[arg(long, default_value_t = 100)]
+    #[arg(long, default_value_t = 20)]
     sample_len: usize,
 
     /// The initial prompt.
@@ -46,57 +44,22 @@ struct Args {
 fn main() -> Result<()> {
     let args = Args::parse();
 
-    let (tokenizer, llama, device) = load_llama(LoaderArgs {
+    let mut infer = LlamaInfer::load(LoaderArgs {
         model_id: args.model_id,
         revision: args.revision,
         local_weights: args.local_weights,
     })?;
 
-    let eos_token_id = tokenizer.token_to_id(EOS_TOKEN);
     let prompt = args.prompt.as_ref().map_or(DEFAULT_PROMPT, |p| p.as_str());
-    let mut tokens = tokenizer
-        .encode(prompt, true)
-        .map_err(Error::msg)?
-        .get_ids()
-        .to_vec();
 
-    println!("starting the inference loop");
     print!("{prompt}");
+    std::io::stdout().flush()?;
+
     let mut logits_processor = LogitsProcessor::new(args.seed, args.temperature, args.top_p);
+
     let start_gen = std::time::Instant::now();
-    let mut index_pos = 0;
-    let mut token_generated = 0;
-    for index in 0..args.sample_len {
-        let context_size = if index > 0 { 1 } else { tokens.len() };
-        let ctxt = &tokens[tokens.len().saturating_sub(context_size)..];
-        let input = Tensor::new(ctxt, &device)?.unsqueeze(0)?;
-        let logits = llama.forward(&input, index_pos)?;
-        let logits = logits.squeeze(0)?;
-
-        index_pos += ctxt.len();
-
-        let next_token = logits_processor.sample(&logits)?;
-        token_generated += 1;
-        tokens.push(next_token);
-
-        // Extracting the last token as a string is complicated, here we just apply some simple
-        // heuristics as it seems to work well enough for this example. See the following for more
-        // details:
-        // https://github.com/huggingface/tokenizers/issues/1141#issuecomment-1562644141
-        if let Some(text) = tokenizer.id_to_token(next_token) {
-            let text = text.replace('▁', " ").replace("<0x0A>", "\n");
-            print!("{text}");
-            std::io::stdout().flush()?;
-        }
-        if Some(next_token) == eos_token_id {
-            break;
-        }
-    }
+    let gen = infer.generate(prompt, args.sample_len, &mut logits_processor)?;
     let dt = start_gen.elapsed();
-    println!(
-        "\n\n{} tokens generated ({} token/s)\n",
-        token_generated,
-        token_generated as f64 / dt.as_secs_f64(),
-    );
+    println!("{gen}\ntime: {dt:?}\n");
     Ok(())
 }

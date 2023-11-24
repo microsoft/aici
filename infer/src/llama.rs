@@ -86,7 +86,6 @@ impl Config {
 #[derive(Clone)]
 pub struct Cache {
     masks: Arc<Mutex<HashMap<usize, Tensor>>>,
-    pub use_kv_cache: bool,
     #[allow(clippy::type_complexity)]
     kvs: Arc<Mutex<Vec<Option<(Tensor, Tensor)>>>>,
     cos: Tensor,
@@ -95,7 +94,7 @@ pub struct Cache {
 }
 
 impl Cache {
-    pub fn new(use_kv_cache: bool, dtype: DType, config: &Config, device: &Device) -> Result<Self> {
+    pub fn new(dtype: DType, config: &Config, device: &Device) -> Result<Self> {
         // precompute freqs_cis
         let n_elem = config.hidden_size / config.num_attention_heads;
         let theta: Vec<_> = (0..n_elem)
@@ -114,12 +113,16 @@ impl Cache {
         let sin = idx_theta.sin()?.to_dtype(dtype)?;
         Ok(Self {
             masks: Arc::new(Mutex::new(HashMap::new())),
-            use_kv_cache,
             kvs: Arc::new(Mutex::new(vec![None; config.num_hidden_layers])),
             device: device.clone(),
             cos,
             sin,
         })
+    }
+
+    pub fn clear(&self) {
+        let mut kvs = self.kvs.lock().unwrap();
+        *kvs = vec![None; kvs.len()];
     }
 
     fn mask(&self, t: usize) -> Result<Tensor> {
@@ -164,7 +167,6 @@ fn flash_attn(
     candle_flash_attn::flash_attn(q, k, v, softmax_scale, causal)
 }
 
-
 impl CausalSelfAttention {
     fn apply_rotary_emb(&self, x: &Tensor, index_pos: usize) -> Result<Tensor> {
         let (b_sz, _, seq_len, hidden_size) = x.dims4()?;
@@ -198,7 +200,7 @@ impl CausalSelfAttention {
         let q = self.apply_rotary_emb(&q, index_pos)?;
         let mut k = self.apply_rotary_emb(&k, index_pos)?;
 
-        if self.cache.use_kv_cache {
+        {
             let mut cache = self.cache.kvs.lock().unwrap();
             if let Some((cache_k, cache_v)) = &cache[block_idx] {
                 k = Tensor::cat(&[cache_k, &k], 2)?.contiguous()?;
