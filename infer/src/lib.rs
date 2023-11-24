@@ -1,4 +1,5 @@
 pub mod llama;
+pub mod seq;
 mod logits;
 
 pub use logits::LogitsProcessor;
