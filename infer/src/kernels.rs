@@ -78,6 +78,12 @@ pub fn rotary_embedding(
     assert!(num_heads * head_size == num_heads_x_head_size);
     assert!(num_kv_heads * head_size == num_kv_heads_x_head_size);
 
+    // println!("{:?}", query.layout());
+    // println!("q: {:?} k: {:?}", query.dims(), key.dims());
+    // println!(
+    //     "rotary_embedding: num_tokens={} num_heads={} num_kv_heads={} head_size={} rot_dim={}",
+    //     num_tokens, num_heads, num_kv_heads, head_size, rot_dim);
+
     let (pos_stor, pos_layout) = positions.storage_and_layout();
     let pos_buf = as_cont_cuda_slice::<i64>(&pos_stor, &pos_layout);
     let pos_ptr = *pos_buf.device_ptr() as *const i64;
@@ -91,6 +97,8 @@ pub fn rotary_embedding(
     let key_stride = k_l.stride()[0];
     let key_buf = as_cuda_slice::<bf16>(&k_stor, &k_l);
     let key_ptr = *key_buf.device_ptr() as *mut bf16;
+
+    // println!("key_stride={} query_stride={}", key_stride, query_stride);
 
     let (cos_sin_stor, cos_sin_layout) = cos_sin_cache.storage_and_layout();
     let cos_sin_buf = as_cont_cuda_slice::<bf16>(&cos_sin_stor, &cos_sin_layout);

@@ -1,6 +1,9 @@
 // adapted from vllm pos_encoding_kernels.cu
 
 #include <cuda_bf16.h>
+#include <assert.h>
+#include <stdio.h>
+
 
 template<typename scalar_t, bool IS_NEOX>
 inline __device__ void apply_rotary_embedding(
@@ -58,6 +61,16 @@ __global__ void rotary_embedding_kernel(
     const int head_idx = i / embed_dim;
     const int token_head = token_idx * query_stride + head_idx * head_size;
     const int rot_offset = i % embed_dim;
+    if (token_idx == 0 &&
+    token_head + rot_offset + embed_dim >= query_stride
+    ) {
+      // token_head: 3968, rot_offset: 63, embed_dim: 128, query_stride: 4096
+
+      printf("i: %d, head_idx: %d, head_size: %d, token_head: %d, rot_offset: %d, embed_dim: %d, query_stride: %d\n",
+      i, head_idx, head_size,
+      token_head, rot_offset, embed_dim, query_stride);
+      assert(false);
+    }
     apply_rotary_embedding<scalar_t, IS_NEOX>(query + token_head, cos_ptr,
                                               sin_ptr, rot_offset, embed_dim);
   }
