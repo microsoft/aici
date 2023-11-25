@@ -34,6 +34,9 @@ struct Args {
     #[arg(long)]
     revision: Option<String>,
 
+    #[arg(long, default_value_t = false)]
+    reference: bool,
+
     /// The folder name that contains safetensor weights and json files
     /// (same structure as huggingface online)
     #[arg(long)]
@@ -47,7 +50,7 @@ fn main() -> Result<()> {
         model_id: args.model_id,
         revision: args.revision,
         local_weights: args.local_weights,
-        use_reference: true,
+        use_reference: args.reference,
     })?;
 
     let prompt = args.prompt.as_ref().map_or(DEFAULT_PROMPT, |p| p.as_str());

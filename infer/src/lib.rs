@@ -193,9 +193,9 @@ impl LlamaInfer {
         // seqs.push(self.new_seq(prompt)?);
         // seqs.push(self.new_seq(prompt)?);
 
-        for _ in 0..sample_len {
+        for _idx in 0..sample_len {
             let info = BatchInfo::from_seqs(&seqs, &self.device)?;
-            println!("batch_info: {:?}", info);
+            // println!("batch_info #{_idx}: {:?}", info);
             let logits = match &self.model {
                 Model::Llama(llama) => llama.forward(&info)?,
                 Model::Reference(llama) => {
@@ -204,7 +204,7 @@ impl LlamaInfer {
                     llama.forward(&input, index_pos as usize)?
                 }
             };
-            println!("logits: {:?}", logits);
+            // println!("logits: {}", logits);
             for idx in 0..seqs.len() {
                 let logits = logits.i((idx, ..))?;
                 let next_token = logits_processor.sample(&logits)?;

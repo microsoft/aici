@@ -126,6 +126,8 @@ impl CausalSelfAttention {
         let (b_sz, seq_len, hidden_size) = x.dims3()?;
         assert!(b_sz == 1);
 
+        let log = false && block_idx <= 1;
+
         let q = self.q_proj.forward(x)?;
         let k = self.k_proj.forward(x)?;
         let v = self.v_proj.forward(x)?;
@@ -151,6 +153,11 @@ impl CausalSelfAttention {
             .reshape((b_sz, seq_len, self.num_key_value_heads, self.head_dim))?
             .transpose(1, 2)?;
 
+        if log {
+            println!("q: {}", q);
+            println!("k: {}", k);
+        }
+
         {
             let mut cache = self.cache.kvs.lock().unwrap();
             if let Some((cache_k, cache_v)) = &cache[block_idx] {
@@ -175,13 +182,18 @@ impl CausalSelfAttention {
         let k = self.repeat_kv(k)?;
         let v = self.repeat_kv(v)?;
 
+        if log {
+            println!("q2: {}", q);
+            println!("k2: {}", k);
+        }
+
         let y = {
             // flash-attn expects (seq_len, nheads, head_dim)
             let q = q.transpose(1, 2)?.squeeze(0)?;
             let k = k.transpose(1, 2)?.squeeze(0)?;
             let v = v.transpose(1, 2)?.squeeze(0)?;
             let softmax_scale = 1f32 / (self.head_dim as f32).sqrt();
-            let causal = true;
+            let causal = seq_len > 1; // TODO
             candle_flash_attn::flash_attn_varlen(
                 &q,
                 &k,
@@ -196,6 +208,11 @@ impl CausalSelfAttention {
             .transpose(0, 1)?
             .unsqueeze(0)?
         };
+
+        if log {
+            println!("y: {}", y);
+        }
+
         let y = y.transpose(1, 2)?.reshape(&[b_sz, seq_len, hidden_size])?;
         let y = self.o_proj.forward(&y)?;
         Ok(y)
@@ -276,6 +293,7 @@ impl Block {
         let x = (self.attn.forward(&x, batch_info, block_idx)? + residual)?;
         let residual = &x;
         let x = (self.mlp.forward(&self.rms_2.forward(&x)?)? + residual)?;
+        // println!("x: {}", x);
         Ok(x)
     }
 
@@ -312,10 +330,14 @@ impl Llama {
             x = block.forward(&x, batch_info, block_idx)?;
         }
         let x0 = self.ln_f.forward(&x)?;
+        // println!("x: {}", x0);
+
         // skip first zero
-        let mut idx = batch_info.seqlens_k.i(1..)?;
+        let mut idx = batch_info.seqlens_q.i(1..)?;
+        // subtract 1 from each index
         idx = idx.sub(&Tensor::ones_like(&idx)?)?;
         let x = x0.i((.., &idx, ..))?;
+        // println!("x0 {:?} x {:?} idx {}", x0, x, idx);
 
         let logits = self.lm_head.forward(&x)?.squeeze(0)?;
         logits.to_dtype(DType::F32)
