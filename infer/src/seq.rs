@@ -27,7 +27,7 @@ pub struct Sequance {
 
 #[derive(Debug)]
 pub struct BatchInfo {
-    pub tokens: Tensor,
+    pub tokens: Tensor, // u32, [num_tokens]
     pub positions: Tensor, // i64, [num_tokens]
     pub seqlens_q: Tensor, // u32, [batch_size + 1]; points to tokens/positions
     pub seqlens_k: Tensor, // u32, [batch_size + 1]; can go outside tokens/positions

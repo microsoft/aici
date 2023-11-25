@@ -307,7 +307,6 @@ pub struct Llama {
 
 impl Llama {
     pub fn forward(&self, batch_info: &BatchInfo) -> Result<Tensor> {
-        // println!("batch_info: {:?}", batch_info);
         let mut x = self.wte.forward(&batch_info.tokens)?.unsqueeze(0)?;
         for (block_idx, block) in self.blocks.iter().enumerate() {
             x = block.forward(&x, batch_info, block_idx)?;

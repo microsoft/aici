@@ -47,6 +47,7 @@ fn main() -> Result<()> {
         model_id: args.model_id,
         revision: args.revision,
         local_weights: args.local_weights,
+        use_reference: true,
     })?;
 
     let prompt = args.prompt.as_ref().map_or(DEFAULT_PROMPT, |p| p.as_str());

@@ -18,11 +18,14 @@ use hf_hub::{
 use llama::{Llama, LlamaConfig};
 use tokenizers::Tokenizer;
 
+use candle_transformers::models::llama as llama_ref;
+
 #[derive(Default)]
 pub struct LoaderArgs {
     pub model_id: Option<String>,
     pub revision: Option<String>,
     pub local_weights: Option<String>,
+    pub use_reference: bool,
 }
 
 enum Repo {
@@ -72,11 +75,16 @@ impl Display for Repo {
     }
 }
 
+pub enum Model {
+    Llama(Llama),
+    Reference(llama_ref::Llama),
+}
+
 pub struct LlamaInfer {
     pub tokenizer: Tokenizer,
-    pub model: Llama,
+    pub model: Model,
     seq_id: SeqId,
-    cache: llama::Cache,
+    cache: Option<llama::Cache>,
     pub device: Device,
     pub eos_token_id: u32,
 }
@@ -112,20 +120,32 @@ impl LlamaInfer {
             .collect::<Result<Vec<_>>>()?;
 
         println!("building the model");
-        let cache = llama::Cache::new(dtype, &config, &device)?;
 
         let vb = unsafe { VarBuilder::from_mmaped_safetensors(&filenames, dtype, &device)? };
-
         let tokenizer = Tokenizer::from_file(tokenizer_filename).map_err(anyhow::Error::msg)?;
-        let llama = Llama::load(vb, &cache, &config)?;
 
         let eos_token_id = tokenizer
             .token_to_id("</s>")
             .ok_or(anyhow!("</s> not found"))?;
 
+        let (model, cache) = if args.use_reference {
+            let config: llama_ref::LlamaConfig =
+                serde_json::from_slice(&repo.read("config.json")?)?;
+            let use_flash_attn = true;
+            let config = config.into_config(use_flash_attn);
+            let use_kv_cache = true;
+            let cache = llama_ref::Cache::new(use_kv_cache, dtype, &config, &device)?;
+            let llama = llama_ref::Llama::load(vb, &cache, &config)?;
+            (Model::Reference(llama), None)
+        } else {
+            let cache = llama::Cache::new(dtype, &config, &device)?;
+            let llama = Llama::load(vb, &cache, &config)?;
+            (Model::Llama(llama), Some(cache))
+        };
+
         Ok(LlamaInfer {
             tokenizer,
-            model: llama,
+            model,
             cache,
             seq_id: 1,
             device,
@@ -166,7 +186,8 @@ impl LlamaInfer {
         sample_len: usize,
         logits_processor: &mut LogitsProcessor,
     ) -> Result<String> {
-        self.cache.clear();
+        self.cache.as_ref().map(|x| x.clear());
+
         let seq = self.new_seq(prompt)?;
         let mut seqs = vec![seq];
         // seqs.push(self.new_seq(prompt)?);
@@ -174,7 +195,16 @@ impl LlamaInfer {
 
         for _ in 0..sample_len {
             let info = BatchInfo::from_seqs(&seqs, &self.device)?;
-            let logits = self.model.forward(&info)?;
+            println!("batch_info: {:?}", info);
+            let logits = match &self.model {
+                Model::Llama(llama) => llama.forward(&info)?,
+                Model::Reference(llama) => {
+                    let index_pos = info.positions.i(0..1)?.to_vec1::<i64>()?[0];
+                    let input = info.tokens.unsqueeze(0)?;
+                    llama.forward(&input, index_pos as usize)?
+                }
+            };
+            println!("logits: {:?}", logits);
             for idx in 0..seqs.len() {
                 let logits = logits.i((idx, ..))?;
                 let next_token = logits_processor.sample(&logits)?;
