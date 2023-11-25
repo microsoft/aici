@@ -1,5 +1,5 @@
 use anyhow::Result;
-use candle::{quantized, DType, Device, IndexOp, Shape, Tensor, D};
+use candle::{DType, Device, IndexOp, Shape, Tensor};
 
 use crate::to_offsets;
 
@@ -55,9 +55,9 @@ fn flash_attn(
     softmax_scale: f32,
 ) -> Result<Tensor> {
     // flash-attn expects (seq_len, nheads, head_dim)
-    let q = q.transpose(0, 1)?;
-    let k = k.transpose(0, 1)?;
-    let v = v.transpose(0, 1)?;
+    let q = q.transpose(0, 1)?.contiguous()?;
+    let k = k.transpose(0, 1)?.contiguous()?;
+    let v = v.transpose(0, 1)?.contiguous()?;
     let cuda = Device::new_cuda(0)?;
     let device = &cuda;
     let causal = true;
@@ -97,26 +97,31 @@ pub fn check_all_close(t1: &Tensor, t2: &Tensor) {
     }
 }
 
+#[allow(dead_code)]
 pub fn playground_1() {
     let mut xor = XorShiftRng::new();
     let device = Device::new_cuda(0).unwrap();
 
-    let slen = 12;
-    let pref = 5;
-    let head_dim = 32;
+    let slen = 5;
+    let pref = 2;
+    let head_dim = 8;
     let n_heads = 1;
     let query = xor.rand_tensor(&[n_heads, slen, head_dim], &device);
     let key = xor.rand_tensor(&[n_heads, slen, head_dim], &device);
     let value = xor.rand_tensor(&[n_heads, slen, head_dim], &device);
 
-    let q1 = query.i((.., 0..pref, ..)).unwrap();
     let q2 = query.i((.., pref.., ..)).unwrap();
+
+    let q1 = query.i((.., 0..pref, ..)).unwrap();
     let k1 = key.i((.., 0..pref, ..)).unwrap();
     let v1 = value.i((.., 0..pref, ..)).unwrap();
 
     let out = flash_attn(&query, &key, &value, &[slen], &[slen], 0.0, 1.0).unwrap();
+    println!("out\n{out}");
     let o1 = flash_attn(&q1, &k1, &v1, &[pref], &[pref], 0.0, 1.0).unwrap();
+    println!("o1\n{o1}");
     let o2 = flash_attn(&q2, &key, &value, &[slen - pref], &[slen], 0.0, 1.0).unwrap();
+    println!("o2\n{o2}");
     println!("{:?}", out.dims());
     println!("{:?}", o1.dims());
     println!("{:?}", o2.dims());
@@ -125,3 +130,4 @@ pub fn playground_1() {
     println!("suff");
     check_all_close(&out.i((.., pref.., ..)).unwrap(), &o2);
 }
+
