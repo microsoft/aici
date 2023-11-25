@@ -2,7 +2,7 @@ use core::panic;
 
 use candle::{
     cuda_backend::{
-        cudarc::driver::{CudaSlice, CudaView, DevicePtr},
+        cudarc::driver::{CudaView, DevicePtr},
         CudaDType,
     },
     Layout, Storage, Tensor,

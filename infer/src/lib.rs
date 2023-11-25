@@ -1,14 +1,15 @@
-pub mod llama;
-pub mod seq;
-mod logits;
 mod kernels;
+pub mod llama;
+mod logits;
+pub mod seq;
 
 pub use logits::LogitsProcessor;
+use seq::{BatchInfo, SeqId, SeqPhase, Sequance};
 
 use std::{collections::HashSet, fmt::Display, path::PathBuf};
 
 use anyhow::{anyhow, Error as E, Result};
-use candle::{DType, Device, Tensor};
+use candle::{DType, Device, IndexOp};
 use candle_nn::VarBuilder;
 use hf_hub::{
     api::sync::{Api, ApiRepo},
@@ -74,6 +75,7 @@ impl Display for Repo {
 pub struct LlamaInfer {
     pub tokenizer: Tokenizer,
     pub model: Llama,
+    seq_id: SeqId,
     cache: llama::Cache,
     pub device: Device,
     pub eos_token_id: u32,
@@ -125,19 +127,37 @@ impl LlamaInfer {
             tokenizer,
             model: llama,
             cache,
+            seq_id: 1,
             device,
             eos_token_id,
         })
     }
 
-    pub fn tokenize_prompt(&self, prompt: &str) -> Result<Vec<u32>> {
+    pub fn new_seq(&mut self, prompt: &str) -> Result<Sequance> {
         let tokens = self
             .tokenizer
             .encode(prompt, true)
             .map_err(anyhow::Error::msg)?
             .get_ids()
             .to_vec();
-        Ok(tokens)
+        let prompt_len = tokens.len();
+        let seq = Sequance {
+            seq_id: self.seq_id,
+            phase: SeqPhase::Prompt,
+            tokens,
+            prompt_len,
+        };
+        self.seq_id += 1;
+        Ok(seq)
+    }
+
+    pub fn decode_seq(&self, seq: &Sequance) -> Result<String> {
+        let tokens = &seq.tokens[seq.prompt_len..];
+        let generated = self
+            .tokenizer
+            .decode(tokens, true)
+            .map_err(anyhow::Error::msg)?;
+        Ok(generated)
     }
 
     pub fn generate(
@@ -147,29 +167,23 @@ impl LlamaInfer {
         logits_processor: &mut LogitsProcessor,
     ) -> Result<String> {
         self.cache.clear();
-        let mut tokens = self.tokenize_prompt(prompt)?;
-        let prompt_len = tokens.len();
-        let mut index_pos = 0;
-        for index in 0..sample_len {
-            let context_size = if index > 0 { 1 } else { prompt_len };
-            let ctxt = &tokens[tokens.len().saturating_sub(context_size)..];
-            let input = Tensor::new(ctxt, &self.device)?.unsqueeze(0)?;
-            let logits = self.model.forward(&input, index_pos)?;
-            let logits = logits.squeeze(0)?;
+        let seq = self.new_seq(prompt)?;
+        let mut seqs = vec![seq];
 
-            index_pos += ctxt.len();
-
-            let next_token = logits_processor.sample(&logits)?;
-            tokens.push(next_token);
-
-            if next_token == self.eos_token_id {
-                break;
+        for _ in 0..sample_len {
+            let info = BatchInfo::from_seqs(&seqs, &self.device)?;
+            let logits = self.model.forward(&info)?;
+            for idx in 0..seqs.len() {
+                let logits = logits.i((idx, ..))?;
+                let next_token = logits_processor.sample(&logits)?;
+                seqs[idx].tokens.push(next_token);
+                seqs[idx].phase = SeqPhase::Gen;
+                // if next_token == self.eos_token_id {
+                //     break;
+                // }
             }
         }
-        let generated = self
-            .tokenizer
-            .decode(&tokens[prompt_len..], true)
-            .map_err(E::msg)?;
-        Ok(generated)
+
+        Ok(self.decode_seq(&seqs[0])?)
     }
 }

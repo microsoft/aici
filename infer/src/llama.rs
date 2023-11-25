@@ -1,9 +1,11 @@
 // based on https://github.com/huggingface/candle/blob/main/candle-transformers/src/models/llama.rs
 
-use candle::{DType, Device, IndexOp, Result, Tensor, D};
+use candle::{DType, Device, Result, Tensor, D};
 use candle_nn::{linear_no_bias, Embedding, Linear, Module, RmsNorm, VarBuilder};
 use serde::Deserialize;
 use std::sync::{Arc, Mutex};
+
+use crate::{kernels, seq::BatchInfo};
 
 pub const MAX_SEQ_LEN: usize = 4096;
 
@@ -69,17 +71,16 @@ impl Config {
 pub struct Cache {
     #[allow(clippy::type_complexity)]
     kvs: Arc<Mutex<Vec<Option<(Tensor, Tensor)>>>>,
-    cos: Tensor,
-    sin: Tensor,
+    cos_sin: Tensor,
 }
 
 impl Cache {
     pub fn new(dtype: DType, config: &Config, device: &Device) -> Result<Self> {
         // precompute freqs_cis
-        let n_elem = config.hidden_size / config.num_attention_heads;
-        let theta: Vec<_> = (0..n_elem)
+        let rotary_dim = config.hidden_size / config.num_attention_heads;
+        let theta: Vec<_> = (0..rotary_dim)
             .step_by(2)
-            .map(|i| 1f32 / config.rope_theta.powf(i as f32 / n_elem as f32))
+            .map(|i| 1f32 / config.rope_theta.powf(i as f32 / rotary_dim as f32))
             .collect();
         let theta = Tensor::new(theta.as_slice(), device)?;
         let idx_theta = Tensor::arange(0, MAX_SEQ_LEN as u32, device)?
@@ -91,10 +92,10 @@ impl Cache {
         let idx_theta = Tensor::cat(&[&idx_theta, &idx_theta], D::Minus1)?;
         let cos = idx_theta.cos()?.to_dtype(dtype)?;
         let sin = idx_theta.sin()?.to_dtype(dtype)?;
+        let cos_sin = Tensor::cat(&[&cos, &sin], D::Minus1)?;
         Ok(Self {
             kvs: Arc::new(Mutex::new(vec![None; config.num_hidden_layers])),
-            cos,
-            sin,
+            cos_sin,
         })
     }
 
@@ -120,48 +121,35 @@ struct CausalSelfAttention {
     cache: Cache,
 }
 
-fn flash_attn(
-    q: &Tensor,
-    k: &Tensor,
-    v: &Tensor,
-    softmax_scale: f32,
-    causal: bool,
-) -> Result<Tensor> {
-    candle_flash_attn::flash_attn(q, k, v, softmax_scale, causal)
-}
-
 impl CausalSelfAttention {
-    fn apply_rotary_emb(&self, x: &Tensor, index_pos: usize) -> Result<Tensor> {
-        let (b_sz, _, seq_len, hidden_size) = x.dims4()?;
-        let cos = self.cache.cos.narrow(0, index_pos, seq_len)?;
-        let sin = self.cache.sin.narrow(0, index_pos, seq_len)?;
-        let cos = cos.broadcast_as((b_sz, 1, seq_len, hidden_size))?;
-        let sin = sin.broadcast_as((b_sz, 1, seq_len, hidden_size))?;
-        let x1 = x.narrow(D::Minus1, 0, hidden_size / 2)?;
-        let x2 = x.narrow(D::Minus1, hidden_size / 2, hidden_size / 2)?;
-        let rotate_x = Tensor::cat(&[&x2.neg()?, &x1], D::Minus1)?;
-        let rope = (x.broadcast_mul(&cos)? + rotate_x.broadcast_mul(&sin)?)?;
-        Ok(rope)
-    }
-
-    fn forward(&self, x: &Tensor, index_pos: usize, block_idx: usize) -> Result<Tensor> {
+    fn forward(&self, x: &Tensor, batch_info: &BatchInfo, block_idx: usize) -> Result<Tensor> {
         let (b_sz, seq_len, hidden_size) = x.dims3()?;
+        assert!(b_sz == 1);
+
         let q = self.q_proj.forward(x)?;
         let k = self.k_proj.forward(x)?;
         let v = self.v_proj.forward(x)?;
 
+        let mut q = q.reshape((seq_len, self.num_attention_heads * self.head_dim))?;
+        let mut k = k.reshape((seq_len, self.num_key_value_heads * self.head_dim))?;
+
+        kernels::rotary_embedding(
+            &batch_info.positions,
+            &mut q,
+            &mut k,
+            self.head_dim,
+            &self.cache.cos_sin,
+        );
+
         let q = q
             .reshape((b_sz, seq_len, self.num_attention_heads, self.head_dim))?
             .transpose(1, 2)?;
-        let k = k
+        let mut k = k
             .reshape((b_sz, seq_len, self.num_key_value_heads, self.head_dim))?
             .transpose(1, 2)?;
         let mut v = v
             .reshape((b_sz, seq_len, self.num_key_value_heads, self.head_dim))?
             .transpose(1, 2)?;
-
-        let q = self.apply_rotary_emb(&q, index_pos)?;
-        let mut k = self.apply_rotary_emb(&k, index_pos)?;
 
         {
             let mut cache = self.cache.kvs.lock().unwrap();
@@ -188,12 +176,25 @@ impl CausalSelfAttention {
         let v = self.repeat_kv(v)?;
 
         let y = {
-            // flash-attn expects (b_sz, seq_len, nheads, head_dim)
-            let q = q.transpose(1, 2)?;
-            let k = k.transpose(1, 2)?;
-            let v = v.transpose(1, 2)?;
+            // flash-attn expects (seq_len, nheads, head_dim)
+            let q = q.transpose(1, 2)?.squeeze(0)?;
+            let k = k.transpose(1, 2)?.squeeze(0)?;
+            let v = v.transpose(1, 2)?.squeeze(0)?;
             let softmax_scale = 1f32 / (self.head_dim as f32).sqrt();
-            flash_attn(&q, &k, &v, softmax_scale, seq_len > 1)?.transpose(1, 2)?
+            let causal = true;
+            candle_flash_attn::flash_attn_varlen(
+                &q,
+                &k,
+                &v,
+                &batch_info.seqlens_q,
+                &batch_info.seqlens_k,
+                batch_info.max_seqlen_q,
+                batch_info.max_seqlen_k,
+                softmax_scale,
+                causal,
+            )?
+            .transpose(0, 1)?
+            .unsqueeze(0)?
         };
         let y = y.transpose(1, 2)?.reshape(&[b_sz, seq_len, hidden_size])?;
         let y = self.o_proj.forward(&y)?;
@@ -269,10 +270,10 @@ struct Block {
 }
 
 impl Block {
-    fn forward(&self, x: &Tensor, index_pos: usize, block_idx: usize) -> Result<Tensor> {
+    fn forward(&self, x: &Tensor, batch_info: &BatchInfo, block_idx: usize) -> Result<Tensor> {
         let residual = x;
         let x = self.rms_1.forward(x)?;
-        let x = (self.attn.forward(&x, index_pos, block_idx)? + residual)?;
+        let x = (self.attn.forward(&x, batch_info, block_idx)? + residual)?;
         let residual = &x;
         let x = (self.mlp.forward(&self.rms_2.forward(&x)?)? + residual)?;
         Ok(x)
@@ -305,14 +306,13 @@ pub struct Llama {
 }
 
 impl Llama {
-    pub fn forward(&self, x: &Tensor, index_pos: usize) -> Result<Tensor> {
-        let (_b_sz, seq_len) = x.dims2()?;
-        let mut x = self.wte.forward(x)?;
+    pub fn forward(&self, batch_info: &BatchInfo) -> Result<Tensor> {
+        let mut x = self.wte.forward(&batch_info.tokens)?;
         for (block_idx, block) in self.blocks.iter().enumerate() {
-            x = block.forward(&x, index_pos, block_idx)?;
+            x = block.forward(&x, batch_info, block_idx)?;
         }
         let x = self.ln_f.forward(&x)?;
-        let x = x.i((.., seq_len - 1, ..))?;
+        // let x = x.i((.., seq_len - 1, ..))?;
         let logits = self.lm_head.forward(&x)?;
         logits.to_dtype(DType::F32)
     }
