@@ -25,6 +25,7 @@ pub struct Sequance {
 // `seqlens_q` and `seqlens_k` contain `batch_size + 1` elements, typically `0`, `seqlen_1`,
 // `seqlen_1 + seqlen_2`, etc.
 
+#[derive(Debug)]
 pub struct BatchInfo {
     pub tokens: Tensor,
     pub positions: Tensor, // i64, [num_tokens]
