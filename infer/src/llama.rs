@@ -1,6 +1,6 @@
 // based on https://github.com/huggingface/candle/blob/main/candle-transformers/src/models/llama.rs
 
-use candle::{DType, Device, Result, Tensor, D};
+use candle::{DType, Device, IndexOp, Result, Tensor, D};
 use candle_nn::{linear_no_bias, Embedding, Linear, Module, RmsNorm, VarBuilder};
 use serde::Deserialize;
 use std::sync::{Arc, Mutex};
@@ -92,7 +92,7 @@ impl Cache {
         let idx_theta = Tensor::cat(&[&idx_theta, &idx_theta], D::Minus1)?;
         let cos = idx_theta.cos()?.to_dtype(dtype)?;
         let sin = idx_theta.sin()?.to_dtype(dtype)?;
-        let cos_sin = Tensor::cat(&[&cos, &sin], D::Minus1)?;
+        let cos_sin = Tensor::cat(&[&cos, &sin], D::Minus1)?.contiguous()?;
         Ok(Self {
             kvs: Arc::new(Mutex::new(vec![None; config.num_hidden_layers])),
             cos_sin,
@@ -307,13 +307,17 @@ pub struct Llama {
 
 impl Llama {
     pub fn forward(&self, batch_info: &BatchInfo) -> Result<Tensor> {
-        let mut x = self.wte.forward(&batch_info.tokens)?;
+        let mut x = self.wte.forward(&batch_info.tokens)?.unsqueeze(0)?;
         for (block_idx, block) in self.blocks.iter().enumerate() {
             x = block.forward(&x, batch_info, block_idx)?;
         }
-        let x = self.ln_f.forward(&x)?;
-        // let x = x.i((.., seq_len - 1, ..))?;
-        let logits = self.lm_head.forward(&x)?;
+        let x0 = self.ln_f.forward(&x)?;
+        // skip first zero
+        let mut idx = batch_info.seqlens_k.i(1..)?;
+        idx = idx.sub(&Tensor::ones_like(&idx)?)?;
+        let x = x0.i((.., &idx, ..))?;
+
+        let logits = self.lm_head.forward(&x)?.squeeze(0)?;
         logits.to_dtype(DType::F32)
     }
 

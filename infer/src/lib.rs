@@ -169,6 +169,8 @@ impl LlamaInfer {
         self.cache.clear();
         let seq = self.new_seq(prompt)?;
         let mut seqs = vec![seq];
+        // seqs.push(self.new_seq(prompt)?);
+        // seqs.push(self.new_seq(prompt)?);
 
         for _ in 0..sample_len {
             let info = BatchInfo::from_seqs(&seqs, &self.device)?;

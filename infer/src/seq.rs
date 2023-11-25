@@ -28,8 +28,8 @@ pub struct Sequance {
 pub struct BatchInfo {
     pub tokens: Tensor,
     pub positions: Tensor, // i64, [num_tokens]
-    pub seqlens_q: Tensor, // u32, [batch_size + 1]
-    pub seqlens_k: Tensor, // u32, [batch_size + 1]
+    pub seqlens_q: Tensor, // u32, [batch_size + 1]; points to tokens/positions
+    pub seqlens_k: Tensor, // u32, [batch_size + 1]; can go outside tokens/positions
     pub max_seqlen_q: usize,
     pub max_seqlen_k: usize,
 }
@@ -53,7 +53,7 @@ impl BatchInfo {
                 SeqPhase::Gen => 1,
             };
             let off = k_len - q_len;
-            for idx in off..off + k_len {
+            for idx in off..off + q_len {
                 positions.push(idx as i64);
                 tokens.push(seq.tokens[idx]);
             }
