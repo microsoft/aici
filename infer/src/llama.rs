@@ -193,7 +193,6 @@ impl CausalSelfAttention {
             let k = k.transpose(1, 2)?.squeeze(0)?;
             let v = v.transpose(1, 2)?.squeeze(0)?;
             let softmax_scale = 1f32 / (self.head_dim as f32).sqrt();
-            let causal = seq_len > 1; // TODO
             candle_flash_attn::flash_attn_varlen(
                 &q,
                 &k,
@@ -203,7 +202,7 @@ impl CausalSelfAttention {
                 batch_info.max_seqlen_q,
                 batch_info.max_seqlen_k,
                 softmax_scale,
-                causal,
+                batch_info.causal,
             )?
             .transpose(0, 1)?
             .unsqueeze(0)?
