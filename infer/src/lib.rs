@@ -1,6 +1,7 @@
 pub mod llama;
 pub mod seq;
 mod logits;
+mod kernels;
 
 pub use logits::LogitsProcessor;
 
