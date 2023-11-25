@@ -52,4 +52,9 @@ fn test_infer1() {
     for idx in 0..QUERIES.len() {
         expect(&mut ctx, QUERIES[idx].0, QUERIES[idx].1);
     }
+
+    ctx.infer.alt = 1;
+    for idx in 0..QUERIES.len() {
+        expect(&mut ctx, QUERIES[idx].0, QUERIES[idx].1);
+    }
 }

@@ -103,7 +103,7 @@ pub struct LlamaInfer {
     seq_id: SeqId,
     cache: Option<llama::Cache>,
     #[allow(dead_code)]
-    alt: usize,
+    pub alt: usize,
     pub device: Device,
     pub eos_token_id: u32,
 }
@@ -208,7 +208,7 @@ impl LlamaInfer {
     ) -> Result<String> {
         self.cache.as_ref().map(|x| x.clear());
 
-        let trace = true;
+        let trace = false;
 
         let seq = self.new_seq(prompt)?;
         rtrace!("seq: {:?}", seq);
@@ -216,9 +216,10 @@ impl LlamaInfer {
         // seqs.push(self.new_seq(prompt)?);
         // seqs.push(self.new_seq(prompt)?);
 
-        if self.alt > 0 {
+        if self.alt == 1 {
             set_trace(trace);
-            let rest = seqs[0].tokens.drain(6..).collect::<Vec<_>>();
+            let off = seqs[0].tokens.len() / 2;
+            let rest = seqs[0].tokens.drain(off..).collect::<Vec<_>>();
             seqs[0].prompt_len = seqs[0].tokens.len();
 
             let info0 = BatchInfo::from_seqs(&seqs, &self.device)?;
