@@ -1,15 +1,18 @@
 mod kernels;
 pub mod llama;
 mod logits;
+mod playground;
 pub mod seq;
 
 pub use logits::LogitsProcessor;
+pub use playground::playground_1;
+
 use seq::{BatchInfo, SeqId, SeqPhase, Sequance};
 
-use std::{collections::HashSet, fmt::Display, path::PathBuf};
+use std::{collections::HashSet, fmt::Display, path::PathBuf, sync::atomic::AtomicBool};
 
 use anyhow::{anyhow, Error as E, Result};
-use candle::{DType, Device, IndexOp};
+use candle::{DType, Device, IndexOp, Tensor};
 use candle_nn::VarBuilder;
 use hf_hub::{
     api::sync::{Api, ApiRepo},
@@ -26,6 +29,7 @@ pub struct LoaderArgs {
     pub revision: Option<String>,
     pub local_weights: Option<String>,
     pub use_reference: bool,
+    pub alt: usize,
 }
 
 enum Repo {
@@ -80,11 +84,26 @@ pub enum Model {
     Reference(llama_ref::Llama),
 }
 
+impl Model {
+    pub fn forward(&self, info: &BatchInfo) -> Result<Tensor> {
+        match self {
+            Model::Llama(llama) => Ok(llama.forward(info)?),
+            Model::Reference(llama) => {
+                let index_pos = info.positions.i(0..1)?.to_vec1::<i64>()?[0];
+                let input = info.tokens.unsqueeze(0)?;
+                Ok(llama.forward(&input, index_pos as usize)?)
+            }
+        }
+    }
+}
+
 pub struct LlamaInfer {
     pub tokenizer: Tokenizer,
     pub model: Model,
     seq_id: SeqId,
     cache: Option<llama::Cache>,
+    #[allow(dead_code)]
+    alt: usize,
     pub device: Device,
     pub eos_token_id: u32,
 }
@@ -150,6 +169,7 @@ impl LlamaInfer {
             seq_id: 1,
             device,
             eos_token_id,
+            alt: args.alt,
         })
     }
 
@@ -188,23 +208,34 @@ impl LlamaInfer {
     ) -> Result<String> {
         self.cache.as_ref().map(|x| x.clear());
 
+        let trace = true;
+
         let seq = self.new_seq(prompt)?;
+        rtrace!("seq: {:?}", seq);
         let mut seqs = vec![seq];
         // seqs.push(self.new_seq(prompt)?);
         // seqs.push(self.new_seq(prompt)?);
 
+        if self.alt > 0 {
+            set_trace(trace);
+            let rest = seqs[0].tokens.drain(6..).collect::<Vec<_>>();
+            seqs[0].prompt_len = seqs[0].tokens.len();
+
+            let info0 = BatchInfo::from_seqs(&seqs, &self.device)?;
+            let _ = self.model.forward(&info0)?;
+
+            seqs[0].phase = SeqPhase::Fixed(rest.len());
+            seqs[0].tokens.extend(rest);
+            seqs[0].prompt_len = seqs[0].tokens.len();
+        }
+
+        set_trace(trace);
+
         for _idx in 0..sample_len {
             let info = BatchInfo::from_seqs(&seqs, &self.device)?;
-            // println!("batch_info #{_idx}: {:?}", info);
-            let logits = match &self.model {
-                Model::Llama(llama) => llama.forward(&info)?,
-                Model::Reference(llama) => {
-                    let index_pos = info.positions.i(0..1)?.to_vec1::<i64>()?[0];
-                    let input = info.tokens.unsqueeze(0)?;
-                    llama.forward(&input, index_pos as usize)?
-                }
-            };
-            // println!("logits: {}", logits);
+            rtrace!("batch_info #{_idx}: {:?}", info);
+            let logits = self.model.forward(&info)?;
+            rtrace!("logits: {}", logits);
             for idx in 0..seqs.len() {
                 let logits = logits.i((idx, ..))?;
                 let next_token = logits_processor.sample(&logits)?;
@@ -218,4 +249,39 @@ impl LlamaInfer {
 
         Ok(self.decode_seq(&seqs[0])?)
     }
+}
+
+static mut TRACE: AtomicBool = AtomicBool::new(false);
+
+pub fn set_trace(trace_enabled: bool) {
+    unsafe {
+        TRACE.store(trace_enabled, std::sync::atomic::Ordering::Relaxed);
+    }
+}
+
+pub fn get_trace() -> bool {
+    unsafe { TRACE.load(std::sync::atomic::Ordering::Relaxed) }
+}
+
+#[macro_export]
+macro_rules! rtrace {
+    ($($arg:tt)*) => {{
+        if $crate::get_trace() {
+            println!($($arg)*);
+        }
+    }};
+}
+
+pub fn to_offsets(seqlens: &[usize], device: &Device) -> Tensor {
+    let mut offsets = Vec::with_capacity(seqlens.len() + 1);
+    let mut offset = 0;
+    for len in seqlens {
+        offsets.push(offset as u32);
+        offset += len;
+    }
+    offsets.push(offset as u32);
+    Tensor::new(offsets.as_slice(), device)
+        .unwrap()
+        .to_dtype(DType::U32)
+        .unwrap()
 }

@@ -1,3 +1,3 @@
 #!/bin/sh
 RUST_BACKTRACE=1 \
-    cargo run -- --sample-len 5 "$@"
+    cargo run -- --sample-len 10 "$@"

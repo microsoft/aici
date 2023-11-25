@@ -5,7 +5,7 @@ use candle_nn::{linear_no_bias, Embedding, Linear, Module, RmsNorm, VarBuilder};
 use serde::Deserialize;
 use std::sync::{Arc, Mutex};
 
-use crate::{kernels, seq::BatchInfo};
+use crate::{kernels, seq::BatchInfo, get_trace};
 
 pub const MAX_SEQ_LEN: usize = 4096;
 
@@ -126,7 +126,11 @@ impl CausalSelfAttention {
         let (b_sz, seq_len, hidden_size) = x.dims3()?;
         assert!(b_sz == 1);
 
-        let log = false && block_idx <= 1;
+        let trace = get_trace() && block_idx <= 1;
+
+        if trace {
+            println!("block #{block_idx}");
+        }
 
         let q = self.q_proj.forward(x)?;
         let k = self.k_proj.forward(x)?;
@@ -153,9 +157,9 @@ impl CausalSelfAttention {
             .reshape((b_sz, seq_len, self.num_key_value_heads, self.head_dim))?
             .transpose(1, 2)?;
 
-        if log {
-            println!("q: {}", q);
-            println!("k: {}", k);
+        if trace {
+            // println!("q: {}", q);
+            // println!("k: {}", k);
         }
 
         {
@@ -182,9 +186,10 @@ impl CausalSelfAttention {
         let k = self.repeat_kv(k)?;
         let v = self.repeat_kv(v)?;
 
-        if log {
-            println!("q2: {}", q);
-            println!("k2: {}", k);
+        if trace {
+            println!("q2: {q:?}\n{q}");
+            println!("k2: {k:?}\n{k}");
+            println!("v2: {v:?}\n{v}");
         }
 
         let y = {
@@ -193,6 +198,9 @@ impl CausalSelfAttention {
             let k = k.transpose(1, 2)?.squeeze(0)?;
             let v = v.transpose(1, 2)?.squeeze(0)?;
             let softmax_scale = 1f32 / (self.head_dim as f32).sqrt();
+            if trace {
+                println!("Q {q:?} K {k:?} V {v:?} {}", batch_info.causal);
+            }
             candle_flash_attn::flash_attn_varlen(
                 &q,
                 &k,
@@ -208,8 +216,8 @@ impl CausalSelfAttention {
             .unsqueeze(0)?
         };
 
-        if log {
-            println!("y: {}", y);
+        if trace {
+            println!("y: {y:?}\n{y}");
         }
 
         let y = y.transpose(1, 2)?.reshape(&[b_sz, seq_len, hidden_size])?;

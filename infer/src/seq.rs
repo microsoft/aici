@@ -4,12 +4,14 @@ use candle::Tensor;
 pub type Token = u32;
 pub type SeqId = u32;
 
+#[derive(Debug)]
 pub enum SeqPhase {
     Prompt,
     Fixed(usize),
     Gen,
 }
 
+#[derive(Debug)]
 pub struct Sequance {
     pub seq_id: SeqId,
     pub phase: SeqPhase,

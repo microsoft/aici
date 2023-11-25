@@ -1,9 +1,9 @@
 use anyhow::Result;
 use clap::Parser;
 
-use rllm::{LlamaInfer, LoaderArgs, LogitsProcessor};
+use rllm::{playground_1, LlamaInfer, LoaderArgs, LogitsProcessor};
 
-const DEFAULT_PROMPT: &str = "My favorite theorem is ";
+const DEFAULT_PROMPT: &str = "Tarski's fixed-point theorem was proven by";
 
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
@@ -37,6 +37,9 @@ struct Args {
     #[arg(long, default_value_t = false)]
     reference: bool,
 
+    #[arg(long, default_value_t = 0)]
+    alt: usize,
+
     /// The folder name that contains safetensor weights and json files
     /// (same structure as huggingface online)
     #[arg(long)]
@@ -46,11 +49,17 @@ struct Args {
 fn main() -> Result<()> {
     let args = Args::parse();
 
+    if args.alt == 3 {
+        playground_1();
+        return Ok(());
+    }
+
     let mut infer = LlamaInfer::load(LoaderArgs {
         model_id: args.model_id,
         revision: args.revision,
         local_weights: args.local_weights,
         use_reference: args.reference,
+        alt: args.alt,
     })?;
 
     let prompt = args.prompt.as_ref().map_or(DEFAULT_PROMPT, |p| p.as_str());
