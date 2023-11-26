@@ -164,12 +164,13 @@ fn check_cont_bf16(t: &Tensor) {
     assert!(t.layout().is_contiguous());
 }
 
-fn sync(_d: &Device) {
-    // seems this is not necessary
-    // match d {
-    //     Device::Cuda(c) => c.synchronize().unwrap(),
-    //     _ => panic!("not cuda"),
-    // }
+fn sync(d: &Device) {
+    match d {
+        Device::Cuda(_c) => {
+            //   c.synchronize().unwrap()
+        }
+        _ => panic!("not cuda"),
+    }
 }
 
 pub fn copy_blocks(
@@ -310,4 +311,8 @@ pub fn gather_cached_kv(
     slot_mapping: &Tensor, // [num_tokens]
 ) {
     gather_scatter_inner(key, value, key_cache, value_cache, slot_mapping, 1);
+}
+
+pub fn swap_blocks(_src: &mut Tensor, _dst: &mut Tensor, _block_mapping: &HashMap<i64, i64>) {
+    todo!()
 }
