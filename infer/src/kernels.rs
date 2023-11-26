@@ -6,7 +6,7 @@ use candle::{
         cudarc::driver::{CudaView, DevicePtr},
         CudaDType, CudaStorageSlice,
     },
-    DType, Layout, Storage, Tensor,
+    Layout, Storage, Tensor,
 };
 use half::{bf16, f16};
 
@@ -32,6 +32,22 @@ extern "C" {
         numel_per_block: i32,
         num_pairs: i32,
         num_layers: i32,
+    );
+
+    fn gather_scatter_inner_bf16(
+        key: *mut bf16,           // [num_tokens, num_heads, head_size]
+        value: *mut bf16,         // [num_tokens, num_heads, head_size]
+        key_cache: *mut bf16,     // [num_blocks, num_heads, head_size/x, block_size, x]
+        value_cache: *mut bf16,   // [num_blocks, num_heads, head_size, block_size]
+        slot_mapping: *const i32, // [num_tokens]
+        key_stride: i32,
+        value_stride: i32,
+        num_heads: i32,
+        head_size: i32,
+        block_size: i32,
+        x: i32,
+        num_tokens: i32,
+        op: i32,
     );
 
 }
@@ -141,6 +157,11 @@ pub fn rotary_embedding(
 // key_cache,     // [num_blocks, num_heads, head_size/x, block_size, x]
 // value_cache,   // [num_blocks, num_heads, head_size, block_size]
 
+fn check_cont_bf16(t: &Tensor) {
+    assert!(is_bf16(t));
+    assert!(t.layout().is_contiguous());
+}
+
 pub fn copy_blocks(
     key_caches: &mut Vec<Tensor>,
     value_caches: &mut Vec<Tensor>,
@@ -170,8 +191,7 @@ pub fn copy_blocks(
         };
         assert!(e.device().same_device(cache_device));
         assert_eq!(e.elem_count(), tsize);
-        assert_eq!(e.dtype(), DType::BF16);
-        assert!(e.layout().is_contiguous());
+        check_cont_bf16(e);
     }
 
     let mut block_mapping_vec = Vec::new();
@@ -217,4 +237,65 @@ fn to_cuda_ptr_inner(storage: &Storage, layout: &Layout) -> i64 {
 fn to_cuda_ptr(t: &Tensor) -> i64 {
     let (storage, layout) = t.storage_and_layout();
     to_cuda_ptr_inner(&storage, &layout)
+}
+
+fn gather_scatter_inner(
+    key: &Tensor,          // [num_tokens, num_heads, head_size]
+    value: &Tensor,        // [num_tokens, num_heads, head_size]
+    key_cache: &Tensor,    // [num_blocks, num_heads, head_size/x, block_size, x]
+    value_cache: &Tensor,  // [num_blocks, num_heads, head_size, block_size]
+    slot_mapping: &Tensor, // [num_tokens]
+    op: i32,
+) {
+    let (num_tokens, num_heads, head_size) = key.dims3().unwrap();
+    let (_num_blocks, _num_heads, _head_size_x, block_size, x) = key_cache.dims5().unwrap();
+
+    assert_eq!(num_heads, _num_heads);
+    assert_eq!(head_size, _head_size_x * x);
+
+    let key_stride = key.layout().stride()[0];
+    let value_stride = value.layout().stride()[0];
+
+    check_cont_bf16(key);
+    check_cont_bf16(value);
+    check_cont_bf16(key_cache);
+    check_cont_bf16(value_cache);
+
+    unsafe {
+        gather_scatter_inner_bf16(
+            to_cuda_ptr(key) as _,
+            to_cuda_ptr(value) as _,
+            to_cuda_ptr(key_cache) as _,
+            to_cuda_ptr(value_cache) as _,
+            to_cuda_ptr(slot_mapping) as _,
+            key_stride as i32,
+            value_stride as i32,
+            num_heads as i32,
+            head_size as i32,
+            block_size as i32,
+            x as i32,
+            num_tokens as i32,
+            op,
+        );
+    }
+}
+
+pub fn reshape_and_cache(
+    key: &Tensor,             // [num_tokens, num_heads, head_size]
+    value: &Tensor,           // [num_tokens, num_heads, head_size]
+    key_cache: &mut Tensor,   // [num_blocks, num_heads, head_size/x, block_size, x]
+    value_cache: &mut Tensor, // [num_blocks, num_heads, head_size, block_size]
+    slot_mapping: &Tensor,    // [num_tokens]
+) {
+    gather_scatter_inner(key, value, key_cache, value_cache, slot_mapping, 0);
+}
+
+pub fn gather_cached_kv(
+    key: &mut Tensor,      // [num_tokens, num_heads, head_size]
+    value: &mut Tensor,    // [num_tokens, num_heads, head_size]
+    key_cache: &Tensor,    // [num_blocks, num_heads, head_size/x, block_size, x]
+    value_cache: &Tensor,  // [num_blocks, num_heads, head_size, block_size]
+    slot_mapping: &Tensor, // [num_tokens]
+) {
+    gather_scatter_inner(key, value, key_cache, value_cache, slot_mapping, 1);
 }
