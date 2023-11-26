@@ -17,6 +17,8 @@ serde = { version = "1.0.193", features = ["derive"] }
 rand = "0.8.5"
 half = "2.3.1"
 candle-transformers = { path = "../candle/candle-transformers", features = ["cuda", "flash-attn"] }
+log = "0.4.20"
+env_logger = "0.10.1"
 
 [[bin]]
 name = "infer"

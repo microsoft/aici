@@ -4,6 +4,10 @@ mod logits;
 mod playground;
 pub mod seq;
 
+// vllm modules
+mod cache_engine;
+pub mod config;
+
 pub use logits::LogitsProcessor;
 pub use playground::playground_1;
 pub use kernels::*;

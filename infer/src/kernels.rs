@@ -3,7 +3,7 @@ use std::collections::HashMap;
 
 use candle::{
     cuda_backend::{
-        cudarc::driver::{CudaView, DevicePtr},
+        cudarc::driver::{CudaStream, CudaView, DevicePtr},
         CudaDType, CudaStorageSlice,
     },
     Device, Layout, Storage, Tensor,
@@ -174,9 +174,9 @@ fn sync(d: &Device) {
 }
 
 pub fn copy_blocks(
-    key_caches: &mut Vec<Tensor>,
-    value_caches: &mut Vec<Tensor>,
-    block_mapping: &HashMap<i64, Vec<i64>>,
+    key_caches: &Vec<&Tensor>,
+    value_caches: &Vec<&Tensor>,
+    block_mapping: &HashMap<usize, Vec<usize>>,
 ) {
     let num_layers = key_caches.len();
     assert_eq!(num_layers, value_caches.len());
@@ -191,8 +191,8 @@ pub fn copy_blocks(
 
     let tsize = key_caches[0].elem_count();
 
-    let key_cache_ptrs: Vec<i64> = key_caches.iter().map(to_cuda_ptr).collect();
-    let value_cache_ptrs: Vec<i64> = value_caches.iter().map(to_cuda_ptr).collect();
+    let key_cache_ptrs: Vec<i64> = key_caches.iter().map(|t| to_cuda_ptr(*t)).collect();
+    let value_cache_ptrs: Vec<i64> = value_caches.iter().map(|t| to_cuda_ptr(*t)).collect();
 
     for layer_idx in 0..(2 * num_layers) {
         let e = if layer_idx < num_layers {
@@ -313,6 +313,11 @@ pub fn gather_cached_kv(
     gather_scatter_inner(key, value, key_cache, value_cache, slot_mapping, 1);
 }
 
-pub fn swap_blocks(_src: &mut Tensor, _dst: &mut Tensor, _block_mapping: &HashMap<i64, i64>) {
+pub fn swap_blocks(
+    _src: &Tensor,
+    _dst: &Tensor,
+    _block_mapping: &HashMap<usize, usize>,
+    _stream: &CudaStream,
+) {
     todo!()
 }
