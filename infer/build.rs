@@ -5,8 +5,9 @@ use anyhow::{Context, Result};
 use rayon::prelude::*;
 use std::path::PathBuf;
 
-const KERNEL_FILES: [&str; 1] = [
+const KERNEL_FILES: [&str; 2] = [
     "pos_encoding.cu",
+    "cache.cu",
 ];
 
 fn main() -> Result<()> {

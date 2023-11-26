@@ -1,13 +1,14 @@
 use core::panic;
+use std::collections::HashMap;
 
 use candle::{
     cuda_backend::{
         cudarc::driver::{CudaView, DevicePtr},
-        CudaDType,
+        CudaDType, CudaStorageSlice,
     },
-    Layout, Storage, Tensor,
+    DType, Layout, Storage, Tensor,
 };
-use half::bf16;
+use half::{bf16, f16};
 
 extern "C" {
     fn rotary_embedding_bf16(
@@ -23,6 +24,16 @@ extern "C" {
         num_kv_heads: i32,
         head_size: i32,
     );
+
+    fn copy_blocks_bf16(
+        key_cache_ptrs: *mut i64,
+        value_cache_ptrs: *mut i64,
+        block_mapping: *const i32,
+        numel_per_block: i32,
+        num_pairs: i32,
+        num_layers: i32,
+    );
+
 }
 
 fn is_bf16(t: &Tensor) -> bool {
@@ -53,6 +64,12 @@ fn as_cuda_slice<'a, T: CudaDType + 'a>(storage: &'a Storage, layout: &Layout) -
             .slice(layout.start_offset()..),
         _ => panic!("not cuda"),
     }
+}
+
+fn as_cuda_ptr<'a, T: CudaDType + 'a>(storage: &'a Storage, layout: &Layout) -> i64 {
+    let slice = as_cuda_slice::<T>(storage, layout);
+    let ptr = slice.device_ptr();
+    *ptr as i64
 }
 
 pub fn rotary_embedding(
@@ -119,4 +136,85 @@ pub fn rotary_embedding(
             head_size as i32,
         );
     }
+}
+
+// key_cache,     // [num_blocks, num_heads, head_size/x, block_size, x]
+// value_cache,   // [num_blocks, num_heads, head_size, block_size]
+
+pub fn copy_blocks(
+    key_caches: &mut Vec<Tensor>,
+    value_caches: &mut Vec<Tensor>,
+    block_mapping: &HashMap<i64, Vec<i64>>,
+) {
+    let num_layers = key_caches.len();
+    assert_eq!(num_layers, value_caches.len());
+    if num_layers == 0 {
+        return;
+    }
+    let cache_device = key_caches[0].device();
+    assert!(cache_device.is_cuda());
+
+    let (_num_blocks, num_heads, head_size, block_size) = key_caches[0].dims4().unwrap();
+    let numel_per_block = (num_heads * head_size * block_size) as i32;
+
+    let tsize = key_caches[0].elem_count();
+
+    let key_cache_ptrs: Vec<i64> = key_caches.iter().map(to_cuda_ptr).collect();
+    let value_cache_ptrs: Vec<i64> = value_caches.iter().map(to_cuda_ptr).collect();
+
+    for layer_idx in 0..(2 * num_layers) {
+        let e = if layer_idx < num_layers {
+            &key_caches[layer_idx]
+        } else {
+            &value_caches[layer_idx - num_layers]
+        };
+        assert!(e.device().same_device(cache_device));
+        assert_eq!(e.elem_count(), tsize);
+        assert_eq!(e.dtype(), DType::BF16);
+        assert!(e.layout().is_contiguous());
+    }
+
+    let mut block_mapping_vec = Vec::new();
+    for (&src_block_number, dst_block_numbers) in block_mapping {
+        for &dst_block_number in dst_block_numbers {
+            block_mapping_vec.push(src_block_number as u32);
+            block_mapping_vec.push(dst_block_number as u32);
+        }
+    }
+    let num_pairs = block_mapping_vec.len() / 2;
+
+    let key_cache_ptrs_tensor = Tensor::new(key_cache_ptrs, cache_device).unwrap();
+    let value_cache_ptrs_tensor = Tensor::new(value_cache_ptrs, cache_device).unwrap();
+    let block_mapping_tensor = Tensor::new(block_mapping_vec, cache_device).unwrap();
+
+    unsafe {
+        copy_blocks_bf16(
+            to_cuda_ptr(&key_cache_ptrs_tensor) as _,
+            to_cuda_ptr(&value_cache_ptrs_tensor) as _,
+            to_cuda_ptr(&block_mapping_tensor) as _,
+            numel_per_block,
+            num_pairs as i32,
+            num_layers as i32,
+        );
+    }
+}
+
+fn to_cuda_ptr_inner(storage: &Storage, layout: &Layout) -> i64 {
+    match storage {
+        Storage::Cuda(c) => match c.slice {
+            CudaStorageSlice::U8(_) => as_cuda_ptr::<u8>(&storage, &layout),
+            CudaStorageSlice::U32(_) => as_cuda_ptr::<u32>(&storage, &layout),
+            CudaStorageSlice::I64(_) => as_cuda_ptr::<i64>(&storage, &layout),
+            CudaStorageSlice::BF16(_) => as_cuda_ptr::<bf16>(&storage, &layout),
+            CudaStorageSlice::F16(_) => as_cuda_ptr::<f16>(&storage, &layout),
+            CudaStorageSlice::F32(_) => as_cuda_ptr::<f32>(&storage, &layout),
+            CudaStorageSlice::F64(_) => as_cuda_ptr::<f64>(&storage, &layout),
+        },
+        _ => panic!("not cuda"),
+    }
+}
+
+fn to_cuda_ptr(t: &Tensor) -> i64 {
+    let (storage, layout) = t.storage_and_layout();
+    to_cuda_ptr_inner(&storage, &layout)
 }

@@ -6,6 +6,7 @@ pub mod seq;
 
 pub use logits::LogitsProcessor;
 pub use playground::playground_1;
+pub use kernels::copy_blocks;
 
 use seq::{BatchInfo, SeqId, SeqPhase, Sequance};
 

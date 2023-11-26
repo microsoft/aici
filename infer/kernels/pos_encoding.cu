@@ -1,4 +1,4 @@
-// adapted from vllm pos_encoding_kernels.cu
+// adapted from https://github.com/vllm-project/vllm/blob/b9fe4616f98b77b4b9458bce203aa6544cb31ef2/csrc/pos_encoding_kernels.cu
 
 #include <cuda_bf16.h>
 #include <assert.h>
@@ -108,56 +108,3 @@ extern "C" void rotary_embedding_bf16(
   rotary_embedding_kernel<scalar_t, true><<<grid, block, 0, stream>>>(
     positions, query, key, cos_sin_cache, rot_dim, query_stride, key_stride, num_heads, num_kv_heads, head_size);
 }
-
-#if 0
-
-void rotary_embedding(
-  torch::Tensor& positions,         // [num_tokens]
-  torch::Tensor& query,             // [num_tokens, num_heads * head_size]
-  torch::Tensor& key,               // [num_tokens, num_kv_heads * head_size]
-  int head_size,
-  torch::Tensor& cos_sin_cache,     // [max_position, rot_dim]
-  bool is_neox) {
-  int num_tokens = query.size(0);
-  int rot_dim = cos_sin_cache.size(1);
-  int num_heads = query.size(1) / head_size;
-  int num_kv_heads = key.size(1) / head_size;
-  int query_stride = query.stride(0);
-  int key_stride = key.stride(0);
-
-  dim3 grid(num_tokens);
-  dim3 block(std::min(num_heads * rot_dim / 2, 512));
-  const cudaStream_t stream = at::cuda::getCurrentCUDAStream();
-  VLLM_DISPATCH_FLOATING_TYPES(
-    query.scalar_type(),
-    "rotary_embedding",
-    [&] {
-      if (is_neox) {
-        vllm::rotary_embedding_kernel<scalar_t, true><<<grid, block, 0, stream>>>(
-          positions.data_ptr<int64_t>(),
-          query.data_ptr<scalar_t>(),
-          key.data_ptr<scalar_t>(),
-          cos_sin_cache.data_ptr<scalar_t>(),
-          rot_dim,
-          query_stride,
-          key_stride,
-          num_heads,
-          num_kv_heads,
-          head_size);
-      } else {
-        vllm::rotary_embedding_kernel<scalar_t, false><<<grid, block, 0, stream>>>(
-          positions.data_ptr<int64_t>(),
-          query.data_ptr<scalar_t>(),
-          key.data_ptr<scalar_t>(),
-          cos_sin_cache.data_ptr<scalar_t>(),
-          rot_dim,
-          query_stride,
-          key_stride,
-          num_heads,
-          num_kv_heads,
-          head_size);
-      }
-    });
-}
-
-#endif
