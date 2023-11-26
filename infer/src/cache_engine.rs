@@ -6,14 +6,12 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use candle::cuda_backend::cudarc::driver::CudaStream;
-use candle::{DType, Device, Tensor};
+use candle::{Device, Tensor};
 
-use crate::config::{CacheConfig, ModelConfig, ParallelConfig};
+use crate::config::RllmConfig;
 use crate::kernels;
-// use crate::utils::{in_wsl, get_dtype_element_size};
 
 type KVCache = (Tensor, Tensor);
-
 
 // TODO
 pub struct CudaEvent;
@@ -27,18 +25,7 @@ impl CudaEvent {
 }
 
 pub struct CacheEngine {
-    cache_config: Arc<CacheConfig>,
-    model_config: Arc<ModelConfig>,
-    parallel_config: Arc<ParallelConfig>,
-
-    head_size: usize,
-    num_layers: usize,
-    num_heads: usize,
-    dtype: DType,
-
-    block_size: usize,
-    num_gpu_blocks: usize,
-    num_cpu_blocks: usize,
+    config: Arc<RllmConfig>,
 
     gpu_cache: Vec<KVCache>,
     cpu_cache: Vec<KVCache>,
@@ -49,24 +36,12 @@ pub struct CacheEngine {
 }
 
 impl CacheEngine {
-    pub fn new(
-        cache_config: Arc<CacheConfig>,
-        model_config: Arc<ModelConfig>,
-        parallel_config: Arc<ParallelConfig>,
-    ) -> Self {
-        let head_size = model_config.get_head_size();
-        let num_layers = model_config.get_num_layers(&parallel_config);
-        let num_heads = model_config.get_num_heads(&parallel_config);
-        let dtype = model_config.dtype;
+    pub fn new(config: Arc<RllmConfig>) -> Self {
+        let num_layers = config.get_num_layers_parallel();
 
-        let block_size = cache_config.block_size;
-        let num_gpu_blocks = cache_config.num_gpu_blocks.unwrap();
-        let num_cpu_blocks = cache_config.num_cpu_blocks.unwrap();
+        let (gpu_cache, cpu_cache) = Self::allocate_caches(&config);
 
-        let (gpu_cache, cpu_cache) =
-            Self::allocate_caches(&model_config, &cache_config, &parallel_config);
-
-        let cuda_device = match &model_config.device {
+        let cuda_device = match &config.device {
             Device::Cuda(c) => c.clone(),
             _ => panic!(),
         };
@@ -75,31 +50,13 @@ impl CacheEngine {
         let events = (0..num_layers).map(|_| CudaEvent::new()).collect();
 
         Self {
-            cache_config,
-            model_config,
-            parallel_config,
-            head_size,
-            num_layers,
-            num_heads,
-            dtype,
-            block_size,
-            num_gpu_blocks,
-            num_cpu_blocks,
+            config,
             gpu_cache,
             cpu_cache,
             cache_stream,
             events,
             cuda_device,
         }
-    }
-
-    fn get_key_block_shape(&self) -> (usize, usize, usize, usize) {
-        let x = 16 / self.dtype.size_in_bytes();
-        (self.num_heads, self.head_size / x, self.block_size, x)
-    }
-
-    fn get_value_block_shape(&self) -> (usize, usize, usize) {
-        (self.num_heads, self.head_size, self.block_size)
     }
 
     pub fn swap_in(&self, src_to_dst: HashMap<usize, usize>) {
@@ -110,51 +67,50 @@ impl CacheEngine {
         self.swap(&self.gpu_cache, &self.cpu_cache, &src_to_dst);
     }
 
-    fn allocate_caches(
-        model_config: &ModelConfig,
-        cache_config: &CacheConfig,
-        parallel_config: &ParallelConfig,
-    ) -> (Vec<KVCache>, Vec<KVCache>) {
-        let head_size = model_config.get_head_size();
-        let num_layers = model_config.get_num_layers(parallel_config);
-        let num_heads = model_config.get_num_heads(parallel_config);
-        let dtype = model_config.dtype;
+    fn allocate_caches(config: &RllmConfig) -> (Vec<KVCache>, Vec<KVCache>) {
+        let head_size = config.get_head_size();
+        let num_layers = config.get_num_layers_parallel();
+        let num_heads = config.get_num_heads_parallel();
+        let dtype = config.dtype;
+        let block_size = config.cache.block_size;
+        let x = 16 / dtype.size_in_bytes();
+
+        let key_block = |num_bl, device| {
+            Tensor::zeros(
+                (num_bl, num_heads, head_size / x, block_size, x),
+                dtype,
+                device,
+            )
+            .unwrap()
+        };
+
+        let value_block = |num_bl, device| {
+            Tensor::zeros((num_bl, num_heads, head_size, block_size), dtype, device).unwrap()
+        };
 
         let gpu_cache = {
-            let num_gpu_blocks = cache_config.num_gpu_blocks.unwrap();
-            let key_block_shape = (
-                num_heads,
-                head_size / (16 / dtype.size_in_bytes()),
-                num_gpu_blocks,
-                16 / dtype.size_in_bytes(),
-            );
-            let value_block_shape = (num_heads, head_size, num_gpu_blocks);
+            let num_gpu_blocks = config.cache.num_gpu_blocks.unwrap();
             (0..num_layers)
                 .map(|_| {
-                    let key_blocks =
-                        Tensor::zeros(key_block_shape, dtype, &model_config.device).unwrap();
-                    let value_blocks =
-                        Tensor::zeros(value_block_shape, dtype, &model_config.device).unwrap();
-                    (key_blocks, value_blocks)
+                    let device = &config.device;
+                    (
+                        key_block(num_gpu_blocks, device),
+                        value_block(num_gpu_blocks, device),
+                    )
                 })
                 .collect()
         };
 
         let cpu_cache = {
-            let num_cpu_blocks = cache_config.num_cpu_blocks.unwrap();
-            let key_block_shape = (
-                num_heads,
-                head_size / (16 / dtype.size_in_bytes()),
-                num_cpu_blocks,
-                16 / dtype.size_in_bytes(),
-            );
-            let value_block_shape = (num_heads, head_size, num_cpu_blocks);
+            let num_cpu_blocks = config.cache.num_cpu_blocks.unwrap();
             (0..num_layers)
                 .map(|_| {
-                    let key_blocks = Tensor::zeros(key_block_shape, dtype, &Device::Cpu).unwrap();
-                    let value_blocks =
-                        Tensor::zeros(value_block_shape, dtype, &Device::Cpu).unwrap();
-                    (key_blocks, value_blocks)
+                    // TODO: vllm sets pin_memory=True here
+                    let device = &Device::Cpu;
+                    (
+                        key_block(num_cpu_blocks, device),
+                        value_block(num_cpu_blocks, device),
+                    )
                 })
                 .collect()
         };
@@ -179,22 +135,14 @@ impl CacheEngine {
         kernels::copy_blocks(&mut key_caches, &mut value_caches, &src_to_dsts);
     }
 
-    pub fn get_cache_block_size(
-        block_size: usize,
-        model_config: &ModelConfig,
-        parallel_config: &ParallelConfig,
-    ) -> usize {
-        let head_size = model_config.get_head_size();
-        let num_heads = model_config.get_num_heads(parallel_config);
-        let num_layers = model_config.get_num_layers(parallel_config);
+    pub fn get_cache_block_size(block_size: usize, config: &RllmConfig) -> usize {
+        let head_size = config.get_head_size();
+        let num_heads = config.get_num_heads_parallel();
+        let num_layers = config.get_num_layers_parallel();
 
         let key_cache_block = block_size * num_heads * head_size;
         let value_cache_block = key_cache_block;
         let total = num_layers * (key_cache_block + value_cache_block);
-        model_config.dtype.size_in_bytes() * total
+        config.dtype.size_in_bytes() * total
     }
-}
-
-fn in_wsl() -> bool {
-    false
 }
