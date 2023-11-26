@@ -68,7 +68,7 @@ impl RllmConfig {
     }
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct ModelConfig {
     pub num_attention_heads: usize,
     pub hidden_size: usize,
@@ -76,6 +76,12 @@ pub struct ModelConfig {
     pub num_key_value_heads: usize,
     pub max_sequence_length: usize,
     pub dtype_str: String,
+
+    pub intermediate_size: usize,
+    pub vocab_size: usize,
+
+    pub rms_norm_eps: Option<f64>,
+    pub rope_theta: Option<f32>,
 }
 
 impl ModelConfig {
@@ -119,6 +125,12 @@ pub struct CacheConfig {
     pub num_gpu_blocks: Option<usize>,
     #[serde(skip)]
     pub num_cpu_blocks: Option<usize>,
+}
+
+impl Default for CacheConfig {
+    fn default() -> Self {
+        Self::new(16, 0.9, 4).unwrap()
+    }
 }
 
 impl CacheConfig {

@@ -1,7 +1,7 @@
 use anyhow::Result;
 use clap::Parser;
 
-use rllm::{playground_1, LlamaInfer, LoaderArgs, LogitsProcessor};
+use rllm::{playground_1, RllmEngine, LoaderArgs, LogitsProcessor};
 
 const DEFAULT_PROMPT: &str = "Tarski's fixed-point theorem was proven by";
 
@@ -54,7 +54,7 @@ fn main() -> Result<()> {
         return Ok(());
     }
 
-    let mut infer = LlamaInfer::load(LoaderArgs {
+    let mut infer = RllmEngine::load(LoaderArgs {
         model_id: args.model_id,
         revision: args.revision,
         local_weights: args.local_weights,

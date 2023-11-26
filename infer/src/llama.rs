@@ -5,7 +5,7 @@ use candle_nn::{linear_no_bias, Embedding, Linear, Module, RmsNorm, VarBuilder};
 use serde::Deserialize;
 use std::sync::{Arc, Mutex};
 
-use crate::{kernels, seq::BatchInfo, get_trace};
+use crate::{config::ModelConfig, get_trace, kernels, seq::BatchInfo};
 
 pub const MAX_SEQ_LEN: usize = 4096;
 
@@ -18,6 +18,7 @@ pub struct LlamaConfig {
     pub num_attention_heads: usize,
     pub num_key_value_heads: Option<usize>,
     pub rms_norm_eps: f64,
+    pub max_position_embeddings: usize, // TODO - is this max seq len?
     #[serde(default = "default_rope")]
     pub rope_theta: f32,
 }
@@ -27,42 +28,35 @@ fn default_rope() -> f32 {
 }
 
 impl LlamaConfig {
-    pub fn into_config(self) -> Config {
-        Config {
+    pub fn into_config(self) -> ModelConfig {
+        ModelConfig {
             hidden_size: self.hidden_size,
             intermediate_size: self.intermediate_size,
             vocab_size: self.vocab_size,
             num_hidden_layers: self.num_hidden_layers,
             num_attention_heads: self.num_attention_heads,
             num_key_value_heads: self.num_key_value_heads.unwrap_or(self.num_attention_heads),
-            rms_norm_eps: self.rms_norm_eps,
-            rope_theta: self.rope_theta,
+            rms_norm_eps: Some(self.rms_norm_eps),
+            rope_theta: Some(self.rope_theta),
+            max_sequence_length: self.max_position_embeddings,
+            dtype_str: "bf16".to_string(),
         }
     }
 }
 
-pub struct Config {
-    pub hidden_size: usize,
-    pub intermediate_size: usize,
-    pub vocab_size: usize,
-    pub num_hidden_layers: usize,
-    pub num_attention_heads: usize,
-    pub num_key_value_heads: usize,
-    pub rms_norm_eps: f64,
-    pub rope_theta: f32,
-}
-
-impl Config {
+impl ModelConfig {
     pub fn config_7b_v2() -> Self {
         Self {
+            num_attention_heads: 32,
             hidden_size: 4096,
+            num_hidden_layers: 32,
+            num_key_value_heads: 32,
+            max_sequence_length: 4096, // ???
+            dtype_str: "bf16".to_string(),
             intermediate_size: 11008,
             vocab_size: 32000,
-            num_hidden_layers: 32,
-            num_attention_heads: 32,
-            num_key_value_heads: 32,
-            rms_norm_eps: 1e-5,
-            rope_theta: 10_000.0,
+            rms_norm_eps: Some(1e-5),
+            rope_theta: Some(10_000.0),
         }
     }
 }
@@ -75,12 +69,17 @@ pub struct Cache {
 }
 
 impl Cache {
-    pub fn new(dtype: DType, config: &Config, device: &Device) -> Result<Self> {
+    pub fn new(dtype: DType, config: &ModelConfig, device: &Device) -> Result<Self> {
         // precompute freqs_cis
         let rotary_dim = config.hidden_size / config.num_attention_heads;
         let theta: Vec<_> = (0..rotary_dim)
             .step_by(2)
-            .map(|i| 1f32 / config.rope_theta.powf(i as f32 / rotary_dim as f32))
+            .map(|i| {
+                1f32 / config
+                    .rope_theta
+                    .unwrap()
+                    .powf(i as f32 / rotary_dim as f32)
+            })
             .collect();
         let theta = Tensor::new(theta.as_slice(), device)?;
         let idx_theta = Tensor::arange(0, MAX_SEQ_LEN as u32, device)?
@@ -102,7 +101,7 @@ impl Cache {
     }
 }
 
-fn embedding(cfg: &Config, vb: VarBuilder) -> Result<Embedding> {
+fn embedding(cfg: &ModelConfig, vb: VarBuilder) -> Result<Embedding> {
     let embeddings = vb.get((cfg.vocab_size, cfg.hidden_size), "weight")?;
     Ok(Embedding::new(embeddings, cfg.hidden_size))
 }
@@ -237,7 +236,7 @@ impl CausalSelfAttention {
         }
     }
 
-    fn load(vb: VarBuilder, cache: &Cache, cfg: &Config) -> Result<Self> {
+    fn load(vb: VarBuilder, cache: &Cache, cfg: &ModelConfig) -> Result<Self> {
         let size_in = cfg.hidden_size;
         let size_q = (cfg.hidden_size / cfg.num_attention_heads) * cfg.num_attention_heads;
         let size_kv = (cfg.hidden_size / cfg.num_attention_heads) * cfg.num_key_value_heads;
@@ -270,7 +269,7 @@ impl Mlp {
         self.c_proj.forward(&x)
     }
 
-    fn load(vb: VarBuilder, cfg: &Config) -> Result<Self> {
+    fn load(vb: VarBuilder, cfg: &ModelConfig) -> Result<Self> {
         let h_size = cfg.hidden_size;
         let i_size = cfg.intermediate_size;
         let c_fc1 = linear_no_bias(h_size, i_size, vb.pp("gate_proj"))?;
@@ -302,14 +301,14 @@ impl Block {
         Ok(x)
     }
 
-    fn load(vb: VarBuilder, cache: &Cache, cfg: &Config) -> Result<Self> {
+    fn load(vb: VarBuilder, cache: &Cache, cfg: &ModelConfig) -> Result<Self> {
         let attn = CausalSelfAttention::load(vb.pp("self_attn"), cache, cfg)?;
         let mlp = Mlp::load(vb.pp("mlp"), cfg)?;
-        let rms_1 =
-            candle_nn::rms_norm(cfg.hidden_size, cfg.rms_norm_eps, vb.pp("input_layernorm"))?;
+        let rms_norm_eps = cfg.rms_norm_eps.unwrap();
+        let rms_1 = candle_nn::rms_norm(cfg.hidden_size, rms_norm_eps, vb.pp("input_layernorm"))?;
         let rms_2 = candle_nn::rms_norm(
             cfg.hidden_size,
-            cfg.rms_norm_eps,
+            rms_norm_eps,
             vb.pp("post_attention_layernorm"),
         )?;
         Ok(Self {
@@ -348,10 +347,14 @@ impl Llama {
         logits.to_dtype(DType::F32)
     }
 
-    pub fn load(vb: VarBuilder, cache: &Cache, cfg: &Config) -> Result<Self> {
+    pub fn load(vb: VarBuilder, cache: &Cache, cfg: &ModelConfig) -> Result<Self> {
         let wte = embedding(cfg, vb.pp("model.embed_tokens"))?;
         let lm_head = linear_no_bias(cfg.hidden_size, cfg.vocab_size, vb.pp("lm_head"))?;
-        let ln_f = candle_nn::rms_norm(cfg.hidden_size, cfg.rms_norm_eps, vb.pp("model.norm"))?;
+        let ln_f = candle_nn::rms_norm(
+            cfg.hidden_size,
+            cfg.rms_norm_eps.unwrap(),
+            vb.pp("model.norm"),
+        )?;
         let blocks: Vec<_> = (0..cfg.num_hidden_layers)
             .map(|i| Block::load(vb.pp(&format!("model.layers.{i}")), cache, cfg).unwrap())
             .collect();

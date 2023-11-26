@@ -135,7 +135,8 @@ impl CacheEngine {
         kernels::copy_blocks(&mut key_caches, &mut value_caches, &src_to_dsts);
     }
 
-    pub fn get_cache_block_size(block_size: usize, config: &RllmConfig) -> usize {
+    pub fn get_cache_block_size(config: &RllmConfig) -> usize {
+        let block_size = config.cache.block_size;
         let head_size = config.get_head_size();
         let num_heads = config.get_num_heads_parallel();
         let num_layers = config.get_num_layers_parallel();

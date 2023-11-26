@@ -1,14 +1,14 @@
-use rllm::{LlamaInfer, LoaderArgs, LogitsProcessor};
+use rllm::{RllmEngine, LoaderArgs, LogitsProcessor};
 
 struct Ctx {
-    infer: LlamaInfer,
+    infer: RllmEngine,
     logits_processor: LogitsProcessor,
 }
 
 impl Ctx {
     fn new() -> Self {
         Self {
-            infer: LlamaInfer::load(LoaderArgs::default()).unwrap(),
+            infer: RllmEngine::load(LoaderArgs::default()).unwrap(),
             logits_processor: LogitsProcessor::new(42, Some(0.0), None),
         }
     }

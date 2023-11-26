@@ -3,7 +3,7 @@ use std::{fmt::Debug, marker::PhantomData};
 use anyhow::Result;
 use candle::Tensor;
 
-use crate::block::{BlockRef, LogicalTokenBlock};
+use crate::{block::{BlockRef, LogicalTokenBlock}, config::SamplingParams};
 
 pub type Token = u32;
 pub type SeqId = u32;
@@ -123,6 +123,8 @@ impl Sequence {
 pub struct SequenceGroup {
     pub request_id: String,
     pub seqs: Vec<Sequence>,
+    pub sampling_params: SamplingParams,
+    pub arrival_time: std::time::Instant,
 }
 
 // * `seqlens_q` - The cumulative lengths of the sequences in the batch, used to index in q.

@@ -29,6 +29,11 @@ use tokenizers::Tokenizer;
 
 use candle_transformers::models::llama as llama_ref;
 
+use crate::{
+    cache_engine::CacheEngine,
+    config::{CacheConfig, ModelConfig, ParallelConfig, RllmConfig, SchedulerConfig},
+};
+
 #[derive(Default)]
 pub struct LoaderArgs {
     pub model_id: Option<String>,
@@ -103,7 +108,7 @@ impl Model {
     }
 }
 
-pub struct LlamaInfer {
+pub struct RllmEngine {
     pub tokenizer: Tokenizer,
     pub model: Model,
     seq_id: SeqId,
@@ -114,8 +119,8 @@ pub struct LlamaInfer {
     pub eos_token_id: u32,
 }
 
-impl LlamaInfer {
-    pub fn load(args: LoaderArgs) -> Result<LlamaInfer> {
+impl RllmEngine {
+    pub fn load(args: LoaderArgs) -> Result<RllmEngine> {
         let device = Device::new_cuda(0)?;
         let dtype = DType::BF16;
 
@@ -124,8 +129,23 @@ impl LlamaInfer {
 
         let tokenizer_filename = repo.get("tokenizer.json")?;
 
-        let config: LlamaConfig = serde_json::from_slice(&repo.read("config.json")?)?;
-        let config = config.into_config();
+        let json_config: LlamaConfig = serde_json::from_slice(&repo.read("config.json")?)?;
+        let model_config: ModelConfig = json_config.into_config();
+
+        let mut rllm_config = RllmConfig {
+            model: model_config.clone(),
+            parallel: ParallelConfig::single(),
+            cache: CacheConfig::default(),
+            scheduler: SchedulerConfig::new(2560, 256, model_config.max_sequence_length),
+            dtype,
+            device: device.clone(),
+        };
+
+        // TODO infer these
+        let elt_size = CacheEngine::get_cache_block_size(&rllm_config);
+        let cache_mem = 4 << 30; // 4GiB
+        rllm_config.cache.num_cpu_blocks = Some(cache_mem / elt_size);
+        rllm_config.cache.num_gpu_blocks = Some(cache_mem / elt_size);
 
         let st_index: serde_json::Value =
             serde_json::from_slice(&repo.read("model.safetensors.index.json")?)?;
@@ -163,12 +183,12 @@ impl LlamaInfer {
             let llama = llama_ref::Llama::load(vb, &cache, &config)?;
             (Model::Reference(llama), None)
         } else {
-            let cache = llama::Cache::new(dtype, &config, &device)?;
-            let llama = Llama::load(vb, &cache, &config)?;
+            let cache = llama::Cache::new(dtype, &model_config, &device)?;
+            let llama = Llama::load(vb, &cache, &model_config)?;
             (Model::Llama(llama), Some(cache))
         };
 
-        Ok(LlamaInfer {
+        Ok(RllmEngine {
             tokenizer,
             model,
             cache,
