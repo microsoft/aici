@@ -6,7 +6,7 @@ use candle::{
         cudarc::driver::{CudaView, DevicePtr},
         CudaDType, CudaStorageSlice,
     },
-    Layout, Storage, Tensor,
+    Device, Layout, Storage, Tensor,
 };
 use half::{bf16, f16};
 
@@ -151,6 +151,7 @@ pub fn rotary_embedding(
             num_kv_heads as i32,
             head_size as i32,
         );
+        sync(key.device());
     }
 }
 
@@ -158,8 +159,17 @@ pub fn rotary_embedding(
 // value_cache,   // [num_blocks, num_heads, head_size, block_size]
 
 fn check_cont_bf16(t: &Tensor) {
+    assert!(t.device().is_cuda());
     assert!(is_bf16(t));
     assert!(t.layout().is_contiguous());
+}
+
+fn sync(_d: &Device) {
+    // seems this is not necessary
+    // match d {
+    //     Device::Cuda(c) => c.synchronize().unwrap(),
+    //     _ => panic!("not cuda"),
+    // }
 }
 
 pub fn copy_blocks(
@@ -172,8 +182,8 @@ pub fn copy_blocks(
     if num_layers == 0 {
         return;
     }
-    let cache_device = key_caches[0].device();
-    assert!(cache_device.is_cuda());
+    let device = key_caches[0].device();
+    assert!(device.is_cuda());
 
     let (_num_blocks, num_heads, head_size, block_size) = key_caches[0].dims4().unwrap();
     let numel_per_block = (num_heads * head_size * block_size) as i32;
@@ -189,7 +199,7 @@ pub fn copy_blocks(
         } else {
             &value_caches[layer_idx - num_layers]
         };
-        assert!(e.device().same_device(cache_device));
+        assert!(e.device().same_device(device));
         assert_eq!(e.elem_count(), tsize);
         check_cont_bf16(e);
     }
@@ -203,9 +213,9 @@ pub fn copy_blocks(
     }
     let num_pairs = block_mapping_vec.len() / 2;
 
-    let key_cache_ptrs_tensor = Tensor::new(key_cache_ptrs, cache_device).unwrap();
-    let value_cache_ptrs_tensor = Tensor::new(value_cache_ptrs, cache_device).unwrap();
-    let block_mapping_tensor = Tensor::new(block_mapping_vec, cache_device).unwrap();
+    let key_cache_ptrs_tensor = Tensor::new(key_cache_ptrs, device).unwrap();
+    let value_cache_ptrs_tensor = Tensor::new(value_cache_ptrs, device).unwrap();
+    let block_mapping_tensor = Tensor::new(block_mapping_vec, device).unwrap();
 
     unsafe {
         copy_blocks_bf16(
@@ -216,6 +226,7 @@ pub fn copy_blocks(
             num_pairs as i32,
             num_layers as i32,
         );
+        sync(device);
     }
 }
 
@@ -277,6 +288,7 @@ fn gather_scatter_inner(
             num_tokens as i32,
             op,
         );
+        sync(key.device());
     }
 }
 
