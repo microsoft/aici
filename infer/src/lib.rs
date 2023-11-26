@@ -5,14 +5,15 @@ mod playground;
 pub mod seq;
 
 // vllm modules
+mod block;
 mod cache_engine;
 pub mod config;
 
+pub use kernels::*;
 pub use logits::LogitsProcessor;
 pub use playground::playground_1;
-pub use kernels::*;
 
-use seq::{BatchInfo, SeqId, SeqPhase, Sequance};
+use seq::{BatchInfo, SeqId, SeqPhase, Sequence};
 
 use std::{collections::HashSet, fmt::Display, path::PathBuf, sync::atomic::AtomicBool};
 
@@ -178,25 +179,19 @@ impl LlamaInfer {
         })
     }
 
-    pub fn new_seq(&mut self, prompt: &str) -> Result<Sequance> {
+    pub fn new_seq(&mut self, prompt: &str) -> Result<Sequence> {
         let tokens = self
             .tokenizer
             .encode(prompt, true)
             .map_err(anyhow::Error::msg)?
             .get_ids()
             .to_vec();
-        let prompt_len = tokens.len();
-        let seq = Sequance {
-            seq_id: self.seq_id,
-            phase: SeqPhase::Prompt,
-            tokens,
-            prompt_len,
-        };
+        let seq = Sequence::new(self.seq_id, &tokens, 16);
         self.seq_id += 1;
         Ok(seq)
     }
 
-    pub fn decode_seq(&self, seq: &Sequance) -> Result<String> {
+    pub fn decode_seq(&self, seq: &Sequence) -> Result<String> {
         let tokens = &seq.tokens[seq.prompt_len..];
         let generated = self
             .tokenizer

@@ -1,22 +1,128 @@
+use std::{fmt::Debug, marker::PhantomData};
+
 use anyhow::Result;
 use candle::Tensor;
+
+use crate::block::{BlockRef, LogicalTokenBlock};
 
 pub type Token = u32;
 pub type SeqId = u32;
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
+pub enum FinishReason {
+    Stopped,
+    LengthCapped,
+    Aborted,
+    Ignored,
+}
+
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
+pub enum SequenceStatus {
+    Waiting,
+    Running,
+    Swapped,
+    Finished(FinishReason),
+}
+
+#[derive(Debug, Clone, Copy)]
 pub enum SeqPhase {
     Prompt,
     Fixed(usize),
     Gen,
 }
 
-#[derive(Debug)]
-pub struct Sequance {
+pub struct Sequence {
     pub seq_id: SeqId,
+    pub status: SequenceStatus,
     pub phase: SeqPhase,
     pub tokens: Vec<Token>,
     pub prompt_len: usize,
+    pub(crate) phys_blocks: Vec<BlockRef>,
+    pub(crate) logical_blocks: Vec<LogicalTokenBlock>,
+    _marker: PhantomData<u32>,
+    block_size: usize,
+}
+
+impl Debug for Sequence {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Sequence")
+            .field("seq_id", &self.seq_id)
+            .field("status", &self.status)
+            .field("phase", &self.phase)
+            .field("tokens", &self.tokens)
+            .field("prompt_len", &self.prompt_len)
+            .finish()
+    }
+}
+
+impl Sequence {
+    pub(crate) fn new(seq_id: SeqId, tokens: &[Token], block_size: usize) -> Self {
+        let prompt_len = tokens.len();
+        let mut seq = Self {
+            seq_id,
+            status: SequenceStatus::Waiting,
+            phase: SeqPhase::Prompt,
+            tokens: Vec::new(),
+            prompt_len,
+            phys_blocks: Vec::new(),
+            logical_blocks: Vec::new(),
+            block_size,
+            _marker: PhantomData,
+        };
+        seq._append_tokens_to_blocks(tokens);
+        seq
+    }
+
+    pub(crate) fn fork_as(&self, seq_id: SeqId) -> Self {
+        let mut seq = Self {
+            seq_id,
+            status: self.status,
+            phase: self.phase,
+            tokens: self.tokens.clone(),
+            prompt_len: self.prompt_len,
+            phys_blocks: self.phys_blocks.iter().map(|x| x.fork()).collect(),
+            logical_blocks: self.logical_blocks.clone(),
+            block_size: self.block_size,
+            _marker: PhantomData,
+        };
+        seq._append_tokens_to_blocks(&self.tokens);
+        seq
+    }
+
+    fn _append_logical_block(&mut self) {
+        let block = LogicalTokenBlock::new(self.logical_blocks.len(), self.block_size);
+        self.logical_blocks.push(block);
+    }
+
+    fn _append_tokens_to_blocks(&mut self, token_ids: &[Token]) {
+        let mut cursor = 0;
+        self.tokens.extend_from_slice(token_ids);
+        while cursor < token_ids.len() {
+            if self.logical_blocks.is_empty() {
+                self._append_logical_block();
+            }
+
+            let last_block = self.logical_blocks.last_mut().unwrap();
+            if last_block.is_full() {
+                self._append_logical_block();
+                continue;
+            }
+
+            let num_empty_slots = last_block.get_num_empty_slots();
+            let end = std::cmp::min(cursor + num_empty_slots, token_ids.len());
+            last_block.append_tokens(&token_ids[cursor..end]);
+            cursor = end;
+        }
+    }
+
+    pub fn append_token_id(&mut self, token_id: Token) {
+        self._append_tokens_to_blocks(&[token_id]);
+    }
+}
+
+pub struct SequenceGroup {
+    pub request_id: String,
+    pub seqs: Vec<Sequence>,
 }
 
 // * `seqlens_q` - The cumulative lengths of the sequences in the batch, used to index in q.
@@ -38,7 +144,7 @@ pub struct BatchInfo {
 }
 
 impl BatchInfo {
-    pub fn from_seqs(seqs: &[Sequance], device: &candle::Device) -> Result<Self> {
+    pub fn from_seqs(seqs: &[Sequence], device: &candle::Device) -> Result<Self> {
         let mut k_ptr = 0u32;
         let mut q_ptr = 0u32;
         let mut positions = Vec::new();
