@@ -1,12 +1,9 @@
 #![allow(dead_code)]
 
-use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use std::vec::Vec;
 
-use crate::seq::{SeqId, Token};
-
-const BLANK_TOKEN_ID: u32 = 0xffffffff;
+use crate::seq::Token;
 
 #[derive(Debug, Clone, Copy)]
 pub enum BlockLocation {
@@ -23,7 +20,6 @@ pub struct LogicalTokenBlock {
     block_number: usize,
     block_size: usize,
     token_ids: Vec<Token>,
-    num_tokens: usize,
 }
 
 impl LogicalTokenBlock {
@@ -31,37 +27,33 @@ impl LogicalTokenBlock {
         Self {
             block_number,
             block_size,
-            token_ids: vec![BLANK_TOKEN_ID; block_size],
-            num_tokens: 0,
+            token_ids: vec![],
         }
     }
 
     pub fn is_empty(&self) -> bool {
-        self.num_tokens == 0
+        self.token_ids.is_empty()
     }
 
     pub fn get_num_empty_slots(&self) -> usize {
-        self.block_size - self.num_tokens
+        self.block_size - self.token_ids.len()
     }
 
     pub fn is_full(&self) -> bool {
-        self.num_tokens == self.block_size
+        self.token_ids.len() == self.block_size
     }
 
     pub fn append_tokens(&mut self, token_ids: &[Token]) {
         assert!(token_ids.len() <= self.get_num_empty_slots());
-        let curr_idx = self.num_tokens;
-        self.token_ids[curr_idx..curr_idx + token_ids.len()].copy_from_slice(token_ids);
-        self.num_tokens += token_ids.len();
+        self.token_ids.extend_from_slice(token_ids);
     }
 
     pub fn get_token_ids(&self) -> &[Token] {
-        &self.token_ids[..self.num_tokens]
+        &self.token_ids
     }
 
     pub fn get_last_token_id(&self) -> Token {
-        assert!(self.num_tokens > 0);
-        self.token_ids[self.num_tokens - 1]
+        *self.token_ids.last().unwrap()
     }
 }
 
@@ -168,7 +160,6 @@ pub struct BlockSpaceManager {
     watermark_blocks: usize,
     gpu_allocator: BlockAllocator,
     cpu_allocator: BlockAllocator,
-    block_tables: HashMap<SeqId, BlockTable>,
 }
 
 impl BlockSpaceManager {
@@ -185,7 +176,6 @@ impl BlockSpaceManager {
             watermark_blocks,
             gpu_allocator: BlockAllocator::new(BlockLocation::GPU, block_size, num_gpu_blocks),
             cpu_allocator: BlockAllocator::new(BlockLocation::CPU, block_size, num_cpu_blocks),
-            block_tables: HashMap::new(),
         }
     }
 
