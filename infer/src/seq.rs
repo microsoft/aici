@@ -39,7 +39,7 @@ pub struct Sequence {
     pub tokens: Vec<Token>,
     pub prompt_len: usize,
 
-    // state for Scheduler and BlockManager
+    // state for Scheduler and BlockSpaceManager
     pub(crate) sched_phase: SchedulingPhase,
     pub(crate) phys_blocks: Vec<BlockRef>,
     block_size: usize,

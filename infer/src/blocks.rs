@@ -4,7 +4,7 @@ use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use std::vec::Vec;
 
-use crate::seq::{Sequence, SequenceGroup, SchedulingPhase};
+use crate::seq::{SchedulingPhase, Sequence, SequenceGroup};
 
 #[derive(Debug, Clone, Copy)]
 pub enum BlockLocation {
@@ -288,5 +288,11 @@ impl BlockSpaceManager {
 
     pub fn get_num_free_cpu_blocks(&self) -> usize {
         self.cpu_allocator.lock().unwrap().get_num_free_blocks()
+    }
+
+    pub fn get_gpu_blocks(&self, seq: &Sequence) -> Vec<usize> {
+        assert!(seq.phys_blocks.len() > 0);
+        assert!(seq.sched_phase == SchedulingPhase::Running);
+        seq.phys_blocks.iter().map(|x| x.block_idx).collect()
     }
 }

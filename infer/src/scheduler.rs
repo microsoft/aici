@@ -1,5 +1,6 @@
 #![allow(dead_code)]
 
+use std::cell::RefCell;
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::vec::Vec;
@@ -8,7 +9,7 @@ use log::warn;
 
 use crate::blocks::BlockSpaceManager;
 use crate::config::RllmConfig;
-use crate::seq::{FinishReason, SeqId, Sequence, SequenceGroup, SchedulingPhase};
+use crate::seq::{FinishReason, SchedulingPhase, SeqId, Sequence, SequenceGroup};
 
 /// Preemption modes.
 #[derive(Debug, Clone, Copy)]
@@ -31,7 +32,7 @@ pub struct SchedulerOutputs {
     pub blocks_to_swap_in: HashMap<usize, usize>,
     pub blocks_to_swap_out: HashMap<usize, usize>,
     pub blocks_to_copy: HashMap<usize, Vec<usize>>,
-    pub ignored_seq_groups: Vec<SequenceGroup>,
+    pub dropped_seq_groups: Vec<SequenceGroup>,
 }
 
 impl SchedulerOutputs {
@@ -52,7 +53,7 @@ pub struct Scheduler {
     config: Arc<RllmConfig>,
     prompt_limit: usize,
     block_manager: BlockSpaceManager,
-    freed_seq_ids: Vec<SeqId>,
+    freed_seq_ids: RefCell<Vec<SeqId>>,
 
     /// These have no KV cache stored anywhere. Each sequence group has only 1 sequence.
     waiting: Vec<SequenceGroup>,
@@ -81,7 +82,7 @@ impl Scheduler {
             config,
             prompt_limit,
             block_manager,
-            freed_seq_ids: Vec::new(),
+            freed_seq_ids: RefCell::new(Vec::new()),
             waiting: Vec::new(),
             on_gpu: Vec::new(),
             next_step: Vec::new(),
@@ -118,11 +119,6 @@ impl Scheduler {
 
     pub fn get_num_unfinished_seq_groups(&self) -> usize {
         self.waiting.len() + self.on_gpu.len() + self.swapped.len()
-    }
-
-    pub fn free_seq(&mut self, seq: &mut Sequence) {
-        self.freed_seq_ids.push(seq.seq_id);
-        seq.phys_blocks.clear();
     }
 
     pub fn free_finished_seq_groups(&mut self) {
@@ -163,7 +159,43 @@ impl Scheduler {
         scheduler_outputs
     }
 
-    fn step_waiting(&mut self, outputs: &mut SchedulerOutputs) {
+    fn drop_finished(outputs: &mut SchedulerOutputs, q: &mut Vec<SequenceGroup>) {
+        if q.iter().any(|sg| sg.is_finished()) {
+            let mut not_finished = Vec::new();
+            for e in q.drain(..) {
+                if e.is_finished() {
+                    outputs.dropped_seq_groups.push(e);
+                } else {
+                    not_finished.push(e);
+                }
+            }
+            assert!(q.is_empty());
+            q.extend(not_finished);
+        }
+    }
+
+    fn step_drop_finished(&mut self, outputs: &mut SchedulerOutputs) {
+        let mut waiting = std::mem::replace(&mut self.waiting, Vec::new());
+        for seq_group in waiting.iter_mut() {
+            assert!(seq_group.seqs.len() == 1);
+            let num_prompt_tokens = seq_group.get_seqs(None)[0].get_len();
+            if num_prompt_tokens > self.prompt_limit {
+                warn!(
+                    "Sequence group {} has a prompt that is too long ({} > {})",
+                    seq_group.request_id, num_prompt_tokens, self.prompt_limit
+                );
+                self.set_phase(seq_group, SchedulingPhase::Finished(FinishReason::Ignored));
+            }
+        }
+
+        assert!(self.next_step.is_empty());
+
+        Self::drop_finished(outputs, &mut self.waiting);
+        Self::drop_finished(outputs, &mut self.on_gpu);
+        Self::drop_finished(outputs, &mut self.swapped);
+    }
+
+    fn step_start_waiting(&mut self, outputs: &mut SchedulerOutputs) {
         let mut num_curr_seqs = self
             .on_gpu
             .iter()
@@ -173,19 +205,6 @@ impl Scheduler {
         while let Some(mut seq_group) = self.waiting.pop() {
             assert!(seq_group.seqs.len() == 1);
             let num_prompt_tokens = seq_group.get_seqs(None)[0].get_len();
-            if num_prompt_tokens > self.prompt_limit {
-                warn!(
-                    "Sequence group {} has a prompt that is too long ({} > {})",
-                    seq_group.request_id, num_prompt_tokens, self.prompt_limit
-                );
-                self.set_phase(
-                    &mut seq_group,
-                    SchedulingPhase::Finished(FinishReason::Ignored),
-                );
-                outputs.ignored_seq_groups.push(seq_group);
-                continue;
-            }
-
             let num_new_seqs = seq_group.get_max_num_running_seqs();
 
             // Check allocation and batch token limits
@@ -207,6 +226,7 @@ impl Scheduler {
 
     fn sort_by_priority(seq_groups: &mut Vec<SequenceGroup>) {
         // TODO check which direction?
+        // note that we take elements first from the end of the queue (Vec::pop())
         seq_groups.sort_by_key(|g| g.arrival_time);
     }
 
@@ -218,6 +238,7 @@ impl Scheduler {
             while !self.block_manager.can_append_slot(&seq_group) {
                 did_preempt = true;
                 if !self.on_gpu.is_empty() {
+                    // take the first group in queue (lowest priority)
                     let victim_seq_group = self.on_gpu.remove(0);
                     self._preempt(victim_seq_group, outputs);
                 } else {
@@ -311,15 +332,16 @@ impl Scheduler {
             blocks_to_swap_in: HashMap::new(),
             blocks_to_swap_out: HashMap::new(),
             blocks_to_copy: HashMap::new(),
-            ignored_seq_groups: Vec::new(),
+            dropped_seq_groups: Vec::new(),
         };
 
         // first, everything that used to be "next_step" is now just on the GPU
         self.on_gpu.append(&mut self.next_step);
 
-        // Join waiting sequences if possible
+        self.step_drop_finished(&mut outputs);
+
         if self.swapped.is_empty() {
-            self.step_waiting(&mut outputs);
+            self.step_start_waiting(&mut outputs);
         }
 
         if self.next_step.is_empty() {
@@ -343,15 +365,31 @@ impl Scheduler {
         outputs
     }
 
-    /// Sets the status of all sequences.
+    pub fn finish_seq(&self, seq: &mut Sequence, reason: FinishReason) {
+        if seq.is_finished() {
+            return;
+        }
+        seq.sched_phase = SchedulingPhase::Finished(reason);
+        self.freed_seq_ids.borrow_mut().push(seq.seq_id);
+        seq.phys_blocks.clear();
+    }
+
+    /// Sets the phase of all sequences in a group.
     fn set_phase(&self, seq_group: &mut SequenceGroup, status: SchedulingPhase) {
         let clear = match status {
             SchedulingPhase::Waiting => true,
             SchedulingPhase::Running => false,
             SchedulingPhase::Swapped => false,
-            SchedulingPhase::Finished(_) => true,
+            SchedulingPhase::Finished(reason) => {
+                seq_group
+                    .seqs
+                    .iter_mut()
+                    .for_each(|seq| self.finish_seq(seq, reason));
+                return;
+            }
         };
         for seq in seq_group.seqs.iter_mut() {
+            assert!(!seq.is_finished());
             seq.sched_phase = status;
             if clear {
                 seq.phys_blocks.clear();
