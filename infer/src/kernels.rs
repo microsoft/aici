@@ -54,7 +54,14 @@ extern "C" {
 
 fn is_bf16(t: &Tensor) -> bool {
     match t.dtype() {
-        candle::DType::BF16 => true,
+        DType::BF16 => true,
+        _ => false,
+    }
+}
+
+fn is_u32(t: &Tensor) -> bool {
+    match t.dtype() {
+        DType::U32 => true,
         _ => false,
     }
 }
@@ -159,8 +166,14 @@ pub fn rotary_embedding(
 // value_cache,   // [num_blocks, num_heads, head_size, block_size]
 
 fn check_cont_bf16(t: &Tensor) {
-    assert!(t.device().is_cuda());
     assert!(is_bf16(t));
+    assert!(t.device().is_cuda());
+    assert!(t.layout().is_contiguous());
+}
+
+fn check_cont_u32(t: &Tensor) {
+    assert!(is_u32(t));
+    assert!(t.device().is_cuda());
     assert!(t.layout().is_contiguous());
 }
 
@@ -272,6 +285,7 @@ fn gather_scatter_inner(
     check_cont_bf16(value);
     check_cont_bf16(key_cache);
     check_cont_bf16(value_cache);
+    check_cont_u32(slot_mapping);
 
     unsafe {
         gather_scatter_inner_bf16(
@@ -333,11 +347,5 @@ pub fn to_offsets(seqlens: &[usize], device: &Device) -> (usize, Tensor) {
         offset += len;
     }
     offsets.push(offset as u32);
-    (
-        max,
-        Tensor::new(offsets.as_slice(), device)
-            .unwrap()
-            .to_dtype(DType::U32)
-            .unwrap(),
-    )
+    (max, Tensor::new(offsets.as_slice(), device).unwrap())
 }
