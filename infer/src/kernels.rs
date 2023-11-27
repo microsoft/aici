@@ -6,7 +6,7 @@ use candle::{
         cudarc::driver::{CudaStream, CudaView, DevicePtr},
         CudaDType, CudaStorageSlice,
     },
-    Device, Layout, Storage, Tensor,
+    Device, Layout, Storage, Tensor, DType,
 };
 use half::{bf16, f16};
 
@@ -320,4 +320,18 @@ pub fn swap_blocks(
     _stream: &CudaStream,
 ) {
     todo!()
+}
+
+pub fn to_offsets(seqlens: &[usize], device: &Device) -> Tensor {
+    let mut offsets = Vec::with_capacity(seqlens.len() + 1);
+    let mut offset = 0;
+    for len in seqlens {
+        offsets.push(offset as u32);
+        offset += len;
+    }
+    offsets.push(offset as u32);
+    Tensor::new(offsets.as_slice(), device)
+        .unwrap()
+        .to_dtype(DType::U32)
+        .unwrap()
 }

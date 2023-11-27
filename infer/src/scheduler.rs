@@ -225,9 +225,9 @@ impl Scheduler {
     }
 
     fn sort_by_priority(seq_groups: &mut Vec<SequenceGroup>) {
-        // TODO check which direction?
         // note that we take elements first from the end of the queue (Vec::pop())
         seq_groups.sort_by_key(|g| g.arrival_time);
+        seq_groups.reverse();
     }
 
     fn step_preempt(&mut self, outputs: &mut SchedulerOutputs) -> bool {
