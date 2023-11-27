@@ -5,7 +5,7 @@ mod playground;
 pub mod seq;
 
 // vllm modules
-mod block;
+mod blocks;
 mod cache_engine;
 mod scheduler;
 pub mod config;

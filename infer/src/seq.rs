@@ -5,7 +5,7 @@ use std::fmt::Debug;
 use anyhow::Result;
 use candle::Tensor;
 
-use crate::{block::BlockRef, config::SamplingParams};
+use crate::{blocks::BlockRef, config::SamplingParams};
 
 pub type Token = u32;
 pub type SeqId = u32;

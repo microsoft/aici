@@ -6,7 +6,7 @@ use std::vec::Vec;
 
 use log::warn;
 
-use crate::block::BlockSpaceManager;
+use crate::blocks::BlockSpaceManager;
 use crate::config::RllmConfig;
 use crate::seq::{FinishReason, SeqId, Sequence, SequenceGroup, SchedulingPhase};
 
