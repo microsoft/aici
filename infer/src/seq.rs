@@ -5,7 +5,7 @@ use std::fmt::Debug;
 use anyhow::Result;
 use candle::Tensor;
 
-use crate::{blocks::BlockRef, config::SamplingParams};
+use crate::{blocks::BlockRef, config::SamplingParams, to_offsets};
 
 pub type Token = u32;
 pub type SeqId = u32;
@@ -134,15 +134,16 @@ pub struct BatchInfo {
 }
 
 impl BatchInfo {
-    pub fn from_seqs(seqs: &[Sequence], device: &candle::Device) -> Result<Self> {
-        let mut k_ptr = 0u32;
-        let mut q_ptr = 0u32;
-        let mut positions = Vec::new();
-        let mut seqlens_q = vec![q_ptr];
-        let mut seqlens_k = vec![k_ptr];
-        let mut tokens = Vec::new();
-        let mut max_seqlen_q = 0;
-        let mut max_seqlen_k = 0;
+    pub fn from_seqs<'a>(
+        seqs: impl Iterator<Item = &'a Sequence>,
+        device: &candle::Device,
+    ) -> Result<Self> {
+        let mut positions: Vec<i64> = Vec::new();
+        let mut tokens: Vec<Token> = Vec::new();
+
+        let mut seqlens_q = Vec::new();
+        let mut seqlens_k = Vec::new();
+
         for seq in seqs {
             let seq_len = seq.tokens.len();
             let k_len = seq_len;
@@ -156,18 +157,14 @@ impl BatchInfo {
                 positions.push(idx as i64);
                 tokens.push(seq.tokens[idx]);
             }
-            q_ptr += q_len as u32;
-            k_ptr += k_len as u32;
-            seqlens_q.push(q_ptr);
-            seqlens_k.push(k_ptr);
-
-            max_seqlen_q = max_seqlen_q.max(q_len);
-            max_seqlen_k = max_seqlen_k.max(k_len);
+            seqlens_q.push(q_len);
+            seqlens_k.push(k_len);
         }
 
+        let (max_seqlen_q, seqlens_q) = to_offsets(&seqlens_q, device);
+        let (max_seqlen_k, seqlens_k) = to_offsets(&seqlens_k, device);
+
         let positions = Tensor::new(positions.as_slice(), device)?;
-        let seqlens_q = Tensor::new(seqlens_q.as_slice(), device)?;
-        let seqlens_k = Tensor::new(seqlens_k.as_slice(), device)?;
         let tokens = Tensor::new(tokens.as_slice(), device)?;
         Ok(BatchInfo {
             tokens,

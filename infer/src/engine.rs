@@ -220,7 +220,7 @@ impl RllmEngine {
             let rest = seqs[0].tokens.drain(off..).collect::<Vec<_>>();
             seqs[0].prompt_len = seqs[0].tokens.len();
 
-            let info0 = BatchInfo::from_seqs(&seqs, &self.device)?;
+            let info0 = BatchInfo::from_seqs(seqs.iter(), &self.device)?;
             let _ = self.model.forward(&info0)?;
 
             seqs[0].step_type = StepType::Fixed(rest.len());
@@ -231,7 +231,7 @@ impl RllmEngine {
         set_trace(trace);
 
         for _idx in 0..sample_len {
-            let info = BatchInfo::from_seqs(&seqs, &self.device)?;
+            let info = BatchInfo::from_seqs(seqs.iter(), &self.device)?;
             rtrace!("batch_info #{_idx}: {:?}", info);
             let logits = self.model.forward(&info)?;
             rtrace!("logits: {}", logits);
