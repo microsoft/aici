@@ -322,6 +322,7 @@ pub fn swap_blocks(
     todo!()
 }
 
+/// Convert a vector of lengths into a tensor of offsets, as expected by flash attn.
 pub fn to_offsets(seqlens: &[usize], device: &Device) -> (usize, Tensor) {
     let mut offsets = Vec::with_capacity(seqlens.len() + 1);
     let mut offset = 0;

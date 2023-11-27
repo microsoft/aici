@@ -189,9 +189,9 @@ impl SchedulerConfig {
     }
 }
 
-const SAMPLING_EPS: f32 = 1e-5;
+pub const SAMPLING_EPS: f32 = 1e-5;
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub enum EarlyStopping {
     True,
     False,
@@ -203,7 +203,7 @@ pub enum EarlyStopping {
 /// Overall, we follow the sampling parameters from the OpenAI text completion
 /// API (https://platform.openai.com/docs/api-reference/completions/create).
 /// In addition, we support beam search, which is not supported by OpenAI.
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct SamplingParams {
     /// Number of output sequences to return for the given prompt.
     pub n: usize,
@@ -242,7 +242,7 @@ pub struct SamplingParams {
     pub ignore_eos: bool,
 
     /// Maximum number of tokens to generate per output sequence.
-    pub max_tokens: i32,
+    pub max_tokens: usize,
 
     /// Number of log probabilities to return per output token.
     pub logprobs: Option<i32>,

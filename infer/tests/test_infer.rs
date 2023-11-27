@@ -1,15 +1,17 @@
-use rllm::{RllmEngine, LoaderArgs, LogitsProcessor};
+use rllm::{config::SamplingParams, LoaderArgs, RllmEngine};
 
 struct Ctx {
     infer: RllmEngine,
-    logits_processor: LogitsProcessor,
+    sampling_params: SamplingParams,
 }
 
 impl Ctx {
     fn new() -> Self {
+        let mut sampling_params = SamplingParams::default();
+        sampling_params.max_tokens = 10;
         Self {
             infer: RllmEngine::load(LoaderArgs::default()).unwrap(),
-            logits_processor: LogitsProcessor::new(42, Some(0.0), None),
+            sampling_params,
         }
     }
 }
@@ -17,7 +19,7 @@ impl Ctx {
 fn expect(ctx: &mut Ctx, prompt: &str, expected: &str) {
     let gen = ctx
         .infer
-        .generate(prompt, 10, &mut ctx.logits_processor)
+        .generate(prompt, ctx.sampling_params.clone())
         .unwrap();
     if gen != expected {
         panic!("expected: {:?}, got: {:?}", expected, gen);

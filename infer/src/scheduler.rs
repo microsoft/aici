@@ -26,12 +26,13 @@ pub enum PreemptionMode {
 
 /// Scheduler outputs.
 pub struct SchedulerOutputs {
-    pub num_scheduled_seq_groups: usize,
     pub prompt_run: bool,
     pub num_batched_tokens: usize,
     pub blocks_to_swap_in: HashMap<usize, usize>,
     pub blocks_to_swap_out: HashMap<usize, usize>,
     pub blocks_to_copy: HashMap<usize, Vec<usize>>,
+
+    pub next_seq_groups: Vec<SequenceGroup>,
     pub dropped_seq_groups: Vec<SequenceGroup>,
 }
 
@@ -41,7 +42,7 @@ impl SchedulerOutputs {
     }
     pub fn is_empty(&self) -> bool {
         // We do not consider the ignored sequence groups.
-        self.num_scheduled_seq_groups == 0
+        self.next_seq_groups.is_empty()
             && self.blocks_to_swap_in.is_empty()
             && self.blocks_to_swap_out.is_empty()
             && self.blocks_to_copy.is_empty()
@@ -50,16 +51,14 @@ impl SchedulerOutputs {
 
 /// Scheduler.
 pub struct Scheduler {
-    config: Arc<RllmConfig>,
+    pub(crate) config: Arc<RllmConfig>,
     prompt_limit: usize,
     block_manager: BlockSpaceManager,
     freed_seq_ids: RefCell<Vec<SeqId>>,
 
     /// These have no KV cache stored anywhere. Each sequence group has only 1 sequence.
     waiting: Vec<SequenceGroup>,
-    /// Scheduled to run on the next step.
-    next_step: Vec<SequenceGroup>,
-    /// These currently sit on GPU but are not scheduled to run next.
+    /// These currently sit on GPU but are not scheduled to run next. The ones to run next are in SchedulerOutputs.
     on_gpu: Vec<SequenceGroup>,
     /// These are swapped out to CPU memory.
     swapped: Vec<SequenceGroup>,
@@ -85,7 +84,6 @@ impl Scheduler {
             freed_seq_ids: RefCell::new(Vec::new()),
             waiting: Vec::new(),
             on_gpu: Vec::new(),
-            next_step: Vec::new(),
             swapped: Vec::new(),
         }
     }
@@ -188,8 +186,6 @@ impl Scheduler {
             }
         }
 
-        assert!(self.next_step.is_empty());
-
         Self::drop_finished(outputs, &mut self.waiting);
         Self::drop_finished(outputs, &mut self.on_gpu);
         Self::drop_finished(outputs, &mut self.swapped);
@@ -218,7 +214,7 @@ impl Scheduler {
             }
 
             self._allocate(&mut seq_group);
-            self.next_step.push(seq_group);
+            outputs.next_seq_groups.push(seq_group);
             outputs.num_batched_tokens += num_prompt_tokens;
             num_curr_seqs += num_new_seqs;
         }
@@ -249,7 +245,7 @@ impl Scheduler {
             }
 
             self._append_slot(&mut seq_group, outputs);
-            self.next_step.push(seq_group);
+            outputs.next_seq_groups.push(seq_group);
         }
         return did_preempt;
     }
@@ -324,19 +320,21 @@ impl Scheduler {
         }
     }
 
+    pub fn step_finished(&mut self, mut outputs: SchedulerOutputs) {
+        // everything that used to be "next_step" is now just on the GPU
+        self.on_gpu.append(&mut outputs.next_seq_groups);
+    }
+
     fn _schedule(&mut self) -> SchedulerOutputs {
         let mut outputs = SchedulerOutputs {
-            num_scheduled_seq_groups: 0,
             prompt_run: false,
             num_batched_tokens: 0,
             blocks_to_swap_in: HashMap::new(),
             blocks_to_swap_out: HashMap::new(),
             blocks_to_copy: HashMap::new(),
             dropped_seq_groups: Vec::new(),
+            next_seq_groups: Vec::new(),
         };
-
-        // first, everything that used to be "next_step" is now just on the GPU
-        self.on_gpu.append(&mut self.next_step);
 
         self.step_drop_finished(&mut outputs);
 
@@ -344,7 +342,7 @@ impl Scheduler {
             self.step_start_waiting(&mut outputs);
         }
 
-        if self.next_step.is_empty() {
+        if outputs.next_seq_groups.is_empty() {
             // Preemption logic
             let did_preempt = self.step_preempt(&mut outputs);
 

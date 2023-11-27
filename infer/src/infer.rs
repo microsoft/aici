@@ -1,7 +1,7 @@
 use anyhow::Result;
 use clap::Parser;
 
-use rllm::{playground_1, RllmEngine, LoaderArgs, LogitsProcessor};
+use rllm::{config::SamplingParams, playground_1, LoaderArgs, RllmEngine};
 
 const DEFAULT_PROMPT: &str = "Tarski's fixed-point theorem was proven by";
 
@@ -66,10 +66,13 @@ fn main() -> Result<()> {
 
     println!("{prompt}");
 
-    let mut logits_processor = LogitsProcessor::new(args.seed, args.temperature, args.top_p);
+    let mut p = SamplingParams::default();
+    p.temperature = args.temperature.map_or(p.temperature, |v| v as f32);
+    p.top_p = args.top_p.map_or(p.top_p, |v| v as f32);
+    p.max_tokens = args.sample_len;
 
     let start_gen = std::time::Instant::now();
-    let gen = infer.generate(prompt, args.sample_len, &mut logits_processor)?;
+    let gen = infer.generate(prompt, p)?;
     let dt = start_gen.elapsed();
     println!("\n{gen}\ntime: {dt:?}\n");
     Ok(())

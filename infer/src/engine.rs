@@ -5,20 +5,27 @@ use hf_hub::{
     api::sync::{Api, ApiRepo},
     RepoType,
 };
-use std::{collections::HashSet, fmt::Display, path::PathBuf};
+use std::{collections::HashSet, fmt::Display, path::PathBuf, sync::Arc, time::Instant};
 use tokenizers::Tokenizer;
 
 use candle_transformers::models::llama as llama_ref;
 
-use crate::seq::{BatchInfo, SeqId, Sequence, StepType};
 use crate::{
     cache_engine::CacheEngine,
-    config::{CacheConfig, ModelConfig, ParallelConfig, RllmConfig, SchedulerConfig},
+    config::{
+        CacheConfig, ModelConfig, ParallelConfig, RllmConfig, SamplingParams, SchedulerConfig,
+    },
+    scheduler::SchedulerOutputs,
+    seq::{RequestOutput, SchedulingPhase, SequenceGroup, Token},
 };
 use crate::{llama, rtrace, set_trace, LogitsProcessor};
 use crate::{
     llama::{Llama, LlamaConfig},
     LoaderArgs,
+};
+use crate::{
+    scheduler::Scheduler,
+    seq::{BatchInfo, SeqId, Sequence, StepType},
 };
 
 enum Repo {
@@ -91,10 +98,13 @@ pub struct RllmEngine {
     pub model: Model,
     seq_id: SeqId,
     cache: Option<llama::Cache>,
+    step_no: usize,
     #[allow(dead_code)]
     pub alt: usize,
     pub device: Device,
     pub eos_token_id: u32,
+
+    scheduler: Scheduler,
 }
 
 impl RllmEngine {
@@ -166,31 +176,107 @@ impl RllmEngine {
             (Model::Llama(llama), Some(cache))
         };
 
+        let scheduler = Scheduler::new(Arc::new(rllm_config));
+
         Ok(RllmEngine {
             tokenizer,
             model,
             cache,
             seq_id: 1,
+            step_no: 0,
             device,
             eos_token_id,
             alt: args.alt,
+            scheduler,
         })
     }
 
-    pub fn new_seq(&mut self, prompt: &str) -> Result<Sequence> {
+    pub fn add_request(
+        &mut self,
+        request_id: String,
+        prompt: &str,
+        sampling_params: SamplingParams,
+    ) -> Result<()> {
         let tokens = self
             .tokenizer
             .encode(prompt, true)
             .map_err(anyhow::Error::msg)?
             .get_ids()
             .to_vec();
-        let seq = Sequence::new(self.seq_id, &tokens, 16);
+        let seq = Sequence::new(self.seq_id, &tokens, self.scheduler.config.cache.block_size);
         self.seq_id += 1;
-        Ok(seq)
+
+        let logits_processor = LogitsProcessor::new(&sampling_params);
+        let sg = SequenceGroup {
+            request_id,
+            seqs: vec![seq],
+            sampling_params,
+            arrival_time: Instant::now(),
+            logits_processor,
+        };
+
+        self.scheduler.add_seq_group(sg);
+
+        Ok(())
     }
 
-    pub fn decode_seq(&self, seq: &Sequence) -> Result<String> {
-        let tokens = &seq.tokens[seq.prompt_len..];
+    fn generate_outputs(
+        &self,
+        logits: &Tensor,
+        sched_out: &mut SchedulerOutputs,
+    ) -> Result<Vec<RequestOutput>> {
+        let mut outputs = Vec::new();
+        let mut idx = 0;
+
+        for sg in sched_out.next_seq_groups.iter_mut() {
+            let mut outp = RequestOutput {
+                request_id: sg.request_id.clone(),
+                seq_outputs: Vec::new(),
+            };
+            for seq in sg.seqs.iter_mut() {
+                if seq.sched_phase == SchedulingPhase::Running {
+                    let logits = logits.i((idx, ..))?;
+                    let next_token = sg.logits_processor.sample(&logits)?;
+                    seq.tokens.push(next_token);
+                    seq.step_type = StepType::Gen;
+                    idx += 1;
+                }
+                outp.seq_outputs.push(seq.get_output());
+            }
+            outputs.push(outp);
+        }
+
+        Ok(outputs)
+    }
+
+    fn run_model(&mut self, sched_out: &mut SchedulerOutputs) -> Result<Vec<RequestOutput>> {
+        if sched_out.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        let seqs = sched_out
+            .next_seq_groups
+            .iter()
+            .flat_map(|sg| sg.get_seqs(Some(SchedulingPhase::Running)));
+        let info = BatchInfo::from_seqs(seqs, &self.device)?;
+
+        rtrace!("batch_info #{}: {:?}", self.step_no, info);
+        let logits = self.model.forward(&info)?;
+        rtrace!("logits: {:?}", logits);
+
+        self.generate_outputs(&logits, sched_out)
+    }
+
+    pub fn step(&mut self) -> Result<Vec<RequestOutput>> {
+        self.step_no += 1;
+        let mut sched_out = self.scheduler.schedule();
+        let outputs = self.run_model(&mut sched_out);
+        // we run step_finished() regardless if model failed
+        self.scheduler.step_finished(sched_out);
+        Ok(outputs?)
+    }
+
+    pub fn decode_seq(&self, tokens: &Vec<Token>) -> Result<String> {
         let generated = self
             .tokenizer
             .decode(tokens, true)
@@ -198,54 +284,28 @@ impl RllmEngine {
         Ok(generated)
     }
 
-    pub fn generate(
-        &mut self,
-        prompt: &str,
-        sample_len: usize,
-        logits_processor: &mut LogitsProcessor,
-    ) -> Result<String> {
+    pub fn generate(&mut self, prompt: &str, sampling_params: SamplingParams) -> Result<String> {
         self.cache.as_ref().map(|x| x.clear());
 
         let trace = false;
 
-        let seq = self.new_seq(prompt)?;
-        rtrace!("seq: {:?}", seq);
-        let mut seqs = vec![seq];
-        // seqs.push(self.new_seq(prompt)?);
-        // seqs.push(self.new_seq(prompt)?);
+        let max_tokens = sampling_params.max_tokens;
 
-        if self.alt == 1 {
-            set_trace(trace);
-            let off = seqs[0].tokens.len() / 2;
-            let rest = seqs[0].tokens.drain(off..).collect::<Vec<_>>();
-            seqs[0].prompt_len = seqs[0].tokens.len();
-
-            let info0 = BatchInfo::from_seqs(seqs.iter(), &self.device)?;
-            let _ = self.model.forward(&info0)?;
-
-            seqs[0].step_type = StepType::Fixed(rest.len());
-            seqs[0].tokens.extend(rest);
-            seqs[0].prompt_len = seqs[0].tokens.len();
-        }
+        let req_id = "R1".to_string();
+        self.add_request(req_id, prompt, sampling_params)?;
 
         set_trace(trace);
 
-        for _idx in 0..sample_len {
-            let info = BatchInfo::from_seqs(seqs.iter(), &self.device)?;
-            rtrace!("batch_info #{_idx}: {:?}", info);
-            let logits = self.model.forward(&info)?;
-            rtrace!("logits: {}", logits);
-            for idx in 0..seqs.len() {
-                let logits = logits.i((idx, ..))?;
-                let next_token = logits_processor.sample(&logits)?;
-                seqs[idx].tokens.push(next_token);
-                seqs[idx].step_type = StepType::Gen;
-                // if next_token == self.eos_token_id {
-                //     break;
-                // }
+        let mut outputs = Vec::new();
+
+        for _idx in 0..max_tokens {
+            let outp = self.step()?;
+            if outp.is_empty() {
+                break;
             }
+            outputs = outp[0].seq_outputs[0].output_tokens.clone();
         }
 
-        Ok(self.decode_seq(&seqs[0])?)
+        Ok(self.decode_seq(&outputs)?)
     }
 }

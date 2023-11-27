@@ -3,23 +3,26 @@
 use candle::{DType, Error, Result, Tensor};
 use rand::{distributions::Distribution, SeedableRng};
 
+use crate::config::{SamplingParams, SAMPLING_EPS};
+
 pub struct LogitsProcessor {
     rng: rand::rngs::StdRng,
-    temperature: Option<f64>,
-    top_p: Option<f64>,
+    temperature: Option<f32>,
+    top_p: f32,
 }
 
 impl LogitsProcessor {
-    pub fn new(seed: u64, temperature: Option<f64>, top_p: Option<f64>) -> Self {
-        let temperature = if temperature.map_or(true, |v| v < 1e-7) {
+    pub fn new(sampling_params: &SamplingParams) -> Self {
+        let temperature = if sampling_params.temperature < SAMPLING_EPS {
             None
         } else {
-            temperature
+            Some(sampling_params.temperature)
         };
+
         Self {
-            rng: rand::rngs::StdRng::seed_from_u64(seed),
+            rng: rand::rngs::StdRng::seed_from_u64(42),
             temperature,
-            top_p,
+            top_p: sampling_params.top_p,
         }
     }
 
@@ -67,10 +70,10 @@ impl LogitsProcessor {
         let next_token = match self.temperature {
             None => self.sample_argmax(logits)?,
             Some(temperature) => {
-                let logits = &(&logits / temperature)?;
+                let logits = &(&logits / (temperature as f64))?;
                 let prs = candle_nn::ops::softmax_last_dim(logits)?;
                 let mut prs: Vec<f32> = prs.to_vec1()?;
-                let top_p = self.top_p.unwrap_or(1.);
+                let top_p = self.top_p;
                 if top_p <= 0.0 || top_p >= 1.0 {
                     // simply sample from the predicted probability distribution
                     self.sample_multinomial(&prs)?
