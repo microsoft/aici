@@ -46,7 +46,8 @@ pub struct Sequence {
 
     // state for Scheduler and BlockSpaceManager
     pub(crate) sched_phase: SchedulingPhase,
-    pub(crate) phys_blocks: Vec<BlockRef>,
+    pub(crate) gpu_blocks: Vec<BlockRef>,
+    pub(crate) cpu_blocks: Vec<BlockRef>,
     block_size: usize,
 }
 
@@ -71,7 +72,8 @@ impl Sequence {
             step_type: StepType::Prompt,
             tokens: Vec::new(),
             prompt_len,
-            phys_blocks: Vec::new(),
+            gpu_blocks: Vec::new(),
+            cpu_blocks: Vec::new(),
             block_size,
         };
         seq._append_tokens_to_blocks(tokens);
@@ -86,6 +88,12 @@ impl Sequence {
         self.tokens.len() - self.prompt_len
     }
 
+    pub fn get_gpu_slot(&self, position: usize) -> usize {
+        let block_index = self.gpu_blocks[position / self.block_size].get_index();
+        let block_offset = position % self.block_size;
+        block_index * self.block_size + block_offset
+    }
+
     pub(crate) fn fork_as(&self, seq_id: SeqId) -> Self {
         let mut seq = Self {
             seq_id,
@@ -93,7 +101,8 @@ impl Sequence {
             step_type: self.step_type,
             tokens: self.tokens.clone(),
             prompt_len: self.prompt_len,
-            phys_blocks: self.phys_blocks.iter().map(|x| x.fork()).collect(),
+            gpu_blocks: self.gpu_blocks.iter().map(|x| x.fork()).collect(),
+            cpu_blocks: self.cpu_blocks.iter().map(|x| x.fork()).collect(),
             block_size: self.block_size,
         };
         seq._append_tokens_to_blocks(&self.tokens);

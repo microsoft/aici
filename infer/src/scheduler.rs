@@ -354,12 +354,13 @@ impl Scheduler {
         }
         seq.sched_phase = SchedulingPhase::Finished(reason);
         self.freed_seq_ids.borrow_mut().push(seq.seq_id);
-        seq.phys_blocks.clear();
+        seq.gpu_blocks.clear();
+        seq.cpu_blocks.clear();
     }
 
     /// Sets the phase of all sequences in a group.
     fn set_phase(&self, seq_group: &mut SequenceGroup, status: SchedulingPhase) {
-        let clear = match status {
+        let to_waiting = match status {
             SchedulingPhase::Waiting => true,
             SchedulingPhase::Running => false,
             SchedulingPhase::Swapped => false,
@@ -375,8 +376,8 @@ impl Scheduler {
         for seq in seq_group.seqs.iter_mut() {
             assert!(!seq.is_finished());
             seq.sched_phase = status;
-            if clear {
-                seq.phys_blocks.clear();
+            if to_waiting {
+                seq.gpu_blocks.clear();
             }
         }
     }

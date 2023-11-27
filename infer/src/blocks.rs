@@ -82,6 +82,10 @@ impl BlockRef {
         assert!(blk.ref_count > 0);
         blk.ref_count == 1
     }
+
+    pub fn get_index(&self) -> usize {
+        self.block_idx
+    }
 }
 
 impl BlockAllocator {
@@ -196,8 +200,8 @@ impl BlockSpaceManager {
 
     pub fn allocate(&mut self, seq_group: &mut SequenceGroup) {
         let seq = seq_group.only_seq();
-        assert!(seq.phys_blocks.is_empty());
-        seq_group.seqs[0].phys_blocks = (0..self.num_logical_blocks(seq))
+        assert!(seq.gpu_blocks.is_empty());
+        seq_group.seqs[0].gpu_blocks = (0..self.num_logical_blocks(seq))
             .map(|_| self.alloc_gpu())
             .collect();
     }
@@ -210,14 +214,17 @@ impl BlockSpaceManager {
 
     pub fn trim_physical_blocks(&mut self, seq: &mut Sequence) {
         let num_logical = self.num_logical_blocks(seq);
-        if seq.phys_blocks.len() > num_logical {
-            seq.phys_blocks.truncate(num_logical);
+        if seq.gpu_blocks.len() > num_logical {
+            seq.gpu_blocks.truncate(num_logical);
+        }
+        if seq.cpu_blocks.len() > num_logical {
+            seq.cpu_blocks.truncate(num_logical);
         }
     }
 
     pub fn append_slot(&mut self, seq: &mut Sequence) -> Option<(usize, usize)> {
         let num_logical = self.num_logical_blocks(seq);
-        let block_table = &mut seq.phys_blocks;
+        let block_table = &mut seq.gpu_blocks;
         assert!(block_table.len() > 0); // TODO?
 
         if block_table.len() < num_logical {
@@ -243,7 +250,15 @@ impl BlockSpaceManager {
         seq_group
             .get_seqs(None)
             .iter()
-            .map(|seq| seq.phys_blocks.len())
+            .map(|seq| {
+                let n = seq.gpu_blocks.len();
+                if n == 0 {
+                    seq.cpu_blocks.len()
+                } else {
+                    assert!(seq.cpu_blocks.is_empty());
+                    n
+                }
+            })
             .sum()
     }
 
@@ -254,51 +269,64 @@ impl BlockSpaceManager {
         self.can_alloc_gpu(num_required_blocks + self.watermark_blocks)
     }
 
+    fn to_idx_map(mapping: HashMap<usize, BlockRef>) -> HashMap<usize, usize> {
+        mapping
+            .iter()
+            .map(|(the_old, the_new)| (*the_old, the_new.block_idx))
+            .collect()
+    }
+
+    fn map_blocks(
+        &mut self,
+        mut blocks: Vec<BlockRef>,
+        mapping: &mut HashMap<usize, BlockRef>,
+        to_gpu: bool,
+    ) -> Vec<BlockRef> {
+        blocks
+            .drain(..)
+            .map(|b| match mapping.get(&b.block_idx) {
+                Some(block) => block.fork(),
+                None => {
+                    let new_block = if to_gpu {
+                        self.alloc_gpu()
+                    } else {
+                        self.alloc_cpu()
+                    };
+                    mapping.insert(b.block_idx, new_block.fork());
+                    new_block
+                }
+            })
+            .collect()
+    }
+
     pub fn swap_in(&mut self, seq_group: &mut SequenceGroup) -> HashMap<usize, usize> {
-        self.swap(seq_group, true)
+        let mut mapping = HashMap::new();
+
+        for seq in &mut seq_group.seqs {
+            if seq.sched_phase == SchedulingPhase::Swapped {
+                assert!(seq.cpu_blocks.is_empty());
+                let bl = std::mem::take(&mut seq.gpu_blocks);
+                seq.cpu_blocks = self.map_blocks(bl, &mut mapping, false);
+                seq.sched_phase = SchedulingPhase::Running;
+            }
+        }
+
+        Self::to_idx_map(mapping)
     }
 
     pub fn swap_out(&mut self, seq_group: &mut SequenceGroup) -> HashMap<usize, usize> {
-        self.swap(seq_group, false)
-    }
-
-    fn swap(&mut self, seq_group: &mut SequenceGroup, to_gpu: bool) -> HashMap<usize, usize> {
-        let mut mapping: HashMap<usize, BlockRef> = HashMap::new();
-        let (exp_status, set_status) = if to_gpu {
-            (SchedulingPhase::Swapped, SchedulingPhase::Running)
-        } else {
-            (SchedulingPhase::Running, SchedulingPhase::Swapped)
-        };
+        let mut mapping = HashMap::new();
 
         for seq in &mut seq_group.seqs {
-            if seq.sched_phase != exp_status {
-                continue;
+            if seq.sched_phase == SchedulingPhase::Running {
+                assert!(seq.cpu_blocks.is_empty());
+                let bl = std::mem::take(&mut seq.cpu_blocks);
+                seq.gpu_blocks = self.map_blocks(bl, &mut mapping, true);
+                seq.sched_phase = SchedulingPhase::Swapped;
             }
-
-            for idx in 0..seq.phys_blocks.len() {
-                let old_idx = seq.phys_blocks[idx].block_idx;
-                let new_block = match mapping.get(&old_idx) {
-                    Some(gpu_block) => gpu_block.fork(),
-                    None => {
-                        let new_block = if to_gpu {
-                            self.alloc_gpu()
-                        } else {
-                            self.alloc_cpu()
-                        };
-                        mapping.insert(old_idx, new_block.fork());
-                        new_block
-                    }
-                };
-                seq.phys_blocks[idx] = new_block;
-            }
-
-            seq.sched_phase = set_status;
         }
 
-        mapping
-            .into_iter()
-            .map(|(the_old, the_new)| (the_old, the_new.block_idx))
-            .collect()
+        Self::to_idx_map(mapping)
     }
 
     pub fn can_swap_out(&self, seq_group: &SequenceGroup) -> bool {
@@ -315,8 +343,8 @@ impl BlockSpaceManager {
     }
 
     pub fn get_gpu_blocks(&self, seq: &Sequence) -> Vec<usize> {
-        assert!(seq.phys_blocks.len() > 0);
+        assert!(seq.gpu_blocks.len() > 0);
         assert!(seq.sched_phase == SchedulingPhase::Running);
-        seq.phys_blocks.iter().map(|x| x.block_idx).collect()
+        seq.gpu_blocks.iter().map(|x| x.block_idx).collect()
     }
 }
