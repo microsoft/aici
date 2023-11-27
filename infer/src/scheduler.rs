@@ -150,7 +150,7 @@ impl Scheduler {
                     "Sequence group {} has a prompt that is too long ({} > {})",
                     seq_group.request_id, num_prompt_tokens, self.prompt_limit
                 );
-                self.set_phase(seq_group, SchedulingPhase::Finished(FinishReason::Ignored));
+                self.set_phase(seq_group, SchedulingPhase::Finished(FinishReason::Failed));
             }
         }
         self.waiting = waiting;

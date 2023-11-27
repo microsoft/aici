@@ -243,8 +243,10 @@ impl RllmEngine {
                     seq.step_type = StepType::Gen;
                     idx += 1;
 
-                    if seq.get_gen_len() >= sg.sampling_params.max_tokens {
-                        self.scheduler.finish_seq(seq, FinishReason::LengthCapped);
+                    if next_token == self.eos_token_id {
+                        self.scheduler.finish_seq(seq, FinishReason::FoundEos);
+                    } else if seq.get_gen_len() >= sg.sampling_params.max_tokens {
+                        self.scheduler.finish_seq(seq, FinishReason::MaxTokensReached);
                     }
                 }
                 outp.seq_outputs.push(seq.get_output());

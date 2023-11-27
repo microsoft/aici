@@ -13,10 +13,14 @@ pub type SeqId = u32;
 
 #[derive(Debug, PartialEq, Eq, Clone, Copy, Serialize, Deserialize)]
 pub enum FinishReason {
-    Stopped,
-    LengthCapped,
+    /// EOS token was generated.
+    FoundEos,
+    /// SamplingParams.max_tokens reached.
+    MaxTokensReached,
+    /// Explicit abort request on the engine.
     Aborted,
-    Ignored,
+    /// The scheduler didn't like the sequence.
+    Failed,
 }
 
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
