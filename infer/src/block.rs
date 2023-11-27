@@ -4,7 +4,7 @@ use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use std::vec::Vec;
 
-use crate::seq::{Sequence, SequenceGroup, SequenceStatus};
+use crate::seq::{Sequence, SequenceGroup, SchedulingPhase};
 
 #[derive(Debug, Clone, Copy)]
 pub enum BlockLocation {
@@ -179,7 +179,7 @@ impl BlockSpaceManager {
     }
 
     pub fn can_append_slot(&self, seq_group: &SequenceGroup) -> bool {
-        let num_seqs = seq_group.num_seqs(Some(SequenceStatus::Running));
+        let num_seqs = seq_group.num_seqs(Some(SchedulingPhase::Running));
         // TODO this is not correct - more than one token can be appended
         self.can_alloc_gpu(num_seqs)
     }
@@ -225,7 +225,7 @@ impl BlockSpaceManager {
 
     pub fn can_swap_in(&self, seq_group: &SequenceGroup) -> bool {
         let blocks = self.num_phys_blocks(seq_group);
-        let num_swapped_seqs = seq_group.num_seqs(Some(SequenceStatus::Swapped));
+        let num_swapped_seqs = seq_group.num_seqs(Some(SchedulingPhase::Swapped));
         let num_required_blocks = blocks + num_swapped_seqs;
         self.can_alloc_gpu(num_required_blocks + self.watermark_blocks)
     }
@@ -241,13 +241,13 @@ impl BlockSpaceManager {
     fn swap(&mut self, seq_group: &mut SequenceGroup, to_gpu: bool) -> HashMap<usize, usize> {
         let mut mapping: HashMap<usize, BlockRef> = HashMap::new();
         let (exp_status, set_status) = if to_gpu {
-            (SequenceStatus::Swapped, SequenceStatus::Running)
+            (SchedulingPhase::Swapped, SchedulingPhase::Running)
         } else {
-            (SequenceStatus::Running, SequenceStatus::Swapped)
+            (SchedulingPhase::Running, SchedulingPhase::Swapped)
         };
 
         for seq in &mut seq_group.seqs {
-            if seq.status != exp_status {
+            if seq.sched_phase != exp_status {
                 continue;
             }
 
@@ -268,7 +268,7 @@ impl BlockSpaceManager {
                 seq.phys_blocks[idx] = new_block;
             }
 
-            seq.status = set_status;
+            seq.sched_phase = set_status;
         }
 
         mapping

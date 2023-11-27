@@ -8,7 +8,7 @@ use log::warn;
 
 use crate::block::BlockSpaceManager;
 use crate::config::RllmConfig;
-use crate::seq::{FinishReason, SeqId, Sequence, SequenceGroup, SequenceStatus};
+use crate::seq::{FinishReason, SeqId, Sequence, SequenceGroup, SchedulingPhase};
 
 /// Preemption modes.
 #[derive(Debug, Clone, Copy)]
@@ -178,9 +178,9 @@ impl Scheduler {
                     "Sequence group {} has a prompt that is too long ({} > {})",
                     seq_group.request_id, num_prompt_tokens, self.prompt_limit
                 );
-                self.set_status(
+                self.set_phase(
                     &mut seq_group,
-                    SequenceStatus::Finished(FinishReason::Ignored),
+                    SchedulingPhase::Finished(FinishReason::Ignored),
                 );
                 outputs.ignored_seq_groups.push(seq_group);
                 continue;
@@ -235,12 +235,12 @@ impl Scheduler {
 
     fn _allocate(&mut self, seq_group: &mut SequenceGroup) {
         self.block_manager.allocate(seq_group);
-        self.set_status(seq_group, SequenceStatus::Running);
+        self.set_phase(seq_group, SchedulingPhase::Running);
     }
 
     fn _append_slot(&mut self, seq_group: &mut SequenceGroup, outputs: &mut SchedulerOutputs) {
         for seq in &mut seq_group.seqs {
-            if seq.status == SequenceStatus::Running {
+            if seq.sched_phase == SchedulingPhase::Running {
                 if let Some((src_block, dst_block)) = self.block_manager.append_slot(seq) {
                     outputs
                         .blocks_to_copy
@@ -274,7 +274,7 @@ impl Scheduler {
                 self.swapped.push(seq_group);
             }
             PreemptionMode::Recompute => {
-                self.set_status(&mut seq_group, SequenceStatus::Waiting);
+                self.set_phase(&mut seq_group, SchedulingPhase::Waiting);
                 self.waiting.push(seq_group);
             }
         }
@@ -335,7 +335,7 @@ impl Scheduler {
             outputs.num_batched_tokens = self
                 .on_gpu
                 .iter()
-                .flat_map(|sg| sg.get_seqs(Some(SequenceStatus::Running)))
+                .flat_map(|sg| sg.get_seqs(Some(SchedulingPhase::Running)))
                 .map(|seq| seq.get_len())
                 .sum();
         }
@@ -344,15 +344,15 @@ impl Scheduler {
     }
 
     /// Sets the status of all sequences.
-    fn set_status(&self, seq_group: &mut SequenceGroup, status: SequenceStatus) {
+    fn set_phase(&self, seq_group: &mut SequenceGroup, status: SchedulingPhase) {
         let clear = match status {
-            SequenceStatus::Waiting => true,
-            SequenceStatus::Running => false,
-            SequenceStatus::Swapped => false,
-            SequenceStatus::Finished(_) => true,
+            SchedulingPhase::Waiting => true,
+            SchedulingPhase::Running => false,
+            SchedulingPhase::Swapped => false,
+            SchedulingPhase::Finished(_) => true,
         };
         for seq in seq_group.seqs.iter_mut() {
-            seq.status = status;
+            seq.sched_phase = status;
             if clear {
                 seq.phys_blocks.clear();
             }

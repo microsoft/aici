@@ -14,7 +14,7 @@ pub use kernels::*;
 pub use logits::LogitsProcessor;
 pub use playground::playground_1;
 
-use seq::{BatchInfo, SeqId, SeqPhase, Sequence};
+use seq::{BatchInfo, SeqId, StepType, Sequence};
 
 use std::{collections::HashSet, fmt::Display, path::PathBuf, sync::atomic::AtomicBool};
 
@@ -246,7 +246,7 @@ impl RllmEngine {
             let info0 = BatchInfo::from_seqs(&seqs, &self.device)?;
             let _ = self.model.forward(&info0)?;
 
-            seqs[0].phase = SeqPhase::Fixed(rest.len());
+            seqs[0].step_type = StepType::Fixed(rest.len());
             seqs[0].tokens.extend(rest);
             seqs[0].prompt_len = seqs[0].tokens.len();
         }
@@ -262,7 +262,7 @@ impl RllmEngine {
                 let logits = logits.i((idx, ..))?;
                 let next_token = logits_processor.sample(&logits)?;
                 seqs[idx].tokens.push(next_token);
-                seqs[idx].phase = SeqPhase::Gen;
+                seqs[idx].step_type = StepType::Gen;
                 // if next_token == self.eos_token_id {
                 //     break;
                 // }

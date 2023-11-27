@@ -1,6 +1,6 @@
 #![allow(dead_code)]
 
-use std::{fmt::Debug, marker::PhantomData};
+use std::fmt::Debug;
 
 use anyhow::Result;
 use candle::Tensor;
@@ -19,7 +19,7 @@ pub enum FinishReason {
 }
 
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
-pub enum SequenceStatus {
+pub enum SchedulingPhase {
     Waiting,
     Running,
     Swapped,
@@ -27,7 +27,7 @@ pub enum SequenceStatus {
 }
 
 #[derive(Debug, Clone, Copy)]
-pub enum SeqPhase {
+pub enum StepType {
     Prompt,
     Fixed(usize),
     Gen,
@@ -35,12 +35,13 @@ pub enum SeqPhase {
 
 pub struct Sequence {
     pub seq_id: SeqId,
-    pub status: SequenceStatus,
-    pub phase: SeqPhase,
+    pub step_type: StepType,
     pub tokens: Vec<Token>,
     pub prompt_len: usize,
+
+    // state for Scheduler and BlockManager
+    pub(crate) sched_phase: SchedulingPhase,
     pub(crate) phys_blocks: Vec<BlockRef>,
-    _marker: PhantomData<u32>,
     block_size: usize,
 }
 
@@ -48,8 +49,8 @@ impl Debug for Sequence {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("Sequence")
             .field("seq_id", &self.seq_id)
-            .field("status", &self.status)
-            .field("phase", &self.phase)
+            .field("sched_phase", &self.sched_phase)
+            .field("step_type", &self.step_type)
             .field("tokens", &self.tokens)
             .field("prompt_len", &self.prompt_len)
             .finish()
@@ -61,13 +62,12 @@ impl Sequence {
         let prompt_len = tokens.len();
         let mut seq = Self {
             seq_id,
-            status: SequenceStatus::Waiting,
-            phase: SeqPhase::Prompt,
+            sched_phase: SchedulingPhase::Waiting,
+            step_type: StepType::Prompt,
             tokens: Vec::new(),
             prompt_len,
             phys_blocks: Vec::new(),
             block_size,
-            _marker: PhantomData,
         };
         seq._append_tokens_to_blocks(tokens);
         seq
@@ -80,13 +80,12 @@ impl Sequence {
     pub(crate) fn fork_as(&self, seq_id: SeqId) -> Self {
         let mut seq = Self {
             seq_id,
-            status: self.status,
-            phase: self.phase,
+            sched_phase: self.sched_phase,
+            step_type: self.step_type,
             tokens: self.tokens.clone(),
             prompt_len: self.prompt_len,
             phys_blocks: self.phys_blocks.iter().map(|x| x.fork()).collect(),
             block_size: self.block_size,
-            _marker: PhantomData,
         };
         seq._append_tokens_to_blocks(&self.tokens);
         seq
@@ -101,8 +100,8 @@ impl Sequence {
     }
 
     pub fn is_finished(&self) -> bool {
-        match self.status {
-            SequenceStatus::Finished(_) => true,
+        match self.sched_phase {
+            SchedulingPhase::Finished(_) => true,
             _ => false,
         }
     }
@@ -147,10 +146,10 @@ impl BatchInfo {
         for seq in seqs {
             let seq_len = seq.tokens.len();
             let k_len = seq_len;
-            let q_len = match seq.phase {
-                SeqPhase::Prompt => seq_len,
-                SeqPhase::Fixed(len) => len,
-                SeqPhase::Gen => 1,
+            let q_len = match seq.step_type {
+                StepType::Prompt => seq_len,
+                StepType::Fixed(len) => len,
+                StepType::Gen => 1,
             };
             let off = k_len - q_len;
             for idx in off..off + q_len {
@@ -198,7 +197,7 @@ impl SequenceGroup {
             } else {
                 // At sampling stages, return the number of actual sequences
                 // running.
-                self.num_seqs(Some(SequenceStatus::Running))
+                self.num_seqs(Some(SchedulingPhase::Running))
             }
         }
     }
@@ -212,12 +211,12 @@ impl SequenceGroup {
     }
 
     /// Retrieves sequences, optionally filtered by status.
-    pub fn get_seqs(&self, status: Option<SequenceStatus>) -> Vec<&Sequence> {
+    pub fn get_seqs(&self, status: Option<SchedulingPhase>) -> Vec<&Sequence> {
         match status {
             Some(status_filter) => self
                 .seqs
                 .iter()
-                .filter(|seq| seq.status == status_filter)
+                .filter(|seq| seq.sched_phase == status_filter)
                 .collect(),
             None => self.seqs.iter().collect(),
         }
@@ -229,7 +228,7 @@ impl SequenceGroup {
     }
 
     /// Returns the number of sequences, optionally filtered by status.
-    pub fn num_seqs(&self, status: Option<SequenceStatus>) -> usize {
+    pub fn num_seqs(&self, status: Option<SchedulingPhase>) -> usize {
         self.get_seqs(status).len()
     }
 
