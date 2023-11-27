@@ -47,9 +47,9 @@ fn test_infer1() {
     let mut ctx = Ctx::new();
 
     // make sure we get deterministic results
-    for _ in 0..2 {
-        expect(&mut ctx, QUERIES[0].0, QUERIES[0].1);
-    }
+    expect(&mut ctx, QUERIES[0].0, QUERIES[0].1);
+    expect(&mut ctx, QUERIES[0].0, QUERIES[0].1);
+    expect(&mut ctx, QUERIES[0].0, QUERIES[0].1);
 
     for idx in 0..QUERIES.len() {
         expect(&mut ctx, QUERIES[idx].0, QUERIES[idx].1);

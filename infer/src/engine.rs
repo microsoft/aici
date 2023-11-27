@@ -16,7 +16,7 @@ use crate::{
         CacheConfig, ModelConfig, ParallelConfig, RllmConfig, SamplingParams, SchedulerConfig,
     },
     scheduler::SchedulerOutputs,
-    seq::{RequestOutput, SchedulingPhase, SequenceGroup, Token},
+    seq::{FinishReason, RequestOutput, SchedulingPhase, SequenceGroup, Token},
 };
 use crate::{llama, LogitsProcessor};
 use crate::{
@@ -242,6 +242,10 @@ impl RllmEngine {
                     seq.tokens.push(next_token);
                     seq.step_type = StepType::Gen;
                     idx += 1;
+
+                    if seq.get_gen_len() >= sg.sampling_params.max_tokens {
+                        self.scheduler.finish_seq(seq, FinishReason::LengthCapped);
+                    }
                 }
                 outp.seq_outputs.push(seq.get_output());
             }
@@ -273,6 +277,11 @@ impl RllmEngine {
     pub fn step(&mut self) -> Result<Vec<RequestOutput>> {
         self.step_no += 1;
         let mut sched_out = self.scheduler.schedule();
+        log::debug!(
+            "scheduled: {} groups, dropped: {}",
+            sched_out.next_seq_groups.len(),
+            sched_out.dropped_seq_groups.len()
+        );
         let outputs = self.run_model(&mut sched_out);
         // we run step_finished() regardless if model failed
         self.scheduler.step_finished(sched_out);
@@ -290,19 +299,18 @@ impl RllmEngine {
     pub fn generate(&mut self, prompt: &str, sampling_params: SamplingParams) -> Result<String> {
         self.cache.as_ref().map(|x| x.clear());
 
-        let max_tokens = sampling_params.max_tokens;
-
-        let req_id = "R1".to_string();
+        let req_id = format!("R{}", self.step_no);
         self.add_request(req_id, prompt, sampling_params)?;
 
         let mut outputs = Vec::new();
 
-        for _idx in 0..max_tokens {
+        while self.scheduler.has_unfinished_seqs() {
             let outp = self.step()?;
-            if outp.is_empty() {
-                break;
+            if !outp.is_empty() {
+                assert!(outp.len() == 1);
+                assert!(outp[0].seq_outputs.len() == 1);
+                outputs = outp[0].seq_outputs[0].output_tokens.clone();
             }
-            outputs = outp[0].seq_outputs[0].output_tokens.clone();
         }
 
         Ok(self.decode_seq(&outputs)?)

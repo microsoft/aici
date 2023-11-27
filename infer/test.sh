@@ -1,2 +1,3 @@
 #!/bin/sh
-cargo test --release "$@"
+RUST_BACKTRACE=1 \
+cargo test "$@"

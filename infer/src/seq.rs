@@ -78,6 +78,10 @@ impl Sequence {
         self.tokens.len()
     }
 
+    pub fn get_gen_len(&self) -> usize {
+        self.tokens.len() - self.prompt_len
+    }
+
     pub(crate) fn fork_as(&self, seq_id: SeqId) -> Self {
         let mut seq = Self {
             seq_id,
