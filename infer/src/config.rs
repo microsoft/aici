@@ -255,7 +255,7 @@ impl SamplingParams {
             best_of: 1,
             presence_penalty: 0.0,
             frequency_penalty: 0.0,
-            temperature: 1.0,
+            temperature: 0.0,
             top_p: 1.0,
             top_k: -1,
             use_beam_search: false,

@@ -16,10 +16,6 @@ struct Args {
     #[arg(long)]
     top_p: Option<f64>,
 
-    /// The seed to use when generating random samples.
-    #[arg(long, default_value_t = 42)]
-    seed: u64,
-
     /// The length of the sample to generate (in tokens).
     #[arg(long, default_value_t = 10)]
     sample_len: usize,
@@ -47,6 +43,8 @@ struct Args {
 }
 
 fn main() -> Result<()> {
+    env_logger::init();
+
     let args = Args::parse();
 
     if args.alt == 3 {
@@ -74,6 +72,9 @@ fn main() -> Result<()> {
     let start_gen = std::time::Instant::now();
     let gen = infer.generate(prompt, p)?;
     let dt = start_gen.elapsed();
-    println!("\n{gen}\ntime: {dt:?}\n");
+    println!("\n{gen}\n");
+
+    log::info!("time: {dt:?}");
+
     Ok(())
 }

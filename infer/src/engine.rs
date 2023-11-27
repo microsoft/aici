@@ -18,7 +18,7 @@ use crate::{
     scheduler::SchedulerOutputs,
     seq::{RequestOutput, SchedulingPhase, SequenceGroup, Token},
 };
-use crate::{llama, rtrace, set_trace, LogitsProcessor};
+use crate::{llama, LogitsProcessor};
 use crate::{
     llama::{Llama, LlamaConfig},
     LoaderArgs,
@@ -113,7 +113,7 @@ impl RllmEngine {
         let dtype = DType::BF16;
 
         let repo = Repo::from(&args)?;
-        println!("loading the model weights from {}", repo);
+        log::info!("loading the model weights from {}", repo);
 
         let tokenizer_filename = repo.get("tokenizer.json")?;
 
@@ -152,7 +152,7 @@ impl RllmEngine {
             .map(|f| repo.get(f))
             .collect::<Result<Vec<_>>>()?;
 
-        println!("building the model");
+        log::info!("building the model");
 
         let vb = unsafe { VarBuilder::from_mmaped_safetensors(&filenames, dtype, &device)? };
         let tokenizer = Tokenizer::from_file(tokenizer_filename).map_err(anyhow::Error::msg)?;
@@ -175,6 +175,8 @@ impl RllmEngine {
             let llama = Llama::load(vb, &cache, &model_config)?;
             (Model::Llama(llama), Some(cache))
         };
+
+        log::info!("model loaded");
 
         let scheduler = Scheduler::new(Arc::new(rllm_config));
 
@@ -251,6 +253,7 @@ impl RllmEngine {
 
     fn run_model(&mut self, sched_out: &mut SchedulerOutputs) -> Result<Vec<RequestOutput>> {
         if sched_out.is_empty() {
+            log::debug!("no seqs to run");
             return Ok(Vec::new());
         }
 
@@ -260,9 +263,9 @@ impl RllmEngine {
             .flat_map(|sg| sg.get_seqs(Some(SchedulingPhase::Running)));
         let info = BatchInfo::from_seqs(seqs, &self.device)?;
 
-        rtrace!("batch_info #{}: {:?}", self.step_no, info);
+        log::debug!("batch_info #{}: {:?}", self.step_no, info);
         let logits = self.model.forward(&info)?;
-        rtrace!("logits: {:?}", logits);
+        log::debug!("logits: {:?}", logits);
 
         self.generate_outputs(&logits, sched_out)
     }
@@ -287,14 +290,10 @@ impl RllmEngine {
     pub fn generate(&mut self, prompt: &str, sampling_params: SamplingParams) -> Result<String> {
         self.cache.as_ref().map(|x| x.clear());
 
-        let trace = false;
-
         let max_tokens = sampling_params.max_tokens;
 
         let req_id = "R1".to_string();
         self.add_request(req_id, prompt, sampling_params)?;
-
-        set_trace(trace);
 
         let mut outputs = Vec::new();
 
