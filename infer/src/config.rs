@@ -206,10 +206,10 @@ pub enum EarlyStopping {
 #[derive(Debug, Serialize, Deserialize)]
 pub struct SamplingParams {
     /// Number of output sequences to return for the given prompt.
-    pub n: i32,
+    pub n: usize,
 
     /// Number of output sequences that are generated from the prompt.
-    pub best_of: i32,
+    pub best_of: usize,
 
     /// Float that penalizes new tokens based on whether they appear in the generated text so far.
     pub presence_penalty: f32,

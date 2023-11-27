@@ -7,6 +7,7 @@ pub mod seq;
 // vllm modules
 mod block;
 mod cache_engine;
+mod scheduler;
 pub mod config;
 
 pub use kernels::*;

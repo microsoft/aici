@@ -1,9 +1,11 @@
+#![allow(dead_code)]
+
 use std::{fmt::Debug, marker::PhantomData};
 
 use anyhow::Result;
 use candle::Tensor;
 
-use crate::{block::{BlockRef, LogicalTokenBlock}, config::SamplingParams};
+use crate::{block::BlockRef, config::SamplingParams};
 
 pub type Token = u32;
 pub type SeqId = u32;
@@ -38,7 +40,6 @@ pub struct Sequence {
     pub tokens: Vec<Token>,
     pub prompt_len: usize,
     pub(crate) phys_blocks: Vec<BlockRef>,
-    pub(crate) logical_blocks: Vec<LogicalTokenBlock>,
     _marker: PhantomData<u32>,
     block_size: usize,
 }
@@ -65,12 +66,15 @@ impl Sequence {
             tokens: Vec::new(),
             prompt_len,
             phys_blocks: Vec::new(),
-            logical_blocks: Vec::new(),
             block_size,
             _marker: PhantomData,
         };
         seq._append_tokens_to_blocks(tokens);
         seq
+    }
+
+    pub fn get_len(&self) -> usize {
+        self.tokens.len()
     }
 
     pub(crate) fn fork_as(&self, seq_id: SeqId) -> Self {
@@ -81,7 +85,6 @@ impl Sequence {
             tokens: self.tokens.clone(),
             prompt_len: self.prompt_len,
             phys_blocks: self.phys_blocks.iter().map(|x| x.fork()).collect(),
-            logical_blocks: self.logical_blocks.clone(),
             block_size: self.block_size,
             _marker: PhantomData,
         };
@@ -89,37 +92,23 @@ impl Sequence {
         seq
     }
 
-    fn _append_logical_block(&mut self) {
-        let block = LogicalTokenBlock::new(self.logical_blocks.len(), self.block_size);
-        self.logical_blocks.push(block);
-    }
-
     fn _append_tokens_to_blocks(&mut self, token_ids: &[Token]) {
-        let mut cursor = 0;
         self.tokens.extend_from_slice(token_ids);
-        while cursor < token_ids.len() {
-            if self.logical_blocks.is_empty() {
-                self._append_logical_block();
-            }
-
-            let last_block = self.logical_blocks.last_mut().unwrap();
-            if last_block.is_full() {
-                self._append_logical_block();
-                continue;
-            }
-
-            let num_empty_slots = last_block.get_num_empty_slots();
-            let end = std::cmp::min(cursor + num_empty_slots, token_ids.len());
-            last_block.append_tokens(&token_ids[cursor..end]);
-            cursor = end;
-        }
     }
 
     pub fn append_token_id(&mut self, token_id: Token) {
         self._append_tokens_to_blocks(&[token_id]);
     }
+
+    pub fn is_finished(&self) -> bool {
+        match self.status {
+            SequenceStatus::Finished(_) => true,
+            _ => false,
+        }
+    }
 }
 
+/// A group of sequences that are generated from the same prompt.
 pub struct SequenceGroup {
     pub request_id: String,
     pub seqs: Vec<Sequence>,
@@ -191,3 +180,93 @@ impl BatchInfo {
         })
     }
 }
+
+impl SequenceGroup {
+    /// The maximum number of sequences running in parallel in the remaining
+    /// lifetime of the request.
+    pub fn get_max_num_running_seqs(&self) -> usize {
+        if self.sampling_params.use_beam_search {
+            // For beam search, maximally there will always be `best_of` beam
+            // candidates running in the future.
+            self.sampling_params.best_of
+        } else {
+            if self.sampling_params.best_of > self.num_seqs(None) {
+                // At prompt stage, the sequence group is not yet filled up
+                // and only have one sequence running. However, in the
+                // generation stage, we will have `best_of` sequences running.
+                self.sampling_params.best_of
+            } else {
+                // At sampling stages, return the number of actual sequences
+                // running.
+                self.num_seqs(Some(SequenceStatus::Running))
+            }
+        }
+    }
+
+    pub fn only_seq(&self) -> &Sequence {
+        if self.seqs.len() == 1 {
+            &self.seqs[0]
+        } else {
+            panic!("num seq {} != 1", self.seqs.len());
+        }
+    }
+
+    /// Retrieves sequences, optionally filtered by status.
+    pub fn get_seqs(&self, status: Option<SequenceStatus>) -> Vec<&Sequence> {
+        match status {
+            Some(status_filter) => self
+                .seqs
+                .iter()
+                .filter(|seq| seq.status == status_filter)
+                .collect(),
+            None => self.seqs.iter().collect(),
+        }
+    }
+
+    /// Sets the status of all sequences.
+    pub fn set_status(&mut self, status: SequenceStatus) {
+        let clear = match status {
+            SequenceStatus::Waiting => true,
+            SequenceStatus::Running => false,
+            SequenceStatus::Swapped => false,
+            SequenceStatus::Finished(_) => true,
+        };
+        for seq in self.seqs.iter_mut() {
+            seq.status = status;
+            if clear {
+                seq.phys_blocks.clear();
+            }
+        }
+    }
+
+    /// Retrieves finished sequences.
+    fn get_finished_seqs(&self) -> Vec<&Sequence> {
+        self.seqs.iter().filter(|seq| seq.is_finished()).collect()
+    }
+
+    /// Returns the number of sequences, optionally filtered by status.
+    pub fn num_seqs(&self, status: Option<SequenceStatus>) -> usize {
+        self.get_seqs(status).len()
+    }
+
+    /// Adds a sequence.
+    fn add(&mut self, seq: Sequence) {
+        self.seqs.push(seq)
+    }
+
+    /// Checks if all sequences are finished.
+    pub fn is_finished(&self) -> bool {
+        self.seqs.iter().all(|seq| seq.is_finished())
+    }
+}
+
+/*
+You are PyRust Translator, designed to assist users in translating Python code into Rust.
+- only translate code, do not explain differences between Python and Rust
+- if Python code is using the 'pytorch' package, the Rust should use 'candle' (assuming similar APIs to 'tch' and 'pytorch')
+- keep comments and docstrings; attach docstrings to struct fields or parameters as appropriate in Rust
+- keep asserts
+- provide complete translations, filling out all methods and their bodies; avoid comments like "// Similar to Python" or "// Implement other methods"
+- always translate code, even if it won't work to provide a base line for the user
+
+*/
