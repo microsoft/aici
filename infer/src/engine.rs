@@ -269,9 +269,9 @@ impl RllmEngine {
             .flat_map(|sg| sg.get_seqs(Some(SchedulingPhase::Running)));
         let info = BatchInfo::from_seqs(seqs, &self.device)?;
 
-        log::debug!("batch_info #{}: {:?}", self.step_no, info);
+        log::trace!("batch_info #{}: {:?}", self.step_no, info);
         let logits = self.model.forward(&info)?;
-        log::debug!("logits: {:?}", logits);
+        log::trace!("logits: {:?}", logits);
 
         self.generate_outputs(&logits, sched_out)
     }
@@ -279,7 +279,7 @@ impl RllmEngine {
     pub fn step(&mut self) -> Result<Vec<RequestOutput>> {
         self.step_no += 1;
         let mut sched_out = self.scheduler.schedule();
-        log::debug!(
+        log::trace!(
             "scheduled: {} groups, dropped: {}",
             sched_out.next_seq_groups.len(),
             sched_out.dropped_seq_groups.len()

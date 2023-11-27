@@ -4,6 +4,8 @@ use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use std::vec::Vec;
 
+use crate::cache_engine::CacheEngine;
+use crate::config::RllmConfig;
 use crate::seq::{SchedulingPhase, Sequence, SequenceGroup};
 
 #[derive(Debug, Clone, Copy)]
@@ -124,28 +126,50 @@ pub struct BlockSpaceManager {
 }
 
 impl BlockSpaceManager {
+    fn new_allocator(
+        location: BlockLocation,
+        block_size: usize,
+        num_blocks: usize,
+        config: &RllmConfig,
+    ) -> Arc<Mutex<BlockAllocator>> {
+        log::info!(
+            "{:?} {} blocks, {} MiB",
+            location,
+            num_blocks,
+            (num_blocks * CacheEngine::get_cache_block_size(config)) >> 20
+        );
+        Arc::new(Mutex::new(BlockAllocator::new(
+            location, block_size, num_blocks,
+        )))
+    }
+
     pub fn new(
         block_size: usize,
         num_gpu_blocks: usize,
         num_cpu_blocks: usize,
         watermark: f32,
+        config: &RllmConfig,
     ) -> Self {
         assert!(watermark >= 0.0);
         let watermark_blocks = (watermark * num_gpu_blocks as f32) as usize;
 
+        log::info!("BlockSpaceManager: block_size: {} tokens", block_size);
+
         Self {
             watermark_blocks,
             block_size,
-            gpu_allocator: Arc::new(Mutex::new(BlockAllocator::new(
+            gpu_allocator: Self::new_allocator(
                 BlockLocation::GPU,
                 block_size,
                 num_gpu_blocks,
-            ))),
-            cpu_allocator: Arc::new(Mutex::new(BlockAllocator::new(
+                config,
+            ),
+            cpu_allocator: Self::new_allocator(
                 BlockLocation::CPU,
                 block_size,
                 num_cpu_blocks,
-            ))),
+                config,
+            ),
         }
     }
 

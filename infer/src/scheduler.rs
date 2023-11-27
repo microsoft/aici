@@ -75,6 +75,7 @@ impl Scheduler {
             config.cache.num_gpu_blocks.unwrap(),
             config.cache.num_cpu_blocks.unwrap(),
             0.01,
+            &config,
         );
 
         Self {
