@@ -223,22 +223,6 @@ impl SequenceGroup {
         }
     }
 
-    /// Sets the status of all sequences.
-    pub fn set_status(&mut self, status: SequenceStatus) {
-        let clear = match status {
-            SequenceStatus::Waiting => true,
-            SequenceStatus::Running => false,
-            SequenceStatus::Swapped => false,
-            SequenceStatus::Finished(_) => true,
-        };
-        for seq in self.seqs.iter_mut() {
-            seq.status = status;
-            if clear {
-                seq.phys_blocks.clear();
-            }
-        }
-    }
-
     /// Retrieves finished sequences.
     fn get_finished_seqs(&self) -> Vec<&Sequence> {
         self.seqs.iter().filter(|seq| seq.is_finished()).collect()

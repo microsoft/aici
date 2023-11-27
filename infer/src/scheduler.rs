@@ -178,7 +178,10 @@ impl Scheduler {
                     "Sequence group {} has a prompt that is too long ({} > {})",
                     seq_group.request_id, num_prompt_tokens, self.prompt_limit
                 );
-                seq_group.set_status(SequenceStatus::Finished(FinishReason::Ignored));
+                self.set_status(
+                    &mut seq_group,
+                    SequenceStatus::Finished(FinishReason::Ignored),
+                );
                 outputs.ignored_seq_groups.push(seq_group);
                 continue;
             }
@@ -232,7 +235,7 @@ impl Scheduler {
 
     fn _allocate(&mut self, seq_group: &mut SequenceGroup) {
         self.block_manager.allocate(seq_group);
-        seq_group.set_status(SequenceStatus::Running);
+        self.set_status(seq_group, SequenceStatus::Running);
     }
 
     fn _append_slot(&mut self, seq_group: &mut SequenceGroup, outputs: &mut SchedulerOutputs) {
@@ -271,7 +274,7 @@ impl Scheduler {
                 self.swapped.push(seq_group);
             }
             PreemptionMode::Recompute => {
-                seq_group.set_status(SequenceStatus::Waiting);
+                self.set_status(&mut seq_group, SequenceStatus::Waiting);
                 self.waiting.push(seq_group);
             }
         }
@@ -338,5 +341,21 @@ impl Scheduler {
         }
 
         outputs
+    }
+
+    /// Sets the status of all sequences.
+    fn set_status(&self, seq_group: &mut SequenceGroup, status: SequenceStatus) {
+        let clear = match status {
+            SequenceStatus::Waiting => true,
+            SequenceStatus::Running => false,
+            SequenceStatus::Swapped => false,
+            SequenceStatus::Finished(_) => true,
+        };
+        for seq in seq_group.seqs.iter_mut() {
+            seq.status = status;
+            if clear {
+                seq.phys_blocks.clear();
+            }
+        }
     }
 }
