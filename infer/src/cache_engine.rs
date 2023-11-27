@@ -75,17 +75,16 @@ impl CacheEngine {
         let block_size = config.cache.block_size;
         let x = 16 / dtype.size_in_bytes();
 
-        let key_block = |num_bl, device| {
-            Tensor::zeros(
+        let key_block = |num_bl, device| unsafe {
+            kernels::unset_tensor(
                 (num_bl, num_heads, head_size / x, block_size, x),
                 dtype,
                 device,
             )
-            .unwrap()
         };
 
-        let value_block = |num_bl, device| {
-            Tensor::zeros((num_bl, num_heads, head_size, block_size), dtype, device).unwrap()
+        let value_block = |num_bl, device| unsafe {
+            kernels::unset_tensor((num_bl, num_heads, head_size, block_size), dtype, device)
         };
 
         let gpu_cache = {

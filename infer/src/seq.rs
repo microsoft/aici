@@ -152,6 +152,8 @@ pub struct BatchInfo {
     pub positions: Tensor, // i64, [num_tokens]
     pub seqlens_q: Tensor, // u32, [batch_size + 1]; points to tokens/positions
     pub seqlens_k: Tensor, // u32, [batch_size + 1]; can go outside tokens/positions
+    pub gather_mapping: Tensor, // u32, [sum(context_len + prompt_len)]
+    pub slot_mapping: Tensor, // u32, [num_tokens]
     pub max_seqlen_q: usize,
     pub max_seqlen_k: usize,
 }

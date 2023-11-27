@@ -246,7 +246,8 @@ impl RllmEngine {
                     if next_token == self.eos_token_id {
                         self.scheduler.finish_seq(seq, FinishReason::FoundEos);
                     } else if seq.get_gen_len() >= sg.sampling_params.max_tokens {
-                        self.scheduler.finish_seq(seq, FinishReason::MaxTokensReached);
+                        self.scheduler
+                            .finish_seq(seq, FinishReason::MaxTokensReached);
                     }
                 }
                 outp.seq_outputs.push(seq.get_output());
@@ -267,6 +268,7 @@ impl RllmEngine {
             .next_seq_groups
             .iter()
             .flat_map(|sg| sg.get_seqs(Some(SchedulingPhase::Running)));
+
         let info = BatchInfo::from_seqs(seqs, &self.device)?;
 
         log::trace!("batch_info #{}: {:?}", self.step_no, info);

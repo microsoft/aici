@@ -2,11 +2,12 @@ use core::panic;
 use std::collections::HashMap;
 
 use candle::{
+    backend::BackendStorage,
     cuda_backend::{
-        cudarc::driver::{CudaStream, CudaView, DevicePtr},
+        cudarc::driver::{CudaStream, CudaView, DevicePtr, DeviceRepr},
         CudaDType, CudaStorageSlice,
     },
-    DType, Device, Layout, Storage, Tensor,
+    CpuStorage, CudaDevice, CudaStorage, CustomOp1, DType, Device, Layout, Shape, Storage, Tensor,
 };
 use half::{bf16, f16};
 
@@ -348,4 +349,76 @@ pub fn to_offsets(seqlens: &[usize], device: &Device) -> (usize, Tensor) {
     }
     offsets.push(offset as u32);
     (max, Tensor::new(offsets.as_slice(), device).unwrap())
+}
+
+struct UnsetTensor {
+    shape: Shape,
+}
+
+unsafe fn alloc_vec<T: candle::WithDType>(elts: usize) -> Vec<T> {
+    let mut r = Vec::with_capacity(elts);
+    unsafe { r.set_len(elts) }
+    r
+}
+
+unsafe fn alloc_cuda<T: CudaDType + DeviceRepr>(device: &CudaDevice, elts: usize) -> CudaStorage {
+    let stor = unsafe { device.alloc::<T>(elts).unwrap() };
+    CudaStorage::wrap_cuda_slice(stor, device.clone())
+}
+
+impl CustomOp1 for UnsetTensor {
+    fn name(&self) -> &'static str {
+        "UnsafeEmpty"
+    }
+
+    fn cpu_fwd(
+        &self,
+        storage: &CpuStorage,
+        layout: &Layout,
+    ) -> candle::Result<(CpuStorage, Shape)> {
+        let elts = self.shape.elem_count();
+        let stor = unsafe {
+            match storage.dtype() {
+                DType::U8 => CpuStorage::U8(alloc_vec(elts)),
+                DType::U32 => CpuStorage::U32(alloc_vec(elts)),
+                DType::I64 => CpuStorage::I64(alloc_vec(elts)),
+                DType::BF16 => CpuStorage::BF16(alloc_vec(elts)),
+                DType::F16 => CpuStorage::F16(alloc_vec(elts)),
+                DType::F32 => CpuStorage::F32(alloc_vec(elts)),
+                DType::F64 => CpuStorage::F64(alloc_vec(elts)),
+            }
+        };
+        Ok((stor, self.shape.clone()))
+    }
+
+    fn cuda_fwd(
+        &self,
+        storage: &CudaStorage,
+        layout: &Layout,
+    ) -> candle::Result<(CudaStorage, Shape)> {
+        let elts = self.shape.elem_count();
+        let device = storage.device();
+        let stor = unsafe {
+            match storage.dtype() {
+                DType::U8 => alloc_cuda::<u8>(device, elts),
+                DType::U32 => alloc_cuda::<u32>(device, elts),
+                DType::I64 => alloc_cuda::<i64>(device, elts),
+                DType::BF16 => alloc_cuda::<bf16>(device, elts),
+                DType::F16 => alloc_cuda::<f16>(device, elts),
+                DType::F32 => alloc_cuda::<f32>(device, elts),
+                DType::F64 => alloc_cuda::<f64>(device, elts),
+            }
+        };
+
+        Ok((stor, self.shape.clone()))
+    }
+}
+
+pub unsafe fn unset_tensor<S: Into<Shape>>(shape: S, dtype: DType, device: &Device) -> Tensor {
+    let shape: Shape = shape.into();
+    if shape.elem_count() < 10000 {
+        return Tensor::zeros(shape, dtype, device).unwrap();
+    }
+    let z = Tensor::zeros((1, 2), dtype, device).unwrap();
+    z.apply_op1(UnsetTensor { shape }).unwrap()
 }
