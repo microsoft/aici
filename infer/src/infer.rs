@@ -43,7 +43,9 @@ struct Args {
 }
 
 fn main() -> Result<()> {
-    env_logger::init();
+    let mut builder = env_logger::Builder::from_default_env();
+    builder.format_timestamp(None);
+    builder.init();
 
     let args = Args::parse();
 

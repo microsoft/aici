@@ -89,6 +89,7 @@ impl Scheduler {
     }
 
     pub fn add_seq_group(&mut self, seq_group: SequenceGroup) {
+        log::debug!("add_seq_group: {}", seq_group.request_id);
         self.waiting.push(seq_group);
     }
 
@@ -119,44 +120,6 @@ impl Scheduler {
         self.waiting.len() + self.on_gpu.len() + self.swapped.len()
     }
 
-    pub fn free_finished_seq_groups(&mut self) {
-        self.on_gpu.retain(|seq_group| !seq_group.is_finished());
-    }
-
-    pub fn schedule(&mut self) -> SchedulerOutputs {
-        // Schedule sequence groups
-        let scheduler_outputs = self._schedule();
-
-        // // Create seq_group_metadata_list based on scheduled sequence groups
-        // let mut seq_group_metadata_list: Vec<SequenceGroupMetadata> = Vec::new();
-        // for seq_group in &scheduler_outputs.scheduled_seq_groups {
-        //     let mut seq_data: HashMap<i32, SequenceData> = HashMap::new();
-        //     let mut block_tables: HashMap<i32, Vec<i32>> = HashMap::new();
-        //     let seqs = seq_group.get_seqs(SequenceStatus::Running);
-        //     let is_ff = seqs.iter().any(|seq| seq.data.num_pending_ff_tokens > 0);
-
-        //     for seq in seqs {
-        //         if seq.skip_round {
-        //             continue;
-        //         }
-        //         seq_data.insert(seq.seq_id, seq.data.clone());
-        //         block_tables.insert(seq.seq_id, self.block_manager.get_block_table(seq));
-        //     }
-
-        //     let seq_group_metadata = SequenceGroupMetadata {
-        //         request_id: seq_group.request_id.clone(),
-        //         is_prompt: scheduler_outputs.prompt_run,
-        //         seq_data,
-        //         sampling_params: seq_group.sampling_params.clone(),
-        //         block_tables,
-        //         is_ff,
-        //     };
-        //     seq_group_metadata_list.push(seq_group_metadata);
-        // }
-
-        scheduler_outputs
-    }
-
     fn drop_finished(outputs: &mut SchedulerOutputs, q: &mut Vec<SequenceGroup>) {
         if q.iter().any(|sg| sg.is_finished()) {
             let mut not_finished = Vec::new();
@@ -168,6 +131,11 @@ impl Scheduler {
                 }
             }
             assert!(q.is_empty());
+            log::debug!(
+                "dropped {} seq groups; now {}",
+                outputs.dropped_seq_groups.len(),
+                q.len()
+            );
             q.extend(not_finished);
         }
     }
@@ -185,6 +153,7 @@ impl Scheduler {
                 self.set_phase(seq_group, SchedulingPhase::Finished(FinishReason::Ignored));
             }
         }
+        self.waiting = waiting;
 
         Self::drop_finished(outputs, &mut self.waiting);
         Self::drop_finished(outputs, &mut self.on_gpu);
@@ -192,6 +161,8 @@ impl Scheduler {
     }
 
     fn step_start_waiting(&mut self, outputs: &mut SchedulerOutputs) {
+        log::trace!("step_start_waiting ({} seqs)", self.waiting.len());
+
         let mut num_curr_seqs = self
             .on_gpu
             .iter()
@@ -202,6 +173,13 @@ impl Scheduler {
             assert!(seq_group.seqs.len() == 1);
             let num_prompt_tokens = seq_group.get_seqs(None)[0].get_len();
             let num_new_seqs = seq_group.get_max_num_running_seqs();
+
+            log::trace!(
+                "seq_group {} has {} prompt tokens and {} new seqs",
+                seq_group.request_id,
+                num_prompt_tokens,
+                num_new_seqs
+            );
 
             // Check allocation and batch token limits
             if !self.block_manager.can_allocate(&seq_group)
@@ -325,7 +303,7 @@ impl Scheduler {
         self.on_gpu.append(&mut outputs.next_seq_groups);
     }
 
-    fn _schedule(&mut self) -> SchedulerOutputs {
+    pub fn schedule(&mut self) -> SchedulerOutputs {
         let mut outputs = SchedulerOutputs {
             prompt_run: false,
             num_batched_tokens: 0,
@@ -379,6 +357,7 @@ impl Scheduler {
             SchedulingPhase::Running => false,
             SchedulingPhase::Swapped => false,
             SchedulingPhase::Finished(reason) => {
+                log::debug!("seq_group {} finished: {:?}", seq_group.request_id, reason);
                 seq_group
                     .seqs
                     .iter_mut()

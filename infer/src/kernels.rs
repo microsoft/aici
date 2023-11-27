@@ -328,7 +328,7 @@ pub fn to_offsets(seqlens: &[usize], device: &Device) -> (usize, Tensor) {
     let mut offset = 0;
     let mut max = 0;
     for len in seqlens {
-        max = std::cmp::max(offset, max);
+        max = std::cmp::max(*len, max);
         offsets.push(offset as u32);
         offset += len;
     }
