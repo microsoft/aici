@@ -143,41 +143,29 @@ impl CausalSelfAttention {
             &self.cache.cos_sin,
         );
 
-        let q = q
-            .reshape((b_sz, seq_len, self.num_attention_heads, self.head_dim))?
-            .transpose(1, 2)?;
-        let mut k = k
-            .reshape((b_sz, seq_len, self.num_key_value_heads, self.head_dim))?
-            .transpose(1, 2)?;
-        let mut v = v
-            .reshape((b_sz, seq_len, self.num_key_value_heads, self.head_dim))?
-            .transpose(1, 2)?;
+        let q = q.reshape((seq_len, self.num_attention_heads, self.head_dim))?;
+        let k = k.reshape((seq_len, self.num_key_value_heads, self.head_dim))?;
+        let v = v.reshape((seq_len, self.num_key_value_heads, self.head_dim))?;
 
-        if trace {
-            // println!("q: {}", q);
-            // println!("k: {}", k);
-        }
+        let (key_cache, value_cache) = &batch_info.kv_cache[block_idx];
 
-        {
-            let mut cache = self.cache.kvs.lock().unwrap();
-            if let Some((cache_k, cache_v)) = &cache[block_idx] {
-                k = Tensor::cat(&[cache_k, &k], 2)?.contiguous()?;
-                v = Tensor::cat(&[cache_v, &v], 2)?.contiguous()?;
-                let k_seq_len = k.dims()[1];
-                if k_seq_len > MAX_SEQ_LEN {
-                    k = k
-                        .narrow(D::Minus1, k_seq_len - MAX_SEQ_LEN, MAX_SEQ_LEN)?
-                        .contiguous()?
-                }
-                let v_seq_len = v.dims()[1];
-                if v_seq_len > 2 * MAX_SEQ_LEN {
-                    v = v
-                        .narrow(D::Minus1, v_seq_len - MAX_SEQ_LEN, MAX_SEQ_LEN)?
-                        .contiguous()?
-                }
-            }
-            cache[block_idx] = Some((k.clone(), v.clone()))
-        }
+        // first, stuff the query-sized key/value into the cache
+        kernels::reshape_and_cache(&k, &v, key_cache, value_cache, &batch_info.slot_mapping);
+
+        // then, extend key/value and fill them from cache
+        let k = unsafe {
+            kernels::unset_tensor(
+                (
+                    batch_info.gather_mapping.dims()[0],
+                    self.num_key_value_heads,
+                    self.head_dim,
+                ),
+                k.dtype(),
+                k.device(),
+            )
+        };
+        let v = unsafe { kernels::unset_tensor_like(&k) };
+        kernels::gather_cached_kv(&k, &v, key_cache, value_cache, &batch_info.gather_mapping);
 
         let k = self.repeat_kv(k)?;
         let v = self.repeat_kv(v)?;
@@ -190,9 +178,6 @@ impl CausalSelfAttention {
 
         let y = {
             // flash-attn expects (seq_len, nheads, head_dim)
-            let q = q.transpose(1, 2)?.squeeze(0)?;
-            let k = k.transpose(1, 2)?.squeeze(0)?;
-            let v = v.transpose(1, 2)?.squeeze(0)?;
             let softmax_scale = 1f32 / (self.head_dim as f32).sqrt();
             if trace {
                 println!("Q {q:?} K {k:?} V {v:?}");
@@ -209,15 +194,13 @@ impl CausalSelfAttention {
                 softmax_scale,
                 causal,
             )?
-            .transpose(0, 1)?
-            .unsqueeze(0)?
         };
 
         if trace {
             println!("y: {y:?}\n{y}");
         }
 
-        let y = y.transpose(1, 2)?.reshape(&[b_sz, seq_len, hidden_size])?;
+        let y = y.reshape(&[b_sz, seq_len, hidden_size])?;
         let y = self.o_proj.forward(&y)?;
         Ok(y)
     }
@@ -228,11 +211,11 @@ impl CausalSelfAttention {
             Ok(x)
         } else {
             let (b_sz, n_kv_head, seq_len, head_dim) = x.dims4()?;
-            let x = x
+            let _x = x
                 .unsqueeze(2)?
                 .expand((b_sz, n_kv_head, n_rep, seq_len, head_dim))?
                 .reshape((b_sz, n_kv_head * n_rep, seq_len, head_dim))?;
-            Ok(x)
+            todo!("dims are wrong")
         }
     }
 

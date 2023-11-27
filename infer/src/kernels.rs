@@ -309,18 +309,18 @@ fn gather_scatter_inner(
 }
 
 pub fn reshape_and_cache(
-    key: &Tensor,             // [num_tokens, num_heads, head_size]
-    value: &Tensor,           // [num_tokens, num_heads, head_size]
-    key_cache: &mut Tensor,   // [num_blocks, num_heads, head_size/x, block_size, x]
-    value_cache: &mut Tensor, // [num_blocks, num_heads, head_size, block_size]
-    slot_mapping: &Tensor,    // [num_tokens]
+    key: &Tensor,          // [num_tokens, num_heads, head_size]
+    value: &Tensor,        // [num_tokens, num_heads, head_size]
+    key_cache: &Tensor,    // out [num_blocks, num_heads, head_size/x, block_size, x]
+    value_cache: &Tensor,  // out [num_blocks, num_heads, head_size, block_size]
+    slot_mapping: &Tensor, // [num_tokens]
 ) {
     gather_scatter_inner(key, value, key_cache, value_cache, slot_mapping, 0);
 }
 
 pub fn gather_cached_kv(
-    key: &mut Tensor,      // [num_tokens, num_heads, head_size]
-    value: &mut Tensor,    // [num_tokens, num_heads, head_size]
+    key: &Tensor,          // out [num_tokens, num_heads, head_size]
+    value: &Tensor,        // out [num_tokens, num_heads, head_size]
     key_cache: &Tensor,    // [num_blocks, num_heads, head_size/x, block_size, x]
     value_cache: &Tensor,  // [num_blocks, num_heads, head_size, block_size]
     slot_mapping: &Tensor, // [num_tokens]
@@ -374,7 +374,7 @@ impl CustomOp1 for UnsetTensor {
     fn cpu_fwd(
         &self,
         storage: &CpuStorage,
-        layout: &Layout,
+        _layout: &Layout,
     ) -> candle::Result<(CpuStorage, Shape)> {
         let elts = self.shape.elem_count();
         let stor = unsafe {
@@ -394,7 +394,7 @@ impl CustomOp1 for UnsetTensor {
     fn cuda_fwd(
         &self,
         storage: &CudaStorage,
-        layout: &Layout,
+        _layout: &Layout,
     ) -> candle::Result<(CudaStorage, Shape)> {
         let elts = self.shape.elem_count();
         let device = storage.device();
@@ -421,4 +421,8 @@ pub unsafe fn unset_tensor<S: Into<Shape>>(shape: S, dtype: DType, device: &Devi
     }
     let z = Tensor::zeros((1, 2), dtype, device).unwrap();
     z.apply_op1(UnsetTensor { shape }).unwrap()
+}
+
+pub unsafe fn unset_tensor_like(t: &Tensor) -> Tensor {
+    unsafe { unset_tensor(t.shape(), t.dtype(), t.device()) }
 }

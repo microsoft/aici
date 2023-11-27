@@ -2,11 +2,10 @@
 
 use std::fmt::Debug;
 
-use anyhow::Result;
 use candle::Tensor;
 use serde::{Deserialize, Serialize};
 
-use crate::{blocks::BlockRef, config::SamplingParams, to_offsets, LogitsProcessor};
+use crate::{blocks::BlockRef, config::SamplingParams, LogitsProcessor};
 
 pub type Token = u32;
 pub type SeqId = u32;
@@ -148,58 +147,15 @@ pub struct SequenceGroup {
 
 #[derive(Debug)]
 pub struct BatchInfo {
-    pub tokens: Tensor,    // u32, [num_tokens]
-    pub positions: Tensor, // i64, [num_tokens]
-    pub seqlens_q: Tensor, // u32, [batch_size + 1]; points to tokens/positions
-    pub seqlens_k: Tensor, // u32, [batch_size + 1]; can go outside tokens/positions
+    pub tokens: Tensor,         // u32, [num_tokens]
+    pub positions: Tensor,      // i64, [num_tokens]
+    pub seqlens_q: Tensor,      // u32, [batch_size + 1]; points to tokens/positions
+    pub seqlens_k: Tensor,      // u32, [batch_size + 1]; can go outside tokens/positions
     pub gather_mapping: Tensor, // u32, [sum(context_len + prompt_len)]
-    pub slot_mapping: Tensor, // u32, [num_tokens]
+    pub slot_mapping: Tensor,   // u32, [num_tokens]
     pub max_seqlen_q: usize,
     pub max_seqlen_k: usize,
-}
-
-impl BatchInfo {
-    pub fn from_seqs<'a>(
-        seqs: impl Iterator<Item = &'a Sequence>,
-        device: &candle::Device,
-    ) -> Result<Self> {
-        let mut positions: Vec<i64> = Vec::new();
-        let mut tokens: Vec<Token> = Vec::new();
-
-        let mut seqlens_q = Vec::new();
-        let mut seqlens_k = Vec::new();
-
-        for seq in seqs {
-            let seq_len = seq.tokens.len();
-            let k_len = seq_len;
-            let q_len = match seq.step_type {
-                StepType::Prompt => seq_len,
-                StepType::Fixed(len) => len,
-                StepType::Gen => 1,
-            };
-            let off = k_len - q_len;
-            for idx in off..off + q_len {
-                positions.push(idx as i64);
-                tokens.push(seq.tokens[idx]);
-            }
-            seqlens_q.push(q_len);
-            seqlens_k.push(k_len);
-        }
-
-        let (max_seqlen_q, seqlens_q) = to_offsets(&seqlens_q, device);
-        let (max_seqlen_k, seqlens_k) = to_offsets(&seqlens_k, device);
-
-        let positions = Tensor::new(positions.as_slice(), device)?;
-        let tokens = Tensor::new(tokens.as_slice(), device)?;
-        Ok(BatchInfo {
-            tokens,
-            positions,
-            seqlens_q,
-            seqlens_k,
-            max_seqlen_q,
-            max_seqlen_k,
-        })
-    }
+    pub kv_cache: Vec<(Tensor, Tensor)>,
 }
 
 impl SequenceGroup {

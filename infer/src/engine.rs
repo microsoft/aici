@@ -17,6 +17,7 @@ use crate::{
     },
     scheduler::SchedulerOutputs,
     seq::{FinishReason, RequestOutput, SchedulingPhase, SequenceGroup, Token},
+    to_offsets,
 };
 use crate::{llama, LogitsProcessor};
 use crate::{
@@ -99,6 +100,7 @@ pub struct RllmEngine {
     seq_id: SeqId,
     cache: Option<llama::Cache>,
     step_no: usize,
+    cache_engine: CacheEngine,
     #[allow(dead_code)]
     pub alt: usize,
     pub device: Device,
@@ -178,7 +180,9 @@ impl RllmEngine {
 
         log::info!("model loaded");
 
-        let scheduler = Scheduler::new(Arc::new(rllm_config));
+        let rllm_config = Arc::new(rllm_config);
+        let scheduler = Scheduler::new(rllm_config.clone());
+        let cache_engine = CacheEngine::new(rllm_config.clone());
 
         Ok(RllmEngine {
             tokenizer,
@@ -190,6 +194,7 @@ impl RllmEngine {
             eos_token_id,
             alt: args.alt,
             scheduler,
+            cache_engine,
         })
     }
 
@@ -264,18 +269,72 @@ impl RllmEngine {
             return Ok(Vec::new());
         }
 
-        let seqs = sched_out
-            .next_seq_groups
-            .iter()
-            .flat_map(|sg| sg.get_seqs(Some(SchedulingPhase::Running)));
-
-        let info = BatchInfo::from_seqs(seqs, &self.device)?;
+        let info = self.build_batch_info(sched_out)?;
 
         log::trace!("batch_info #{}: {:?}", self.step_no, info);
         let logits = self.model.forward(&info)?;
         log::trace!("logits: {:?}", logits);
 
         self.generate_outputs(&logits, sched_out)
+    }
+
+    fn build_batch_info(&self, sched_out: &mut SchedulerOutputs) -> Result<BatchInfo> {
+        let mut positions: Vec<i64> = Vec::new();
+        let mut tokens: Vec<Token> = Vec::new();
+        let mut seqlens_q = Vec::new();
+        let mut seqlens_k = Vec::new();
+        let mut gather_mapping: Vec<u32> = Vec::new();
+        let mut slot_mapping: Vec<u32> = Vec::new();
+
+        for sg in sched_out.next_seq_groups.iter_mut() {
+            for seq in sg.seqs.iter_mut() {
+                if seq.sched_phase != SchedulingPhase::Running {
+                    continue;
+                }
+
+                let seq_len = seq.tokens.len();
+                let k_len = seq_len;
+                let q_len = match seq.step_type {
+                    StepType::Prompt => seq_len,
+                    StepType::Fixed(len) => len,
+                    StepType::Gen => 1,
+                };
+                let off = k_len - q_len;
+                for idx in off..off + q_len {
+                    positions.push(idx as i64);
+                    tokens.push(seq.tokens[idx]);
+                    slot_mapping.push(seq.get_gpu_slot(idx) as u32);
+                }
+                for idx in 0..k_len {
+                    gather_mapping.push(seq.get_gpu_slot(idx) as u32);
+                }
+                seqlens_q.push(q_len);
+                seqlens_k.push(k_len);
+            }
+        }
+
+        let device = &self.device;
+        let (max_seqlen_q, seqlens_q) = to_offsets(&seqlens_q, device);
+        let (max_seqlen_k, seqlens_k) = to_offsets(&seqlens_k, device);
+
+        let positions = Tensor::new(positions.as_slice(), device)?;
+        let tokens = Tensor::new(tokens.as_slice(), device)?;
+        let slot_mapping = Tensor::new(slot_mapping.as_slice(), device)?;
+        let gather_mapping = Tensor::new(gather_mapping.as_slice(), device)?;
+
+        let kv_cache = self.cache_engine.get_gpu_cache();
+
+        Ok(BatchInfo {
+            tokens,
+            positions,
+            seqlens_q,
+            seqlens_k,
+            slot_mapping,
+            gather_mapping,
+            max_seqlen_q,
+            max_seqlen_k,
+            kv_cache,
+        })
     }
 
     pub fn step(&mut self) -> Result<Vec<RequestOutput>> {

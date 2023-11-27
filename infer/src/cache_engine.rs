@@ -59,6 +59,10 @@ impl CacheEngine {
         }
     }
 
+    pub fn get_gpu_cache(&self) -> Vec<KVCache> {
+        self.gpu_cache.clone()
+    }
+
     pub fn swap_in(&self, src_to_dst: HashMap<usize, usize>) {
         self.swap(&self.cpu_cache, &self.gpu_cache, &src_to_dst);
     }
