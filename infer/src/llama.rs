@@ -3,7 +3,6 @@
 use candle::{DType, Device, IndexOp, Result, Tensor, D};
 use candle_nn::{linear_no_bias, Embedding, Linear, Module, RmsNorm, VarBuilder};
 use serde::Deserialize;
-use std::sync::{Arc, Mutex};
 
 use crate::{config::ModelConfig, get_trace, kernels, seq::BatchInfo};
 
@@ -62,9 +61,7 @@ impl ModelConfig {
 }
 
 #[derive(Clone)]
-pub struct Cache {
-    #[allow(clippy::type_complexity)]
-    kvs: Arc<Mutex<Vec<Option<(Tensor, Tensor)>>>>,
+struct Cache {
     cos_sin: Tensor,
 }
 
@@ -89,15 +86,7 @@ impl Cache {
         let cos = idx_theta.cos()?.to_dtype(dtype)?;
         let sin = idx_theta.sin()?.to_dtype(dtype)?;
         let cos_sin = Tensor::cat(&[&cos, &sin], D::Minus1)?.contiguous()?;
-        Ok(Self {
-            kvs: Arc::new(Mutex::new(vec![None; config.num_hidden_layers])),
-            cos_sin,
-        })
-    }
-
-    pub fn clear(&self) {
-        let mut kvs = self.kvs.lock().unwrap();
-        *kvs = vec![None; kvs.len()];
+        Ok(Self { cos_sin })
     }
 }
 
@@ -330,7 +319,8 @@ impl Llama {
         logits.to_dtype(DType::F32)
     }
 
-    pub fn load(vb: VarBuilder, cache: &Cache, cfg: &ModelConfig) -> Result<Self> {
+    pub fn load(vb: VarBuilder, cfg: &ModelConfig) -> Result<Self> {
+        let cache = Cache::new(cfg.get_dtype(), cfg, vb.device())?;
         let wte = embedding(cfg, vb.pp("model.embed_tokens"))?;
         let lm_head = linear_no_bias(cfg.hidden_size, cfg.vocab_size, vb.pp("lm_head"))?;
         let ln_f = candle_nn::rms_norm(
@@ -339,7 +329,7 @@ impl Llama {
             vb.pp("model.norm"),
         )?;
         let blocks: Vec<_> = (0..cfg.num_hidden_layers)
-            .map(|i| Block::load(vb.pp(&format!("model.layers.{i}")), cache, cfg).unwrap())
+            .map(|i| Block::load(vb.pp(&format!("model.layers.{i}")), &cache, cfg).unwrap())
             .collect();
 
         Ok(Self {

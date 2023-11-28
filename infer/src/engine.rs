@@ -10,6 +10,7 @@ use tokenizers::Tokenizer;
 
 use candle_transformers::models::llama as llama_ref;
 
+use crate::LogitsProcessor;
 use crate::{
     cache_engine::CacheEngine,
     config::{
@@ -19,7 +20,6 @@ use crate::{
     seq::{FinishReason, RequestOutput, SchedulingPhase, SequenceGroup, Token},
     to_offsets,
 };
-use crate::{llama, LogitsProcessor};
 use crate::{
     llama::{Llama, LlamaConfig},
     LoaderArgs,
@@ -98,7 +98,6 @@ pub struct RllmEngine {
     pub tokenizer: Tokenizer,
     pub model: Model,
     seq_id: SeqId,
-    cache: Option<llama::Cache>,
     step_no: usize,
     cache_engine: CacheEngine,
     #[allow(dead_code)]
@@ -163,7 +162,7 @@ impl RllmEngine {
             .token_to_id("</s>")
             .ok_or(anyhow!("</s> not found"))?;
 
-        let (model, cache) = if args.use_reference {
+        let model = if args.use_reference {
             let config: llama_ref::LlamaConfig =
                 serde_json::from_slice(&repo.read("config.json")?)?;
             let use_flash_attn = true;
@@ -171,11 +170,10 @@ impl RllmEngine {
             let use_kv_cache = true;
             let cache = llama_ref::Cache::new(use_kv_cache, dtype, &config, &device)?;
             let llama = llama_ref::Llama::load(vb, &cache, &config)?;
-            (Model::Reference(llama), None)
+            Model::Reference(llama)
         } else {
-            let cache = llama::Cache::new(dtype, &model_config, &device)?;
-            let llama = Llama::load(vb, &cache, &model_config)?;
-            (Model::Llama(llama), Some(cache))
+            let llama = Llama::load(vb, &model_config)?;
+            Model::Llama(llama)
         };
 
         log::info!("model loaded");
@@ -187,7 +185,6 @@ impl RllmEngine {
         Ok(RllmEngine {
             tokenizer,
             model,
-            cache,
             seq_id: 1,
             step_no: 0,
             device,
@@ -378,8 +375,6 @@ impl RllmEngine {
     }
 
     pub fn generate(&mut self, prompt: &str, sampling_params: SamplingParams) -> Result<String> {
-        self.cache.as_ref().map(|x| x.clear());
-
         let req_id = format!("R{}", self.step_no);
         self.add_request(req_id, prompt, sampling_params)?;
 
