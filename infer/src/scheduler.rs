@@ -56,7 +56,7 @@ impl SchedulerOutputs {
 pub struct Scheduler {
     pub(crate) config: Arc<RllmConfig>,
     prompt_limit: usize,
-    block_manager: BlockSpaceManager,
+    pub(crate) block_manager: BlockSpaceManager,
     freed_seq_ids: RefCell<Vec<SeqId>>,
 
     /// These have no KV cache stored anywhere. Each sequence group has only 1 sequence.

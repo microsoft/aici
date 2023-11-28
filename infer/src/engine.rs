@@ -5,6 +5,7 @@ use hf_hub::{
     api::sync::{Api, ApiRepo},
     RepoType,
 };
+use serde::{Deserialize, Serialize};
 use std::{collections::HashSet, fmt::Display, path::PathBuf, sync::Arc, time::Instant};
 use tokenizers::Tokenizer;
 
@@ -94,17 +95,23 @@ impl Model {
     }
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Stats {
+    pub free_gpu_blocks: usize,
+    pub free_cpu_blocks: usize,
+}
+
 pub struct RllmEngine {
     pub tokenizer: Tokenizer,
     pub model: Model,
     seq_id: SeqId,
     step_no: usize,
-    cache_engine: CacheEngine,
     #[allow(dead_code)]
     pub alt: usize,
     pub device: Device,
     pub eos_token_id: u32,
 
+    cache_engine: CacheEngine,
     scheduler: Scheduler,
 }
 
@@ -393,5 +400,12 @@ impl RllmEngine {
         }
 
         Ok(self.decode_seq(&outputs)?)
+    }
+
+    pub fn get_stats(&self) -> Stats {
+        Stats {
+            free_gpu_blocks: self.scheduler.block_manager.get_num_free_gpu_blocks(),
+            free_cpu_blocks: self.scheduler.block_manager.get_num_free_cpu_blocks(),
+        }
     }
 }

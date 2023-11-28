@@ -46,6 +46,8 @@ const QUERIES: &'static [(&'static str, &'static str)] = &[
 fn test_infer1() {
     let mut ctx = Ctx::new();
 
+    let stats0 = ctx.infer.get_stats();
+
     // make sure we get deterministic results
     expect(&mut ctx, QUERIES[0].0, QUERIES[0].1);
     expect(&mut ctx, QUERIES[0].0, QUERIES[0].1);
@@ -59,4 +61,8 @@ fn test_infer1() {
     for idx in 0..QUERIES.len() {
         expect(&mut ctx, QUERIES[idx].0, QUERIES[idx].1);
     }
+
+    let stats = ctx.infer.get_stats();
+    assert!(stats0.free_gpu_blocks == stats.free_gpu_blocks);
+    assert!(stats0.free_cpu_blocks == stats.free_cpu_blocks);
 }
