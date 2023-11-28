@@ -1,5 +1,3 @@
-#![allow(dead_code)]
-
 use std::fmt::Debug;
 
 use candle::Tensor;
@@ -93,6 +91,7 @@ impl Sequence {
         block_index * self.block_size + block_offset
     }
 
+    #[allow(dead_code)]
     pub(crate) fn fork_as(&self, seq_id: SeqId) -> Self {
         let mut seq = Self {
             seq_id,
@@ -200,18 +199,14 @@ impl SequenceGroup {
         }
     }
 
-    /// Retrieves finished sequences.
-    fn get_finished_seqs(&self) -> Vec<&Sequence> {
-        self.seqs.iter().filter(|seq| seq.is_finished()).collect()
-    }
-
     /// Returns the number of sequences, optionally filtered by status.
     pub fn num_seqs(&self, status: Option<SchedulingPhase>) -> usize {
         self.get_seqs(status).len()
     }
 
     /// Adds a sequence.
-    fn add(&mut self, seq: Sequence) {
+    #[allow(dead_code)]
+    pub(crate) fn add(&mut self, seq: Sequence) {
         self.seqs.push(seq)
     }
 

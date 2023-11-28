@@ -1,7 +1,5 @@
 // based on https://github.com/vllm-project/vllm/blob/b9fe4616f98b77b4b9458bce203aa6544cb31ef2/vllm/worker/cache_engine.py
 
-#![allow(dead_code)]
-
 use std::collections::HashMap;
 use std::sync::Arc;
 
@@ -25,8 +23,6 @@ impl CudaEvent {
 }
 
 pub struct CacheEngine {
-    config: Arc<RllmConfig>,
-
     gpu_cache: Vec<KVCache>,
     cpu_cache: Vec<KVCache>,
 
@@ -50,7 +46,6 @@ impl CacheEngine {
         let events = (0..num_layers).map(|_| CudaEvent::new()).collect();
 
         Self {
-            config,
             gpu_cache,
             cpu_cache,
             cache_stream,
@@ -59,16 +54,20 @@ impl CacheEngine {
         }
     }
 
+    pub fn wait_for_copy(&self) {
+        self.cuda_device.wait_for(&self.cache_stream).unwrap();
+    }
+
     pub fn get_gpu_cache(&self) -> Vec<KVCache> {
         self.gpu_cache.clone()
     }
 
-    pub fn swap_in(&self, src_to_dst: HashMap<usize, usize>) {
-        self.swap(&self.cpu_cache, &self.gpu_cache, &src_to_dst);
+    pub fn swap_in(&self, src_to_dst: &HashMap<usize, usize>) {
+        self.swap(&self.cpu_cache, &self.gpu_cache, src_to_dst);
     }
 
-    pub fn swap_out(&self, src_to_dst: HashMap<usize, usize>) {
-        self.swap(&self.gpu_cache, &self.cpu_cache, &src_to_dst);
+    pub fn swap_out(&self, src_to_dst: &HashMap<usize, usize>) {
+        self.swap(&self.gpu_cache, &self.cpu_cache, src_to_dst);
     }
 
     fn allocate_caches(config: &RllmConfig) -> (Vec<KVCache>, Vec<KVCache>) {
@@ -132,7 +131,7 @@ impl CacheEngine {
         }
     }
 
-    pub fn copy(&self, src_to_dsts: HashMap<usize, Vec<usize>>) {
+    pub fn copy(&self, src_to_dsts: &HashMap<usize, Vec<usize>>) {
         let mut key_caches: Vec<_> = self.gpu_cache.iter().map(|(key, _)| key).collect();
         let mut value_caches: Vec<_> = self.gpu_cache.iter().map(|(_, value)| value).collect();
         kernels::copy_blocks(&mut key_caches, &mut value_caches, &src_to_dsts);

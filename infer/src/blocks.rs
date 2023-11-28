@@ -1,5 +1,3 @@
-#![allow(dead_code)]
-
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use std::vec::Vec;
@@ -17,20 +15,12 @@ pub enum BlockLocation {
 /// Represents the state of a block in the KV cache.
 #[derive(Debug)]
 pub struct PhysicalTokenBlock {
-    device: BlockLocation,
-    block_number: usize,
-    block_size: usize,
     ref_count: usize,
 }
 
 impl PhysicalTokenBlock {
-    pub fn new(device: BlockLocation, block_number: usize, block_size: usize) -> Self {
-        Self {
-            device,
-            block_number,
-            block_size,
-            ref_count: 0,
-        }
+    pub fn new(_device: BlockLocation, _block_number: usize, _block_size: usize) -> Self {
+        Self { ref_count: 0 }
     }
 }
 
@@ -40,9 +30,6 @@ impl PhysicalTokenBlock {
 /// requested. When a block is freed, its reference count is decremented. If
 /// the reference count becomes zero, the block is added back to the free list.
 struct BlockAllocator {
-    device: BlockLocation,
-    block_size: usize,
-    num_blocks: usize,
     free_list: Vec<usize>,
     all_blocks: Vec<PhysicalTokenBlock>,
 }
@@ -94,9 +81,6 @@ impl BlockAllocator {
             .map(|i| PhysicalTokenBlock::new(device, i, block_size))
             .collect();
         Self {
-            device,
-            block_size,
-            num_blocks,
             all_blocks,
             free_list: (0..num_blocks).collect(),
         }
@@ -212,6 +196,7 @@ impl BlockSpaceManager {
         self.can_alloc_gpu(num_seqs)
     }
 
+    #[allow(dead_code)]
     pub fn trim_physical_blocks(&mut self, seq: &mut Sequence) {
         let num_logical = self.num_logical_blocks(seq);
         if seq.gpu_blocks.len() > num_logical {
@@ -342,6 +327,7 @@ impl BlockSpaceManager {
         self.cpu_allocator.lock().unwrap().get_num_free_blocks()
     }
 
+    #[allow(dead_code)]
     pub fn get_gpu_blocks(&self, seq: &Sequence) -> Vec<usize> {
         assert!(seq.gpu_blocks.len() > 0);
         assert!(seq.sched_phase == SchedulingPhase::Running);

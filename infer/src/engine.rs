@@ -269,6 +269,24 @@ impl RllmEngine {
             return Ok(Vec::new());
         }
 
+        let mut issued_cache_op = false;
+        if sched_out.blocks_to_swap_in.len() > 0 {
+            self.cache_engine.swap_in(&sched_out.blocks_to_swap_in);
+            issued_cache_op = true;
+        }
+        if sched_out.blocks_to_swap_out.len() > 0 {
+            self.cache_engine.swap_out(&sched_out.blocks_to_swap_out);
+            issued_cache_op = true;
+        }
+        if sched_out.blocks_to_copy.len() > 0 {
+            self.cache_engine.copy(&sched_out.blocks_to_copy);
+            issued_cache_op = true;
+        }
+
+        if issued_cache_op {
+            self.cache_engine.wait_for_copy();
+        }
+
         let info = self.build_batch_info(sched_out)?;
 
         log::trace!("batch_info #{}: {:?}", self.step_no, info);
