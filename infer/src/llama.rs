@@ -6,8 +6,6 @@ use serde::Deserialize;
 
 use crate::{config::ModelConfig, get_trace, kernels, seq::BatchInfo};
 
-pub const MAX_SEQ_LEN: usize = 4096;
-
 #[derive(Deserialize)]
 pub struct LlamaConfig {
     pub hidden_size: usize,
@@ -79,9 +77,10 @@ impl Cache {
             })
             .collect();
         let theta = Tensor::new(theta.as_slice(), device)?;
-        let idx_theta = Tensor::arange(0, MAX_SEQ_LEN as u32, device)?
+        let len = config.max_sequence_length;
+        let idx_theta = Tensor::arange(0u32, len as u32, device)?
             .to_dtype(DType::F32)?
-            .reshape((MAX_SEQ_LEN, 1))?
+            .reshape((len, 1))?
             .matmul(&theta.reshape((1, theta.elem_count()))?)?;
         let cos = idx_theta.cos()?.to_dtype(dtype)?;
         let sin = idx_theta.sin()?.to_dtype(dtype)?;

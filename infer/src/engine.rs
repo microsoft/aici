@@ -301,6 +301,8 @@ impl RllmEngine {
         let mut gather_mapping: Vec<u32> = Vec::new();
         let mut slot_mapping: Vec<u32> = Vec::new();
 
+        let max_seq = self.scheduler.config.model.max_sequence_length;
+
         for sg in sched_out.next_seq_groups.iter_mut() {
             for seq in sg.seqs.iter_mut() {
                 if seq.sched_phase != SchedulingPhase::Running {
@@ -316,6 +318,7 @@ impl RllmEngine {
                 };
                 let off = k_len - q_len;
                 for idx in off..off + q_len {
+                    assert!(idx < max_seq);
                     positions.push(idx as i64);
                     tokens.push(seq.tokens[idx]);
                     slot_mapping.push(seq.get_gpu_slot(idx) as u32);
