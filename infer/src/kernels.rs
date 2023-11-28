@@ -416,11 +416,17 @@ impl CustomOp1 for UnsetTensor {
 
 pub unsafe fn unset_tensor<S: Into<Shape>>(shape: S, dtype: DType, device: &Device) -> Tensor {
     let shape: Shape = shape.into();
-    if shape.elem_count() < 10000 {
-        return Tensor::zeros(shape, dtype, device).unwrap();
+    let stress = false;
+
+    if stress && device.is_cuda() {
+        (Tensor::zeros(shape, dtype, device).unwrap() / 0.0).unwrap()
+    } else {
+        if shape.elem_count() < 10000 {
+            return Tensor::zeros(shape, dtype, device).unwrap();
+        }
+        let z = Tensor::zeros((1, 2), dtype, device).unwrap();
+        z.apply_op1(UnsetTensor { shape }).unwrap()
     }
-    let z = Tensor::zeros((1, 2), dtype, device).unwrap();
-    z.apply_op1(UnsetTensor { shape }).unwrap()
 }
 
 pub unsafe fn unset_tensor_like(t: &Tensor) -> Tensor {

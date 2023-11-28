@@ -82,7 +82,7 @@ impl BlockAllocator {
             .collect();
         Self {
             all_blocks,
-            free_list: (0..num_blocks).collect(),
+            free_list: (0..num_blocks).rev().collect(),
         }
     }
 

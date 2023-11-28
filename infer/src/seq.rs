@@ -138,13 +138,13 @@ impl Sequence {
 /// A group of sequences that are generated from the same prompt.
 pub struct SequenceGroup {
     pub request_id: String,
+    pub prompt: String,
     pub seqs: Vec<Sequence>,
     pub sampling_params: SamplingParams,
     pub arrival_time: std::time::Instant,
     pub logits_processor: LogitsProcessor,
 }
 
-#[derive(Debug)]
 pub struct BatchInfo {
     pub tokens: Tensor,         // u32, [num_tokens]
     pub positions: Tensor,      // i64, [num_tokens]
@@ -155,6 +155,21 @@ pub struct BatchInfo {
     pub max_seqlen_q: usize,
     pub max_seqlen_k: usize,
     pub kv_cache: Vec<(Tensor, Tensor)>,
+}
+
+impl Debug for BatchInfo {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("BatchInfo")
+            .field("tokens", &self.tokens)
+            .field("positions", &self.positions)
+            .field("seqlens_q", &self.seqlens_q)
+            .field("seqlens_k", &self.seqlens_k)
+            // .field("gather_mapping", &self.gather_mapping)
+            // .field("slot_mapping", &self.slot_mapping)
+            .field("max_seqlen_q", &self.max_seqlen_q)
+            .field("max_seqlen_k", &self.max_seqlen_k)
+            .finish()
+    }
 }
 
 impl SequenceGroup {

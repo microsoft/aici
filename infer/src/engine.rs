@@ -11,7 +11,6 @@ use tokenizers::Tokenizer;
 
 use candle_transformers::models::llama as llama_ref;
 
-use crate::LogitsProcessor;
 use crate::{
     cache_engine::CacheEngine,
     config::{
@@ -29,6 +28,7 @@ use crate::{
     scheduler::Scheduler,
     seq::{BatchInfo, SeqId, Sequence, StepType},
 };
+use crate::{seq::SeqOutput, LogitsProcessor};
 
 enum Repo {
     Api(ApiRepo),
@@ -101,11 +101,19 @@ pub struct Stats {
     pub free_cpu_blocks: usize,
 }
 
+impl Stats {
+    pub fn same_as(&self, other: &Self) -> bool {
+        self.free_gpu_blocks == other.free_gpu_blocks
+            && self.free_cpu_blocks == other.free_cpu_blocks
+    }
+}
+
 pub struct RllmEngine {
     pub tokenizer: Tokenizer,
     pub model: Model,
     seq_id: SeqId,
     step_no: usize,
+    req_id_cnt: usize,
     #[allow(dead_code)]
     pub alt: usize,
     pub device: Device,
@@ -194,12 +202,18 @@ impl RllmEngine {
             model,
             seq_id: 1,
             step_no: 0,
+            req_id_cnt: 0,
             device,
             eos_token_id,
             alt: args.alt,
             scheduler,
             cache_engine,
         })
+    }
+
+    pub fn gen_req_id(&mut self) -> String {
+        self.req_id_cnt += 1;
+        format!("_{}", self.req_id_cnt)
     }
 
     pub fn add_request(
@@ -220,6 +234,7 @@ impl RllmEngine {
         let logits_processor = LogitsProcessor::new(&sampling_params);
         let sg = SequenceGroup {
             request_id,
+            prompt: prompt.to_string(),
             seqs: vec![seq],
             sampling_params,
             arrival_time: Instant::now(),
@@ -251,6 +266,18 @@ impl RllmEngine {
                     seq.tokens.push(next_token);
                     seq.step_type = StepType::Gen;
                     idx += 1;
+
+                    let tok = self
+                        .tokenizer
+                        .decode(&[next_token], true)
+                        .unwrap_or("???".to_string());
+                    log::trace!(
+                        "seq {}/{}: {} {:?}",
+                        sg.request_id,
+                        seq.seq_id,
+                        next_token,
+                        tok
+                    );
 
                     if next_token == self.eos_token_id {
                         self.scheduler.finish_seq(seq, FinishReason::FoundEos);
@@ -294,6 +321,9 @@ impl RllmEngine {
         let info = self.build_batch_info(sched_out)?;
 
         log::trace!("batch_info #{}: {:?}", self.step_no, info);
+        log::trace!("{}", info.positions);
+        log::trace!("{}", info.gather_mapping);
+        log::trace!("{}", info.slot_mapping);
         let logits = self.model.forward(&info)?;
         log::trace!("logits: {:?}", logits);
 
@@ -342,6 +372,7 @@ impl RllmEngine {
         let (max_seqlen_q, seqlens_q) = to_offsets(&seqlens_q, device);
         let (max_seqlen_k, seqlens_k) = to_offsets(&seqlens_k, device);
 
+        // TODO positions, tokens should be padded to 8? see worker.py, search for multiple_of=8
         let positions = Tensor::new(positions.as_slice(), device)?;
         let tokens = Tensor::new(tokens.as_slice(), device)?;
         let slot_mapping = Tensor::new(slot_mapping.as_slice(), device)?;
@@ -362,6 +393,14 @@ impl RllmEngine {
         })
     }
 
+    pub fn seq_output_text(&self, seq_output: &SeqOutput) -> Result<String> {
+        let generated = self
+            .tokenizer
+            .decode(&seq_output.output_tokens, true)
+            .map_err(anyhow::Error::msg)?;
+        Ok(generated)
+    }
+
     pub fn step(&mut self) -> Result<Vec<RequestOutput>> {
         self.step_no += 1;
         let mut sched_out = self.scheduler.schedule();
@@ -373,10 +412,15 @@ impl RllmEngine {
         let outputs = self.run_model(&mut sched_out);
         // we run step_finished() regardless if model failed
         self.scheduler.step_finished(sched_out);
-        Ok(outputs?)
+
+        let outputs = outputs?;
+        if outputs.is_empty() {
+            assert!(!self.scheduler.has_unfinished_seqs());
+        }
+        Ok(outputs)
     }
 
-    pub fn decode_seq(&self, tokens: &Vec<Token>) -> Result<String> {
+    fn decode_seq(&self, tokens: &Vec<Token>) -> Result<String> {
         let generated = self
             .tokenizer
             .decode(tokens, true)
@@ -385,7 +429,7 @@ impl RllmEngine {
     }
 
     pub fn generate(&mut self, prompt: &str, sampling_params: SamplingParams) -> Result<String> {
-        let req_id = format!("R{}", self.step_no);
+        let req_id = self.gen_req_id();
         self.add_request(req_id, prompt, sampling_params)?;
 
         let mut outputs = Vec::new();

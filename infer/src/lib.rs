@@ -8,6 +8,7 @@ pub mod seq;
 mod blocks;
 mod cache_engine;
 pub mod config;
+pub mod util;
 mod engine;
 mod scheduler;
 

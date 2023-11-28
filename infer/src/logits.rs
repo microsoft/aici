@@ -27,14 +27,22 @@ impl LogitsProcessor {
     }
 
     fn sample_argmax(&mut self, logits: Tensor) -> Result<u32> {
-        let logits_v: Vec<f32> = logits.to_vec1()?;
-        let next_token = logits_v
-            .iter()
-            .enumerate()
-            .max_by(|(_, u), (_, v)| u.total_cmp(v))
-            .map(|(i, _)| i as u32)
-            .unwrap();
-        Ok(next_token)
+        let mut logits_v: Vec<_> = logits.to_vec1::<f32>()?.into_iter().enumerate().collect();
+        logits_v.sort_by(|u, v| v.1.total_cmp(&u.1));
+        log::trace!(
+            "argmax: {:?} {:?} {:?}",
+            logits_v[0],
+            logits_v[1],
+            logits_v[2]
+        );
+        Ok(logits_v[0].0 as u32)
+        // let next_token = logits_v
+        //     .iter()
+        //     .enumerate()
+        //     .max_by(|(_, u), (_, v)| u.total_cmp(v))
+        //     .map(|(i, _)| i as u32)
+        //     .unwrap();
+        // Ok(next_token)
     }
 
     fn sample_multinomial(&mut self, prs: &Vec<f32>) -> Result<u32> {

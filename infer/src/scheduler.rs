@@ -8,6 +8,7 @@ use log::warn;
 use crate::blocks::BlockSpaceManager;
 use crate::config::RllmConfig;
 use crate::seq::{FinishReason, SchedulingPhase, SeqId, Sequence, SequenceGroup};
+use crate::util::limit_str;
 
 /// Preemption modes.
 #[derive(Debug, Clone, Copy)]
@@ -93,7 +94,11 @@ impl Scheduler {
     }
 
     pub fn add_seq_group(&mut self, seq_group: SequenceGroup) {
-        log::debug!("add_seq_group: {}", seq_group.request_id);
+        log::debug!(
+            "add_seq_group: {} {:?}",
+            seq_group.request_id,
+            limit_str(&seq_group.prompt, 200)
+        );
         self.waiting.push(seq_group);
     }
 
@@ -166,6 +171,7 @@ impl Scheduler {
 
     fn step_start_waiting(&mut self, outputs: &mut SchedulerOutputs) {
         log::trace!("step_start_waiting ({} seqs)", self.waiting.len());
+        Self::sort_by_priority(&mut self.waiting);
 
         let mut num_curr_seqs = self
             .on_gpu
