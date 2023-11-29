@@ -96,30 +96,35 @@ def main():
         ]
     }
 
+    notes = "The patient should take some tylenol in the evening and aspirin in the morning. They should also take something for indigestion.\n"
+    notes = "Start doctor note:\n" + notes + "\nEnd doctor note.\n"
+
     arg = {
         "steps": [
             ast.fixed("[INST] "),
+            # there is currently a bug going back to the first token, so we label the stuff after [INST] instead
             ast.label(
                 "start",
                 ast.fixed(
-                    "List 5 names of cities in Poland. Use <city>City Name</city> syntax. Say DONE when done. [/INST]\n"
+                    "List drug names in the following doctor's notes. Use <drug>Drug Name</drug> syntax. Say DONE when done. [/INST]\n"
+                    + notes
                 ),
             ),
             ast.gen(
                 max_tokens=100,
                 stop_at="DONE",
                 set={
-                    "cities": ast.e_extract_all(
-                        r"<city>([^<]*</city>)", ast.e_current()
+                    "drugs": ast.e_extract_all(
+                        r"<drug>([^<]*</drug>)", ast.e_current()
                     )
                 },
             ),
-            ast.fixed("Pick a specific capital city and say something about it. "
-                        "Use <city>City Name</city> syntax when referring to city names. [/INST]\n",
-                        # backtrack to start, to erase info about 'Poland'
+            ast.fixed("For each drug in the following doctor's notes give the time to take it. "
+                        "Use <drug>Drug Name</drug> syntax when referring to any drugs. [/INST]\n"
+                        + notes,
                         following="start"),
-            ast.gen(max_tokens=20, inner={
-                "<city>": ast.e_var("cities"),
+            ast.gen(max_tokens=100, inner={
+                "<drug>": ast.e_var("drugs"),
             })
         ]
     }

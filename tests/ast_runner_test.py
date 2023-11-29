@@ -247,6 +247,7 @@ def test_inner_1():
         "",
         [
             ast.fixed("[INST] "),
+            # there is currently a bug going back to the first token, so we label the stuff after [INST] instead
             ast.label(
                 "start",
                 ast.fixed(
