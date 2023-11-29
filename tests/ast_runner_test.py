@@ -241,6 +241,25 @@ def test_backtrack_1():
             ],
         )
 
+
+def test_backtrack_2():
+    expect(
+        "<...>Foo\nZzzzz\nQux\nMux\nDONE",
+        "",
+        [
+            ast.fixed("Please remember the following items:\nFoo\nZzzzz"),
+            ast.label("l", ast.fixed("\nBar\nBaz")),
+            ast.fixed("\nPlease repeat the list, say DONE when done:\n"),
+            ast.gen(max_tokens=20, stop_at="DONE", set_var="x"),
+            ast.fixed(
+                "\nQux\nMux\nPlease repeat the list, say DONE when done:\n",
+                following="l",
+            ),
+            ast.gen(max_tokens=20, stop_at="DONE", set_var="y"),
+        ],
+    )
+
+
 def test_inner_1():
     expect(
         "<...><city>Warsaw</city> is the capital city of Poland and is known for its rich history, cultural land",
@@ -263,15 +282,21 @@ def test_inner_1():
                     )
                 },
             ),
-            ast.fixed("Pick a specific capital city and say something about it. "
-                        "Use <city>City Name</city> syntax when referring to city names. [/INST]\n",
-                        # backtrack to start, to erase info about 'Poland'
-                        following="start"),
-            ast.gen(max_tokens=20, inner={
-                "<city>": ast.e_var("cities"),
-            })
-        ]
+            ast.fixed(
+                "Pick a specific capital city and say something about it. "
+                "Use <city>City Name</city> syntax when referring to city names. [/INST]\n",
+                # backtrack to start, to erase info about 'Poland'
+                following="start",
+            ),
+            ast.gen(
+                max_tokens=20,
+                inner={
+                    "<city>": ast.e_var("cities"),
+                },
+            ),
+        ],
     )
+
 
 def test_wait_1():
     expect(

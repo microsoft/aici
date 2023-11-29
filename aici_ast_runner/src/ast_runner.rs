@@ -1061,7 +1061,15 @@ impl Runner {
                     // lidx is index of the first token with the label
                     // we want to pop that token and everything that follows
                     // and one more token that will be generated in this (useless) model pass
-                    let backtrack = (self.ctx.tokens.len() + 1 - lidx.unwrap()) as u32 + 1;
+                    let backtrack = (self.ctx.tokens.len() - lidx.unwrap()) as u32 + 1;
+
+                    let t0 = self.ctx.tokens.iter().map(|t| t.id).collect::<Vec<_>>();
+                    wprintln!(
+                        "slice: {t0:?} -> {:?} + {:?}",
+                        &t0[..lidx.unwrap()],
+                        tokens[0]
+                    );
+
                     return MidProcessResult::Splice {
                         backtrack,
                         ff_tokens: tokens[0].clone(),

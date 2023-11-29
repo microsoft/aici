@@ -129,9 +129,10 @@ def install(runner: AiciRunner):
                 assert seq is parent
                 seq.backtrack(backtrack)
                 block_manager.trim_physical_blocks(seq)
-                toks = []
-            else:
-                toks = [seq.data.output_token_ids[-1]]
+                assert ff
+                t = ff.pop(0)
+                seq.append_token_id(t, {t: 0.0})
+            toks = [seq.data.output_token_ids[-1]]
             if ff:
                 # print("FF", seq.seq_id, ff, resp)
                 seq.pending_ff_tokens = ff.copy()
