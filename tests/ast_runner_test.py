@@ -149,7 +149,7 @@ def test_ff_0():
         "Hello",
         [
             {"Gen": {"rx": ", ", "max_tokens": 10}},
-            {"Fixed": {"text": "3 + 8 is"}},
+            {"Fixed": {"text": {"String": {"str": "3 + 8 is"}}}},
             {"Gen": {"max_tokens": 5}},
         ],
     )

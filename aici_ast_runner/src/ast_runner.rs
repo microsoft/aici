@@ -26,7 +26,7 @@ use aici_abi::{
     aici_expose_all,
     bytes::limit_str,
     svob::SimpleVob,
-    tokenize,
+    tokenize, tokenize_bytes,
     toktree::{Recognizer, SpecialToken, TokTrie},
     wprintln, AiciVm, InitPromptArg, MidProcessArg, MidProcessResult, PostProcessArg,
     PostProcessResult, PreProcessArg, PreProcessResult, TokenId, VariableStorage,
@@ -59,13 +59,125 @@ impl Debug for LabelName {
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq, Hash)]
 pub struct TagName(String);
 
+pub const SEP: &str = "\u{FF0C}"; // this is '，' - Fullwidth Comma
+pub const SEP_REPL: &str = ", ";
+
+#[derive(Serialize, Deserialize, Clone)]
+pub enum Expr {
+    /// Literal string
+    String { str: String },
+    /// The current value of this variable, or empty string if not set.
+    Var { var: VarName },
+    /// The result of the current step (typically Gen, but can be anything).
+    Current {},
+    Concat {
+        /// Concatenate these expressions.
+        parts: Vec<Expr>,
+        /// When set, add SEP between elements.
+        #[serde(default)]
+        list: bool,
+    },
+    /// Evaluates to `eq` if `a == b`, otherwise to `neq`.
+    IfEq {
+        a: Box<Expr>,
+        b: Box<Expr>,
+        eq: Box<Expr>,
+        neq: Box<Expr>,
+    },
+    Extract {
+        /// Extract from where?
+        from: Box<Expr>,
+        /// Regular expression to search for.
+        rx: String,
+        /// The template for the result. Defaults to "$1".
+        template: Option<String>,
+        /// When set, find all occurances of `rx` and add SEP between them.
+        /// Also, if SEP occurs in any element, replace it with SEP_REPL.
+        #[serde(default)]
+        list: bool,
+    },
+}
+
+fn write_list<T: Debug>(lst: &[T], sep: &str, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    for (idx, part) in lst.iter().enumerate() {
+        if idx > 0 {
+            write!(f, "{}", sep)?;
+        }
+        write!(f, "{:?}", part)?;
+    }
+    Ok(())
+}
+
+fn extract_template(t: &Option<String>) -> String {
+    if let Some(t) = t {
+        t.clone()
+    } else {
+        "$1".to_string()
+    }
+}
+
+impl Debug for Expr {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Expr::String { str } => write!(f, "{:?}", str),
+            Expr::Var { var } => write!(f, "{:?}", var),
+            Expr::Current {} => write!(f, "$current"),
+            Expr::Concat { parts, list } => {
+                if *list {
+                    write!(f, "[")?;
+                    write_list(parts, SEP, f)?;
+                    write!(f, "]")?;
+                } else {
+                    write!(f, "(")?;
+                    write_list(parts, " + ", f)?;
+                    write!(f, ")")?;
+                }
+                Ok(())
+            }
+            Expr::IfEq { a, b, eq, neq } => {
+                write!(f, "(if {:?} == {:?} then {:?} else {:?})", a, b, eq, neq)
+            }
+            Expr::Extract {
+                from,
+                rx,
+                list,
+                template,
+            } => {
+                if *list {
+                    write!(f, "extract_list(")?;
+                } else {
+                    write!(f, "extract(")?;
+                }
+                write!(
+                    f,
+                    "/{rx:?}/ -> {repl:?} from {from:?})",
+                    repl = extract_template(template)
+                )?;
+                Ok(())
+            }
+        }
+    }
+}
+
+#[derive(Serialize, Deserialize, Clone)]
+pub enum Stmt {
+    /// Set named variable
+    Set { var: VarName, expr: Expr },
+}
+
+impl Debug for Stmt {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Stmt::Set { var, expr } => write!(f, "{:?} := {:?}", var, expr),
+        }
+    }
+}
+
 #[derive(Serialize, Deserialize, Clone, Default)]
 pub struct StepAttributes {
-    /// Append the result of this generation to named variable.
-    append_to_var: Option<VarName>,
-
-    /// Set named variable to the result of this generation.
-    set_var: Option<VarName>,
+    /// What to do with the output of the generation (if any).
+    #[serde(default)]
+    stmts: Vec<Stmt>,
 
     /// For attention masking
     tag: Option<TagName>,
@@ -75,28 +187,32 @@ pub struct StepAttributes {
 }
 
 #[derive(Serialize, Deserialize, Clone)]
+pub struct InnerConstraint {
+    /// After this strings is generated,
+    pub after: String,
+    /// chose one of these options.
+    pub options: Expr,
+}
+
+#[derive(Serialize, Deserialize, Clone)]
 pub enum Step {
     // Generate exactly the provided string
     Fixed {
         /// Text to generate.
-        text: String,
+        text: Expr,
 
         /// First backtrack to this label, and then generate text.
         following: Option<LabelName>,
-
-        /// Expand variables `{{var_name}}` in the `text`.
-        /// Expansion occurs atomically, when the step is executed.
-        #[serde(default)]
-        expand_vars: bool,
 
         /// Common attributes
         #[serde(flatten)]
         attrs: StepAttributes,
     },
 
-    // Generate exactly one of the provided strings
+    /// Generate exactly one of the provided strings
     Choose {
-        options: Vec<String>,
+        /// This is typically a Expr::Concat([...], list=true)
+        options: Expr,
 
         /// Common attributes
         #[serde(flatten)]
@@ -111,6 +227,10 @@ pub enum Step {
 
         /// Generate string that matches the yacc grammar.
         yacc: Option<String>,
+
+        /// Constraints to apply in the middle of the generation.
+        #[serde(default)]
+        inner: Vec<InnerConstraint>,
 
         /// Stop generation when specific string is generated.
         /// It is still included in the output.
@@ -147,14 +267,19 @@ pub enum Step {
 
 impl Debug for StepAttributes {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        if let Some(var) = &self.append_to_var {
-            write!(f, ", {var:?} += out")?;
-        }
-        if let Some(var) = &self.set_var {
-            write!(f, ", {var:?} := out")?;
-        }
         if let Some(tag) = &self.tag {
             write!(f, ", tag:{:?}", tag)?;
+        }
+        if let Some(LabelName(label)) = &self.label {
+            write!(f, ", label:{label}")?;
+        }
+        if self.stmts.len() == 1 {
+            write!(f, ", stmt: {:?}", self.stmts[0])?;
+        } else if self.stmts.len() > 0 {
+            write!(f, ", stmts:\n")?;
+            for s in &self.stmts {
+                write!(f, "    {:?}\n", s)?;
+            }
         }
         Ok(())
     }
@@ -166,19 +291,16 @@ impl std::fmt::Display for Step {
             Step::Fork { branches } => write!(f, "Fork({})", branches.len()),
             Step::Wait { vars } => write!(f, "Wait({})", vars.len()),
             Step::Stop {} => write!(f, "Stop"),
-            Step::Fixed {
-                text, expand_vars, ..
-            } => {
-                write!(
-                    f,
-                    "Fixed({}{:?})",
-                    if *expand_vars { "f" } else { "" },
-                    limit_str(text, 30)
-                )
-            }
-            Step::Choose { options, .. } => write!(f, "Choose({})", options.len()),
+            Step::Fixed { .. } => write!(f, "Fixed()"),
+            Step::Choose { .. } => write!(f, "Choose()"),
             Step::Gen { .. } => write!(f, "Gen()"),
         }
+    }
+}
+
+impl Debug for InnerConstraint {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{:?} -> {:?}", self.after, self.options)
     }
 }
 
@@ -199,14 +321,12 @@ impl Debug for Step {
             Step::Stop {} => write!(f, "Stop"),
             Step::Fixed {
                 text,
-                expand_vars,
                 attrs,
                 following,
             } => {
                 write!(
                     f,
-                    "Fixed({}{text:?}{attrs:?}){}",
-                    if *expand_vars { "f" } else { "" },
+                    "Fixed({text:?}{attrs:?}){}",
                     following
                         .as_ref()
                         .map(|l| format!(" following:{}", l.0))
@@ -217,6 +337,7 @@ impl Debug for Step {
             Step::Gen {
                 rx,
                 yacc,
+                inner,
                 stop_at,
                 max_tokens,
                 max_words,
@@ -230,6 +351,12 @@ impl Debug for Step {
                 }
                 if let Some(yacc) = yacc {
                     write!(f, "yacc:{:?} ", limit_str(yacc, 200))?;
+                }
+                if inner.len() > 0 {
+                    write!(f, "inner:")?;
+                    for ic in inner {
+                        write!(f, " /{:?}/ -> {:?}", ic.after, ic.options)?;
+                    }
                 }
                 if let Some(stop_at) = stop_at {
                     write!(f, "stop_at:{:?}, ", stop_at)?;
@@ -259,8 +386,9 @@ pub struct Program {
 
 enum StepSpecific {
     Options { tokens: Vec<Vec<TokenId>> },
-    ExpandOptions { texts: Vec<String> },
-    Gen { rx: RxStackRecognizer },
+    ExpandOptions { text: Expr, many: bool },
+    Inner { constraints: Vec<InnerConstraint> },
+    Rx { rx: RxStackRecognizer },
     Cfg { cfg: CfgParser },
     Fork { branches: Vec<Vec<StepState>> },
     Wait { vars: Vec<VarName> },
@@ -277,13 +405,16 @@ struct StepState {
     max_words: usize,
     max_bytes: usize,
 
+    // if true, this step was derived from the next step
+    is_derived: bool,
+
     mask_tags: Vec<TagName>,
     attrs: StepAttributes,
 
     // state so far for this step
     num_tokens: usize,
     num_bytes: usize,
-    word_idx: usize,
+    num_words: usize,
 }
 
 struct TokenInfo {
@@ -297,6 +428,76 @@ struct RunnerCtx {
     vars: VariableStorage,
     tokens: Vec<TokenInfo>,
     bytes: Vec<u8>,
+}
+
+impl RunnerCtx {
+    pub fn string_position(&self, sidx: usize, str: &str) -> Option<usize> {
+        let slen = str.len();
+        self.bytes[sidx.saturating_sub(slen)..]
+            .windows(slen)
+            .position(|w| w == str.as_bytes())
+    }
+
+    fn do_expand(&self, expr: &Expr, curr_ctx: Option<&StepState>) -> Vec<u8> {
+        match expr {
+            Expr::String { str } => str.as_bytes().to_vec(),
+            Expr::Var { var } => match self.vars.get(&var.0) {
+                Some(r) => r,
+                None => Vec::new(),
+            },
+            Expr::Current {} => match curr_ctx {
+                Some(ctx) => self.bytes[self.bytes.len() - ctx.num_bytes..].to_vec(),
+                None => panic!("$current used outside of stmts:..."),
+            },
+            Expr::Concat { parts, list } => {
+                let parts = parts
+                    .iter()
+                    .map(|p| self.do_expand(p, curr_ctx))
+                    .collect::<Vec<_>>();
+                if *list {
+                    parts.join(SEP.as_bytes()).to_vec()
+                } else {
+                    parts.join("".as_bytes()).to_vec()
+                }
+            }
+            Expr::IfEq { a, b, eq, neq } => {
+                let a = self.do_expand(a, curr_ctx);
+                let b = self.do_expand(b, curr_ctx);
+                if a == b {
+                    self.do_expand(eq, curr_ctx)
+                } else {
+                    self.do_expand(neq, curr_ctx)
+                }
+            }
+            Expr::Extract {
+                from,
+                rx,
+                template,
+                list,
+            } => {
+                let from = self.do_expand(from, curr_ctx);
+                let t = extract_template(template);
+                let template = t.as_bytes();
+                let re = regex_automata::meta::Regex::new(rx).unwrap();
+                let mut res = Vec::new();
+                for cap in re.captures_iter(&from) {
+                    res.push(cap.interpolate_bytes(&from, template));
+                    if !list {
+                        break;
+                    }
+                }
+                res.join(SEP.as_bytes())
+            }
+        }
+    }
+
+    pub fn expand(&self, expr: &Expr) -> Vec<u8> {
+        self.do_expand(expr, None)
+    }
+
+    pub fn expand_with_curr(&self, expr: &Expr, curr_ctx: &StepState) -> Vec<u8> {
+        self.do_expand(expr, Some(curr_ctx))
+    }
 }
 
 pub struct Runner {
@@ -315,7 +516,7 @@ impl Debug for StepState {
             write!(f, "{}", self.max_tokens)?;
         }
         if self.max_words < 10000 {
-            write!(f, " word:{}/{}", self.word_idx, self.max_words)?;
+            write!(f, " word:{}/{}", self.num_words, self.max_words)?;
         }
         if self.max_bytes < 100000 {
             write!(f, " byte:{}/{}", self.num_bytes, self.max_bytes)?;
@@ -326,6 +527,25 @@ impl Debug for StepState {
 
 fn has_token_at(t: TokenId, idx: usize) -> impl for<'a> Fn(&'a Vec<TokenId>) -> bool {
     move |v: &Vec<TokenId>| idx < v.len() && v[idx] == t
+}
+
+fn split_vec(vec: &[u8], sep: &[u8]) -> Vec<Vec<u8>> {
+    let mut result = Vec::new();
+    let mut last = 0;
+    for (i, window) in vec.windows(sep.len()).enumerate() {
+        if window == sep {
+            result.push(vec[last..i].to_vec());
+            last = i + sep.len();
+        }
+    }
+    if last < vec.len() {
+        result.push(vec[last..].to_vec());
+    }
+    result
+}
+
+fn val_to_list(val: &[u8]) -> Vec<Vec<u8>> {
+    split_vec(val, SEP.as_bytes())
 }
 
 impl StepState {
@@ -344,10 +564,11 @@ impl StepState {
             max_bytes: usize::MAX,
             max_tokens: usize::MAX,
             mask_tags: Vec::new(),
-            word_idx: 0,
+            num_words: 0,
             num_tokens: 0,
             num_bytes: 0,
             following: None,
+            is_derived: false,
         }
     }
 
@@ -388,20 +609,14 @@ impl StepState {
 
             Step::Fixed {
                 text,
-                expand_vars,
                 attrs,
                 following,
             } => Self::new_with_attrs(
                 s,
                 attrs,
-                if *expand_vars {
-                    StepSpecific::ExpandOptions {
-                        texts: vec![text.clone()],
-                    }
-                } else {
-                    StepSpecific::Options {
-                        tokens: vec![tokenize(&text)],
-                    }
+                StepSpecific::ExpandOptions {
+                    text: text.clone(),
+                    many: false,
                 },
             )
             .with(|s| s.following = following.clone()),
@@ -409,8 +624,9 @@ impl StepState {
             Step::Choose { options, attrs } => Self::new_with_attrs(
                 s,
                 attrs,
-                StepSpecific::Options {
-                    tokens: options.iter().map(|s| tokenize(s)).collect(),
+                StepSpecific::ExpandOptions {
+                    text: options.clone(),
+                    many: true,
                 },
             ),
 
@@ -418,6 +634,7 @@ impl StepState {
                 rx,
                 yacc,
                 stop_at,
+                inner,
                 max_tokens,
                 max_bytes,
                 max_words,
@@ -425,6 +642,12 @@ impl StepState {
                 attrs,
             } => {
                 let spec = match (yacc, rx) {
+                    (None, None) if inner.len() > 0 => StepSpecific::Inner {
+                        constraints: inner.clone(),
+                    },
+                    _ if inner.len() > 0 => {
+                        panic!("can't have inner= and either yacc= or rx=")
+                    }
                     (Some(_), Some(_)) => {
                         panic!("can't have both yacc= and rx=")
                     }
@@ -434,7 +657,7 @@ impl StepState {
                     _ => {
                         let defl = "(.|\n)+".to_string();
                         let rx = rx.as_deref().unwrap_or(&defl);
-                        StepSpecific::Gen {
+                        StepSpecific::Rx {
                             rx: RecRx::from_rx(&rx).to_stack_recognizer(),
                         }
                     }
@@ -470,19 +693,20 @@ impl StepState {
     fn check_eos(&mut self, optional: bool) -> bool {
         self.num_tokens >= self.max_tokens
             || self.num_bytes >= self.max_bytes
-            || self.word_idx >= self.max_words
+            || self.num_words >= self.max_words
             || (self.stop_at.is_some() && self.stop_at.as_ref().unwrap().is_empty())
             || match &mut self.specific {
                 StepSpecific::Fork { .. } => false,
                 StepSpecific::Wait { .. } => false,
                 StepSpecific::Stop => false,
-                StepSpecific::ExpandOptions { texts } => {
+                StepSpecific::ExpandOptions { .. } => {
                     assert!(self.num_tokens == 0);
-                    if optional {
-                        texts.iter().any(|t| t.len() == 0)
-                    } else {
-                        texts.iter().all(|t| t.len() == 0)
-                    }
+                    false
+                    // if optional {
+                    //     texts.iter().any(|t| t.len() == 0)
+                    // } else {
+                    //     texts.iter().all(|t| t.len() == 0)
+                    // }
                 }
                 StepSpecific::Options { tokens } => {
                     if optional {
@@ -495,7 +719,8 @@ impl StepState {
                     cfg.special_allowed(SpecialToken::EndOfSentence)
                         && (optional || (0..=255).all(|byte| !cfg.byte_allowed(byte)))
                 }
-                StepSpecific::Gen { rx } => {
+                StepSpecific::Inner { .. } => optional,
+                StepSpecific::Rx { rx } => {
                     rx.special_allowed(SpecialToken::EndOfSentence)
                         && (optional || (0..=255).all(|byte| !rx.byte_allowed(byte)))
                 }
@@ -530,7 +755,7 @@ impl StepState {
         }
     }
 
-    fn advance(&mut self, runner: &RunnerCtx, token: TokenId) {
+    fn advance(&mut self, runner: &RunnerCtx, token: TokenId) -> Option<StepState> {
         let nbytes = runner.trie.token(token).len();
         self.num_tokens += 1;
         self.num_bytes += nbytes;
@@ -538,20 +763,14 @@ impl StepState {
 
         for idx in sidx.saturating_sub(1)..runner.bytes.len().saturating_sub(1) {
             if !is_boundry(runner.bytes[idx]) && is_boundry(runner.bytes[idx + 1]) {
-                self.word_idx += 1;
+                self.num_words += 1;
                 break;
             }
         }
 
         if let Some(stop) = &self.stop_at {
-            let slen = stop.len();
-            if slen > 0 {
-                let pos = runner.bytes[sidx.saturating_sub(slen)..]
-                    .windows(stop.len())
-                    .position(|w| w == stop.as_bytes());
-                if pos.is_some() {
-                    self.stop_at = Some("".to_string())
-                }
+            if stop.len() > 0 && runner.string_position(sidx, stop).is_some() {
+                self.stop_at = Some("".to_string())
             }
         }
 
@@ -564,8 +783,35 @@ impl StepState {
                 tokens.retain(has_token_at(token, self.num_tokens - 1))
             }
             StepSpecific::Cfg { cfg } => runner.trie.append_token(cfg, token),
-            StepSpecific::Gen { rx } => runner.trie.append_token(rx, token),
+            StepSpecific::Rx { rx } => runner.trie.append_token(rx, token),
+            StepSpecific::Inner { constraints } => {
+                for c in constraints {
+                    if let Some(p) = runner.string_position(sidx, &c.after) {
+                        let pref = &runner.bytes[p + c.after.len()..];
+                        let expanded = runner.expand(&c.options);
+                        let tokens = val_to_list(&expanded)
+                            .iter()
+                            .filter_map(|e| {
+                                if e.starts_with(pref) {
+                                    Some(tokenize_bytes(&e[pref.len()..]))
+                                } else {
+                                    None
+                                }
+                            })
+                            .collect::<Vec<_>>();
+                        let mut new_state = StepState::from_ast(&self.ast);
+                        new_state.specific = StepSpecific::Options { tokens };
+                        new_state.max_tokens -= self.num_tokens;
+                        new_state.max_bytes -= self.num_bytes;
+                        new_state.max_words -= self.num_words;
+                        new_state.is_derived = true;
+                        return Some(new_state);
+                    }
+                }
+            }
         }
+
+        return None;
 
         fn is_boundry(b: u8) -> bool {
             b == b' ' || b == b'\n' || b == b'\t'
@@ -585,11 +831,12 @@ impl StepState {
             StepSpecific::Fork { .. } => false,
             StepSpecific::Wait { .. } => false,
             StepSpecific::Stop => false,
+            StepSpecific::Inner { .. } => true,
             StepSpecific::Options { tokens } => {
                 tokens.iter().any(has_token_at(token, self.num_tokens))
             }
             StepSpecific::Cfg { cfg } => trie.token_allowed(cfg, token),
-            StepSpecific::Gen { rx } => trie.token_allowed(rx, token),
+            StepSpecific::Rx { rx } => trie.token_allowed(rx, token),
         }
     }
 
@@ -597,37 +844,30 @@ impl StepState {
         let sidx = runner.bytes.len() - self.num_bytes;
         let my_bytes = runner.bytes[sidx..].to_vec();
         wprintln!("finish: {self:?} {:?}", String::from_utf8_lossy(&my_bytes));
-        if let Some(v) = self.attrs.append_to_var.as_ref() {
-            wprintln!("  append to {:?}", v.0);
-            runner.vars.append(&v.0, my_bytes.clone());
-        }
-        if let Some(v) = self.attrs.set_var.as_ref() {
-            runner.vars.set(&v.0, my_bytes);
+        for s in &self.attrs.stmts {
+            match s {
+                Stmt::Set { var, expr } => {
+                    let val = runner.expand_with_curr(&expr, self);
+                    wprintln!("  set {:?} = {:?}", var, val);
+                    runner.vars.set(&var.0, val);
+                }
+            }
         }
     }
 
-    fn concretize(&mut self, vars: &VariableStorage) {
+    fn concretize(&mut self, runner: &RunnerCtx) {
         match &mut self.specific {
-            StepSpecific::ExpandOptions { texts } => {
-                let re = regex_automata::meta::Regex::new(r"\{\{[a-zA-Z0-9_]+\}\}").unwrap();
-                let tokens = texts
+            StepSpecific::ExpandOptions { text, many } => {
+                let expanded = runner.expand(text);
+                let options = if *many {
+                    val_to_list(&expanded)
+                } else {
+                    vec![expanded]
+                };
+                let tokens = options
                     .iter()
-                    .map(|text| {
-                        let mut new_text = String::with_capacity(text.len());
-                        let mut last_match = 0;
-                        for mtch in re.find_iter(text) {
-                            new_text.push_str(&text[last_match..mtch.start()]);
-                            let var = &text[(mtch.start() + 2)..(mtch.end() - 2)];
-                            let val = vars.get(var).unwrap_or(b"???".to_vec());
-                            let val = String::from_utf8(val).unwrap();
-                            new_text.push_str(&val);
-                            last_match = mtch.end();
-                        }
-                        new_text.push_str(&text[last_match..]);
-                        wprintln!("exp: {text} -> {new_text}");
-                        return tokenize(&new_text);
-                    })
-                    .collect();
+                    .map(|v| tokenize_bytes(v))
+                    .collect::<Vec<_>>();
                 self.specific = StepSpecific::Options { tokens }
             }
             _ => {}
@@ -642,6 +882,11 @@ impl StepState {
             StepSpecific::ExpandOptions { .. } => {}
             StepSpecific::Wait { .. } => {}
             StepSpecific::Fork { .. } => {}
+            StepSpecific::Inner { .. } => {
+                // anything goes, until one of constraint strings is generated
+                toks.set_all(true);
+                toks.disallow_token(trie.special_token(SpecialToken::EndOfSentence));
+            }
             StepSpecific::Options { tokens } => {
                 for v in tokens {
                     if self.num_tokens < v.len() {
@@ -649,7 +894,7 @@ impl StepState {
                     }
                 }
             }
-            StepSpecific::Gen { rx } => {
+            StepSpecific::Rx { rx } => {
                 trie.add_bias(rx, toks);
             }
             StepSpecific::Cfg { cfg } => {
@@ -764,7 +1009,9 @@ impl Runner {
 
         self.ctx.bytes.extend_from_slice(bytes);
 
-        self.states[self.state_idx].advance(&self.ctx, token);
+        if let Some(new_state) = self.states[self.state_idx].advance(&self.ctx, token) {
+            self.states.insert(self.state_idx, new_state)
+        }
 
         while self.states[self.state_idx].forces_eos() {
             self.state_idx += 1;
@@ -788,7 +1035,7 @@ impl Runner {
 
     fn try_backtrack(&mut self) -> MidProcessResult {
         for idx in self.state_idx..self.states.len() {
-            self.states[idx].concretize(&self.ctx.vars);
+            self.states[idx].concretize(&self.ctx);
 
             let state = &self.states[idx];
             if let Some(label) = &state.following {
@@ -826,7 +1073,7 @@ impl Runner {
         let mut all_eos = true;
 
         for state in &mut self.states[self.state_idx..] {
-            state.concretize(&self.ctx.vars);
+            state.concretize(&self.ctx);
             if state.forces_eos() {
                 if all_eos {
                     self.state_idx += 1;

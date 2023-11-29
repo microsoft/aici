@@ -85,7 +85,7 @@ def main():
         ]
     }
 
-    arg = {
+    _arg = {
         "steps": [
             ast.fixed("The word 'hello'"),
             ast.label("lang", ast.fixed(" in French is translated as")),

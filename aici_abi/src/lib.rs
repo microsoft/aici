@@ -11,7 +11,7 @@ pub mod toktree;
 pub type TokenId = bytes::TokenId;
 
 pub use host::{
-    _print, arg_bytes, self_seq_id, stdout, tokenize, StorageCmd, StorageOp, StorageResp,
+    _print, arg_bytes, self_seq_id, stdout, tokenize, tokenize_bytes, StorageCmd, StorageOp, StorageResp,
     VariableStorage,
 };
 
