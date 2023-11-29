@@ -6,6 +6,7 @@ base_url = "http://127.0.0.1:8080/v1/"
 log_level = 1
 ast_module = ""
 
+
 def upload_module(file_path: str) -> str:
     """
     Upload a WASM module to the server.
@@ -55,10 +56,12 @@ def completion(
         )
     texts = [""] * n
     full_resp = []
+    storage = {}
     res = {
         "request": json,
         "response": full_resp,
         "text": texts,
+        "raw_storage": storage,
         "error": None,
     }
 
@@ -77,6 +80,10 @@ def completion(
                 idx = ch["index"]
                 while len(texts) <= idx:
                     texts.append("")
+                for s in ch.get("storage", []):
+                    w = s.get("WriteVar", None)
+                    if w:
+                        storage[w["name"]] = w["value"]
                 if idx == 0:
                     if log_level > 1:
                         l = ch["logs"].rstrip("\n")
@@ -92,4 +99,9 @@ def completion(
         else:
             raise RuntimeError(f"bad response line: {decoded_line}")
 
+    # convert hex bytes in storage to strings
+    s = {}
+    res["storage"] = s
+    for k, v in storage.items():
+        s[k] = bytes.fromhex(v).decode("utf-8", errors="ignore")
     return res

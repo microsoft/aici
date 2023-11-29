@@ -28,6 +28,7 @@ def ask_completion(*args, **kwargs):
     with open(path, "w") as f:
         ujson.dump(res, f, indent=1)
     print(f"response saved to {path}")
+    print(res["storage"])
 
 
 def main():
