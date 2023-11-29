@@ -52,6 +52,7 @@ def gen(
     *,
     rx: Optional[str] = None,
     yacc: Optional[str] = None,
+    inner: Optional[dict] = None,
     stop_at: Optional[str] = None,
     max_tokens: Optional[int] = None,
     max_words: Optional[int] = None,
@@ -77,10 +78,16 @@ def gen(
     if set is not None:
         for var, expr in set.items():
             stmts.append(stmt_set(var, expr))
+    if inner is not None:
+        inner = [{"after": k, "options": v} for k, v in inner.items()]
+    else:
+        inner = []
+
     return {
         "Gen": {
             "rx": rx,
             "yacc": yacc,
+            "inner": inner,
             "stop_at": stop_at,
             "max_tokens": max_tokens,
             "max_words": max_words,

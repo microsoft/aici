@@ -355,7 +355,7 @@ impl Debug for Step {
                 if inner.len() > 0 {
                     write!(f, "inner:")?;
                     for ic in inner {
-                        write!(f, " /{:?}/ -> {:?}", ic.after, ic.options)?;
+                        write!(f, " /{:?}/ -> {:?}, ", ic.after, ic.options)?;
                     }
                 }
                 if let Some(stop_at) = stop_at {
@@ -433,9 +433,11 @@ struct RunnerCtx {
 impl RunnerCtx {
     pub fn string_position(&self, sidx: usize, str: &str) -> Option<usize> {
         let slen = str.len();
-        self.bytes[sidx.saturating_sub(slen)..]
+        let start = sidx.saturating_sub(slen);
+        self.bytes[start..]
             .windows(slen)
             .position(|w| w == str.as_bytes())
+            .map(|x| start + x)
     }
 
     fn do_expand(&self, expr: &Expr, curr_ctx: Option<&StepState>) -> Vec<u8> {
@@ -691,40 +693,48 @@ impl StepState {
     }
 
     fn check_eos(&mut self, optional: bool) -> bool {
-        self.num_tokens >= self.max_tokens
+        if self.num_tokens >= self.max_tokens
             || self.num_bytes >= self.max_bytes
             || self.num_words >= self.max_words
-            || (self.stop_at.is_some() && self.stop_at.as_ref().unwrap().is_empty())
-            || match &mut self.specific {
-                StepSpecific::Fork { .. } => false,
-                StepSpecific::Wait { .. } => false,
-                StepSpecific::Stop => false,
-                StepSpecific::ExpandOptions { .. } => {
-                    assert!(self.num_tokens == 0);
-                    false
-                    // if optional {
-                    //     texts.iter().any(|t| t.len() == 0)
-                    // } else {
-                    //     texts.iter().all(|t| t.len() == 0)
-                    // }
-                }
-                StepSpecific::Options { tokens } => {
-                    if optional {
-                        tokens.iter().any(|t| self.num_tokens >= t.len())
-                    } else {
-                        tokens.iter().all(|t| self.num_tokens >= t.len())
-                    }
-                }
-                StepSpecific::Cfg { cfg } => {
-                    cfg.special_allowed(SpecialToken::EndOfSentence)
-                        && (optional || (0..=255).all(|byte| !cfg.byte_allowed(byte)))
-                }
-                StepSpecific::Inner { .. } => optional,
-                StepSpecific::Rx { rx } => {
-                    rx.special_allowed(SpecialToken::EndOfSentence)
-                        && (optional || (0..=255).all(|byte| !rx.byte_allowed(byte)))
+        {
+            return true;
+        }
+
+        match &self.stop_at {
+            Some(s) => return s.len() == 0,
+            None => {}
+        }
+
+        match &mut self.specific {
+            StepSpecific::Fork { .. } => false,
+            StepSpecific::Wait { .. } => false,
+            StepSpecific::Stop => false,
+            StepSpecific::ExpandOptions { .. } => {
+                assert!(self.num_tokens == 0);
+                false
+                // if optional {
+                //     texts.iter().any(|t| t.len() == 0)
+                // } else {
+                //     texts.iter().all(|t| t.len() == 0)
+                // }
+            }
+            StepSpecific::Options { tokens } => {
+                if optional {
+                    tokens.iter().any(|t| self.num_tokens >= t.len())
+                } else {
+                    tokens.iter().all(|t| self.num_tokens >= t.len())
                 }
             }
+            StepSpecific::Cfg { cfg } => {
+                cfg.special_allowed(SpecialToken::EndOfSentence)
+                    && (optional || (0..=255).all(|byte| !cfg.byte_allowed(byte)))
+            }
+            StepSpecific::Inner { .. } => optional,
+            StepSpecific::Rx { rx } => {
+                rx.special_allowed(SpecialToken::EndOfSentence)
+                    && (optional || (0..=255).all(|byte| !rx.byte_allowed(byte)))
+            }
+        }
     }
 
     fn allows_eos(&mut self) -> bool {
@@ -786,7 +796,8 @@ impl StepState {
             StepSpecific::Rx { rx } => runner.trie.append_token(rx, token),
             StepSpecific::Inner { constraints } => {
                 for c in constraints {
-                    if let Some(p) = runner.string_position(sidx, &c.after) {
+                    let pos = runner.string_position(sidx, &c.after);
+                    if let Some(p) = pos {
                         let pref = &runner.bytes[p + c.after.len()..];
                         let expanded = runner.expand(&c.options);
                         let tokens = val_to_list(&expanded)
@@ -800,11 +811,13 @@ impl StepState {
                             })
                             .collect::<Vec<_>>();
                         let mut new_state = StepState::from_ast(&self.ast);
+                        // wprintln!("tokens: {p} {pref:?} {tokens:?}");
                         new_state.specific = StepSpecific::Options { tokens };
                         new_state.max_tokens -= self.num_tokens;
                         new_state.max_bytes -= self.num_bytes;
                         new_state.max_words -= self.num_words;
                         new_state.is_derived = true;
+                        // wprintln!("here: {new_state:?}");
                         return Some(new_state);
                     }
                 }
@@ -848,7 +861,7 @@ impl StepState {
             match s {
                 Stmt::Set { var, expr } => {
                     let val = runner.expand_with_curr(&expr, self);
-                    wprintln!("  set {:?} = {:?}", var, val);
+                    wprintln!("  set {:?} := {:?}", var, String::from_utf8_lossy(&val));
                     runner.vars.set(&var.0, val);
                 }
             }

@@ -241,6 +241,36 @@ def test_backtrack_1():
             ],
         )
 
+def test_inner_1():
+    expect(
+        "<...><city>Warsaw</city> is the capital city of Poland and is known for its rich history, cultural land",
+        "",
+        [
+            ast.fixed("[INST] "),
+            ast.label(
+                "start",
+                ast.fixed(
+                    "List 5 names of cities in Poland. Use <city>City Name</city> syntax. Say DONE when done. [/INST]\n"
+                ),
+            ),
+            ast.gen(
+                max_tokens=100,
+                stop_at="DONE",
+                set={
+                    "cities": ast.e_extract_all(
+                        r"<city>([^<]*</city>)", ast.e_current()
+                    )
+                },
+            ),
+            ast.fixed("Pick a specific capital city and say something about it. "
+                        "Use <city>City Name</city> syntax when referring to city names. [/INST]\n",
+                        # backtrack to start, to erase info about 'Poland'
+                        following="start"),
+            ast.gen(max_tokens=20, inner={
+                "<city>": ast.e_var("cities"),
+            })
+        ]
+    )
 
 def test_wait_1():
     expect(
