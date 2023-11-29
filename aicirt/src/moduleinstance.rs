@@ -326,13 +326,17 @@ impl ModuleInstance {
             Err(_) => serde_json::Map::new(),
         };
 
-        m.insert("millis".to_string(), json!(t0.elapsed().as_millis() as u64));
+        // 10us accuracy for Spectre mitigation
+        let t = (t0.elapsed().as_micros() as u64 / 10) as f64 / 100.0;
+        m.insert("millis".to_string(), json!(t));
 
         let logs = self.store.data_mut().string_log();
+        let storage = std::mem::take(&mut self.store.data_mut().storage_log);
         let spec = match res {
             Ok(_) => json!({
                 "type": "ok",
                 "logs": logs,
+                "storage": storage,
             }),
 
             Err(e) => {
@@ -341,6 +345,7 @@ impl ModuleInstance {
                 json!({
                     "type": "error",
                     "logs": logs + &suffix,
+                    "storage": storage,
                 })
             }
         };

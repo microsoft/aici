@@ -1,6 +1,6 @@
 use aici_abi::{
     bytes::{clone_vec_as_bytes, vec_from_bytes, TokRxInfo},
-    PreProcessArg, PostProcessArg,
+    PostProcessArg, PreProcessArg, StorageCmd,
 };
 use anyhow::{anyhow, Result};
 use log::{info, warn};
@@ -40,6 +40,7 @@ pub struct ModuleData {
     tokenizer: Option<Tokenizer>,
     pub store_limits: wasmtime::StoreLimits,
     pub had_error: bool,
+    pub storage_log: Vec<serde_json::Value>,
     blobs: Vec<Rc<Vec<u8>>>,
 }
 
@@ -96,6 +97,7 @@ impl ModuleData {
             process_result: Vec::new(),
             logit_ptr: &mut [],
             had_error: false,
+            storage_log: Vec::new(),
             blobs: vec![Rc::new(Vec::new()); BlobId::MAX_BLOB_ID as usize],
         };
         r.set_blob(BlobId::MODULE_ARG, module_arg.as_bytes().to_vec());
@@ -207,9 +209,19 @@ impl ModuleData {
         self.clear_blob(BlobId::STORAGE_RESULT);
         match serde_json::from_slice(&m) {
             Ok(cmd) => {
+                let log = match &cmd {
+                    StorageCmd::WriteVar { .. } => {
+                        let v = serde_json::to_value(&cmd).unwrap();
+                        Some(v)
+                    }
+                    StorageCmd::ReadVar { .. } => None,
+                };
                 let res = self.group_channel.send_cmd(GroupCmd::StorageCmd { cmd });
                 match res {
                     Ok(GroupResp::StorageResp { resp }) => {
+                        if let Some(log) = log {
+                            self.storage_log.push(log)
+                        }
                         let res_bytes = serde_json::to_vec(&resp).unwrap();
                         self.set_blob(BlobId::STORAGE_RESULT, res_bytes);
                     }

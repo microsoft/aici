@@ -272,8 +272,8 @@ class AiciRunner:
 
         self.vocab_size = -1
         self.batch_size = -1
-        self.last_response = {}
         self.last_pre_response = {}
+        self.last_mid_response = {}
         self.last_post_response = {}
         self.disable_attn_mask = False
         self.curr_attn_mask = None
@@ -451,7 +451,9 @@ class AiciRunner:
             obj["clone_id"] = clone_id
         self.gen_q.append(obj)
 
-    def step_add_post(self, id: int, backtrack:int, tokens: list[int], clone_id: int = None):
+    def step_add_post(
+        self, id: int, backtrack: int, tokens: list[int], clone_id: int = None
+    ):
         obj = {"id": id, "tokens": tokens, "backtrack": backtrack}
         if clone_id is not None:
             obj["clone_id"] = clone_id
@@ -548,7 +550,7 @@ class AiciRunner:
             self.last_post_response = {}
             return False
         assert not self.logit_pending
-        self.last_post_response = self.cmd.exec("post_process", cmd)
+        self.last_post_response = self.cmd.exec("post_process", cmd)["data"]
         return True
 
     def flush_logit_bias(self):
@@ -566,7 +568,7 @@ class AiciRunner:
         """
         assert self.logit_pending
         self.logit_pending = False
-        self.last_response = self.cmd.expect("recv")["data"]
+        self.last_mid_response = self.cmd.expect("recv")["data"]
         n = self.batch_size
         arr = np.frombuffer(
             self.bin_shm, dtype=np.float32, offset=0, count=n * self.vocab_size
@@ -584,23 +586,28 @@ class AiciRunner:
         """
         Get the response for a given batch entry ID.
         """
-        pre: dict[str, str] = self.last_pre_response.get(str(seq_id), None)
-        r: dict[str, str] = self.last_response.get(str(seq_id), None)
+        pre: dict[str, str] = self.last_pre_response.get(str(seq_id), {})
+        mid: dict[str, str] = self.last_mid_response.get(str(seq_id), {})
         post: dict[str, str] = self.last_post_response.get(str(seq_id), {})
-        if pre is not None:
-            if r is None:
-                r = pre
-            else:
-                logs = pre.get("logs", "") + r.get("logs", "") + post.get("logs", "")
-                r = {**pre, **r}
-                r["logs"] = logs
-        return r
+        logs = pre.get("logs", "") + mid.get("logs", "") + post.get("logs", "")
+        storage = (
+            pre.get("storage", []) + mid.get("storage", []) + post.get("storage", [])
+        )
+        millis = (
+            pre.get("millis", 0.0) + mid.get("millis", 0.0) + post.get("millis", 0.0)
+        )
+        return {
+            "type": post.get("type", mid.get("type", pre.get("type", "unk"))),
+            "storage": storage,
+            "logs": logs,
+            "millis": millis,
+        }
 
     def response_by_seq_id(self, seq_id: int) -> Dict[str, Any]:
         """
         Get the response for a given batch entry ID.
         """
-        return self.last_response.get(str(seq_id), None)
+        return self.last_mid_response.get(str(seq_id), None)
 
 
 def add_cli_args(parser: argparse.ArgumentParser, single=False):
