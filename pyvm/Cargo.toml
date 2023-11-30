@@ -1,0 +1,31 @@
+[package]
+name = "aici_pyvm"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+aici_abi = "0.1.0"
+regex-automata = { version = "0.3.8", default-features = false, features = ["std", "dfa", "syntax", "perf", "meta"] }
+serde = { version = "1.0.192", features = ["derive"] }
+serde_json = "1.0.108"
+cfgrammar = "0.13.3"
+lrlex = "0.13.3"
+lrpar = "0.13.3"
+lrtable = "0.13.3"
+anyhow = "1.0.75"
+vob = "3.0.3"
+rustc-hash = "1.1.0"
+rustpython-vm = { version = "0.3.0", path = "../RustPython/vm", default-features = false, features = ["compiler"] }
+libc = "0.2.150"
+# rustpython-stdlib = { version = "0.3.0", path = "../RustPython/stdlib" }
+# rustpython-pylib = { version = "0.3.0", path = "../RustPython/pylib", features = ["freeze-stdlib"] }
+
+[patch.crates-io]
+aici_abi = { path = "../aici_abi" }
+
+[[bin]]
+name = "aici_pyvm"
+path = "src/pyvm.rs"
+
+[profile.release]
+debug = 1

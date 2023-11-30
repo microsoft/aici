@@ -2,3 +2,6 @@
 	path = vllm
 	url = https://github.com/mmoskal/vllm
 	branch = hooks
+[submodule "RustPython"]
+	path = RustPython
+	url = https://github.com/mmoskal/RustPython
