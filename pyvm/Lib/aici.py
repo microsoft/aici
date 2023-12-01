@@ -36,7 +36,6 @@ class MidProcessResult:
 class PreProcessResult:
     def __init__(self, *, suspend=False):
         self.suspend = suspend
-        # TODO only number of masks implemented on the other side
         self.attention_mask: list[list[float]] = [[]]
 
 
