@@ -13,6 +13,8 @@ from .comms import AiciRunner, BenchTimer
 
 def install(runner: AiciRunner):
     timer = BenchTimer("initiate_step")
+    bias_timer = BenchTimer("bias")
+    finish_timer = BenchTimer("finish")
 
     def initiate_step(
         scheduler: Scheduler,
@@ -112,7 +114,8 @@ def install(runner: AiciRunner):
         logits += bias
 
     def recv_attention_mask():
-        return torch.from_numpy(runner.recv_attention_mask())
+        with bias_timer:
+            return torch.from_numpy(runner.recv_attention_mask())
 
     def append_ff_tokens(
         block_manager: BlockSpaceManager,
@@ -143,7 +146,8 @@ def install(runner: AiciRunner):
             runner.step_add_post(seq.seq_id, backtrack, toks, clone_id)
 
     def finish_sampling():
-        runner.step_finish_post()
+        with finish_timer:
+            runner.step_finish_post()
 
     SamplingParams.apply_dynamic_logit_bias = apply_dynamic_logit_bias
     SamplingParams.initiate_step = initiate_step
