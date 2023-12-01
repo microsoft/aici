@@ -63,6 +63,10 @@ struct Cli {
     #[arg(short, long)]
     run: bool,
 
+    /// Path to argument to pass.
+    #[arg(long)]
+    run_arg: Option<PathBuf>,
+
     /// Run with POSIX shared memory interface
     #[arg(short, long)]
     server: bool,
@@ -975,11 +979,15 @@ fn install_from_cmdline(cli: &Cli, wasm_ctx: WasmContext, shm: Shm) {
 
     if cli.run {
         let req_id = "main".to_string();
+        let arg = match cli.run_arg {
+            Some(ref path) => json!(fs::read_to_string(path).unwrap()),
+            None => json!({"steps":[]}),
+        };
         reg.instantiate(InstantiateReq {
             req_id: req_id.clone(),
-            prompt: json!(""),
+            prompt: json!("Hello world!"),
             module_id: module_id.clone(),
-            module_arg: json!({"steps":[]}),
+            module_arg: arg,
         })
         .unwrap();
         reg.run_main(&req_id).unwrap();

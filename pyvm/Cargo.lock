@@ -51,6 +51,7 @@ dependencies = [
  "lrlex",
  "lrpar",
  "lrtable",
+ "num-traits",
  "regex-automata 0.3.9",
  "rustc-hash",
  "rustpython-derive",

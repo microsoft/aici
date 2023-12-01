@@ -30,9 +30,9 @@ fi
 
 PERF=
 if [ `uname` = Linux ] ; then
-  PERF="perf stat"
+  _PERF="perf stat"
 fi
 RUST_LOG=info $PERF ./aicirt/target/release/aicirt --tokenizer gpt4 --module $p/target/opt.wasm
 RUST_LOG=info $PERF ./aicirt/target/release/aicirt \
-  --tokenizer gpt4 --module $p/target/opt.wasm --run | tee tmp/runlog.txt
+  --tokenizer gpt4 --module $p/target/opt.wasm --run --run-arg pyvm/test.py | tee tmp/runlog.txt
 ls -l $p/target/opt.wasm

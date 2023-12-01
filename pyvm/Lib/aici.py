@@ -1,5 +1,5 @@
 from typing import Any, Optional, Coroutine, Union
-import _aici
+import _aici  # type: ignore
 
 Token = int
 SeqId = int
@@ -36,7 +36,8 @@ class MidProcessResult:
 class PreProcessResult:
     def __init__(self, *, suspend=False):
         self.suspend = suspend
-        self.attention_mask = None  # TODO type?
+        # TODO only number of masks implemented on the other side
+        self.attention_mask: list[list[float]] = [[]]
 
 
 class NextToken:
@@ -197,6 +198,7 @@ async def sample_loop():
     tokens = await sample_gen_tokens(5)
     print("Tokens:", tokens)
 
+
 def aici_test():
     cb = aici_start(sample_loop())
 
@@ -207,6 +209,7 @@ def aici_test():
         cb.mid_process([])
         cb.post_process(0, [k + 100])
     print("Done")
+
 
 def hello():
     print("Hello from aici.py")

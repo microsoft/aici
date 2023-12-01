@@ -19,6 +19,7 @@ rustpython-vm = { version = "0.3.0", path = "../RustPython/vm", default-features
 rustpython-derive = { version = "0.3.0", path = "../RustPython/derive" }
 libc = "0.2.150"
 lazy_static = "1.4.0"
+num-traits = "0.2.17"
 # rustpython-stdlib = { version = "0.3.0", path = "../RustPython/stdlib" }
 # rustpython-pylib = { version = "0.3.0", path = "../RustPython/pylib", features = ["freeze-stdlib"] }
 

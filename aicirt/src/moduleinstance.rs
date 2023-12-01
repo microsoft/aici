@@ -217,8 +217,12 @@ impl ModuleInstance {
     pub fn run_main(&mut self) -> Result<()> {
         self.run_init()?;
         let t0 = Instant::now();
-        if self.instance.get_export(&mut self.store, "aici_main").is_some() {
-            self.call_func::<(), ()>("aici_main", ())?;
+        if self
+            .instance
+            .get_export(&mut self.store, "aici_main")
+            .is_some()
+        {
+            self.call_func::<u32, ()>("aici_main", self.handle)?;
         } else {
             let _ = self.call_func::<(i32, i32), i32>("main", (0, 0))?;
         }
