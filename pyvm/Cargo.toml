@@ -16,7 +16,9 @@ anyhow = "1.0.75"
 vob = "3.0.3"
 rustc-hash = "1.1.0"
 rustpython-vm = { version = "0.3.0", path = "../RustPython/vm", default-features = false, features = ["compiler"] }
+rustpython-derive = { version = "0.3.0", path = "../RustPython/derive" }
 libc = "0.2.150"
+lazy_static = "1.4.0"
 # rustpython-stdlib = { version = "0.3.0", path = "../RustPython/stdlib" }
 # rustpython-pylib = { version = "0.3.0", path = "../RustPython/pylib", features = ["freeze-stdlib"] }
 
@@ -29,3 +31,6 @@ path = "src/pyvm.rs"
 
 [profile.release]
 debug = 1
+
+[build-dependencies]
+glob = "0.3.1"

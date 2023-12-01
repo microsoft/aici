@@ -1,4 +1,5 @@
 from typing import Any, Optional, Coroutine, Union
+import _aici
 
 Token = int
 SeqId = int
@@ -129,6 +130,7 @@ class AiciAsync(AiciCallbacks):
     def __init__(self, f: Coroutine[CbType, None, None]):
         self._coro = f
         self._skip_prompt = False
+        _aici.register(self)
         self.step()
         if isinstance(self._cb, NextToken):
             self._skip_prompt = True
@@ -189,6 +191,7 @@ async def sample_gen_tokens(max_tokens=20) -> list[Token]:
 
 
 async def sample_loop():
+    print("Start sample")
     prompt = await GetPrompt()
     print("Prompt:", prompt)
     tokens = await sample_gen_tokens(5)
@@ -207,3 +210,4 @@ def aici_test():
 
 def hello():
     print("Hello from aici.py")
+    AiciAsync(sample_loop())
