@@ -433,6 +433,7 @@ impl RllmEngine {
         self.add_request(req_id, prompt, sampling_params)?;
 
         let mut outputs = Vec::new();
+        let t0 = Instant::now();
 
         while self.scheduler.has_unfinished_seqs() {
             let outp = self.step()?;
@@ -442,6 +443,14 @@ impl RllmEngine {
                 outputs = outp[0].seq_outputs[0].output_tokens.clone();
             }
         }
+
+        let dur = Instant::now().duration_since(t0);
+        log::debug!(
+            "generted {} tokens in {:?}; {:.2} t/s",
+            outputs.len(),
+            dur,
+            outputs.len() as f64 / (dur.as_millis() as f64 / 1000.0)
+        );
 
         Ok(self.decode_seq(&outputs)?)
     }
