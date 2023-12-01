@@ -2,6 +2,7 @@
 
 set -x
 set -e
+mkdir -p tmp
 if test -f vllm/setup.py; then
     :
 else

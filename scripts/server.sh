@@ -19,6 +19,7 @@ python harness/vllm_server.py \
     --aici-tokenizer $TOK \
     --aici-trace tmp/trace.jsonl \
     --model $MODEL \
+    --aici-rtarg="--wasm-max-pre-step-time=10" \
     --tokenizer hf-internal-testing/llama-tokenizer \
     --port 8080 --host 127.0.0.1
 
