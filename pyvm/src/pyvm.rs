@@ -4,17 +4,16 @@ use rustpython_vm as vm;
 
 fn _main() -> Result<()> {
     let source = r#"
-def main():
-    print("Hello!")
-    print("Hello 2!")
-    raise ValueError()
-
-main()
+print("Start")
+import aici
+aici.hello()
+print("STOP")
 "#;
 
     println!("STDOUT!");
 
-    vm::Interpreter::with_init(Default::default(), |_vm| {
+    vm::Interpreter::with_init(Default::default(), |vm| {
+        vm.add_frozen(rustpython_vm::py_freeze!(dir = "Lib"));
         // vm.add_native_modules(rustpython_stdlib::get_module_inits());
         // vm.add_frozen(rustpython_pylib::FROZEN_STDLIB);
     })
