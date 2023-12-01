@@ -23,6 +23,7 @@ RUN curl -L https://github.com/WebAssembly/binaryen/releases/download/version_11
 RUN curl https://sh.rustup.rs -sSf | sh -s -- -y
 ENV PATH="/root/.cargo/bin:${PATH}"
 RUN rustup target add wasm32-unknown-unknown
+RUN rustup target add wasm32-wasi
 
 RUN cd /tmp && \
     curl -L https://github.com/WebAssembly/wabt/releases/download/1.0.33/wabt-1.0.33.tar.xz | tar Jxf - && \
@@ -36,5 +37,5 @@ RUN apt-get install -y software-properties-common
 RUN apt-add-repository ppa:git-core/ppa
 RUN apt-get update && apt-get install -y git
 
-RUN apt-get install -y llvm-dev libclang-dev clang
+RUN apt-get install -y llvm-dev libclang-dev clang ccache
 ENV CUDA_COMPUTE_CAP="80"
