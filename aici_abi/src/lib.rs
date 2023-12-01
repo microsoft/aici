@@ -11,8 +11,8 @@ pub mod toktree;
 pub type TokenId = bytes::TokenId;
 
 pub use host::{
-    _print, arg_bytes, self_seq_id, stdout, tokenize, tokenize_bytes, StorageCmd, StorageOp, StorageResp,
-    VariableStorage,
+    _print, arg_bytes, return_logit_bias, self_seq_id, stdout, tokenize, tokenize_bytes,
+    StorageCmd, StorageOp, StorageResp, VariableStorage,
 };
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -140,7 +140,9 @@ pub trait AiciVm {
         let res = self.mid_process(arg);
         match &res {
             MidProcessResult::SampleWithBias { allowed_tokens } => {
-                host::return_logit_bias(allowed_tokens);
+                if allowed_tokens.len() > 0 {
+                    host::return_logit_bias(allowed_tokens);
+                }
             }
             _ => {}
         }

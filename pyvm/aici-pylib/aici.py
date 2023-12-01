@@ -1,14 +1,9 @@
 from typing import Any, Optional, Coroutine, Union
-import _aici  # type: ignore
+from _aici import TokenSet, tokenize
+import _aici
 
 Token = int
 SeqId = int
-
-
-# TODO
-class TokenSet:
-    def __init__(self):
-        self.allowed_tokens = {}
 
 
 class MidProcessResult:
@@ -34,9 +29,23 @@ class MidProcessResult:
 
 # Typically not needed.
 class PreProcessResult:
-    def __init__(self, *, suspend=False):
-        self.suspend = suspend
-        self.attention_mask: list[list[float]] = [[]]
+    def __init__(self, *, suspended=False):
+        self.suspended = suspended
+        self.attention_masks: list[list[float]] = [[]]
+
+    @classmethod
+    def continue_(cls):
+        return cls()
+
+    @classmethod
+    def suspend(cls):
+        return cls(suspended=True)
+
+    @classmethod
+    def fork(cls, num_forks: int):
+        res = cls()
+        res.attention_masks = [[] for _ in range(num_forks)]
+        return res
 
 
 class NextToken:
@@ -46,13 +55,13 @@ class NextToken:
     """
 
     # to be overridden
-    def can_continue(self) -> bool:
+    def pre_process(self) -> PreProcessResult:
         """
-        Override to return False, if the model cannot continue generating tokens
+        Override to suspend, if the model cannot continue generating tokens
         now (for example, not all variables are available to compute bias).
         ~1ms time limit.
         """
-        return True
+        return PreProcessResult.continue_()
 
     def process(self) -> MidProcessResult:
         """
@@ -67,7 +76,7 @@ class NextToken:
         self.fork_group: list[SeqId] = []
 
     def _pre_process(self) -> PreProcessResult:
-        return PreProcessResult(suspend=not self.can_continue())
+        return self.pre_process()
 
     def _mid_process(self, fork_group: list[SeqId]) -> MidProcessResult:
         self.fork_group = fork_group
@@ -76,6 +85,8 @@ class NextToken:
     def _post_process(self, backtrack: int, tokens: list[Token]):
         # 'backtrack' is not very useful - it's just what we passed in MidProcessResult
         self.tokens = tokens
+        # also there is little point overriding this, as the code right after await will
+        # run exactly the same as if it was placed here
 
     def __await__(self):
         yield self
@@ -119,6 +130,14 @@ class GetPrompt:
 
 
 CbType = Union[GetPrompt, NextToken]
+
+
+class FixedTokens(NextToken):
+    def __init__(self, text: str | bytes):
+        self.tokens: list[Token] = tokenize(text)
+
+    def process(self) -> MidProcessResult:
+        return MidProcessResult.from_splice(0, tokens=self.tokens)
 
 
 class StopToken(NextToken):
@@ -212,4 +231,9 @@ def aici_test():
 
 def hello():
     print("Hello from aici.py XXX")
+    x = TokenSet()
+    print(len(x), x[1], x[2])
+    x.set_all(True)
+    print(len(x), x[1], x[2])
+    print(x)
     AiciAsync(sample_loop())

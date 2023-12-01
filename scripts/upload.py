@@ -7,10 +7,8 @@ import pyaici.ast as ast
 import pyaici.rest
 import pyaici.util
 
-prog = "aici_ast_runner"
 
-
-def upload_wasm():
+def upload_wasm(prog="aici_ast_runner"):
     r = subprocess.run(["sh", "wasm.sh", "build"], cwd=prog)
     if r.returncode != 0:
         sys.exit(1)
@@ -129,6 +127,17 @@ def main():
             })
         ]
     }
+
+    if len(sys.argv) > 1 and sys.argv[1].endswith(".py"):
+        mod = upload_wasm("pyvm")
+        pyaici.rest.log_level = 1
+        arg = open(sys.argv[1]).read()
+        ask_completion(
+            prompt="",
+            aici_module=mod,
+            aici_arg=arg,
+        )
+        return
 
     mod = upload_wasm()
     pyaici.rest.log_level = 1

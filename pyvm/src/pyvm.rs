@@ -1,6 +1,6 @@
 use aici_abi::{
-    AiciVm, InitPromptArg, MidProcessArg, MidProcessResult, PostProcessArg, PostProcessResult,
-    PreProcessArg, PreProcessResult,
+    svob::SimpleVob, toktree::TokTrie, AiciVm, InitPromptArg, MidProcessArg, MidProcessResult,
+    PostProcessArg, PostProcessResult, PreProcessArg, PreProcessResult,
 };
 use anyhow::Result;
 
@@ -12,15 +12,22 @@ use rustpython_vm::{
 };
 use std::{ops::Deref, sync::Mutex, vec};
 
-struct VmImpl {
+struct ModuleState {
     cb_obj: Option<PyObjectRef>,
+    trie: TokTrie,
 }
 
-unsafe impl Send for VmImpl {}
+unsafe impl Send for ModuleState {}
 
 // Define a global Mutex wrapped in a lazy_static
 lazy_static! {
-    static ref GLOBAL_STATE: Mutex<VmImpl> = Mutex::new(VmImpl { cb_obj: None });
+    static ref GLOBAL_STATE: Mutex<ModuleState> = Mutex::new(ModuleState {
+        cb_obj: None,
+        trie: TokTrie::from_host(),
+        // vars: VariableStorage::new(),
+        // tokens: vec![],
+        // bytes: vec![],
+    });
 }
 
 fn get_cb_obj() -> PyObjectRef {
@@ -33,14 +40,106 @@ fn get_cb_obj() -> PyObjectRef {
 
 #[rustpython_derive::pymodule]
 mod _aici {
-    use rustpython_vm::{PyObjectRef, PyResult, VirtualMachine};
+    use std::sync::Mutex;
 
-    use crate::GLOBAL_STATE;
+    use aici_abi::svob::SimpleVob;
+    use once_cell::sync::Lazy;
+    use rustpython_derive::pyclass;
+    use rustpython_vm::{
+        atomic_func,
+        builtins::PyTypeRef,
+        function::ArgStrOrBytesLike,
+        protocol::PySequenceMethods,
+        types::{AsSequence, Constructor},
+        PyObjectRef, PyPayload, PyResult, VirtualMachine,
+    };
+
+    use crate::{VmExt, GLOBAL_STATE};
 
     #[pyfunction]
     fn register(obj: PyObjectRef, _vm: &VirtualMachine) -> PyResult<()> {
         GLOBAL_STATE.lock().unwrap().cb_obj = Some(obj);
         Ok(())
+    }
+
+    #[pyfunction]
+    fn tokenize(text: ArgStrOrBytesLike, vm: &VirtualMachine) -> PyResult {
+        let tokens = aici_abi::tokenize_bytes(&text.borrow_bytes());
+        Ok(vm.new_int_list(&tokens).into())
+    }
+
+    #[pyattr]
+    #[pyclass(name)]
+    #[derive(Debug, PyPayload)]
+    pub struct TokenSet(pub Mutex<SimpleVob>);
+
+    #[pyclass(with(Constructor, AsSequence))]
+    impl TokenSet {
+        fn len(&self) -> usize {
+            self.0.lock().unwrap().len()
+        }
+        fn get_at(&self, i: isize) -> Option<bool> {
+            let inner = self.0.lock().unwrap();
+            if i < 0 || i >= inner.len() as isize {
+                None
+            } else {
+                Some(inner.is_allowed(i as u32))
+            }
+        }
+        fn set_at(&self, i: isize, b: bool) -> Option<()> {
+            let mut inner = self.0.lock().unwrap();
+            if i < 0 || i >= inner.len() as isize {
+                None
+            } else {
+                if b {
+                    inner.allow_token(i as u32);
+                } else {
+                    inner.disallow_token(i as u32);
+                }
+                Some(())
+            }
+        }
+
+        #[pymethod]
+        fn set_all(&self, v: bool) {
+            let mut inner = self.0.lock().unwrap();
+            inner.set_all(v)
+        }
+    }
+
+    impl AsSequence for TokenSet {
+        fn as_sequence() -> &'static PySequenceMethods {
+            static AS_SEQUENCE: Lazy<PySequenceMethods> = Lazy::new(|| PySequenceMethods {
+                length: atomic_func!(|seq, _vm| Ok(TokenSet::sequence_downcast(seq).len())),
+                item: atomic_func!(|seq, i, vm| {
+                    TokenSet::sequence_downcast(seq)
+                        .get_at(i)
+                        .map(|x| vm.ctx.new_bool(x).into())
+                        .ok_or_else(|| vm.new_index_error("index out of range".to_owned()))
+                }),
+                ass_item: atomic_func!(|seq, i, value, vm| {
+                    if let Some(value) = value {
+                        TokenSet::sequence_downcast(seq)
+                            .set_at(i, vm.to_bool_strict(value))
+                            .ok_or_else(|| vm.new_index_error("index out of range".to_owned()))
+                    } else {
+                        Err(vm.new_index_error("can't del".to_owned()))
+                    }
+                }),
+                ..PySequenceMethods::NOT_IMPLEMENTED
+            });
+            &AS_SEQUENCE
+        }
+    }
+
+    impl Constructor for TokenSet {
+        type Args = ();
+        fn py_new(cls: PyTypeRef, _arg: Self::Args, vm: &VirtualMachine) -> PyResult {
+            let v = GLOBAL_STATE.lock().unwrap().trie.alloc_token_set();
+            TokenSet(Mutex::new(v))
+                .into_ref_with_type(vm, cls)
+                .map(Into::into)
+        }
     }
 }
 
@@ -61,9 +160,10 @@ fn _main() -> Result<()> {
 #[no_mangle]
 pub extern "C" fn aici_main(p: *mut Runner) {
     let runner = unsafe { &mut *p };
-    runner.init_prompt(InitPromptArg {
-        prompt: vec![1, 2, 3],
-    });
+    let _ = runner;
+    // runner.init_prompt(InitPromptArg {
+    //     prompt: vec![1, 2, 3],
+    // });
 }
 
 fn main() {
@@ -108,30 +208,34 @@ impl Runner {
     }
 }
 
-impl Runner {
+trait VmExt {
+    fn get_vm(&self) -> &VirtualMachine;
+
     fn catch_exn<T>(&self, r: PyResult<T>) -> T {
         match r {
             Ok(v) => v,
-            Err(e) => self.interpreter.enter(|vm| {
+            Err(e) => {
+                let vm = self.get_vm();
                 vm.print_exception(e.clone());
                 panic!("Python Exception: {e:?}");
-            }),
+            }
         }
     }
 
-    fn attr(&self, vm: &VirtualMachine, obj: &PyObjectRef, name: &'static str) -> PyObjectRef {
-        self.catch_exn(obj.get_attr(name, vm))
+    fn attr(&self, obj: &PyObjectRef, name: &'static str) -> PyObjectRef {
+        self.catch_exn(obj.get_attr(name, self.get_vm()))
     }
 
-    fn bool_attr(&self, vm: &VirtualMachine, obj: &PyObjectRef, name: &'static str) -> bool {
-        self.to_bool_strict(vm, self.attr(vm, obj, name))
+    fn bool_attr(&self, obj: &PyObjectRef, name: &'static str) -> bool {
+        self.to_bool_strict(self.attr(obj, name))
     }
 
-    fn int_attr(&self, vm: &VirtualMachine, obj: &PyObjectRef, name: &'static str) -> i32 {
-        self.to_i32(vm, self.attr(vm, obj, name))
+    fn int_attr(&self, obj: &PyObjectRef, name: &'static str) -> i32 {
+        self.to_i32(self.attr(obj, name))
     }
 
-    fn to_bool_strict(&self, vm: &VirtualMachine, obj: PyObjectRef) -> bool {
+    fn to_bool_strict(&self, obj: PyObjectRef) -> bool {
+        let vm = self.get_vm();
         if obj.is(&vm.ctx.true_value) {
             true
         } else if obj.is(&vm.ctx.false_value) {
@@ -141,7 +245,8 @@ impl Runner {
         }
     }
 
-    fn to_i32(&self, vm: &VirtualMachine, obj: PyObjectRef) -> i32 {
+    fn to_i32(&self, obj: PyObjectRef) -> i32 {
+        let vm = self.get_vm();
         let v = obj.to_number().int(vm).expect("expecting int");
         self.catch_exn(v)
             .as_bigint()
@@ -149,15 +254,17 @@ impl Runner {
             .expect("expecting i32")
     }
 
-    fn to_f64(&self, vm: &VirtualMachine, obj: PyObjectRef) -> f64 {
+    fn to_f64(&self, obj: PyObjectRef) -> f64 {
+        let vm = self.get_vm();
         let v = obj.to_number().float(vm).expect("expecting float");
         self.catch_exn(v).to_f64()
     }
 
-    fn to_list<F, R>(&self, vm: &VirtualMachine, obj: PyObjectRef, mut f: F) -> Vec<R>
+    fn to_list<F, R>(&self, obj: PyObjectRef, mut f: F) -> Vec<R>
     where
         F: FnMut(PyObjectRef) -> R,
     {
+        let vm = self.get_vm();
         obj.payload_if_exact::<PyList>(vm)
             .expect("expecting list")
             .borrow_vec()
@@ -165,24 +272,39 @@ impl Runner {
             .map(|x| f(x.clone()))
             .collect::<Vec<_>>()
     }
+
+    fn new_int_list<T: Into<BigInt> + ToPrimitive + Clone>(&self, lst: &Vec<T>) -> PyRef<PyList> {
+        let vm = self.get_vm();
+        let elts = lst
+            .iter()
+            .map(|v| vm.ctx.new_int(v.clone()).into())
+            .collect();
+        vm.ctx.new_list(elts)
+    }
+}
+
+impl VmExt for VirtualMachine {
+    fn get_vm(&self) -> &VirtualMachine {
+        self
+    }
 }
 
 impl AiciVm for Runner {
     fn init_prompt(&mut self, arg: InitPromptArg) {
         let obj = get_cb_obj();
         self.interpreter.enter(|vm| {
-            let lst = new_int_list(vm, &arg.prompt);
-            self.catch_exn(vm.call_method(obj.deref(), "init_prompt", vec![lst.into()]));
+            let lst = vm.new_int_list(&arg.prompt);
+            vm.catch_exn(vm.call_method(obj.deref(), "init_prompt", vec![lst.into()]));
         });
     }
 
     fn pre_process(&mut self, _arg: PreProcessArg) -> PreProcessResult {
         let obj = get_cb_obj();
         self.interpreter.enter(|vm| {
-            let r = self.catch_exn(vm.call_method(obj.deref(), "pre_process", vec![]));
-            let suspend = self.bool_attr(vm, &r, "suspend");
-            let attention_masks = self.to_list(vm, self.attr(vm, &r, "attention_masks"), |v| {
-                self.to_list(vm, v, |v| self.to_f64(vm, v) as f32)
+            let r = vm.catch_exn(vm.call_method(obj.deref(), "pre_process", vec![]));
+            let suspend = vm.bool_attr(&r, "suspended");
+            let attention_masks = vm.to_list(vm.attr(&r, "attention_masks"), |v| {
+                vm.to_list(v, |v| vm.to_f64(v) as f32)
             });
             PreProcessResult {
                 attention_masks,
@@ -194,18 +316,15 @@ impl AiciVm for Runner {
     fn mid_process(&mut self, arg: MidProcessArg) -> MidProcessResult {
         let obj = get_cb_obj();
         self.interpreter.enter(|vm| {
-            let fork_group =
-                new_int_list(vm, &arg.fork_group.iter().map(|v| v.0.clone()).collect());
+            let fork_group = vm.new_int_list(&arg.fork_group.iter().map(|v| v.0.clone()).collect());
             let r =
-                self.catch_exn(vm.call_method(obj.deref(), "pre_process", vec![fork_group.into()]));
-            let stop = self.bool_attr(vm, &r, "stop");
+                vm.catch_exn(vm.call_method(obj.deref(), "mid_process", vec![fork_group.into()]));
+            let stop = vm.bool_attr(&r, "stop");
             if stop {
                 MidProcessResult::Stop
             } else {
-                let backtrack = self.int_attr(vm, &r, "backtrack") as u32;
-                let ff_tokens = self.to_list(vm, self.attr(vm, &r, "ff_tokens"), |v| {
-                    self.to_i32(vm, v) as u32
-                });
+                let backtrack = vm.int_attr(&r, "backtrack") as u32;
+                let ff_tokens = vm.to_list(vm.attr(&r, "ff_tokens"), |v| vm.to_i32(v) as u32);
 
                 if backtrack > 0 || ff_tokens.len() > 0 {
                     MidProcessResult::Splice {
@@ -213,27 +332,33 @@ impl AiciVm for Runner {
                         ff_tokens,
                     }
                 } else {
-                    // TODO logit_bias
-                    MidProcessResult::Stop
+                    let logit_bias = vm.attr(&r, "logit_bias");
+                    let v = logit_bias
+                        .payload_if_exact::<_aici::TokenSet>(vm)
+                        .expect("expecting TokenSet as logit_bias");
+                    let bias = v.0.lock().unwrap();
+                    aici_abi::return_logit_bias(&bias);
+                    MidProcessResult::SampleWithBias {
+                        allowed_tokens: SimpleVob::new(),
+                    }
                 }
             }
         })
     }
 
-    fn post_process(&mut self, _arg: PostProcessArg) -> PostProcessResult {
-        PostProcessResult {}
+    fn post_process(&mut self, arg: PostProcessArg) -> PostProcessResult {
+        let obj = get_cb_obj();
+        self.interpreter.enter(|vm| {
+            let tokens = vm.new_int_list(&arg.tokens);
+            let backtrack = vm.ctx.new_int(arg.backtrack as i32);
+            let _ignore = vm.catch_exn(vm.call_method(
+                obj.deref(),
+                "post_process",
+                vec![backtrack.into(), tokens.into()],
+            ));
+            PostProcessResult {}
+        })
     }
-}
-
-fn new_int_list<T: Into<BigInt> + ToPrimitive + Clone>(
-    vm: &VirtualMachine,
-    lst: &Vec<T>,
-) -> PyRef<PyList> {
-    let elts = lst
-        .iter()
-        .map(|v| vm.ctx.new_int(v.clone()).into())
-        .collect();
-    vm.ctx.new_list(elts)
 }
 
 fn runner_from_env() -> Runner {

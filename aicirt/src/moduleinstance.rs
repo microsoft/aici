@@ -12,7 +12,7 @@ use wasmtime;
 
 use crate::bench::TimerSet;
 use crate::hostimpl::{
-    setup_linker, AiciLimits, GlobalInfo, ModuleData, ModuleInstId, LOGIT_BIAS_ALLOW,
+    setup_linker, AiciLimits, GlobalInfo, ModuleData, ModuleInstId, LOGIT_BIAS_ALLOW, LOGIT_BIAS_DISALLOW,
 };
 use crate::shm::Shm;
 use crate::worker::{
@@ -280,6 +280,16 @@ impl ModuleInstance {
         self.call_func::<WasmAici, ()>("aici_mid_process", self.handle)?;
         match self.proc_result()? {
             MidProcessResult::SampleWithBias { .. } => Ok(json!({})),
+            MidProcessResult::Stop { .. } => {
+                let eos = self.store.data().globals.tokrx_info.tok_eos;
+                self.store
+                    .data_mut()
+                    .logit_ptr
+                    .iter_mut()
+                    .for_each(|v| *v = LOGIT_BIAS_DISALLOW);
+                self.store.data_mut().logit_ptr[eos as usize] = LOGIT_BIAS_ALLOW;
+                Ok(json!({}))
+            }
             MidProcessResult::Splice {
                 backtrack,
                 mut ff_tokens,
@@ -317,7 +327,6 @@ impl ModuleInstance {
                     }))
                 }
             }
-            r => Err(anyhow!("unhandled {r:?}")),
         }
     }
 
