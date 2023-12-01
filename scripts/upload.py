@@ -130,6 +130,14 @@ def main():
         ]
     }
 
+    arg = {
+        "steps": [
+            ast.fixed("The word 'hello' in French is"),
+            ast.gen(max_tokens=10),
+        ]
+    }
+
+
     mod = upload_wasm()
     pyaici.rest.log_level = 1
     # read file named on command line if provided
