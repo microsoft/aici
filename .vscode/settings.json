@@ -43,7 +43,8 @@
         "format": "cpp"
     },
     "python.analysis.extraPaths": [
-        "./vllm"
+        "./vllm",
+        "./pyvm/aici-pylib"
     ],
     "spellright.language": [
         "en"

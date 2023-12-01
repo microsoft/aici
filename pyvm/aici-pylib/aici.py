@@ -211,5 +211,5 @@ def aici_test():
 
 
 def hello():
-    print("Hello from aici.py")
+    print("Hello from aici.py XXX")
     AiciAsync(sample_loop())

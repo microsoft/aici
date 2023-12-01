@@ -45,7 +45,7 @@ mod _aici {
 }
 
 fn _main() -> Result<()> {
-    let source = std::fs::read_to_string("test.py").unwrap();
+    let source = std::fs::read_to_string("samples/test.py").unwrap();
     let mut runner = Runner::new(source.as_bytes().to_vec());
 
     runner.init_prompt(InitPromptArg {
@@ -80,6 +80,7 @@ impl Runner {
         let interpreter = rustpython_vm::Interpreter::with_init(Default::default(), |vm| {
             vm.add_native_module("_aici".to_owned(), Box::new(_aici::make_module));
             vm.add_frozen(rustpython_vm::py_freeze!(dir = "Lib"));
+            vm.add_frozen(rustpython_vm::py_freeze!(dir = "aici-pylib"));
         });
         interpreter.enter(|vm| {
             let scope = vm.new_scope_with_builtins();
