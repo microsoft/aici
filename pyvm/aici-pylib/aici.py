@@ -1,5 +1,13 @@
 from typing import Any, Optional, Coroutine, Union, Callable
-from _aici import TokenSet, tokenize, RegexConstraint
+from _aici import (
+    TokenSet,
+    tokenize,
+    detokenize,
+    RegexConstraint,
+    get_var,
+    set_var,
+    append_var,
+)
 import _aici
 
 Token = int

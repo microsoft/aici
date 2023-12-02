@@ -130,7 +130,7 @@ def main():
 
     if len(sys.argv) > 1 and sys.argv[1].endswith(".py"):
         mod = upload_wasm("pyvm")
-        pyaici.rest.log_level = 1
+        pyaici.rest.log_level = 2
         arg = open(sys.argv[1]).read()
         ask_completion(
             prompt="",

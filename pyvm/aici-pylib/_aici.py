@@ -5,10 +5,29 @@ import aici
 
 
 def register(cb: aici.AiciCallbacks):
+    """
+    Use aici.start() instead.
+    """
     ...
 
 
 def tokenize(text: bytes | str) -> list[int]:
+    ...
+
+
+def detokenize(tokens: list[int]) -> bytes:
+    ...
+
+
+def get_var(name: str) -> None | bytes:
+    ...
+
+
+def set_var(name: str, value: bytes | str) -> None:
+    ...
+
+
+def append_var(name: str, value: bytes | str) -> None:
     ...
 
 

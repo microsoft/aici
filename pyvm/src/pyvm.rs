@@ -2,7 +2,7 @@ mod rx;
 
 use aici_abi::{
     svob::SimpleVob, toktree::TokTrie, AiciVm, InitPromptArg, MidProcessArg, MidProcessResult,
-    PostProcessArg, PostProcessResult, PreProcessArg, PreProcessResult,
+    PostProcessArg, PostProcessResult, PreProcessArg, PreProcessResult, VariableStorage,
 };
 use anyhow::Result;
 
@@ -17,6 +17,7 @@ use std::{ops::Deref, sync::Mutex, vec};
 struct ModuleState {
     cb_obj: Option<PyObjectRef>,
     trie: TokTrie,
+    vars: VariableStorage,
 }
 
 unsafe impl Send for ModuleState {}
@@ -26,7 +27,7 @@ lazy_static! {
     static ref GLOBAL_STATE: Mutex<ModuleState> = Mutex::new(ModuleState {
         cb_obj: None,
         trie: TokTrie::from_host(),
-        // vars: VariableStorage::new(),
+         vars: VariableStorage::new(),
         // tokens: vec![],
         // bytes: vec![],
     });
@@ -72,6 +73,38 @@ mod _aici {
     fn tokenize(text: ArgStrOrBytesLike, vm: &VirtualMachine) -> PyResult {
         let tokens = aici_abi::tokenize_bytes(&text.borrow_bytes());
         Ok(vm.new_int_list(&tokens).into())
+    }
+
+    #[pyfunction]
+    fn detokenize(tokens: PyObjectRef, vm: &VirtualMachine) -> Vec<u8> {
+        let tokens = vm.to_list(tokens, |v| vm.to_i32(v) as u32);
+        let trie = &mut GLOBAL_STATE.lock().unwrap().trie;
+        let bytes = tokens
+            .iter()
+            .flat_map(|t| trie.token(*t).to_vec())
+            .collect();
+        bytes
+    }
+
+    #[pyfunction]
+    fn get_var(name: PyStrRef, _vm: &VirtualMachine) -> Option<Vec<u8>> {
+        let name = name.as_str();
+        let v = GLOBAL_STATE.lock().unwrap().vars.get(name);
+        v
+    }
+
+    #[pyfunction]
+    fn set_var(name: PyStrRef, value: ArgStrOrBytesLike, _vm: &VirtualMachine) {
+        let name = name.as_str();
+        let vars = &GLOBAL_STATE.lock().unwrap().vars;
+        vars.set(name, (&value.borrow_bytes()).to_vec());
+    }
+
+    #[pyfunction]
+    fn append_var(name: PyStrRef, value: ArgStrOrBytesLike, _vm: &VirtualMachine) {
+        let name = name.as_str();
+        let vars = &GLOBAL_STATE.lock().unwrap().vars;
+        vars.append(name, (&value.borrow_bytes()).to_vec());
     }
 
     #[pyattr]
