@@ -11,10 +11,9 @@ async def main():
     prompt = await aici.GetPrompt()
     print(prompt)
     await aici.FixedTokens("The word 'hello' in French is")
-    t = await aici.gen_tokens(regex=r' "[^"]+"')
-    print(t)
-    s = aici.detokenize(t)
-    print(s)
+    await aici.gen_tokens(regex=r' "[^"]+"', store_var="french")
+    await aici.FixedTokens("\nAnd in German")
+    await aici.gen_tokens(regex=r' "[^"]+"', store_var="german")
 
 
 aici.aici_start(main())

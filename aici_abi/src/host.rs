@@ -41,6 +41,9 @@ extern "C" {
     fn aici_host_return_process_result(res: *const u8, res_size: u32);
 
     fn aici_host_storage_cmd(cmd: *const u8, cmd_size: u32) -> BlobId;
+
+    // This can be also obtained from the TokTrie.
+    fn aici_host_eos_token() -> TokenId;
 }
 
 // TODO: add <T>
@@ -193,7 +196,8 @@ pub mod hex_string {
         let hexstr = String::deserialize(d)?;
         let mut res = Vec::new();
         for i in 0..(hexstr.len() / 2) {
-            let b = u8::from_str_radix(&hexstr[2 * i..2 * i + 2], 16).map_err(serde::de::Error::custom)?;
+            let b = u8::from_str_radix(&hexstr[2 * i..2 * i + 2], 16)
+                .map_err(serde::de::Error::custom)?;
             res.push(b);
         }
         Ok(res)
@@ -316,4 +320,9 @@ pub fn tokenize(s: &str) -> Vec<TokenId> {
 /// Return the ID of the current process.
 pub fn self_seq_id() -> SeqId {
     unsafe { SeqId(aici_host_self_seq_id()) }
+}
+
+/// Return the ID of the EOS token.
+pub fn eos_token() -> TokenId {
+    unsafe { aici_host_eos_token() }
 }

@@ -107,6 +107,12 @@ mod _aici {
         vars.append(name, (&value.borrow_bytes()).to_vec());
     }
 
+    #[pyfunction]
+    fn eos_token() -> TokenId {
+        let trie = &GLOBAL_STATE.lock().unwrap().trie;
+        trie.special_token(SpecialToken::EndOfSentence)
+    }
+
     #[pyattr]
     #[pyclass(name)]
     #[derive(Debug, PyPayload)]
@@ -436,12 +442,13 @@ impl AiciVm for Runner {
         self.interpreter.enter(|vm| {
             let tokens = vm.new_int_list(&arg.tokens);
             let backtrack = vm.ctx.new_int(arg.backtrack as i32);
-            let _ignore = vm.catch_exn(vm.call_method(
+            let r = vm.catch_exn(vm.call_method(
                 obj.deref(),
                 "post_process",
                 vec![backtrack.into(), tokens.into()],
             ));
-            PostProcessResult {}
+            let stop = vm.bool_attr(&r, "stop_seq");
+            PostProcessResult { stop }
         })
     }
 }

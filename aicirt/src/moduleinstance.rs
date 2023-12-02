@@ -333,8 +333,10 @@ impl ModuleInstance {
     fn do_post_process(&mut self, rtarg: RtPostProcessArg) -> Result<Value> {
         self.store.data_mut().set_post_process_data(rtarg.op);
         self.call_func::<WasmAici, ()>("aici_post_process", self.handle)?;
-        let _res: PostProcessResult = self.proc_result()?;
-        Ok(json!({}))
+        let res: PostProcessResult = self.proc_result()?;
+        Ok(json!({
+            "stop": res.stop,
+        }))
     }
 
     fn json_result(&mut self, lbl: &str, t0: Instant, res: Result<Value>) -> Value {

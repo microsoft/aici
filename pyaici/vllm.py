@@ -119,8 +119,10 @@ def install(runner: AiciRunner):
         _seq_group: SequenceGroup,
         child_seqs: List[Tuple[Sequence, Sequence]],
     ):
+        runner.recent_seqs = {}
         for seq, parent in child_seqs:
             assert not seq.skip_round
+            runner.recent_seqs[seq.seq_id] = seq
             # lookup by parent - the child wasn't born yet when response was generated
             resp = runner.response_by_seq_id(parent.seq_id)
             backtrack: int = resp.get("backtrack", 0)
@@ -143,7 +145,10 @@ def install(runner: AiciRunner):
             runner.step_add_post(seq.seq_id, backtrack, toks, clone_id)
 
     def finish_sampling():
-        runner.step_finish_post()
+        for seq_id in runner.step_finish_post():
+            seq: Sequence = runner.recent_seqs[seq_id]
+            seq.status = SequenceStatus.FINISHED_STOPPED
+        runner.recent_seqs = {}
 
     SamplingParams.apply_dynamic_logit_bias = apply_dynamic_logit_bias
     SamplingParams.initiate_step = initiate_step

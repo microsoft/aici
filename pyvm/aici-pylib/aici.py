@@ -7,6 +7,7 @@ from _aici import (
     get_var,
     set_var,
     append_var,
+    eos_token,
 )
 import _aici
 
@@ -58,6 +59,23 @@ class PreProcessResult:
         return res
 
 
+class PostProcessResult:
+    def __init__(self, *, stop_seq=False):
+        self.stop_seq = stop_seq
+
+    @classmethod
+    def continue_(cls):
+        return cls()
+
+    @classmethod
+    def stop(cls):
+        return cls(stop_seq=True)
+
+    @classmethod
+    def from_tokens(cls, tokens: list[int]):
+        return cls(stop_seq=(eos_token() in tokens))
+
+
 class NextToken:
     """
     Awaiting this will return generated token (or tokens, if fast-forwarding requested by self.mid_process()).
@@ -85,10 +103,11 @@ class NextToken:
         This can be overridden to do something with generated tokens.
         ~1ms time limit.
         """
-        pass
+        return PostProcessResult.continue_()
 
     # internals
     def __init__(self) -> None:
+        self.finished = False
         self._reset()
 
     def _reset(self):
@@ -106,12 +125,58 @@ class NextToken:
     def _post_process(self, backtrack: int, tokens: list[Token]):
         # 'backtrack' is not very useful - it's just what we passed in MidProcessResult
         self.tokens = tokens
-        self.post_process(tokens)
+        self.finished = eos_token() in tokens
+        return self.post_process(tokens)
 
     def __await__(self):
         yield self
         assert self.tokens is not None
         return self.tokens
+
+
+class FixedTokens(NextToken):
+    def __init__(self, text: str | bytes):
+        super().__init__()
+        self.text: list[Token] = tokenize(text)
+
+    def mid_process(self) -> MidProcessResult:
+        return MidProcessResult.splice(0, tokens=self.text)
+
+
+class StopToken(NextToken):
+    def __init__(self) -> None:
+        super().__init__()
+
+    def mid_process(self) -> MidProcessResult:
+        return MidProcessResult(stop=True)
+
+    def post_process(self, tokens: list[Token]):
+        self.finished = False  # we're never finished, just keep yelling STOP!
+        return PostProcessResult.stop()
+
+
+Constraint = RegexConstraint
+
+
+class ConstrainedToken(NextToken):
+    def __init__(self, mk_constraint: Callable[[], Constraint]):
+        super().__init__()
+        self.mk_constraint = mk_constraint
+        self._constraint: Constraint | None = None
+
+    def mid_process(self) -> MidProcessResult:
+        bias = TokenSet()
+        # we build the constraint lazily, in mid_process() which has reasonably long time limit
+        if self._constraint is None:
+            self._constraint = self.mk_constraint()
+        self._constraint.allow_tokens(bias)
+        return MidProcessResult.bias(bias)
+
+    def post_process(self, tokens: list[Token]):
+        assert self._constraint is not None
+        for t in tokens:
+            self._constraint.append_token(t)
+        return PostProcessResult.continue_()
 
 
 class AiciCallbacks:
@@ -130,7 +195,7 @@ class AiciCallbacks:
         return MidProcessResult.bias(TokenSet())
 
     def post_process(self, backtrack: int, tokens: list[Token]):
-        pass
+        return PostProcessResult.from_tokens(tokens)
 
 
 class GetPrompt:
@@ -150,19 +215,6 @@ class GetPrompt:
 
 
 CbType = Union[GetPrompt, NextToken]
-
-
-class FixedTokens(NextToken):
-    def __init__(self, text: str | bytes):
-        self.text: list[Token] = tokenize(text)
-
-    def mid_process(self) -> MidProcessResult:
-        return MidProcessResult.splice(0, tokens=self.text)
-
-
-class StopToken(NextToken):
-    def mid_process(self) -> MidProcessResult:
-        return MidProcessResult(stop=True)
 
 
 class AiciAsync(AiciCallbacks):
@@ -198,6 +250,8 @@ class AiciAsync(AiciCallbacks):
 
     def pre_process(self) -> PreProcessResult:
         assert isinstance(self._cb, NextToken)
+        if self._cb.finished:
+            self._cb = StopToken()
         r = self._cb._pre_process()
         assert isinstance(r, PreProcessResult)
         return r
@@ -211,9 +265,11 @@ class AiciAsync(AiciCallbacks):
 
     def post_process(self, backtrack: int, tokens: list[Token]):
         assert isinstance(self._cb, NextToken)
-        self._cb._post_process(backtrack, tokens)
+        r = self._cb._post_process(backtrack, tokens)
+        assert isinstance(r, PostProcessResult)
         self.step()
         assert isinstance(self._cb, NextToken)
+        return r
 
 
 def aici_start(f: Coroutine[CbType, None, None]):
@@ -225,29 +281,11 @@ def aici_start(f: Coroutine[CbType, None, None]):
     return AiciAsync(f)
 
 
-Constraint = RegexConstraint
-
-
-class ConstrainedToken(NextToken):
-    def __init__(self, mk_constraint: Callable[[], Constraint]):
-        self.mk_constraint = mk_constraint
-        self._constraint: Constraint | None = None
-
-    def mid_process(self) -> MidProcessResult:
-        bias = TokenSet()
-        # we build the constraint lazily, in mid_process() which has reasonably long time limit
-        if self._constraint is None:
-            self._constraint = self.mk_constraint()
-        self._constraint.allow_tokens(bias)
-        return MidProcessResult.bias(bias)
-
-    def post_process(self, tokens: list[Token]):
-        assert self._constraint is not None
-        for t in tokens:
-            self._constraint.append_token(t)
-
-
-async def gen_tokens(regex: str | None = None, max_tokens=20) -> list[Token]:
+async def gen_tokens(
+    regex: str | None = None,
+    store_var: str | None = None,
+    max_tokens = 20,
+) -> list[Token]:
     res: list[Token] = []
     if regex is None:
         next_token = NextToken()
@@ -256,4 +294,8 @@ async def gen_tokens(regex: str | None = None, max_tokens=20) -> list[Token]:
     for _ in range(max_tokens):
         t = await next_token
         res += t
+        if next_token.finished:
+            break
+    if store_var is not None:
+        set_var(store_var, detokenize(res))
     return res

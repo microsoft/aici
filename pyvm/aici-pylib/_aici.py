@@ -30,6 +30,8 @@ def set_var(name: str, value: bytes | str) -> None:
 def append_var(name: str, value: bytes | str) -> None:
     ...
 
+def eos_token() -> int:
+    ...
 
 class TokenSet(Sequence[bool]):
     def __init__(self):

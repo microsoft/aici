@@ -327,6 +327,7 @@ class AiciRunner:
         self.cmd.exec("ping")
         resp = self.cmd.exec("tokens")
         self.vocab_size = resp["data"]["vocab_size"]
+        self.recent_seqs = {}
 
         self.step_reset()
 
@@ -548,10 +549,15 @@ class AiciRunner:
         if self.batch_size == 0:
             # nothing to do
             self.last_post_response = {}
-            return False
+            return []
         assert not self.logit_pending
         self.last_post_response = self.cmd.exec("post_process", cmd)["data"]
-        return True
+        stop_seqs = []
+        for (k, v) in self.last_post_response.items():
+            v: dict
+            if v.get("stop", False):
+                stop_seqs.append(int(k))
+        return stop_seqs
 
     def flush_logit_bias(self):
         """

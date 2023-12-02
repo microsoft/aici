@@ -136,6 +136,7 @@ def main():
             prompt="",
             aici_module=mod,
             aici_arg=arg,
+            ignore_eos=True,
         )
         return
 

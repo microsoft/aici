@@ -1173,7 +1173,7 @@ impl AiciVm for Runner {
 
         // if in wait state, don't do anything...
         if let StepSpecific::Wait { .. } = &self.curr_state().specific {
-            return PostProcessResult {};
+            return PostProcessResult::continue_();
         }
 
         let tokens = arg.tokens;
@@ -1190,7 +1190,11 @@ impl AiciVm for Runner {
 
         self.finish_states();
 
-        PostProcessResult {}
+        if let StepSpecific::Stop = &self.curr_state().specific {
+            PostProcessResult::stop()
+        } else {
+            PostProcessResult::continue_()
+        }
     }
 
     fn pre_process(&mut self, _arg: PreProcessArg) -> PreProcessResult {

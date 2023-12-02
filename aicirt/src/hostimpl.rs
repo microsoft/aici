@@ -482,6 +482,12 @@ pub fn setup_linker(engine: &wasmtime::Engine) -> Result<Arc<wasmtime::Linker<Mo
 
     linker.func_wrap(
         "env",
+        "aici_host_eos_token",
+        |caller: wasmtime::Caller<'_, ModuleData>| caller.data().globals.tokrx_info.tok_eos,
+    )?;
+
+    linker.func_wrap(
+        "env",
         "aici_host_return_process_result",
         |mut caller: wasmtime::Caller<'_, ModuleData>, src: u32, src_size: u32| {
             let m = read_caller_mem(&caller, src, src_size);
