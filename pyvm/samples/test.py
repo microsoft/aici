@@ -2,7 +2,8 @@ import aici
 
 async def main():
     print("start")
-    await aici.FixedTokens("The word 'hello' in French")
-    await aici.sample_gen_tokens(10)
+    q = aici.RegexConstraint(r' "[^"]+"')
+    await aici.FixedTokens("The word 'hello' in French is")
+    await aici.gen_tokens(q)
 
 aici.aici_start(main())

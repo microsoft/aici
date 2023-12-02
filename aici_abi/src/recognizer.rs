@@ -75,6 +75,14 @@ impl<S: Copy, R: FunctionalRecognizer<S>> StackRecognizer<S, R> {
     }
 }
 
+impl<S: Copy + Debug, R: FunctionalRecognizer<S>> Debug for StackRecognizer<S, R> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("StackRecognizer")
+            .field("top", &self.stack[self.stack_ptr])
+            .finish()
+    }
+}
+
 impl<S: Copy + Debug, R: FunctionalRecognizer<S>> Recognizer for StackRecognizer<S, R> {
     #[inline(always)]
     fn push_byte(&mut self, byte: u8) {

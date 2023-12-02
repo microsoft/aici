@@ -1,5 +1,5 @@
 from typing import Any, Optional, Coroutine, Union
-from _aici import TokenSet, tokenize
+from _aici import TokenSet, tokenize, RegexConstraint
 import _aici
 
 Token = int
@@ -14,13 +14,13 @@ class MidProcessResult:
         self.ff_tokens: list[Token] = []
 
     @classmethod
-    def from_bias(cls, bias: TokenSet):
+    def bias(cls, bias: TokenSet):
         res = cls()
         res.logit_bias = bias
         return res
 
     @classmethod
-    def from_splice(cls, backtrack: int, tokens: list[Token]):
+    def splice(cls, backtrack: int, tokens: list[Token]):
         res = cls()
         res.backtrack = backtrack
         res.ff_tokens = tokens
@@ -50,7 +50,7 @@ class PreProcessResult:
 
 class NextToken:
     """
-    Awaiting this will return generated token (or tokens, if fast-forwarding requested by self.process()).
+    Awaiting this will return generated token (or tokens, if fast-forwarding requested by self.mid_process()).
     You have only ~1ms to process the results before awaiting a new instance of NextToken() again.
     """
 
@@ -63,12 +63,19 @@ class NextToken:
         """
         return PreProcessResult.continue_()
 
-    def process(self) -> MidProcessResult:
+    def mid_process(self) -> MidProcessResult:
         """
         This can be overridden to return a bias, fast-forward tokens, backtrack etc.
         ~20ms time limit.
         """
-        return MidProcessResult.from_bias(TokenSet())
+        return MidProcessResult.bias(TokenSet())
+
+    def post_process(self, tokens: list[Token]):
+        """
+        This can be overridden to do something with generated tokens.
+        ~1ms time limit.
+        """
+        pass
 
     # internals
     def __init__(self) -> None:
@@ -80,13 +87,12 @@ class NextToken:
 
     def _mid_process(self, fork_group: list[SeqId]) -> MidProcessResult:
         self.fork_group = fork_group
-        return self.process()
+        return self.mid_process()
 
     def _post_process(self, backtrack: int, tokens: list[Token]):
         # 'backtrack' is not very useful - it's just what we passed in MidProcessResult
         self.tokens = tokens
-        # also there is little point overriding this, as the code right after await will
-        # run exactly the same as if it was placed here
+        self.post_process(tokens)
 
     def __await__(self):
         yield self
@@ -107,7 +113,7 @@ class AiciCallbacks:
         return PreProcessResult()
 
     def mid_process(self, fork_group: list[SeqId]) -> MidProcessResult:
-        return MidProcessResult.from_bias(TokenSet())
+        return MidProcessResult.bias(TokenSet())
 
     def post_process(self, backtrack: int, tokens: list[Token]):
         pass
@@ -136,12 +142,12 @@ class FixedTokens(NextToken):
     def __init__(self, text: str | bytes):
         self.tokens: list[Token] = tokenize(text)
 
-    def process(self) -> MidProcessResult:
-        return MidProcessResult.from_splice(0, tokens=self.tokens)
+    def mid_process(self) -> MidProcessResult:
+        return MidProcessResult.splice(0, tokens=self.tokens)
 
 
 class StopToken(NextToken):
-    def process(self) -> MidProcessResult:
+    def mid_process(self) -> MidProcessResult:
         return MidProcessResult(stop=True)
 
 
@@ -198,6 +204,28 @@ def aici_start(f: Coroutine[CbType, None, None]):
     """
     # TODO register callbacks object with runtime
     return AiciAsync(f)
+
+
+class ConstrainedToken(NextToken):
+    def __init__(self, constraint: RegexConstraint):
+        self.constraint = constraint
+
+    def mid_process(self) -> MidProcessResult:
+        bias = TokenSet()
+        self.constraint.allow_tokens(bias)
+        return MidProcessResult.bias(bias)
+    
+    def post_process(self, tokens: list[Token]):
+        for t in tokens:
+            self.constraint.append_token(t)
+
+
+async def gen_tokens(constraint: RegexConstraint, max_tokens=20) -> list[Token]:
+    res: list[Token] = []
+    for _ in range(max_tokens):
+        t = await ConstrainedToken(constraint)
+        res += t
+    return res
 
 
 # In reality we need to extend NextToken class to provide constraints

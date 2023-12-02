@@ -1,3 +1,5 @@
+mod rx;
+
 use aici_abi::{
     svob::SimpleVob, toktree::TokTrie, AiciVm, InitPromptArg, MidProcessArg, MidProcessResult,
     PostProcessArg, PostProcessResult, PreProcessArg, PreProcessResult,
@@ -42,16 +44,20 @@ fn get_cb_obj() -> PyObjectRef {
 mod _aici {
     use std::sync::Mutex;
 
-    use aici_abi::svob::SimpleVob;
+    use aici_abi::{
+        svob::SimpleVob,
+        toktree::{Recognizer, SpecialToken},
+        TokenId,
+    };
     use once_cell::sync::Lazy;
     use rustpython_derive::pyclass;
     use rustpython_vm::{
         atomic_func,
-        builtins::PyTypeRef,
+        builtins::{PyStrRef, PyTypeRef},
         function::ArgStrOrBytesLike,
         protocol::PySequenceMethods,
         types::{AsSequence, Constructor},
-        PyObjectRef, PyPayload, PyResult, VirtualMachine,
+        PyObjectRef, PyPayload, PyRef, PyResult, VirtualMachine,
     };
 
     use crate::{VmExt, GLOBAL_STATE};
@@ -66,6 +72,52 @@ mod _aici {
     fn tokenize(text: ArgStrOrBytesLike, vm: &VirtualMachine) -> PyResult {
         let tokens = aici_abi::tokenize_bytes(&text.borrow_bytes());
         Ok(vm.new_int_list(&tokens).into())
+    }
+
+    #[pyattr]
+    #[pyclass(name)]
+    #[derive(Debug, PyPayload)]
+    pub struct RegexConstraint(pub Mutex<crate::rx::RxStackRecognizer>);
+
+    #[pyclass(with(Constructor))]
+    impl RegexConstraint {
+        #[pymethod]
+        fn eos_allowed(&self) -> bool {
+            let mut s = self.0.lock().unwrap();
+            s.special_allowed(SpecialToken::EndOfSentence)
+        }
+
+        #[pymethod]
+        fn token_allowed(&self, t: TokenId) -> bool {
+            let trie = &mut GLOBAL_STATE.lock().unwrap().trie;
+            let mut s = self.0.lock().unwrap();
+            trie.token_allowed(&mut *s, t)
+        }
+
+        #[pymethod]
+        fn append_token(&self, t: TokenId) {
+            let trie = &mut GLOBAL_STATE.lock().unwrap().trie;
+            let mut s = self.0.lock().unwrap();
+            trie.append_token(&mut *s, t)
+        }
+
+        #[pymethod]
+        fn allow_tokens(&self, ts: PyRef<TokenSet>) {
+            let trie = &mut GLOBAL_STATE.lock().unwrap().trie;
+            let mut s = self.0.lock().unwrap();
+            let mut ts = ts.0.lock().unwrap();
+            trie.compute_bias(&mut *s, &mut *ts);
+        }
+    }
+
+    impl Constructor for RegexConstraint {
+        type Args = (PyStrRef,);
+        fn py_new(cls: PyTypeRef, arg: Self::Args, vm: &VirtualMachine) -> PyResult {
+            let v = crate::rx::RecRx::from_rx(arg.0.as_str());
+            RegexConstraint(Mutex::new(v.to_stack_recognizer()))
+                .into_ref_with_type(vm, cls)
+                .map(Into::into)
+        }
     }
 
     #[pyattr]
