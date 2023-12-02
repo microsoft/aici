@@ -1,4 +1,4 @@
-from typing import Any, Optional, Coroutine, Union
+from typing import Any, Optional, Coroutine, Union, Callable
 from _aici import TokenSet, tokenize, RegexConstraint
 import _aici
 
@@ -22,6 +22,8 @@ class MidProcessResult:
     @classmethod
     def splice(cls, backtrack: int, tokens: list[Token]):
         res = cls()
+        assert backtrack >= 0
+        assert isinstance(tokens, list)
         res.backtrack = backtrack
         res.ff_tokens = tokens
         return res
@@ -79,10 +81,14 @@ class NextToken:
 
     # internals
     def __init__(self) -> None:
+        self._reset()
+
+    def _reset(self):
         self.tokens: Optional[list[Token]] = None
         self.fork_group: list[SeqId] = []
 
     def _pre_process(self) -> PreProcessResult:
+        self._reset()
         return self.pre_process()
 
     def _mid_process(self, fork_group: list[SeqId]) -> MidProcessResult:
@@ -140,10 +146,10 @@ CbType = Union[GetPrompt, NextToken]
 
 class FixedTokens(NextToken):
     def __init__(self, text: str | bytes):
-        self.tokens: list[Token] = tokenize(text)
+        self.text: list[Token] = tokenize(text)
 
     def mid_process(self) -> MidProcessResult:
-        return MidProcessResult.splice(0, tokens=self.tokens)
+        return MidProcessResult.splice(0, tokens=self.text)
 
 
 class StopToken(NextToken):
@@ -184,11 +190,16 @@ class AiciAsync(AiciCallbacks):
 
     def pre_process(self) -> PreProcessResult:
         assert isinstance(self._cb, NextToken)
-        return self._cb._pre_process()
+        r = self._cb._pre_process()
+        assert isinstance(r, PreProcessResult)
+        return r
 
     def mid_process(self, fork_group: list[SeqId]) -> MidProcessResult:
         assert isinstance(self._cb, NextToken)
-        return self._cb._mid_process(fork_group)
+        r = self._cb._mid_process(fork_group)
+        assert isinstance(r, MidProcessResult)
+        assert isinstance(r.ff_tokens, list)
+        return r
 
     def post_process(self, backtrack: int, tokens: list[Token]):
         assert isinstance(self._cb, NextToken)
@@ -206,62 +217,35 @@ def aici_start(f: Coroutine[CbType, None, None]):
     return AiciAsync(f)
 
 
+Constraint = RegexConstraint
+
+
 class ConstrainedToken(NextToken):
-    def __init__(self, constraint: RegexConstraint):
-        self.constraint = constraint
+    def __init__(self, mk_constraint: Callable[[], Constraint]):
+        self.mk_constraint = mk_constraint
+        self._constraint: Constraint | None = None
 
     def mid_process(self) -> MidProcessResult:
         bias = TokenSet()
-        self.constraint.allow_tokens(bias)
+        # we build the constraint lazily, in mid_process() which has reasonably long time limit
+        if self._constraint is None:
+            self._constraint = self.mk_constraint()
+        self._constraint.allow_tokens(bias)
         return MidProcessResult.bias(bias)
-    
+
     def post_process(self, tokens: list[Token]):
+        assert self._constraint is not None
         for t in tokens:
-            self.constraint.append_token(t)
+            self._constraint.append_token(t)
 
 
-async def gen_tokens(constraint: RegexConstraint, max_tokens=20) -> list[Token]:
+async def gen_tokens(regex: str | None = None, max_tokens=20) -> list[Token]:
     res: list[Token] = []
+    if regex is None:
+        next_token = NextToken()
+    else:
+        next_token = ConstrainedToken(lambda: RegexConstraint(regex))
     for _ in range(max_tokens):
-        t = await ConstrainedToken(constraint)
+        t = await next_token
         res += t
     return res
-
-
-# In reality we need to extend NextToken class to provide constraints
-async def sample_gen_tokens(max_tokens=20) -> list[Token]:
-    res: list[Token] = []
-    for _ in range(max_tokens):
-        t = await NextToken()
-        res += t
-    return res
-
-
-async def sample_loop():
-    print("Start sample")
-    prompt = await GetPrompt()
-    print("Prompt:", prompt)
-    tokens = await sample_gen_tokens(5)
-    print("Tokens:", tokens)
-
-
-def aici_test():
-    cb = aici_start(sample_loop())
-
-    cb.init_prompt([1, 2, 3])
-    for k in range(8):
-        print(k)
-        cb.pre_process()
-        cb.mid_process([])
-        cb.post_process(0, [k + 100])
-    print("Done")
-
-
-def hello():
-    print("Hello from aici.py XXX")
-    x = TokenSet()
-    print(len(x), x[1], x[2])
-    x.set_all(True)
-    print(len(x), x[1], x[2])
-    print(x)
-    AiciAsync(sample_loop())

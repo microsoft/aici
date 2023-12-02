@@ -318,7 +318,7 @@ trait VmExt {
     {
         let vm = self.get_vm();
         obj.payload_if_exact::<PyList>(vm)
-            .expect("expecting list")
+            .unwrap_or_else(|| panic!("expecting list, got {:?}", obj))
             .borrow_vec()
             .iter()
             .map(|x| f(x.clone()))
