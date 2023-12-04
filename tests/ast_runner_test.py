@@ -16,7 +16,7 @@ def wrap(text):
 
 def greedy_query(prompt: str, steps: list, n=1):
     ast_module = pyaici.rest.ast_module
-    temperature = 0
+    temperature = 0.0
     if n > 1:
         temperature = 0.8
     assert ast_module
@@ -45,15 +45,16 @@ def expect(expected: Union[list[str], str], prompt: str, steps: list):
     for i in range(len(res)):
         # ░ is used as a placeholder; will be removed
         r = res[i].replace("░", "")
+        r2 = r
         e = expected[i]
         if e.startswith("<...>") and len(r) > len(e) - 5:
             e = e[5:]
-            r = r[-len(e) :]
-        if r != e:
-            if len(res[i]) > 40:
-                print(f'"""{r}"""')
+            r2 = r2[-len(e) :]
+        if r2 != e:
+            if len(r) > 40:
+                print("GOT", f'"""{r}"""')
             else:
-                print(ujson.dumps(r))
+                print("GOT", ujson.dumps(r))
             pytest.fail(f"query output mismatch at #{i}")
 
 

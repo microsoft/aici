@@ -96,7 +96,7 @@ struct Cli {
     wasm_max_memory: usize,
 
     /// Maximum time WASM module can execute step preparation in milliseconds
-    #[arg(long, default_value = "2")]
+    #[arg(long, default_value = "4")]
     wasm_max_pre_step_time: u64,
 
     /// Maximum time WASM module can execute step in milliseconds

@@ -2,6 +2,7 @@ from typing import List, Union, Dict, Any, Tuple
 
 import torch
 
+from vllm import LLMEngine
 from vllm.sampling_params import SamplingParams
 from vllm.sequence import SequenceGroupMetadata, SequenceGroup, SequenceStatus, Sequence
 from vllm.core.scheduler import Scheduler, SchedulerOutputs
@@ -115,7 +116,7 @@ def install(runner: AiciRunner):
         return torch.from_numpy(runner.recv_attention_mask())
 
     def append_ff_tokens(
-        block_manager: BlockSpaceManager,
+        llm_engine: LLMEngine,
         _seq_group: SequenceGroup,
         child_seqs: List[Tuple[Sequence, Sequence]],
     ):
@@ -130,14 +131,19 @@ def install(runner: AiciRunner):
             if backtrack:
                 assert seq is parent
                 seq.backtrack(backtrack)
-                block_manager.trim_physical_blocks(seq)
+                llm_engine.scheduler.block_manager.trim_physical_blocks(seq)
                 assert ff
                 t = ff.pop(0)
                 seq.append_token_id(t, {t: 0.0})
             toks = [seq.data.output_token_ids[-1]]
             if ff:
+                # first, decode with only one token
+                llm_engine._decode_sequence(seq)
                 # print("FF", seq.seq_id, ff, resp)
-                seq.pending_ff_tokens = ff.copy()
+                for t in ff:
+                    # probability of the token is 1.0, so logprob is 0.0
+                    seq.append_token_id(t, {t: 0.0})
+                seq.data.num_pending_ff_tokens = len(ff) + 1
                 toks += ff
             clone_id = None
             if parent is not seq:
@@ -147,6 +153,7 @@ def install(runner: AiciRunner):
     def finish_sampling():
         for seq_id in runner.step_finish_post():
             seq: Sequence = runner.recent_seqs[seq_id]
+            # print("FINISH", seq_id, seq.data.output_token_ids)
             seq.status = SequenceStatus.FINISHED_STOPPED
         runner.recent_seqs = {}
 
