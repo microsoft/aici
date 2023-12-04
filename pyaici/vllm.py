@@ -145,6 +145,7 @@ def install(runner: AiciRunner):
                     seq.append_token_id(t, {t: 0.0})
                 seq.data.num_pending_ff_tokens = len(ff) + 1
                 toks += ff
+            # print("TTT", backtrack, seq.data.output_token_ids)
             clone_id = None
             if parent is not seq:
                 clone_id = parent.seq_id

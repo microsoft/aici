@@ -1,4 +1,6 @@
 from typing import Any, Optional, Coroutine, Union, Callable
+
+# these are to provide re-exports
 from _aici import (
     TokenSet,
     tokenize,
@@ -14,6 +16,16 @@ import _aici
 
 Token = int
 SeqId = int
+
+
+def get_tokens() -> list[Token]:
+    assert AiciAsync.instance
+    return AiciAsync.instance._tokens
+
+
+def get_prompt_len() -> int:
+    assert AiciAsync.instance
+    return AiciAsync.instance._prompt_len
 
 
 class MidProcessResult:
@@ -136,12 +148,18 @@ class NextToken:
 
 
 class FixedTokens(NextToken):
-    def __init__(self, text: str | bytes):
+    def __init__(self, text: str | bytes, following: Optional["Label"] = None):
         super().__init__()
         self.fixed_tokens: list[Token] = tokenize(text)
+        self.following = following
 
     def mid_process(self) -> MidProcessResult:
-        return MidProcessResult.splice(0, tokens=self.fixed_tokens)
+        backtrack = 0
+        if self.following is not None:
+            backtrack = len(get_tokens()) - self.following.ptr
+            assert backtrack >= 0
+            print("backtrack", backtrack)
+        return MidProcessResult.splice(backtrack, tokens=self.fixed_tokens)
 
 
 class StopToken(NextToken):
@@ -216,9 +234,16 @@ CbType = Union[GetPrompt, NextToken]
 
 
 class AiciAsync(AiciCallbacks):
+    instance: Optional["AiciAsync"] = None
+
     def __init__(self, f: Coroutine[CbType, None, None]):
+        assert AiciAsync.instance is None
+        AiciAsync.instance = self
+
         self._coro = f
         self._skip_prompt = False
+        self._tokens: list[Token] = []
+        self._prompt_len = 0
         _aici.register(self)
         self.step()
         if isinstance(self._cb, NextToken):
@@ -238,9 +263,14 @@ class AiciAsync(AiciCallbacks):
             self._coro = _stop()
 
     def init_prompt(self, prompt: list[Token]):
+        assert not self._tokens
+        self._prompt_len = len(prompt)
+        self._tokens.extend(prompt)
+
         if self._skip_prompt:
             self._skip_prompt = False
             return
+
         assert isinstance(self._cb, GetPrompt)
         self._cb.prompt = prompt
         self.step()
@@ -262,6 +292,10 @@ class AiciAsync(AiciCallbacks):
         return r
 
     def post_process(self, backtrack: int, tokens: list[Token]):
+        if backtrack > 0:
+            del self._tokens[-backtrack:]
+        self._tokens.extend(tokens)
+
         assert isinstance(self._cb, NextToken)
         r = self._cb._post_process(backtrack, tokens)
         assert isinstance(r, PostProcessResult)
@@ -277,6 +311,12 @@ def aici_start(f: Coroutine[CbType, None, None]):
     """
     return AiciAsync(f)
 
+
+class Label:
+    def __init__(self):
+        self.ptr = len(get_tokens())
+
+
 class ChooseConstraint(Constraint):
     def __init__(self, options: list[str]):
         # super().__init__()
@@ -290,7 +330,9 @@ class ChooseConstraint(Constraint):
         return any(self.ptr < len(o) and o[self.ptr] == t for o in self.options)
 
     def append_token(self, t: int):
-        self.options = [o for o in self.options if self.ptr < len(o) and o[self.ptr] == t]
+        self.options = [
+            o for o in self.options if self.ptr < len(o) and o[self.ptr] == t
+        ]
         self.ptr += 1
 
     def allow_tokens(self, ts: TokenSet):
@@ -305,7 +347,7 @@ async def gen_tokens(
     regex: str | None = None,
     options: list[str] | None = None,
     store_var: str | None = None,
-    max_tokens = 20,
+    max_tokens=20,
 ) -> list[Token]:
     res: list[Token] = []
     if regex is not None:

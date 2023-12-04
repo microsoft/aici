@@ -1060,8 +1060,7 @@ impl Runner {
                     }
                     // lidx is index of the first token with the label
                     // we want to pop that token and everything that follows
-                    // and one more token that will be generated in this (useless) model pass
-                    let backtrack = (self.ctx.tokens.len() - lidx.unwrap()) as u32 + 1;
+                    let backtrack = (self.ctx.tokens.len() - lidx.unwrap()) as u32;
 
                     let t0 = self.ctx.tokens.iter().map(|t| t.id).collect::<Vec<_>>();
                     wprintln!(
@@ -1165,7 +1164,9 @@ impl AiciVm for Runner {
         self.finish_states();
 
         if arg.backtrack > 0 {
-            self.ctx.tokens.drain(arg.backtrack as usize..);
+            self.ctx
+                .tokens
+                .drain(self.ctx.tokens.len() - arg.backtrack as usize..);
             let state = self.curr_state();
             assert!(state.following.is_some());
             assert!(state.num_tokens == 0);

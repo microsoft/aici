@@ -292,7 +292,7 @@ impl ModuleInstance {
                 Ok(json!({}))
             }
             MidProcessResult::Splice {
-                backtrack,
+                mut backtrack,
                 mut ff_tokens,
             } => {
                 let vocab_size = self.store.data().logit_ptr.len();
@@ -321,6 +321,9 @@ impl ModuleInstance {
                             .iter_mut()
                             .for_each(|v| *v = LOGIT_BIAS_ALLOW);
                         // don't remove anything from ff_tokens - they all need to be appended after backtracking
+                        
+                        // backtrack needs to include also the next token to be generated
+                        backtrack += 1;
                     }
                     Ok(json!({
                         "ff_tokens": ff_tokens,

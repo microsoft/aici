@@ -682,7 +682,7 @@ impl Stepper {
                 let op = RtPostProcessArg {
                     op: PostProcessArg {
                         tokens,
-                        backtrack: op.backtrack,
+                        backtrack: op.backtrack.saturating_sub(1),
                     },
                 };
                 match h.start_post_process(op) {
