@@ -3,7 +3,7 @@ from _aici import (
     TokenSet,
     tokenize,
     detokenize,
-    RegexConstraint,
+    Constraint,
     get_var,
     set_var,
     append_var,
@@ -155,9 +155,6 @@ class StopToken(NextToken):
         return PostProcessResult.stop()
 
 
-Constraint = RegexConstraint
-
-
 class ConstrainedToken(NextToken):
     def __init__(self, mk_constraint: Callable[[], Constraint]):
         super().__init__()
@@ -290,7 +287,7 @@ async def gen_tokens(
     if regex is None:
         next_token = NextToken()
     else:
-        next_token = ConstrainedToken(lambda: RegexConstraint(regex))
+        next_token = ConstrainedToken(lambda: Constraint.regex(regex))
     for _ in range(max_tokens):
         t = await next_token
         res += t

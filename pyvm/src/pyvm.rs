@@ -1,8 +1,10 @@
 mod rx;
 
 use aici_abi::{
-    svob::SimpleVob, toktree::TokTrie, AiciVm, InitPromptArg, MidProcessArg, MidProcessResult,
-    PostProcessArg, PostProcessResult, PreProcessArg, PreProcessResult, VariableStorage,
+    svob::SimpleVob,
+    toktree::{Recognizer, SpecialToken, TokTrie},
+    AiciVm, InitPromptArg, MidProcessArg, MidProcessResult, PostProcessArg, PostProcessResult,
+    PreProcessArg, PreProcessResult, TokenId, VariableStorage,
 };
 use anyhow::Result;
 
@@ -43,13 +45,9 @@ fn get_cb_obj() -> PyObjectRef {
 
 #[rustpython_derive::pymodule]
 mod _aici {
-    use std::sync::Mutex;
+    use std::{fmt::Debug, sync::Mutex};
 
-    use aici_abi::{
-        svob::SimpleVob,
-        toktree::{Recognizer, SpecialToken},
-        TokenId,
-    };
+    use aici_abi::{svob::SimpleVob, toktree::SpecialToken, TokenId};
     use once_cell::sync::Lazy;
     use rustpython_derive::pyclass;
     use rustpython_vm::{
@@ -61,7 +59,7 @@ mod _aici {
         PyObjectRef, PyPayload, PyRef, PyResult, VirtualMachine,
     };
 
-    use crate::{VmExt, GLOBAL_STATE};
+    use crate::{PyConstraint, VmExt, GLOBAL_STATE};
 
     #[pyfunction]
     fn register(obj: PyObjectRef, _vm: &VirtualMachine) -> PyResult<()> {
@@ -115,47 +113,46 @@ mod _aici {
 
     #[pyattr]
     #[pyclass(name)]
-    #[derive(Debug, PyPayload)]
-    pub struct RegexConstraint(pub Mutex<crate::rx::RxStackRecognizer>);
+    #[derive(PyPayload)]
+    pub struct Constraint(pub Mutex<Box<dyn PyConstraint>>);
 
-    #[pyclass(with(Constructor))]
-    impl RegexConstraint {
+    impl Debug for Constraint {
+        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            f.debug_struct("Constraint").finish()
+        }
+    }
+
+    #[pyclass]
+    impl Constraint {
         #[pymethod]
         fn eos_allowed(&self) -> bool {
             let mut s = self.0.lock().unwrap();
-            s.special_allowed(SpecialToken::EndOfSentence)
+            s.eos_allowed()
         }
 
         #[pymethod]
         fn token_allowed(&self, t: TokenId) -> bool {
-            let trie = &mut GLOBAL_STATE.lock().unwrap().trie;
             let mut s = self.0.lock().unwrap();
-            trie.token_allowed(&mut *s, t)
+            s.token_allowed(t)
         }
 
         #[pymethod]
         fn append_token(&self, t: TokenId) {
-            let trie = &mut GLOBAL_STATE.lock().unwrap().trie;
             let mut s = self.0.lock().unwrap();
-            trie.append_token(&mut *s, t)
+            s.append_token(t)
         }
 
         #[pymethod]
         fn allow_tokens(&self, ts: PyRef<TokenSet>) {
-            let trie = &mut GLOBAL_STATE.lock().unwrap().trie;
             let mut s = self.0.lock().unwrap();
             let mut ts = ts.0.lock().unwrap();
-            trie.compute_bias(&mut *s, &mut *ts);
+            s.allow_tokens(&mut *ts);
         }
-    }
 
-    impl Constructor for RegexConstraint {
-        type Args = (PyStrRef,);
-        fn py_new(cls: PyTypeRef, arg: Self::Args, vm: &VirtualMachine) -> PyResult {
-            let v = crate::rx::RecRx::from_rx(arg.0.as_str());
-            RegexConstraint(Mutex::new(v.to_stack_recognizer()))
-                .into_ref_with_type(vm, cls)
-                .map(Into::into)
+        #[pyclassmethod]
+        fn regex(_cls: PyTypeRef, regex: PyStrRef) -> PyResult<Constraint> {
+            let rx = crate::rx::RecRx::from_rx(regex.as_str()).to_stack_recognizer();
+            Ok(Constraint(Mutex::new(Box::new(rx))))
         }
     }
 
@@ -296,6 +293,34 @@ impl Runner {
             }
         });
         Self { interpreter }
+    }
+}
+
+trait PyConstraint {
+    fn eos_allowed(&mut self) -> bool;
+    fn token_allowed(&mut self, t: TokenId) -> bool;
+    fn append_token(&mut self, t: TokenId);
+    fn allow_tokens(&mut self, logits: &mut SimpleVob);
+}
+
+impl<T: Recognizer> PyConstraint for T {
+    fn eos_allowed(&mut self) -> bool {
+        self.special_allowed(SpecialToken::EndOfSentence)
+    }
+
+    fn token_allowed(&mut self, t: TokenId) -> bool {
+        let trie = &mut GLOBAL_STATE.lock().unwrap().trie;
+        trie.token_allowed(self, t)
+    }
+
+    fn append_token(&mut self, t: TokenId) {
+        let trie = &mut GLOBAL_STATE.lock().unwrap().trie;
+        trie.append_token(self, t)
+    }
+
+    fn allow_tokens(&mut self, logits: &mut SimpleVob) {
+        let trie = &mut GLOBAL_STATE.lock().unwrap().trie;
+        trie.compute_bias(self, logits)
     }
 }
 

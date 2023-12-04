@@ -47,10 +47,7 @@ class TokenSet(Sequence[bool]):
         ...
 
 
-class RegexConstraint:
-    def __init__(self, regex: str):
-        ...
-
+class Constraint:
     def eos_allowed(self) -> bool:
         ...
 
@@ -61,4 +58,8 @@ class RegexConstraint:
         ...
 
     def allow_tokens(self, ts: TokenSet):
+        ...
+    
+    @classmethod
+    def regex(cls, pattern: str) -> Constraint:
         ...
