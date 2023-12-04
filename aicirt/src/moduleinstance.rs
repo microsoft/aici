@@ -12,7 +12,8 @@ use wasmtime;
 
 use crate::bench::TimerSet;
 use crate::hostimpl::{
-    setup_linker, AiciLimits, GlobalInfo, ModuleData, ModuleInstId, LOGIT_BIAS_ALLOW, LOGIT_BIAS_DISALLOW,
+    setup_linker, AiciLimits, GlobalInfo, ModuleData, ModuleInstId, LOGIT_BIAS_ALLOW,
+    LOGIT_BIAS_DISALLOW,
 };
 use crate::shm::Shm;
 use crate::worker::{
@@ -394,7 +395,12 @@ impl ModuleInstance {
     pub fn post_process(&mut self, op: RtPostProcessArg) -> Value {
         let t0 = Instant::now();
         let res = self.do_post_process(op);
-        self.json_result("post", t0, res)
+        let force_stop = res.is_err();
+        let mut r = self.json_result("post", t0, res);
+        if force_stop {
+            r["stop"] = json!(true);
+        }
+        r
     }
 
     pub fn tokenize(&mut self, s: &str) -> Result<Vec<u32>> {
