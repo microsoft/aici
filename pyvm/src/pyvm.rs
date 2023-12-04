@@ -47,19 +47,24 @@ fn get_cb_obj() -> PyObjectRef {
 mod _aici {
     use std::{fmt::Debug, sync::Mutex};
 
-    use aici_abi::{svob::SimpleVob, toktree::SpecialToken, TokenId};
+    use aici_abi::{
+        recognizer::{AnythingGoes, StackRecognizer},
+        svob::SimpleVob,
+        toktree::SpecialToken,
+        TokenId,
+    };
     use once_cell::sync::Lazy;
     use rustpython_derive::pyclass;
     use rustpython_vm::{
         atomic_func,
         builtins::{PyStrRef, PyTypeRef},
-        function::ArgStrOrBytesLike,
+        function::{ArgStrOrBytesLike, FuncArgs},
         protocol::PySequenceMethods,
         types::{AsSequence, Constructor},
         PyObjectRef, PyPayload, PyRef, PyResult, VirtualMachine,
     };
 
-    use crate::{PyConstraint, VmExt, GLOBAL_STATE};
+    use crate::{rx::RecRx, PyConstraint, VmExt, GLOBAL_STATE};
 
     #[pyfunction]
     fn register(obj: PyObjectRef, _vm: &VirtualMachine) -> PyResult<()> {
@@ -122,7 +127,7 @@ mod _aici {
         }
     }
 
-    #[pyclass]
+    #[pyclass(flags(BASETYPE), with(Constructor))]
     impl Constraint {
         #[pymethod]
         fn eos_allowed(&self) -> bool {
@@ -148,11 +153,21 @@ mod _aici {
             let mut ts = ts.0.lock().unwrap();
             s.allow_tokens(&mut *ts);
         }
+    }
 
-        #[pyclassmethod]
-        fn regex(_cls: PyTypeRef, regex: PyStrRef) -> PyResult<Constraint> {
-            let rx = crate::rx::RecRx::from_rx(regex.as_str()).to_stack_recognizer();
-            Ok(Constraint(Mutex::new(Box::new(rx))))
+    #[pyfunction(name = "RegexConstraint")]
+    fn regex_constraint(regex: PyStrRef) -> PyResult<Constraint> {
+        let rx = RecRx::from_rx(regex.as_str()).to_stack_recognizer();
+        Ok(Constraint(Mutex::new(Box::new(rx))))
+    }
+
+    impl Constructor for Constraint {
+        type Args = FuncArgs;
+        fn py_new(cls: PyTypeRef, _arg: Self::Args, vm: &VirtualMachine) -> PyResult {
+            let anything = StackRecognizer::from(AnythingGoes {});
+            Constraint(Mutex::new(Box::new(anything)))
+                .into_ref_with_type(vm, cls)
+                .map(Into::into)
         }
     }
 

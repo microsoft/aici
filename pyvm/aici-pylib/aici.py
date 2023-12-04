@@ -3,6 +3,7 @@ from _aici import (
     TokenSet,
     tokenize,
     detokenize,
+    RegexConstraint,
     Constraint,
     get_var,
     set_var,
@@ -111,7 +112,7 @@ class NextToken:
         self._reset()
 
     def _reset(self):
-        self.tokens: Optional[list[Token]] = None
+        self.curr_tokens: Optional[list[Token]] = None
         self.fork_group: list[SeqId] = []
 
     def _pre_process(self) -> PreProcessResult:
@@ -124,23 +125,23 @@ class NextToken:
 
     def _post_process(self, backtrack: int, tokens: list[Token]):
         # 'backtrack' is not very useful - it's just what we passed in MidProcessResult
-        self.tokens = tokens
+        self.curr_tokens = tokens
         self.finished = eos_token() in tokens
         return self.post_process(tokens)
 
     def __await__(self):
         yield self
-        assert self.tokens is not None
-        return self.tokens
+        assert self.curr_tokens is not None
+        return self.curr_tokens
 
 
 class FixedTokens(NextToken):
     def __init__(self, text: str | bytes):
         super().__init__()
-        self.text: list[Token] = tokenize(text)
+        self.fixed_tokens: list[Token] = tokenize(text)
 
     def mid_process(self) -> MidProcessResult:
-        return MidProcessResult.splice(0, tokens=self.text)
+        return MidProcessResult.splice(0, tokens=self.fixed_tokens)
 
 
 class StopToken(NextToken):
@@ -274,20 +275,46 @@ def aici_start(f: Coroutine[CbType, None, None]):
     Starts the AICI loop.
     The coroutine may first `await GetPrompt()` and then should `await NextToken()` (typically in a loop).
     """
-    # TODO register callbacks object with runtime
     return AiciAsync(f)
+
+class ChooseConstraint(Constraint):
+    def __init__(self, options: list[str]):
+        # super().__init__()
+        self.ptr = 0
+        self.options = [tokenize(o) for o in options]
+
+    def eos_allowed(self) -> bool:
+        return any(len(o) == self.ptr for o in self.options)
+
+    def token_allowed(self, t: int) -> bool:
+        return any(self.ptr < len(o) and o[self.ptr] == t for o in self.options)
+
+    def append_token(self, t: int):
+        self.options = [o for o in self.options if self.ptr < len(o) and o[self.ptr] == t]
+        self.ptr += 1
+
+    def allow_tokens(self, ts: TokenSet):
+        for o in self.options:
+            if self.ptr < len(o):
+                ts[o[self.ptr]] = True
+            elif self.ptr == len(o):
+                ts[eos_token()] = True
 
 
 async def gen_tokens(
     regex: str | None = None,
+    options: list[str] | None = None,
     store_var: str | None = None,
     max_tokens = 20,
 ) -> list[Token]:
     res: list[Token] = []
-    if regex is None:
-        next_token = NextToken()
+    if regex is not None:
+        assert options is None
+        next_token = ConstrainedToken(lambda: RegexConstraint(regex))
+    elif options is not None:
+        next_token = ConstrainedToken(lambda: ChooseConstraint(options))
     else:
-        next_token = ConstrainedToken(lambda: Constraint.regex(regex))
+        next_token = ConstrainedToken(lambda: Constraint())
     for _ in range(max_tokens):
         t = await next_token
         res += t

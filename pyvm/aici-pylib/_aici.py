@@ -30,14 +30,19 @@ def set_var(name: str, value: bytes | str) -> None:
 def append_var(name: str, value: bytes | str) -> None:
     ...
 
+
 def eos_token() -> int:
     ...
+
 
 class TokenSet(Sequence[bool]):
     def __init__(self):
         ...
 
     def __getitem__(self, i: int) -> bool:
+        ...
+
+    def __setitem__(self, i: int, v: bool) -> bool:
         ...
 
     def __len__(self) -> int:
@@ -48,6 +53,9 @@ class TokenSet(Sequence[bool]):
 
 
 class Constraint:
+    def __init__(self):
+        ...
+
     def eos_allowed(self) -> bool:
         ...
 
@@ -59,7 +67,7 @@ class Constraint:
 
     def allow_tokens(self, ts: TokenSet):
         ...
-    
-    @classmethod
-    def regex(cls, pattern: str) -> Constraint:
+
+class RegexConstraint(Constraint):
+    def __init__(self, pattern: str):
         ...
