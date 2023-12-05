@@ -34,7 +34,8 @@ async def sample():
 
     await aici.FixedTokens("\nFive")
     # generates one of the strings
-    await aici.gen_text(options=[" pounds", " euros", " dollars"])
+    # aici.gen_tokens() and gen_text() are the same, except for return type
+    await aici.gen_tokens(options=[" pounds", " euros", " dollars"])
 
 aici.start(sample())
 ```
