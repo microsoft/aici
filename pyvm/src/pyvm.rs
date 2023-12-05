@@ -29,7 +29,7 @@ lazy_static! {
     static ref GLOBAL_STATE: Mutex<ModuleState> = Mutex::new(ModuleState {
         cb_obj: None,
         trie: TokTrie::from_host(),
-         vars: VariableStorage::new(),
+        vars: VariableStorage::new(),
         // tokens: vec![],
         // bytes: vec![],
     });
@@ -70,6 +70,11 @@ mod _aici {
     fn register(obj: PyObjectRef, _vm: &VirtualMachine) -> PyResult<()> {
         GLOBAL_STATE.lock().unwrap().cb_obj = Some(obj);
         Ok(())
+    }
+
+    #[pyfunction]
+    fn self_seq_id() -> u32 {
+        aici_abi::self_seq_id().0
     }
 
     #[pyfunction]
@@ -133,6 +138,12 @@ mod _aici {
         fn eos_allowed(&self) -> bool {
             let mut s = self.0.lock().unwrap();
             s.eos_allowed()
+        }
+
+        #[pymethod]
+        fn eos_forced(&self) -> bool {
+            let mut s = self.0.lock().unwrap();
+            s.eos_forced()
         }
 
         #[pymethod]
@@ -313,6 +324,7 @@ impl Runner {
 
 trait PyConstraint {
     fn eos_allowed(&mut self) -> bool;
+    fn eos_forced(&mut self) -> bool;
     fn token_allowed(&mut self, t: TokenId) -> bool;
     fn append_token(&mut self, t: TokenId);
     fn allow_tokens(&mut self, logits: &mut SimpleVob);
@@ -321,6 +333,11 @@ trait PyConstraint {
 impl<T: Recognizer> PyConstraint for T {
     fn eos_allowed(&mut self) -> bool {
         self.special_allowed(SpecialToken::EndOfSentence)
+    }
+
+    fn eos_forced(&mut self) -> bool {
+        self.special_allowed(SpecialToken::EndOfSentence)
+            && (0..=255).all(|b| !self.byte_allowed(b))
     }
 
     fn token_allowed(&mut self, t: TokenId) -> bool {

@@ -29,8 +29,9 @@ def get_prompt_len() -> int:
 
 
 class MidProcessResult:
-    def __init__(self, *, stop=False):
+    def __init__(self, *, stop=False, skip_me=False):
         self.stop = stop
+        self.skip_me = skip_me
         self.logit_bias: Optional[TokenSet] = None
         self.backtrack = 0
         self.ff_tokens: list[Token] = []
@@ -51,7 +52,6 @@ class MidProcessResult:
         return res
 
 
-# Typically not needed.
 class PreProcessResult:
     def __init__(self, *, suspended=False):
         self.suspended = suspended
@@ -192,7 +192,61 @@ class ConstrainedToken(NextToken):
         assert self._constraint is not None
         for t in tokens:
             self._constraint.append_token(t)
+        if self._constraint.eos_forced():
+            self.finished = True
         return PostProcessResult.continue_()
+
+
+class PreToken(NextToken):
+    def __await__(self):
+        yield self
+        return None
+
+    def mid_process(self) -> MidProcessResult:
+        return MidProcessResult(skip_me=True)
+
+
+class _Fork(PreToken):
+    def __init__(self, num_forks: int):
+        super().__init__()
+        self.num_forks = num_forks
+
+    def pre_process(self) -> PreProcessResult:
+        return PreProcessResult.fork(self.num_forks)
+
+
+async def fork(num_forks: int):
+    """
+    Forks the execution into `num_forks` branches.
+    Returns a number from 0 to `num_forks`-1, indicating the branch.
+    """
+    f = _Fork(num_forks)
+    await f
+    return f.fork_group.index(_aici.self_seq_id())
+
+
+class _WaitVars(PreToken):
+    def __init__(self, vars: list[str]):
+        super().__init__()
+        self.vars = vars
+        self.values: list[bytes] = []
+
+    def pre_process(self) -> PreProcessResult:
+        values = [get_var(v) for v in self.vars]
+        if None in values:
+            return PreProcessResult.suspend()
+        self.values = values  # type: ignore
+        return PreProcessResult.continue_()
+
+
+async def wait_vars(*vars: str) -> list[bytes]:
+    """
+    Suspends execution until all variables are available.
+    Returns values of the variables.
+    """
+    w = _WaitVars(list(vars))
+    await w
+    return w.values
 
 
 class AiciCallbacks:
@@ -244,6 +298,8 @@ class AiciAsync(AiciCallbacks):
         self._skip_prompt = False
         self._tokens: list[Token] = []
         self._prompt_len = 0
+        self._pending_cb: Optional[CbType] = None
+        self._fork_group: list[SeqId] = []
         _aici.register(self)
         self.step()
         if isinstance(self._cb, NextToken):
@@ -252,6 +308,11 @@ class AiciAsync(AiciCallbacks):
             assert isinstance(self._cb, GetPrompt)
 
     def step(self):
+        if self._pending_cb is not None:
+            self._cb = self._pending_cb
+            self._pending_cb = None
+            return
+
         try:
             self._cb: CbType = self._coro.send(None)
         except StopIteration:
@@ -286,8 +347,25 @@ class AiciAsync(AiciCallbacks):
 
     def mid_process(self, fork_group: list[SeqId]) -> MidProcessResult:
         assert isinstance(self._cb, NextToken)
+
         r = self._cb._mid_process(fork_group)
         assert isinstance(r, MidProcessResult)
+
+        while r.skip_me:
+            self.step()
+            assert isinstance(self._cb, NextToken)
+            r2 = self._cb._pre_process()
+            assert isinstance(r2, PreProcessResult)
+            assert len(r2.attention_masks) == 1, "nested fork not allowed"
+            if r2.suspended:
+                # need to generate one fake token...
+                self._pending_cb = self._cb
+                f = FixedTokens("░")
+                assert len(f.fixed_tokens) == 1
+                self._cb = f
+            r = self._cb._mid_process(fork_group)
+            assert isinstance(r, MidProcessResult)
+
         assert isinstance(r.ff_tokens, list)
         return r
 
@@ -316,6 +394,12 @@ class Label:
     def __init__(self):
         self.ptr = len(get_tokens())
 
+    def tokens_since(self) -> list[Token]:
+        return get_tokens()[self.ptr :]
+
+    def text_since(self) -> str:
+        return detokenize(self.tokens_since()).decode(errors="replace")
+
 
 class ChooseConstraint(Constraint):
     def __init__(self, options: list[str]):
@@ -325,6 +409,9 @@ class ChooseConstraint(Constraint):
 
     def eos_allowed(self) -> bool:
         return any(len(o) == self.ptr for o in self.options)
+
+    def eos_forced(self) -> bool:
+        return len(self.options) == 1 and len(self.options[0]) == self.ptr
 
     def token_allowed(self, t: int) -> bool:
         return any(self.ptr < len(o) and o[self.ptr] == t for o in self.options)
@@ -347,6 +434,7 @@ async def gen_tokens(
     regex: str | None = None,
     options: list[str] | None = None,
     store_var: str | None = None,
+    stop_at: str | None = None,
     max_tokens=20,
 ) -> list[Token]:
     res: list[Token] = []
@@ -358,10 +446,28 @@ async def gen_tokens(
     else:
         next_token = ConstrainedToken(lambda: Constraint())
     for _ in range(max_tokens):
-        t = await next_token
-        res += t
+        tokens = await next_token
+        res += tokens
+
+        # this may get slow when the output is veeeeeery long
+        # not a problem for a few k tokens
+        text = detokenize(res).decode(errors="replace")
+
+        if stop_at is not None:
+            if stop_at in text:
+                break
+
+        if text.endswith("\n\n\n\n"):
+            break  # HACK - we don't seem to be getting EOS
+
         if next_token.finished:
             break
     if store_var is not None:
         set_var(store_var, detokenize(res))
+    print("GEN", res, repr(detokenize(res).decode(errors="replace")))
     return res
+
+
+async def gen_text(**kwargs: Any) -> str:
+    tokens = await gen_tokens(**kwargs)
+    return detokenize(tokens).decode(errors="replace")

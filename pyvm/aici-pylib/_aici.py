@@ -19,6 +19,10 @@ def detokenize(tokens: list[int]) -> bytes:
     ...
 
 
+def self_seq_id() -> int:
+    ...
+
+
 def get_var(name: str) -> None | bytes:
     ...
 
@@ -59,6 +63,9 @@ class Constraint:
     def eos_allowed(self) -> bool:
         ...
 
+    def eos_forced(self) -> bool:
+        ...
+
     def token_allowed(self, t: int) -> bool:
         ...
 
@@ -67,6 +74,7 @@ class Constraint:
 
     def allow_tokens(self, ts: TokenSet):
         ...
+
 
 class RegexConstraint(Constraint):
     def __init__(self, pattern: str):

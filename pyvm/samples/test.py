@@ -1,4 +1,5 @@
 import aici
+import re
 
 
 def check_var(name: str, value: str):
@@ -27,6 +28,22 @@ async def main3():
     check_vars({"x": "=5.", "y": "=7."})
 
 
+async def main_fork():
+    await aici.FixedTokens("The word 'hello' in")
+    id = await aici.fork(3)
+    if id == 0:
+        french, german = await aici.wait_vars("french", "german")
+        await aici.FixedTokens(f"{french} is the same as {german}.")
+        await aici.gen_tokens(max_tokens=5)
+    elif id == 1:
+        await aici.FixedTokens(" German is")
+        await aici.gen_tokens(regex=r' "[^"]+"', store_var="german", max_tokens=5)
+    elif id == 2:
+        await aici.FixedTokens(" French is")
+        await aici.gen_tokens(regex=r' "[^"]+"', store_var="french", max_tokens=5)
+    check_vars({"french": ' "bonjour"', "german": ' "Hallo"'})
+
+
 async def main2():
     await aici.FixedTokens("The word 'hello' in")
     l = aici.Label()
@@ -44,16 +61,13 @@ async def main():
     aici.set_var("test", "hello")
     v = aici.get_var("test")
     print(type(v))
-    check_var("test", "hello")
     prompt = await aici.GetPrompt()
     print(prompt)
     await aici.FixedTokens("The word 'hello' in French is")
     # try unconstrained output
     await aici.gen_tokens(store_var="french", max_tokens=5)
-    check_var("french", " 'bonjour'.")
     await aici.FixedTokens("\nAnd in German")
     await aici.gen_tokens(regex=r' "[^"]+"', store_var="german")
-    check_var("german", ' "Hallo"')
     await aici.FixedTokens("\nFive")
     await aici.gen_tokens(
         store_var="five",
@@ -62,10 +76,59 @@ async def main():
             " euros",
         ],
     )
-    check_var("five", " pounds")
     await aici.FixedTokens(" is worth about $")
     await aici.gen_tokens(regex=r"\d+\.\d", store_var="dollars")
-    check_var("dollars", "100.0")
+    check_vars(
+        {
+            "test": "hello",
+            "french": " 'bonjour'.",
+            "german": ' "Hallo"',
+            "five": " pounds",
+            "dollars": "100.0",
+        }
+    )
 
 
-aici.aici_start(main3())
+async def drugs():
+    drug_syn = (
+        "\nUse <drug>Drug Name</drug> syntax for any drug name, for example <drug>Advil</drug>.\n\n"
+    )
+
+    notes = "The patient should take some tylenol in the evening and aspirin in the morning. They should also take something for indigestion.\n"
+    notes = "Start doctor note:\n" + notes + "\nEnd doctor note.\n"
+
+    await aici.FixedTokens("[INST] ")
+    start = aici.Label()
+
+    def inst(s: str) -> str:
+        return s + drug_syn + notes + " [/INST]\n"
+
+    await aici.FixedTokens(inst("Extract drug names in the following doctor's notes."))
+    s = await aici.gen_text(
+        max_tokens=100,
+    )
+    drugs = re.findall(r"<drug>([^<]*)</drug>", s)
+    print("drugs", drugs)
+    await aici.FixedTokens(
+        inst(
+            "Make a list of each drug along with time to take it, based on the following doctor's notes."
+        ),
+        following=start,
+    )
+    pos = aici.Label()
+    if False:
+        await aici.gen_text(max_tokens=50)
+    else:
+        for _ in range(5):
+            fragment = await aici.gen_text(max_tokens=20, stop_at="<drug>")
+            print(fragment)
+            if "<drug>" in fragment:
+                assert fragment.endswith("<drug>")
+                await aici.gen_tokens(options=[d + "</drug>" for d in drugs])
+            else:
+                break
+
+    aici.set_var("times", pos.text_since())
+
+
+aici.aici_start(drugs())
