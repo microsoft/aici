@@ -94,7 +94,7 @@ async def drugs():
         "\nUse <drug>Drug Name</drug> syntax for any drug name, for example <drug>Advil</drug>.\n\n"
     )
 
-    notes = "The patient should take some tylenol in the evening and aspirin in the morning. They should also take something for indigestion.\n"
+    notes = "The patient should take some tylenol in the evening and aspirin in the morning. Excercise is highly recommended. Get lots of sleep.\n"
     notes = "Start doctor note:\n" + notes + "\nEnd doctor note.\n"
 
     await aici.FixedTokens("[INST] ")
@@ -103,30 +103,28 @@ async def drugs():
     def inst(s: str) -> str:
         return s + drug_syn + notes + " [/INST]\n"
 
-    await aici.FixedTokens(inst("Extract drug names in the following doctor's notes."))
+    await aici.FixedTokens(inst("List specific drug names in the following doctor's notes.") + "\n1. <drug>")
     s = await aici.gen_text(
         max_tokens=100,
     )
-    drugs = re.findall(r"<drug>([^<]*)</drug>", s)
+    drugs = re.findall(r"<drug>([^<]*)</drug>", "<drug>" + s)
     print("drugs", drugs)
     await aici.FixedTokens(
         inst(
             "Make a list of each drug along with time to take it, based on the following doctor's notes."
-        ),
+        ) + "Take <drug>",
         following=start,
     )
     pos = aici.Label()
-    if False:
-        await aici.gen_text(max_tokens=50)
-    else:
-        for _ in range(5):
-            fragment = await aici.gen_text(max_tokens=20, stop_at="<drug>")
-            print(fragment)
-            if "<drug>" in fragment:
-                assert fragment.endswith("<drug>")
-                await aici.gen_tokens(options=[d + "</drug>" for d in drugs])
-            else:
-                break
+    await aici.gen_tokens(options=[d + "</drug>" for d in drugs])
+    for _ in range(5):
+        fragment = await aici.gen_text(max_tokens=20, stop_at="<drug>")
+        print(fragment)
+        if "<drug>" in fragment:
+            assert fragment.endswith("<drug>")
+            await aici.gen_tokens(options=[d + "</drug>" for d in drugs])
+        else:
+            break
 
     aici.set_var("times", pos.text_since())
 
