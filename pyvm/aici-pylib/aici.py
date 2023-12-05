@@ -269,7 +269,7 @@ async def wait_vars(*vars: str) -> list[bytes]:
 class AiciCallbacks:
     """
     Low-level interface for AICI.
-    Use aici_start() to wrap a coroutine.
+    Use aici.start() to wrap a coroutine.
     """
 
     def init_prompt(self, prompt: list[Token]):
@@ -399,7 +399,7 @@ class AiciAsync(AiciCallbacks):
         return r
 
 
-def aici_start(f: Coroutine[CbType, None, None]):
+def start(f: Coroutine[CbType, None, None]):
     """
     Starts the AICI loop.
     The coroutine may first `await aici.GetPrompt()` and then can `await aici.gen_*()` or
