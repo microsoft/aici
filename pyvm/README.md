@@ -102,6 +102,22 @@ async def forking():
 aici.start(forking)
 ```
 
+## Tokens, bytes, and strings
+
+LLMs generate tokens. Each token is identified by a unique integer
+(we generally do not use the string names for tokens).
+Different models have different token sets (vocabularies), eg. 32000 tokens for Llama.
+Each token corresponds to a sequence of bytes; these often are valid UTF-8 strings,
+but not always (eg., some emojis or rare Unicode characters will be split across multiple tokens).
+Because of this:
+* the `aici.gen_tokens()` returns `list[int]`
+* `aici.gen_text()` returns `str`, possibly with Unicode replacement characters (`�`);
+  this may not do the right thing in presence of non-UTF-8 bytes
+* shared variables are stored and returned as `bytes` (though when writing them, you can use `str`)
+
+We may need to extend `re` with support for matching `bytes` not only `str` in future.
+
+
 ## Restrictions and compatibility
 
 * you can't access files or network
