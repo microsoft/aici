@@ -105,6 +105,7 @@ aici.start(forking)
 
 * you can't access files or network
 * only parts of the standard library are included (though more modules are easily added)
+* `re` module is available; all `str` methods are also available
 * you can't `pip install`
 * there is no multi-threading (but see `aici.fork()`)
 
