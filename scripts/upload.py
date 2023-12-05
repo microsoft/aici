@@ -7,10 +7,8 @@ import pyaici.ast as ast
 import pyaici.rest
 import pyaici.util
 
-prog = "aici_ast_runner"
 
-
-def upload_wasm():
+def upload_wasm(prog="aici_ast_runner"):
     r = subprocess.run(["sh", "wasm.sh", "build"], cwd=prog)
     if r.returncode != 0:
         sys.exit(1)
@@ -28,6 +26,7 @@ def ask_completion(*args, **kwargs):
     with open(path, "w") as f:
         ujson.dump(res, f, indent=1)
     print(f"response saved to {path}")
+    print(res["storage"])
 
 
 def main():
@@ -85,7 +84,7 @@ def main():
         ]
     }
 
-    arg = {
+    _arg = {
         "steps": [
             ast.fixed("The word 'hello'"),
             ast.label("lang", ast.fixed(" in French is translated as")),
@@ -95,6 +94,58 @@ def main():
             ast.fixed("\nResults: {{french}} {{blah}}", expand_vars=True),
         ]
     }
+
+    notes = "The patient should take some tylenol in the evening and aspirin in the morning. They should also take something for indigestion.\n"
+    notes = "Start doctor note:\n" + notes + "\nEnd doctor note.\n"
+
+    arg = {
+        "steps": [
+            ast.fixed("[INST] "),
+            # there is currently a bug going back to the first token, so we label the stuff after [INST] instead
+            ast.label(
+                "start",
+                ast.fixed(
+                    "List drug names in the following doctor's notes. Use <drug>Drug Name</drug> syntax. Say DONE when done. [/INST]\n"
+                    + notes
+                ),
+            ),
+            ast.gen(
+                max_tokens=100,
+                stop_at="DONE",
+                set={
+                    "drugs": ast.e_extract_all(
+                        r"<drug>([^<]*</drug>)", ast.e_current()
+                    )
+                },
+            ),
+            ast.fixed("For each drug in the following doctor's notes give the time to take it. "
+                        "Use <drug>Drug Name</drug> syntax when referring to any drugs. [/INST]\n"
+                        + notes,
+                        following="start"),
+            ast.gen(max_tokens=100, inner={
+                "<drug>": ast.e_var("drugs"),
+            })
+        ]
+    }
+
+    arg = {
+        "steps": [
+            ast.fixed("The word 'hello' in French is"),
+            ast.gen(max_tokens=10),
+        ]
+    }
+
+    if len(sys.argv) > 1 and sys.argv[1].endswith(".py"):
+        mod = upload_wasm("pyvm")
+        pyaici.rest.log_level = 2
+        arg = open(sys.argv[1]).read()
+        ask_completion(
+            prompt="",
+            aici_module=mod,
+            aici_arg=arg,
+            ignore_eos=True,
+        )
+        return
 
     mod = upload_wasm()
     pyaici.rest.log_level = 1

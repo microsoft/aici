@@ -16,7 +16,7 @@ def wrap(text):
 
 def greedy_query(prompt: str, steps: list, n=1):
     ast_module = pyaici.rest.ast_module
-    temperature = 0
+    temperature = 0.0
     if n > 1:
         temperature = 0.8
     assert ast_module
@@ -45,15 +45,16 @@ def expect(expected: Union[list[str], str], prompt: str, steps: list):
     for i in range(len(res)):
         # ░ is used as a placeholder; will be removed
         r = res[i].replace("░", "")
+        r2 = r
         e = expected[i]
         if e.startswith("<...>") and len(r) > len(e) - 5:
             e = e[5:]
-            r = r[-len(e) :]
-        if r != e:
-            if len(res[i]) > 40:
-                print(f'"""{r}"""')
+            r2 = r2[-len(e) :]
+        if r2 != e:
+            if len(r) > 40:
+                print("GOT", f'"""{r}"""')
             else:
-                print(ujson.dumps(r))
+                print("GOT", ujson.dumps(r))
             pytest.fail(f"query output mismatch at #{i}")
 
 
@@ -149,7 +150,7 @@ def test_ff_0():
         "Hello",
         [
             {"Gen": {"rx": ", ", "max_tokens": 10}},
-            {"Fixed": {"text": "3 + 8 is"}},
+            {"Fixed": {"text": {"String": {"str": "3 + 8 is"}}}},
             {"Gen": {"max_tokens": 5}},
         ],
     )
@@ -240,6 +241,62 @@ def test_backtrack_1():
                 ast.fixed("\nResults:{{french}}{{blah}}", expand_vars=True),
             ],
         )
+
+
+def test_backtrack_2():
+    expect(
+        "<...>Foo\nZzzzz\nQux\nMux\nDONE",
+        "",
+        [
+            ast.fixed("Please remember the following items:\nFoo\nZzzzz"),
+            ast.label("l", ast.fixed("\nBar\nBaz")),
+            ast.fixed("\nPlease repeat the list, say DONE when done:\n"),
+            ast.gen(max_tokens=20, stop_at="DONE", set_var="x"),
+            ast.fixed(
+                "\nQux\nMux\nPlease repeat the list, say DONE when done:\n",
+                following="l",
+            ),
+            ast.gen(max_tokens=20, stop_at="DONE", set_var="y"),
+        ],
+    )
+
+
+def test_inner_1():
+    expect(
+        "<...><city>Warsaw</city> is the capital city of Poland and is known for its rich history, cultural land",
+        "",
+        [
+            ast.fixed("[INST] "),
+            # there is currently a bug going back to the first token, so we label the stuff after [INST] instead
+            ast.label(
+                "start",
+                ast.fixed(
+                    "List 5 names of cities in Poland. Use <city>City Name</city> syntax. Say DONE when done. [/INST]\n"
+                ),
+            ),
+            ast.gen(
+                max_tokens=100,
+                stop_at="DONE",
+                set={
+                    "cities": ast.e_extract_all(
+                        r"<city>([^<]*</city>)", ast.e_current()
+                    )
+                },
+            ),
+            ast.fixed(
+                "Pick a specific capital city and say something about it. "
+                "Use <city>City Name</city> syntax when referring to city names. [/INST]\n",
+                # backtrack to start, to erase info about 'Poland'
+                following="start",
+            ),
+            ast.gen(
+                max_tokens=20,
+                inner={
+                    "<city>": ast.e_var("cities"),
+                },
+            ),
+        ],
+    )
 
 
 def test_wait_1():

@@ -44,6 +44,14 @@ impl SimpleVob {
         self.data[byte_idx] |= 1 << bit_idx;
     }
 
+    #[inline(always)]
+    pub fn disallow_token(&mut self, tok: TokenId) {
+        let idx = tok as usize;
+        let byte_idx = idx / BITS;
+        let bit_idx = idx % BITS;
+        self.data[byte_idx] &= !(1 << bit_idx);
+    }
+
     pub fn resize(&mut self, size: usize) {
         let new_size = size / BITS + 1;
         assert!(new_size >= self.data.len());

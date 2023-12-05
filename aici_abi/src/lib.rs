@@ -11,8 +11,8 @@ pub mod toktree;
 pub type TokenId = bytes::TokenId;
 
 pub use host::{
-    _print, arg_bytes, self_seq_id, stdout, tokenize, StorageCmd, StorageOp, StorageResp,
-    VariableStorage,
+    _print, arg_bytes, return_logit_bias, self_seq_id, stdout, tokenize, tokenize_bytes,
+    StorageCmd, StorageOp, StorageResp, VariableStorage,
 };
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -80,7 +80,25 @@ pub struct PostProcessArg {
 }
 
 #[derive(Serialize, Deserialize, Debug)]
-pub struct PostProcessResult {}
+pub struct PostProcessResult {
+    /// If true, stop the sequence.
+    pub stop: bool,
+}
+
+impl PostProcessResult {
+    pub fn stop() -> Self {
+        PostProcessResult { stop: true }
+    }
+
+    pub fn continue_() -> Self {
+        PostProcessResult { stop: false }
+    }
+
+    pub fn from_arg(arg: &PostProcessArg) -> Self {
+        let stop = arg.tokens.contains(&host::eos_token());
+        PostProcessResult { stop }
+    }
+}
 
 impl PreProcessResult {
     pub fn new(attention_masks: Vec<Vec<f32>>) -> Self {
@@ -118,8 +136,8 @@ pub trait AiciVm {
     fn mid_process(&mut self, arg: MidProcessArg) -> MidProcessResult;
 
     /// Called after tokens are appended, after mid_process(). ~1ms time limit.
-    fn post_process(&mut self, _arg: PostProcessArg) -> PostProcessResult {
-        PostProcessResult {}
+    fn post_process(&mut self, arg: PostProcessArg) -> PostProcessResult {
+        PostProcessResult::from_arg(&arg)
     }
 
     // Internals
@@ -140,7 +158,9 @@ pub trait AiciVm {
         let res = self.mid_process(arg);
         match &res {
             MidProcessResult::SampleWithBias { allowed_tokens } => {
-                host::return_logit_bias(allowed_tokens);
+                if allowed_tokens.len() > 0 {
+                    host::return_logit_bias(allowed_tokens);
+                }
             }
             _ => {}
         }

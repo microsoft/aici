@@ -150,7 +150,8 @@ class AiciCompletionRequest(CompletionRequest):
 
 class AiciCompletionResponseStreamChoice(CompletionResponseStreamChoice):
     logs: str
-    millis: int
+    storage: list
+    millis: float
 
 
 @app.post("/v1/completions")
@@ -284,6 +285,7 @@ async def create_completion(request: AiciCompletionRequest, raw_request: Request
             index=index,
             text=text,
             logs=aici.get("logs", ""),
+            storage=aici.get("storage", []),
             millis=aici.get("millis", 0),
             logprobs=logprobs,
             finish_reason=finish_reason,

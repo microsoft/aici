@@ -9,7 +9,8 @@
         "aicirt/Cargo.toml",
         "aici_abi/Cargo.toml",
         "aici_tokenizers/Cargo.toml",
-        "aici_ast_runner/Cargo.toml"
+        "aici_ast_runner/Cargo.toml",
+        "pyvm/Cargo.toml"
     ],
     "rust-analyzer.diagnostics.disabled": [],
     "files.associations": {
@@ -44,7 +45,8 @@
         "format": "cpp"
     },
     "python.analysis.extraPaths": [
-        "./vllm"
+        "./vllm",
+        "./pyvm/aici-pylib"
     ],
     "spellright.language": [
         "en"

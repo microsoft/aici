@@ -1,6 +1,6 @@
 use aici_abi::{
     bytes::{clone_vec_as_bytes, vec_from_bytes, TokRxInfo},
-    PreProcessArg, PostProcessArg,
+    PostProcessArg, PreProcessArg, StorageCmd,
 };
 use anyhow::{anyhow, Result};
 use log::{info, warn};
@@ -40,6 +40,7 @@ pub struct ModuleData {
     tokenizer: Option<Tokenizer>,
     pub store_limits: wasmtime::StoreLimits,
     pub had_error: bool,
+    pub storage_log: Vec<serde_json::Value>,
     blobs: Vec<Rc<Vec<u8>>>,
 }
 
@@ -96,6 +97,7 @@ impl ModuleData {
             process_result: Vec::new(),
             logit_ptr: &mut [],
             had_error: false,
+            storage_log: Vec::new(),
             blobs: vec![Rc::new(Vec::new()); BlobId::MAX_BLOB_ID as usize],
         };
         r.set_blob(BlobId::MODULE_ARG, module_arg.as_bytes().to_vec());
@@ -207,9 +209,19 @@ impl ModuleData {
         self.clear_blob(BlobId::STORAGE_RESULT);
         match serde_json::from_slice(&m) {
             Ok(cmd) => {
+                let log = match &cmd {
+                    StorageCmd::WriteVar { .. } => {
+                        let v = serde_json::to_value(&cmd).unwrap();
+                        Some(v)
+                    }
+                    StorageCmd::ReadVar { .. } => None,
+                };
                 let res = self.group_channel.send_cmd(GroupCmd::StorageCmd { cmd });
                 match res {
                     Ok(GroupResp::StorageResp { resp }) => {
+                        if let Some(log) = log {
+                            self.storage_log.push(log)
+                        }
                         let res_bytes = serde_json::to_vec(&resp).unwrap();
                         self.set_blob(BlobId::STORAGE_RESULT, res_bytes);
                     }
@@ -267,8 +279,125 @@ fn write_caller_mem(
     src.len() as u32
 }
 
+macro_rules! fake_wasi {
+    ($linker:ident, $func_name:ident, $($arg_type:ty)+) => {
+        $linker.func_wrap(
+            "wasi_snapshot_preview1",
+            stringify!($func_name),
+            |$(_: $arg_type),+| -> i32 {
+                8 // BADF
+                // 52 // NOSYS
+            },
+        )?;
+    };
+}
+
 pub fn setup_linker(engine: &wasmtime::Engine) -> Result<Arc<wasmtime::Linker<ModuleData>>> {
     let mut linker = wasmtime::Linker::<ModuleData>::new(engine);
+
+    fake_wasi!(linker, environ_get, i32 i32);
+    fake_wasi!(linker, clock_time_get, i32 i64 i32);
+    fake_wasi!(linker, path_create_directory, i32 i32 i32);
+    fake_wasi!(linker, path_filestat_get, i32 i32 i32 i32 i32);
+    fake_wasi!(linker, path_link, i32 i32 i32 i32 i32 i32 i32);
+    fake_wasi!(linker, path_open, i32 i32 i32 i32 i32 i64 i64 i32 i32);
+    fake_wasi!(linker, path_readlink, i32 i32 i32 i32 i32 i32);
+    fake_wasi!(linker, path_remove_directory, i32 i32 i32);
+    fake_wasi!(linker, path_rename, i32 i32 i32 i32 i32 i32);
+    fake_wasi!(linker, path_unlink_file, i32 i32 i32);
+    fake_wasi!(linker, poll_oneoff, i32 i32 i32 i32);
+    fake_wasi!(linker, fd_filestat_set_size, i32 i64);
+    fake_wasi!(linker, fd_read, i32 i32 i32 i32);
+    fake_wasi!(linker, fd_readdir, i32 i32 i32 i64 i32);
+    fake_wasi!(linker, fd_close, i32);
+    fake_wasi!(linker, fd_filestat_get, i32 i32);
+    fake_wasi!(linker, fd_prestat_get, i32 i32);
+    fake_wasi!(linker, fd_prestat_dir_name, i32 i32 i32);
+    fake_wasi!(linker, fd_seek, i32 i64 i32 i32);
+    fake_wasi!(linker, path_filestat_set_times, i32 i32 i32 i32 i64 i64 i32);
+
+    linker.func_wrap("wasi_snapshot_preview1", "sched_yield", || 0)?;
+    linker.func_wrap("wasi_snapshot_preview1", "fd_sync", |_: i32| 0)?;
+
+    linker.func_wrap(
+        "wasi_snapshot_preview1",
+        "proc_exit",
+        |code: i32| -> Result<()> { Err(anyhow!("proc_exit: {code}")) },
+    )?;
+
+    linker.func_wrap(
+        "wasi_snapshot_preview1",
+        "fd_fdstat_get",
+        |mut caller: wasmtime::Caller<'_, ModuleData>, fd: i32, stat_ptr: u32| -> Result<i32> {
+            if fd != 0 && fd != 1 && fd != 2 {
+                return Ok(8); // BADF
+            }
+            // pretend file isatty()
+            let mut char_device = vec![0u8; 24];
+            char_device[0] = 2;
+            write_caller_mem(&mut caller, stat_ptr, 24, &char_device);
+            Ok(0)
+        },
+    )?;
+
+    linker.func_wrap(
+        "wasi_snapshot_preview1",
+        "fd_write",
+        |mut caller: wasmtime::Caller<'_, ModuleData>,
+         fd: i32,
+         iovs_ptr: u32,
+         niovs: u32,
+         nwrittenptr: u32| {
+            if fd != 1 && fd != 2 {
+                return 8; // BADF
+            }
+            let iovs = read_caller_mem(&caller, iovs_ptr, niovs * 8);
+            let ptr_lens = vec_from_bytes::<(u32, u32)>(&iovs);
+            let mut nwr = 0;
+            for (ptr, len) in ptr_lens {
+                let m = read_caller_mem(&caller, ptr, len);
+                nwr += m.len();
+                caller.data_mut().write_log(&m);
+            }
+            if nwrittenptr != 0 {
+                write_caller_mem(&mut caller, nwrittenptr, 4, &nwr.to_le_bytes());
+            }
+            0
+        },
+    )?;
+
+    linker.func_wrap(
+        "wasi_snapshot_preview1",
+        "random_get",
+        |mut caller: wasmtime::Caller<'_, ModuleData>, ptr: u32, len: u32| {
+            write_caller_mem(&mut caller, ptr, len, &[]);
+            0
+        },
+    )?;
+
+    linker.func_wrap(
+        "wasi_snapshot_preview1",
+        "args_sizes_get",
+        |mut caller: wasmtime::Caller<'_, ModuleData>, p1: u32, p2: u32| {
+            let z = vec![0u8; 4];
+            write_caller_mem(&mut caller, p1, 4, &z);
+            write_caller_mem(&mut caller, p2, 4, &z);
+            0
+        },
+    )?;
+
+    linker.func_wrap(
+        "wasi_snapshot_preview1",
+        "environ_sizes_get",
+        |mut caller: wasmtime::Caller<'_, ModuleData>, p1: u32, p2: u32| {
+            let z = vec![0u8; 4];
+            write_caller_mem(&mut caller, p1, 4, &z);
+            write_caller_mem(&mut caller, p2, 4, &z);
+            0
+        },
+    )?;
+    linker.func_wrap("wasi_snapshot_preview1", "args_get", |_: u32, _: u32| 0)?;
+
     linker.func_wrap(
         "env",
         "aici_host_print",
@@ -349,6 +478,12 @@ pub fn setup_linker(engine: &wasmtime::Engine) -> Result<Arc<wasmtime::Linker<Mo
         "env",
         "aici_host_self_seq_id",
         |caller: wasmtime::Caller<'_, ModuleData>| caller.data().id as u32,
+    )?;
+
+    linker.func_wrap(
+        "env",
+        "aici_host_eos_token",
+        |caller: wasmtime::Caller<'_, ModuleData>| caller.data().globals.tokrx_info.tok_eos,
     )?;
 
     linker.func_wrap(

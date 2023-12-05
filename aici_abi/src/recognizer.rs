@@ -29,15 +29,15 @@ impl<R: Recognizer + Clone> AiciVm for AiciRecognizer<R> {
     }
 
     fn post_process(&mut self, arg: PostProcessArg) -> PostProcessResult {
-        for token in arg.tokens {
-            let bytes = self.trie.token(token);
+        for token in &arg.tokens {
+            let bytes = self.trie.token(*token);
             // wprintln!("process {} {:?}", token, bytes);
             for b in bytes {
                 self.rec.push_byte(*b)
             }
             self.rec.collapse();
         }
-        PostProcessResult {}
+        PostProcessResult::from_arg(&arg)
     }
 }
 
@@ -72,6 +72,14 @@ impl<S: Copy, R: FunctionalRecognizer<S>> StackRecognizer<S, R> {
     pub fn reset(&mut self) {
         self.stack_ptr = 0;
         self.stack[0] = self.rec.initial();
+    }
+}
+
+impl<S: Copy + Debug, R: FunctionalRecognizer<S>> Debug for StackRecognizer<S, R> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("StackRecognizer")
+            .field("top", &self.stack[self.stack_ptr])
+            .finish()
     }
 }
 

@@ -1,7 +1,8 @@
-from typing import List, Union, Dict, Any, Tuple
+from typing import List, Union, Dict, Any, Tuple, cast
 
 import torch
 
+from vllm import LLMEngine
 from vllm.sampling_params import SamplingParams
 from vllm.sequence import SequenceGroupMetadata, SequenceGroup, SequenceStatus, Sequence
 from vllm.core.scheduler import Scheduler, SchedulerOutputs
@@ -13,6 +14,8 @@ from .comms import AiciRunner, BenchTimer
 
 def install(runner: AiciRunner):
     timer = BenchTimer("initiate_step")
+    bias_timer = BenchTimer("bias")
+    finish_timer = BenchTimer("finish")
 
     def initiate_step(
         scheduler: Scheduler,
@@ -112,15 +115,18 @@ def install(runner: AiciRunner):
         logits += bias
 
     def recv_attention_mask():
-        return torch.from_numpy(runner.recv_attention_mask())
+        with bias_timer:
+            return torch.from_numpy(runner.recv_attention_mask())
 
     def append_ff_tokens(
-        block_manager: BlockSpaceManager,
+        llm_engine: LLMEngine,
         _seq_group: SequenceGroup,
         child_seqs: List[Tuple[Sequence, Sequence]],
     ):
+        runner.recent_seqs = {}
         for seq, parent in child_seqs:
             assert not seq.skip_round
+            runner.recent_seqs[seq.seq_id] = seq
             # lookup by parent - the child wasn't born yet when response was generated
             resp = runner.response_by_seq_id(parent.seq_id)
             backtrack: int = resp.get("backtrack", 0)
@@ -128,21 +134,47 @@ def install(runner: AiciRunner):
             if backtrack:
                 assert seq is parent
                 seq.backtrack(backtrack)
-                block_manager.trim_physical_blocks(seq)
-                toks = []
-            else:
-                toks = [seq.data.output_token_ids[-1]]
+                llm_engine.scheduler.block_manager.trim_physical_blocks(seq)
+                assert ff
+                t = ff.pop(0)
+                seq.append_token_id(t, {t: 0.0})
+            last_tok = seq.data.output_token_ids[-1]
+            # replace sampled EOS with space - at least Llama models get confused by EOS
+            if (
+                not backtrack
+                and not ff
+                and last_tok == llm_engine.tokenizer.eos_token_id
+            ):
+                if runner.space_token == -1:
+                    sp = llm_engine.tokenizer.tokenize(" ")[-1]
+                    runner.space_token = cast(
+                        int, llm_engine.tokenizer.convert_tokens_to_ids(sp)
+                    )
+                last_tok = runner.space_token
+                seq.data.output_token_ids[-1] = last_tok
+            toks = [last_tok]
             if ff:
+                # first, decode with only one token
+                llm_engine._decode_sequence(seq)
                 # print("FF", seq.seq_id, ff, resp)
-                seq.pending_ff_tokens = ff.copy()
+                for t in ff:
+                    # probability of the token is 1.0, so logprob is 0.0
+                    seq.append_token_id(t, {t: 0.0})
+                seq.data.num_pending_ff_tokens = len(ff) + 1
                 toks += ff
+            # print("TTT", backtrack, seq.data.output_token_ids)
             clone_id = None
             if parent is not seq:
                 clone_id = parent.seq_id
             runner.step_add_post(seq.seq_id, backtrack, toks, clone_id)
 
     def finish_sampling():
-        runner.step_finish_post()
+        with finish_timer:
+            for seq_id in runner.step_finish_post():
+                seq: Sequence = runner.recent_seqs[seq_id]
+                # print("FINISH", seq_id, seq.data.output_token_ids)
+                seq.status = SequenceStatus.FINISHED_STOPPED
+        runner.recent_seqs = {}
 
     SamplingParams.apply_dynamic_logit_bias = apply_dynamic_logit_bias
     SamplingParams.initiate_step = initiate_step

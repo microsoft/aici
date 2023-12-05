@@ -41,6 +41,9 @@ extern "C" {
     fn aici_host_return_process_result(res: *const u8, res_size: u32);
 
     fn aici_host_storage_cmd(cmd: *const u8, cmd_size: u32) -> BlobId;
+
+    // This can be also obtained from the TokTrie.
+    fn aici_host_eos_token() -> TokenId;
 }
 
 // TODO: add <T>
@@ -164,6 +167,43 @@ pub enum StorageOp {
     Append,
 }
 
+#[allow(dead_code)]
+pub mod bin_string {
+    use serde::{Deserialize, Serialize};
+    use serde::{Deserializer, Serializer};
+
+    pub fn serialize<S: Serializer>(v: &Vec<u8>, s: S) -> Result<S::Ok, S::Error> {
+        let binstr = String::from_iter(v.iter().map(|b| *b as char));
+        String::serialize(&binstr, s)
+    }
+
+    pub fn deserialize<'de, D: Deserializer<'de>>(d: D) -> Result<Vec<u8>, D::Error> {
+        let binstr = String::deserialize(d)?;
+        Ok(binstr.chars().map(|c| c as u8).collect())
+    }
+}
+
+pub mod hex_string {
+    use serde::{Deserialize, Serialize};
+    use serde::{Deserializer, Serializer};
+
+    pub fn serialize<S: Serializer>(v: &Vec<u8>, s: S) -> Result<S::Ok, S::Error> {
+        let hexstr = String::from_iter(v.iter().map(|b| format!("{:02x}", b)));
+        String::serialize(&hexstr, s)
+    }
+
+    pub fn deserialize<'de, D: Deserializer<'de>>(d: D) -> Result<Vec<u8>, D::Error> {
+        let hexstr = String::deserialize(d)?;
+        let mut res = Vec::new();
+        for i in 0..(hexstr.len() / 2) {
+            let b = u8::from_str_radix(&hexstr[2 * i..2 * i + 2], 16)
+                .map_err(serde::de::Error::custom)?;
+            res.push(b);
+        }
+        Ok(res)
+    }
+}
+
 #[derive(Serialize, Deserialize, Debug)]
 pub enum StorageCmd {
     /// Read variable. Returns StorageResp::ReadVar or StorageResp::VariableMissing.
@@ -177,6 +217,7 @@ pub enum StorageCmd {
     /// just like ReadVar would.
     WriteVar {
         name: String,
+        #[serde(with = "hex_string")]
         value: Vec<u8>,
         op: StorageOp,
         when_version_is: Option<u64>,
@@ -186,7 +227,11 @@ pub enum StorageCmd {
 #[derive(Serialize, Deserialize, Debug)]
 pub enum StorageResp {
     /// Upon handling the request the variable had the specified value and version number.
-    ReadVar { version: u64, value: Vec<u8> },
+    ReadVar {
+        version: u64,
+        #[serde(with = "hex_string")]
+        value: Vec<u8>,
+    },
     /// Upon handling the request the variable was unset.
     VariableMissing {},
     /// The variable has been written, and the new version is returned.
@@ -250,6 +295,19 @@ impl VariableStorage {
     }
 }
 
+/// Tokenize given byte string.
+pub fn tokenize_bytes(s: &[u8]) -> Vec<TokenId> {
+    let id = unsafe { aici_host_tokenize(s.as_ptr(), s.len() as u32) };
+    let r = read_blob(id, 4 * (s.len() / 3 + 10));
+    let res = vec_from_bytes(&r);
+    wprintln!(
+        "tokenize_bytes: {:?} -> {:?}",
+        String::from_utf8_lossy(s),
+        res
+    );
+    res
+}
+
 /// Tokenize given UTF8 string.
 pub fn tokenize(s: &str) -> Vec<TokenId> {
     let id = unsafe { aici_host_tokenize(s.as_ptr(), s.len() as u32) };
@@ -262,4 +320,9 @@ pub fn tokenize(s: &str) -> Vec<TokenId> {
 /// Return the ID of the current process.
 pub fn self_seq_id() -> SeqId {
     unsafe { SeqId(aici_host_self_seq_id()) }
+}
+
+/// Return the ID of the EOS token.
+pub fn eos_token() -> TokenId {
+    unsafe { aici_host_eos_token() }
 }
