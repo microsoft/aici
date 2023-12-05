@@ -10,6 +10,9 @@
 #include "flash.h"
 #include "flash_fwd_kernel.h"
 
+#define C10_CUDA_CHECK(EXPR) do{ (void) EXPR; }while(0)
+#define C10_CUDA_KERNEL_LAUNCH_CHECK() C10_CUDA_CHECK(cudaGetLastError())
+
 template<typename Kernel_traits, bool Is_dropout, bool Is_causal, bool Is_local, bool Is_even_MN, bool Is_even_K, bool Return_softmax>
 __global__ void flash_fwd_kernel(Flash_fwd_params params) {
     static_assert(!(Is_causal && Is_local));  // If Is_local is true, Is_causal should be false
