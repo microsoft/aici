@@ -1,6 +1,6 @@
 
 from promptlib.prompt import PromptNode, append, begin, begin_chat, end
-from promptlib.gen import gen, choose
+from promptlib.gen import gen, choose, wait
 from promptlib.model import set_model, begin_assistant, begin_user, begin_system
 from promptlib.constrain import constrain
 
@@ -18,6 +18,7 @@ setattr(PromptNode, "begin_user", begin_user)
 setattr(PromptNode, "end", end)
 setattr(PromptNode, "gen", gen)
 setattr(PromptNode, "choose", choose)
+setattr(PromptNode, "wait", wait)
 setattr(PromptNode, "constrain", constrain)
 setattr(PromptNode, "set_model", set_model)
 setattr(PromptNode, "set_endpoint", set_endpoint)

@@ -24,7 +24,7 @@ class AICI(Endpoint):
         return True
     
     def run(self, prompt_plan):
-        _submit_program(self.base_url, self.wasm_runner_id, prompt_plan, log=True)
+        return _submit_program(self.base_url, self.wasm_runner_id, prompt_plan, log=True)
 
 
 def _compile_wasm(wasm_runner_buildsh, scriptargs=["build"]):
@@ -92,6 +92,9 @@ def _submit_program(base_url, aici_module, aici_arg, temperature=0, max_tokens=2
                                 raise "Bailing out due to WASM error: " + l
                         #else:
                         #    print(ch["text"], end="")
+                    # make sure texts is long enough
+                    while len(texts) <= idx:
+                        texts.append("")
                     texts[idx] += ch["text"]
             #elif decoded_line == "data: [DONE]":
             #    print(" [DONE]")
@@ -108,4 +111,6 @@ def _submit_program(base_url, aici_module, aici_arg, temperature=0, max_tokens=2
         ujson.dump(
             {"request": json, "texts": texts, "response": full_resp}, f, indent=1
         )
+
+    return texts, json, full_resp
     #print(f"response saved to {path}")
