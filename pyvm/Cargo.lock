@@ -47,6 +47,7 @@ dependencies = [
  "cfgrammar",
  "crossbeam-utils",
  "glob",
+ "indexmap 1.9.3",
  "lazy_static",
  "libc",
  "lrlex",
@@ -1195,6 +1196,7 @@ dependencies = [
 [[package]]
 name = "rustpython-codegen"
 version = "0.3.0"
+source = "git+https://github.com/RustPython/RustPython#0fab6e606379cfda346c82fa2f3960d0449b40e9"
 dependencies = [
  "ahash",
  "bitflags 2.4.1",
@@ -1211,6 +1213,7 @@ dependencies = [
 [[package]]
 name = "rustpython-common"
 version = "0.3.0"
+source = "git+https://github.com/RustPython/RustPython#0fab6e606379cfda346c82fa2f3960d0449b40e9"
 dependencies = [
  "ascii",
  "bitflags 2.4.1",
@@ -1236,6 +1239,7 @@ dependencies = [
 [[package]]
 name = "rustpython-compiler"
 version = "0.3.0"
+source = "git+https://github.com/RustPython/RustPython#0fab6e606379cfda346c82fa2f3960d0449b40e9"
 dependencies = [
  "rustpython-codegen",
  "rustpython-compiler-core",
@@ -1245,6 +1249,7 @@ dependencies = [
 [[package]]
 name = "rustpython-compiler-core"
 version = "0.3.0"
+source = "git+https://github.com/RustPython/RustPython#0fab6e606379cfda346c82fa2f3960d0449b40e9"
 dependencies = [
  "bitflags 2.4.1",
  "itertools",
@@ -1257,6 +1262,7 @@ dependencies = [
 [[package]]
 name = "rustpython-derive"
 version = "0.3.0"
+source = "git+https://github.com/RustPython/RustPython#0fab6e606379cfda346c82fa2f3960d0449b40e9"
 dependencies = [
  "rustpython-compiler",
  "rustpython-derive-impl",
@@ -1266,6 +1272,7 @@ dependencies = [
 [[package]]
 name = "rustpython-derive-impl"
 version = "0.3.0"
+source = "git+https://github.com/RustPython/RustPython#0fab6e606379cfda346c82fa2f3960d0449b40e9"
 dependencies = [
  "itertools",
  "maplit",
@@ -1357,6 +1364,7 @@ dependencies = [
 [[package]]
 name = "rustpython-vm"
 version = "0.3.0"
+source = "git+https://github.com/RustPython/RustPython#0fab6e606379cfda346c82fa2f3960d0449b40e9"
 dependencies = [
  "ahash",
  "ascii",

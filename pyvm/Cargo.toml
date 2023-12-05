@@ -15,15 +15,14 @@ lrtable = "0.13.3"
 anyhow = "1.0.75"
 vob = "3.0.3"
 rustc-hash = "1.1.0"
-rustpython-vm = { version = "0.3.0", path = "../RustPython/vm", default-features = false, features = ["compiler"] }
-rustpython-derive = { version = "0.3.0", path = "../RustPython/derive" }
+rustpython-vm = { version = "0.3.0", git = "https://github.com/RustPython/RustPython", default-features = false, features = ["compiler"] }
+rustpython-derive = { version = "0.3.0", git = "https://github.com/RustPython/RustPython" }
 libc = "0.2.150"
 lazy_static = "1.4.0"
 num-traits = "0.2.17"
 crossbeam-utils = "0.8.16"
 once_cell = "1.18.0"
-# rustpython-stdlib = { version = "0.3.0", path = "../RustPython/stdlib" }
-# rustpython-pylib = { version = "0.3.0", path = "../RustPython/pylib", features = ["freeze-stdlib"] }
+indexmap = { version = "1.9.3", features = ["std"] }
 
 [patch.crates-io]
 aici_abi = { path = "../aici_abi" }
