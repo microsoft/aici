@@ -19,11 +19,17 @@ SeqId = int
 
 
 def get_tokens() -> list[Token]:
+    """
+    Get list of tokens in the current sequence, including the prompt.
+    """
     assert AiciAsync.instance
     return AiciAsync.instance._tokens
 
 
 def get_prompt_len() -> int:
+    """
+    Get the length of the prompt in the current sequence.
+    """
     assert AiciAsync.instance
     return AiciAsync.instance._prompt_len
 
@@ -149,6 +155,10 @@ class NextToken:
 
 class FixedTokens(NextToken):
     def __init__(self, text: str | bytes, following: Optional["Label"] = None):
+        """
+        Forces next tokens to be exactly the given text.
+        If following is given, the text replaces everything that follows the label.
+        """
         super().__init__()
         self.fixed_tokens: list[Token] = tokenize(text)
         self.following = following
@@ -164,6 +174,9 @@ class FixedTokens(NextToken):
 
 class StopToken(NextToken):
     def __init__(self) -> None:
+        """
+        Indicates that the generation should stop.
+        """
         super().__init__()
 
     def mid_process(self) -> MidProcessResult:
@@ -176,6 +189,10 @@ class StopToken(NextToken):
 
 class ConstrainedToken(NextToken):
     def __init__(self, mk_constraint: Callable[[], Constraint]):
+        """
+        Generates a token that satisfies the given constraint.
+        The constraint will be constructed in mid_process() phase, which has slightly longer time limit.
+        """
         super().__init__()
         self.mk_constraint = mk_constraint
         self._constraint: Constraint | None = None
@@ -385,19 +402,30 @@ class AiciAsync(AiciCallbacks):
 def aici_start(f: Coroutine[CbType, None, None]):
     """
     Starts the AICI loop.
-    The coroutine may first `await GetPrompt()` and then should `await NextToken()` (typically in a loop).
+    The coroutine may first `await aici.GetPrompt()` and then can `await aici.gen_*()` or
+    `await aici.FixedTokens()` multiple times.
     """
     return AiciAsync(f)
 
 
 class Label:
     def __init__(self):
+        """
+        Create a new label the indictes the current position in the sequence.
+        Can be passed as `following=` argument to `FixedTokens()`.
+        """
         self.ptr = len(get_tokens())
 
     def tokens_since(self) -> list[Token]:
+        """
+        Return tokens generated since the label.
+        """
         return get_tokens()[self.ptr :]
 
     def text_since(self) -> str:
+        """
+        Return text generated since the label.
+        """
         return detokenize(self.tokens_since()).decode(errors="replace")
 
 
@@ -437,6 +465,12 @@ async def gen_tokens(
     stop_at: str | None = None,
     max_tokens=20,
 ) -> list[Token]:
+    """
+    Generates tokens with the given constraint.
+    If `stop_at` is given, the generation stops when the given text is generated. The stop text is included in result.
+    If `store_var` is given, the generated tokens are stored in the variable.
+    `regex` and `options` are mutually exclusive.
+    """
     res: list[Token] = []
     if regex is not None:
         assert options is None
@@ -469,5 +503,8 @@ async def gen_tokens(
 
 
 async def gen_text(**kwargs: Any) -> str:
+    """
+    Same as gen_tokens(), but tries to decode the output as text.
+    """
     tokens = await gen_tokens(**kwargs)
     return detokenize(tokens).decode(errors="replace")
