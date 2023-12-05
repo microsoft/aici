@@ -13,6 +13,7 @@ use wasmtime;
 use crate::bench::TimerSet;
 use crate::hostimpl::{
     setup_linker, AiciLimits, GlobalInfo, ModuleData, ModuleInstId, LOGIT_BIAS_ALLOW,
+    LOGIT_BIAS_DISALLOW,
 };
 use crate::shm::Shm;
 use crate::worker::{
@@ -217,8 +218,16 @@ impl ModuleInstance {
     pub fn run_main(&mut self) -> Result<()> {
         self.run_init()?;
         let t0 = Instant::now();
-        let _ = self.call_func::<(i32, i32), i32>("main", (0, 0))?;
-        println!("{}\n", self.store.data_mut().string_log());
+        if self
+            .instance
+            .get_export(&mut self.store, "aici_main")
+            .is_some()
+        {
+            self.call_func::<u32, ()>("aici_main", self.handle)?;
+        } else {
+            let _ = self.call_func::<(i32, i32), i32>("main", (0, 0))?;
+        }
+        //println!("{}\n", self.store.data_mut().string_log());
         println!("time: {:?}", t0.elapsed());
         Ok(())
     }
@@ -272,8 +281,18 @@ impl ModuleInstance {
         self.call_func::<WasmAici, ()>("aici_mid_process", self.handle)?;
         match self.proc_result()? {
             MidProcessResult::SampleWithBias { .. } => Ok(json!({})),
+            MidProcessResult::Stop { .. } => {
+                let eos = self.store.data().globals.tokrx_info.tok_eos;
+                self.store
+                    .data_mut()
+                    .logit_ptr
+                    .iter_mut()
+                    .for_each(|v| *v = LOGIT_BIAS_DISALLOW);
+                self.store.data_mut().logit_ptr[eos as usize] = LOGIT_BIAS_ALLOW;
+                Ok(json!({}))
+            }
             MidProcessResult::Splice {
-                backtrack,
+                mut backtrack,
                 mut ff_tokens,
             } => {
                 let vocab_size = self.store.data().logit_ptr.len();
@@ -302,6 +321,9 @@ impl ModuleInstance {
                             .iter_mut()
                             .for_each(|v| *v = LOGIT_BIAS_ALLOW);
                         // don't remove anything from ff_tokens - they all need to be appended after backtracking
+                        
+                        // backtrack needs to include also the next token to be generated
+                        backtrack += 1;
                     }
                     Ok(json!({
                         "ff_tokens": ff_tokens,
@@ -309,15 +331,16 @@ impl ModuleInstance {
                     }))
                 }
             }
-            r => Err(anyhow!("unhandled {r:?}")),
         }
     }
 
     fn do_post_process(&mut self, rtarg: RtPostProcessArg) -> Result<Value> {
         self.store.data_mut().set_post_process_data(rtarg.op);
         self.call_func::<WasmAici, ()>("aici_post_process", self.handle)?;
-        let _res: PostProcessResult = self.proc_result()?;
-        Ok(json!({}))
+        let res: PostProcessResult = self.proc_result()?;
+        Ok(json!({
+            "stop": res.stop,
+        }))
     }
 
     fn json_result(&mut self, lbl: &str, t0: Instant, res: Result<Value>) -> Value {
@@ -375,7 +398,12 @@ impl ModuleInstance {
     pub fn post_process(&mut self, op: RtPostProcessArg) -> Value {
         let t0 = Instant::now();
         let res = self.do_post_process(op);
-        self.json_result("post", t0, res)
+        let force_stop = res.is_err();
+        let mut r = self.json_result("post", t0, res);
+        if force_stop {
+            r["stop"] = json!(true);
+        }
+        r
     }
 
     pub fn tokenize(&mut self, s: &str) -> Result<Vec<u32>> {

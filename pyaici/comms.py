@@ -251,8 +251,8 @@ class AiciRunner:
         self,
         rtpath,
         tokenizer="llama",
-        json_size=8,
-        bin_size=16,
+        json_size=32,
+        bin_size=32,
         pref=DEFAULT_SHM_PREF,
         trace_file=None,
         rtargs=[],
@@ -277,6 +277,7 @@ class AiciRunner:
         self.last_post_response = {}
         self.disable_attn_mask = False
         self.curr_attn_mask = None
+        self.space_token = -1
 
         if trace_file:
             self.trace_file = open(trace_file, "w")
@@ -327,6 +328,7 @@ class AiciRunner:
         self.cmd.exec("ping")
         resp = self.cmd.exec("tokens")
         self.vocab_size = resp["data"]["vocab_size"]
+        self.recent_seqs = {}
 
         self.step_reset()
 
@@ -548,10 +550,15 @@ class AiciRunner:
         if self.batch_size == 0:
             # nothing to do
             self.last_post_response = {}
-            return False
+            return []
         assert not self.logit_pending
         self.last_post_response = self.cmd.exec("post_process", cmd)["data"]
-        return True
+        stop_seqs = []
+        for (k, v) in self.last_post_response.items():
+            v: dict
+            if v.get("stop", False):
+                stop_seqs.append(int(k))
+        return stop_seqs
 
     def flush_logit_bias(self):
         """

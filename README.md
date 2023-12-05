@@ -130,6 +130,8 @@ graph TD
 - WASM modules are [sandboxed by Wasmtime](https://docs.wasmtime.dev/security.html)
 - WASM only have access to [`aici_host_*` functions](aici_abi/src/host.rs),
   implemented in [hostimpl.rs](aicirt/src/hostimpl.rs)
+- `aicirt` also exposes a partial WASI interface; however almost all the functions are no-op, except
+  for `fd_write` which shims file descriptors 1 and 2 (stdout and stderr) to print debug messages
 
 In particular, WASM modules cannot access the filesystem, network, or any other resources.
 They also cannot spin threads or access any timers (this is relevant for Spectre/Meltdown attacks).

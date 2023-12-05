@@ -38,6 +38,7 @@ def completion(
     temperature=0,
     max_tokens=200,
     n=1,
+    ignore_eos=False,
 ):
     json = {
         "model": "",
@@ -48,6 +49,7 @@ def completion(
         "stream": True,
         "aici_module": aici_module,
         "aici_arg": aici_arg,
+        "ignore_eos": ignore_eos,
     }
     resp = requests.post(base_url + "completions", json=json, stream=True)
     if resp.status_code != 200:
