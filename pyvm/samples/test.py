@@ -90,9 +90,7 @@ async def main():
 
 
 async def drugs():
-    drug_syn = (
-        "\nUse <drug>Drug Name</drug> syntax for any drug name, for example <drug>Advil</drug>.\n\n"
-    )
+    drug_syn = "\nUse <drug>Drug Name</drug> syntax for any drug name, for example <drug>Advil</drug>.\n\n"
 
     notes = "The patient should take some tylenol in the evening and aspirin in the morning. Excercise is highly recommended. Get lots of sleep.\n"
     notes = "Start doctor note:\n" + notes + "\nEnd doctor note.\n"
@@ -103,7 +101,10 @@ async def drugs():
     def inst(s: str) -> str:
         return s + drug_syn + notes + " [/INST]\n"
 
-    await aici.FixedTokens(inst("List specific drug names in the following doctor's notes.") + "\n1. <drug>")
+    await aici.FixedTokens(
+        inst("List specific drug names in the following doctor's notes.")
+        + "\n1. <drug>"
+    )
     s = await aici.gen_text(
         max_tokens=100,
     )
@@ -112,7 +113,8 @@ async def drugs():
     await aici.FixedTokens(
         inst(
             "Make a list of each drug along with time to take it, based on the following doctor's notes."
-        ) + "Take <drug>",
+        )
+        + "Take <drug>",
         following=start,
     )
     pos = aici.Label()
@@ -126,7 +128,15 @@ async def drugs():
         else:
             break
 
-    aici.set_var("times", pos.text_since())
+    aici.set_var("times", "<drug>" + pos.text_since())
+
+    check_vars(
+        {
+            "times": "<drug>Tylenol</drug> in the evening.\n"
+            "Take <drug>Aspirin</drug> in the morning.\n"
+            "Exercise is highly recommended.\nGet lots of sleep."
+        }
+    )
 
 
 aici.aici_start(drugs())
