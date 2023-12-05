@@ -277,6 +277,7 @@ class AiciRunner:
         self.last_post_response = {}
         self.disable_attn_mask = False
         self.curr_attn_mask = None
+        self.space_token = -1
 
         if trace_file:
             self.trace_file = open(trace_file, "w")

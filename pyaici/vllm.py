@@ -1,4 +1,4 @@
-from typing import List, Union, Dict, Any, Tuple
+from typing import List, Union, Dict, Any, Tuple, cast
 
 import torch
 
@@ -135,7 +135,15 @@ def install(runner: AiciRunner):
                 assert ff
                 t = ff.pop(0)
                 seq.append_token_id(t, {t: 0.0})
-            toks = [seq.data.output_token_ids[-1]]
+            last_tok = seq.data.output_token_ids[-1]
+            # replace sampled EOS with space - at least Llama models get confused by EOS
+            if not backtrack and not ff and last_tok == llm_engine.tokenizer.eos_token_id:
+                if runner.space_token == -1:
+                    sp = llm_engine.tokenizer.tokenize(" ")[-1]
+                    runner.space_token = cast(int, llm_engine.tokenizer.convert_tokens_to_ids(sp))
+                last_tok = runner.space_token
+                seq.data.output_token_ids[-1] = last_tok
+            toks = [last_tok]
             if ff:
                 # first, decode with only one token
                 llm_engine._decode_sequence(seq)

@@ -163,4 +163,17 @@ async def sample():
     await aici.gen_text(options=[" pounds", " euros", " dollars"])
 
 
-aici.start(drugs())
+class SampleEos(aici.NextToken):
+    def mid_process(self) -> aici.MidProcessResult:
+        ts = aici.TokenSet()
+        ts[aici.eos_token()] = True
+        return aici.MidProcessResult.bias(ts)
+
+
+async def test_eos():
+    await aici.FixedTokens("The word 'hello' in French is")
+    await SampleEos()
+    await aici.gen_tokens(regex=r' "[^"]+"', max_tokens=6, store_var="french")
+    check_vars({"french": ' "Bonjour"'})
+    
+aici.start(test_eos())
