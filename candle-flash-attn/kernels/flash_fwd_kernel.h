@@ -62,6 +62,7 @@ inline __device__ void write_softmax_to_gmem(
     Layout l = tOrP.layout();
     Tensor tPrP = make_tensor(tOrP.data(), make_layout(get<0>(l), make_layout(get<1>(l), get<2>(l))));
     CUTE_STATIC_ASSERT_V(size<2>(tPgP) == _1{});
+    // TODO(laurent): reactivate the following ???
     CUTE_STATIC_ASSERT_V(size<1>(tPrP) == size<1>(tPgP));
     #pragma unroll
     for (int mi = 0; mi < size<1>(tPrP); ++mi) {
@@ -308,9 +309,11 @@ inline __device__ void compute_attn_1rowblock(const Params &params, const int bi
         cute::copy(smem_tiled_copy_Q, tSsQ, tSrQ_copy_view);
     }
 
-    auto seeds = at::cuda::philox::unpack(params.philox_args);
-    unsigned long long seed = std::get<0>(seeds);
-    unsigned long long offset = std::get<1>(seeds) + (bidb * params.h + bidh) * 32 + tidx % 32;
+    // auto seeds = at::cuda::philox::unpack(params.philox_args);
+    // unsigned long long seed = std::get<0>(seeds);
+    // unsigned long long offset = std::get<1>(seeds) + (bidb * params.h + bidh) * 32 + tidx % 32;
+    unsigned long long seed = 0;
+    unsigned long long offset = 0;
 
     // Save seed and offset for backward.
     if (Is_dropout && blockIdx.x == 0 && blockIdx.y == 0 && blockIdx.z == 0 && tidx == 0) {
