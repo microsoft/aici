@@ -43,3 +43,21 @@ There is also `aici.fork()` for generating multiple sequences in parallel,
 `aici.Label()` and `FixedTokens(following=...)` for backtracking,
 and `aici.wait_vars()` for waiting in fork branches until variables are set.
 
+## Restrictions and compatibility
+
+* you can't access files or network
+* only parts of the standard library is included (though some modules are easily added)
+* you can't `pip install`
+* there is no multi-threading (but see `aici.fork()`)
+
+RustPython is generally compatible with Python 3.
+
+## Performance
+
+Performance-critical code is implemented natively. This includes:
+
+* `TokenSet` class
+* `RegexConstraint` class
+* tokenizer/detokenizer
+
+You should limit the amount of Python code you run after generating tokens to a few lines.
