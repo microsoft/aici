@@ -107,6 +107,11 @@ extern "C" void run_mha(
     params.cu_seqlens_k = cu_seqlens_k_ptr;
     params.p_ptr = nullptr; // used for `return_softmax`.
 
+    params.num_splits = 1;
+    params.is_seqlens_k_cumulative = true;
+    params.window_size_left = -1;
+    params.window_size_right = -1;
+
     cudaStream_t stream = 0; // Use the default stream.
     run_mha_fwd(params, stream);
 }
