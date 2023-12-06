@@ -6,7 +6,13 @@ use hf_hub::{
     RepoType,
 };
 use serde::{Deserialize, Serialize};
-use std::{collections::HashSet, fmt::Display, path::PathBuf, sync::Arc, time::Instant};
+use std::{
+    collections::HashSet,
+    fmt::Display,
+    path::PathBuf,
+    sync::{Arc, Mutex},
+    time::Instant,
+};
 use tokenizers::Tokenizer;
 
 use candle_transformers::models::llama as llama_ref;
@@ -325,6 +331,7 @@ impl RllmEngine {
         log::trace!("{}", info.gather_mapping);
         log::trace!("{}", info.slot_mapping);
         let logits = self.model.forward(&info)?;
+        info.save_log(&format!("step-{}.safetensor", self.step_no));
         log::trace!("logits: {:?}", logits);
 
         self.generate_outputs(&logits, sched_out)
@@ -390,6 +397,7 @@ impl RllmEngine {
             max_seqlen_q,
             max_seqlen_k,
             kv_cache,
+            infer_log: Mutex::new(Vec::new()),
         })
     }
 

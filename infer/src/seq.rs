@@ -1,4 +1,4 @@
-use std::fmt::Debug;
+use std::{collections::HashMap, fmt::Debug, sync::Mutex};
 
 use candle::Tensor;
 use serde::{Deserialize, Serialize};
@@ -155,6 +155,31 @@ pub struct BatchInfo {
     pub max_seqlen_q: usize,
     pub max_seqlen_k: usize,
     pub kv_cache: Vec<(Tensor, Tensor)>,
+
+    pub infer_log: Mutex<Vec<(String, Tensor)>>,
+}
+
+impl BatchInfo {
+    pub fn log_tensor(&self, key: &str, value: &Tensor) {
+        self.infer_log
+            .lock()
+            .unwrap()
+            .push((key.to_string(), value.clone()));
+    }
+
+    pub fn save_log(&self, filename: &str) {
+        let mut lck = self.infer_log.lock().unwrap();
+        if lck.len() == 0 {
+            return;
+        }
+        let tensors: HashMap<String, Tensor> = lck
+            .iter()
+            .enumerate()
+            .map(|(i, (k, v))| (format!("{:0>4}_{}", i, k), v.clone()))
+            .collect();
+        lck.clear();
+        candle::safetensors::save(&tensors, filename).unwrap()
+    }
 }
 
 impl Debug for BatchInfo {

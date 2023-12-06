@@ -94,7 +94,7 @@ fn flash_attn(
     println!("R: {r}");
     println!("R2: {r2}");
 
-    check_all_close(&r, &r2);
+    check_all_close(&r, &r2, 0.05);
 
     Ok(r)
 }

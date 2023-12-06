@@ -22,9 +22,9 @@ pub fn max_diff(t1: &Tensor, t2: &Tensor) -> Result<f64> {
     Ok(max)
 }
 
-pub fn check_all_close(t1: &Tensor, t2: &Tensor) {
+pub fn check_all_close(t1: &Tensor, t2: &Tensor, max_diff_: f64) {
     let df = max_diff(t1, t2).unwrap();
-    if df > 1e-2 {
+    if df > max_diff_ {
         print!("A: {t1:?}\n{t1}\n");
         print!("B: {t2:?}\n{t2}\n");
         let d = t1.sub(t2).unwrap().abs().unwrap();

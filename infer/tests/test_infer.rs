@@ -87,7 +87,7 @@ fn test_infer1() {
                 let expected = expected_map.remove(&sgo.request_id).unwrap();
                 if outp != expected {
                     // TODO this fails
-                    log::warn!("expected: {:?}, got: {:?}", expected, outp);
+                    panic!("expected: {:?}, got: {:?}", expected, outp);
                 }
             }
         }

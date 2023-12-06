@@ -72,11 +72,39 @@ fn main() -> Result<()> {
     p.max_tokens = args.sample_len;
 
     let start_gen = std::time::Instant::now();
-    let gen = infer.generate(prompt, p)?;
-    let dt = start_gen.elapsed();
-    println!("\n{gen}\n");
 
-    log::info!("time: {dt:?}");
+    if args.alt == 7 {
+        // "the color of nature, the color of the earth",
+        infer.add_request("R1".to_string(), "Color green is", p.clone())?;
+        // "Alfred Tarski in 1936."
+        infer.add_request(
+            "R2".to_string(),
+            "Tarski's fixed-point theorem was proven by",
+            p.clone(),
+        )?;
+        // "the existence of a fixed point in a certain relation",
+        infer.add_request(
+            "R3".to_string(),
+            "Tarski's fixed-point theorem is about",
+            p.clone(),
+        )?;
+
+        for _ in 0..1 {
+            let res = infer.step().unwrap();
+            for sgo in &res {
+                assert!(sgo.seq_outputs.len() == 1);
+                let so = &sgo.seq_outputs[0];
+                let t = infer.seq_output_text(so)?;
+                let rid = &sgo.request_id;
+                println!("{rid} {t}");
+            }
+        }
+    } else {
+        let gen = infer.generate(prompt, p)?;
+        let dt = start_gen.elapsed();
+        println!("\n{gen}\n");
+        log::info!("time: {dt:?}");
+    }
 
     Ok(())
 }

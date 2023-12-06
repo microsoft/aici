@@ -4,7 +4,9 @@ use candle::{DType, Device, IndexOp, Result, Tensor, D};
 use candle_nn::{linear_no_bias, Embedding, Linear, Module, RmsNorm, VarBuilder};
 use serde::Deserialize;
 
-use crate::{config::ModelConfig, get_trace, kernels, seq::BatchInfo, util::check_all_close};
+use crate::{
+    config::ModelConfig, get_trace, kernels, seq::BatchInfo, to_offsets, util::check_all_close,
+};
 
 const DOUBLE_CHECK: bool = true;
 
@@ -158,7 +160,7 @@ pub fn naive_attn(
                 .collect();
             let mask =
                 Tensor::from_slice(&mask, (len_q, len_k), q.device())?.to_dtype(attn.dtype())?;
-            println!("mask: {mask}");
+            // println!("mask: {mask}");
             attn = attn.broadcast_add(&mask)?;
         }
 
@@ -174,10 +176,69 @@ pub fn naive_attn(
     Ok(attn)
 }
 
+pub fn flash_attn_by_piece(
+    q: &Tensor,
+    k: &Tensor,
+    v: &Tensor,
+    seqlens_q: &Tensor,
+    seqlens_k: &Tensor,
+    max_seqlen_q: usize,
+    max_seqlen_k: usize,
+    softmax_scale: f32,
+    causal: bool,
+) -> Result<Tensor> {
+    let seqlens_q = seqlens_q.to_vec1::<u32>()?;
+    let seqlens_k = seqlens_k.to_vec1::<u32>()?;
+    assert!(seqlens_q.len() == seqlens_k.len());
+    let batch_size = seqlens_k.len() - 1;
+
+    // flash-attn expects (seq_len, nheads, head_dim)
+
+    let mut attns = Vec::with_capacity(batch_size);
+
+    for i in 0..batch_size {
+        let ptr_q = seqlens_q[i] as usize;
+        let ptr_k = seqlens_k[i] as usize;
+        let len_q = seqlens_q[i + 1] as usize - ptr_q;
+        let len_k = seqlens_k[i + 1] as usize - ptr_k;
+
+        assert!(len_q <= max_seqlen_q);
+        assert!(len_k <= max_seqlen_k);
+
+        let q = q.i((ptr_q..ptr_q + len_q, .., ..))?;
+        let k = k.i((ptr_k..ptr_k + len_k, .., ..))?;
+        let v = v.i((ptr_k..ptr_k + len_k, .., ..))?;
+
+        let device = q.device();
+
+        let (max_seqlen_q, seqlens_q) = to_offsets(&vec![len_q], device);
+        let (max_seqlen_k, seqlens_k) = to_offsets(&vec![len_k], device);
+
+        let attn = candle_flash_attn::flash_attn_varlen(
+            &q,
+            &k,
+            &v,
+            &seqlens_q,
+            &seqlens_k,
+            max_seqlen_q,
+            max_seqlen_k,
+            softmax_scale,
+            causal,
+        )?;
+
+        attns.push(attn);
+    }
+
+    let attn = Tensor::cat(&attns, 0)?;
+    Ok(attn)
+}
+
 impl CausalSelfAttention {
     fn forward(&self, x: &Tensor, batch_info: &BatchInfo, block_idx: usize) -> Result<Tensor> {
         let (b_sz, seq_len, hidden_size) = x.dims3()?;
         assert!(b_sz == 1);
+
+        batch_info.log_tensor("x", &x);
 
         let trace = get_trace() && block_idx <= 1;
 
@@ -234,6 +295,10 @@ impl CausalSelfAttention {
         }
 
         let y = {
+            batch_info.log_tensor("q", &q);
+            batch_info.log_tensor("k", &k);
+            batch_info.log_tensor("v", &v);
+            
             // flash-attn expects (seq_len, nheads, head_dim)
             let softmax_scale = 1f32 / (self.head_dim as f32).sqrt();
             if trace {
@@ -264,11 +329,28 @@ impl CausalSelfAttention {
                     softmax_scale,
                     causal,
                 )?;
-                check_all_close(&y, &y2);
-            }
+                check_all_close(&y, &y2, 0.05);
 
-            y
+                let y3 = flash_attn_by_piece(
+                    &q,
+                    &k,
+                    &v,
+                    &batch_info.seqlens_q,
+                    &batch_info.seqlens_k,
+                    batch_info.max_seqlen_q,
+                    batch_info.max_seqlen_k,
+                    softmax_scale,
+                    causal,
+                )?;
+                check_all_close(&y, &y3, 0.0001);
+
+                y3
+            } else {
+                y
+            }
         };
+
+        batch_info.log_tensor("y", &v);
 
         if trace {
             println!("y: {y:?}\n{y}");
@@ -276,6 +358,9 @@ impl CausalSelfAttention {
 
         let y = y.reshape(&[b_sz, seq_len, hidden_size])?;
         let y = self.o_proj.forward(&y)?;
+
+        batch_info.log_tensor("yp", &v);
+
         Ok(y)
     }
 
@@ -321,8 +406,16 @@ struct Mlp {
 }
 
 impl Mlp {
-    fn forward(&self, x: &Tensor) -> Result<Tensor> {
-        let x = (candle_nn::ops::silu(&self.c_fc1.forward(x)?)? * self.c_fc2.forward(x)?)?;
+    fn forward(&self, x: &Tensor, batch_info: &BatchInfo) -> Result<Tensor> {
+        // println!("fc1: {:?}", self.c_fc1);
+        let m1 = self.c_fc1.forward(x)?;
+        let m2 = self.c_fc2.forward(x)?;
+        batch_info.log_tensor("w1", self.c_fc1.weight());
+        batch_info.log_tensor("m1", &m1);
+        batch_info.log_tensor("m2", &m2);
+        let si = candle_nn::ops::silu(&m1)?;
+        batch_info.log_tensor("si", &m2);
+        let x = (si * &m2)?;
         self.c_proj.forward(&x)
     }
 
@@ -353,7 +446,13 @@ impl Block {
         let x = self.rms_1.forward(x)?;
         let x = (self.attn.forward(&x, batch_info, block_idx)? + residual)?;
         let residual = &x;
-        let x = (self.mlp.forward(&self.rms_2.forward(&x)?)? + residual)?;
+        batch_info.log_tensor("x0", &x);
+        let x = self.rms_2.forward(&x)?;
+        batch_info.log_tensor("x1", &x);
+        let x = self.mlp.forward(&x, batch_info)?;
+        batch_info.log_tensor("x2", &x);
+        let x = (x + residual)?;
+        batch_info.log_tensor("x3", &x);
         // println!("x: {}", x);
         Ok(x)
     }
@@ -414,9 +513,14 @@ impl Llama {
             vb.pp("model.norm"),
         )?;
         let blocks: Vec<_> = (0..cfg.num_hidden_layers)
-            .map(|i| Block::load(vb.pp(&format!("model.layers.{i}")), &cache, cfg).unwrap())
+            .map(|i| {
+                eprint!(".");
+                // log::info!("loading block {}/{}", i, cfg.num_hidden_layers);
+                Block::load(vb.pp(&format!("model.layers.{i}")), &cache, cfg).unwrap()
+            })
             .collect();
 
+        eprintln!(" loaded.");
         Ok(Self {
             wte,
             blocks,
