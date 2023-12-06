@@ -408,6 +408,18 @@ def start(f: Coroutine[CbType, None, None]):
     return AiciAsync(f)
 
 
+def test(f: Coroutine[CbType, None, None]):
+    """
+    Runs the loop as a test.
+    """
+
+    async def wrap():
+        await f
+        print("TEST OK")
+
+    return AiciAsync(wrap())
+
+
 class Label:
     def __init__(self):
         """
@@ -490,9 +502,6 @@ async def gen_tokens(
         if stop_at is not None:
             if stop_at in text:
                 break
-
-        if text.endswith("\n\n\n\n"):
-            break  # HACK - we don't seem to be getting EOS
 
         if next_token.finished:
             break

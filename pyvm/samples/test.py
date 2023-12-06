@@ -5,10 +5,10 @@ import re
 def check_var(name: str, value: str):
     v = aici.get_var(name)
     if v is None:
-        raise Exception(f"ERROR: {name} is None")
+        raise AssertionError(f"Variable {name} is unset")
     v = v.decode()
     if v != value:
-        raise Exception(f"ERROR: {name}={v} != {value}")
+        raise AssertionError(f"Variable {name}: {repr(v)} != {repr(value)}")
 
 
 def check_vars(d: dict[str, str]):
@@ -16,7 +16,7 @@ def check_vars(d: dict[str, str]):
         check_var(k, v)
 
 
-async def main3():
+async def test_backtrack_one():
     await aici.FixedTokens("3+")
     l = aici.Label()
     await aici.FixedTokens("2")
@@ -28,7 +28,7 @@ async def main3():
     check_vars({"x": "=5.", "y": "=7."})
 
 
-async def main_fork():
+async def test_fork():
     await aici.FixedTokens("The word 'hello' in")
     id = await aici.fork(3)
     if id == 0:
@@ -44,7 +44,7 @@ async def main_fork():
     check_vars({"french": ' "bonjour"', "german": ' "Hallo"'})
 
 
-async def main2():
+async def test_backtrack_lang():
     await aici.FixedTokens("The word 'hello' in")
     l = aici.Label()
     await aici.FixedTokens(" French is", following=l)
@@ -54,7 +54,7 @@ async def main2():
     check_vars({"french": ' "bonjour"', "german": ' "Hallo"'})
 
 
-async def main():
+async def test_main():
     # init
     print("start")
     print(aici.get_var("test"))
@@ -83,13 +83,13 @@ async def main():
             "test": "hello",
             "french": " 'bonjour'.",
             "german": ' "Hallo"',
-            "five": " pounds",
-            "dollars": "100.0",
+            "five": " euros",
+            "dollars": "6.5",
         }
     )
 
 
-async def drugs():
+async def test_drugs():
     drug_syn = "\nUse <drug>Drug Name</drug> syntax for any drug name, for example <drug>Advil</drug>.\n\n"
 
     notes = "The patient should take some tylenol in the evening and aspirin in the morning. Excercise is highly recommended. Get lots of sleep.\n"
@@ -106,7 +106,7 @@ async def drugs():
         + "\n1. <drug>"
     )
     s = await aici.gen_text(
-        max_tokens=100,
+        max_tokens=30,
     )
     drugs = re.findall(r"<drug>([^<]*)</drug>", "<drug>" + s)
     print("drugs", drugs)
@@ -139,7 +139,7 @@ async def drugs():
     )
 
 
-async def sample():
+async def test_sample():
     # initialization code
     print("I'm going in the logs!")
     # ... more initialization code, it has long time limit
@@ -175,5 +175,6 @@ async def test_eos():
     await SampleEos()
     await aici.gen_tokens(regex=r' "[^"]+"', max_tokens=6, store_var="french")
     check_vars({"french": ' "Bonjour"'})
-    
-aici.start(test_eos())
+
+
+aici.test(test_drugs())

@@ -66,12 +66,14 @@ def completion(
     if resp.status_code != 200:
         raise response_error("completions", resp)
     texts = [""] * n
+    logs = [""] * n
     full_resp = []
     storage = {}
     res = {
         "request": json,
         "response": full_resp,
         "text": texts,
+        "logs": logs,
         "raw_storage": storage,
         "error": None,
     }
@@ -91,6 +93,7 @@ def completion(
                 idx = ch["index"]
                 while len(texts) <= idx:
                     texts.append("")
+                    logs.append("")
                 for s in ch.get("storage", []):
                     w = s.get("WriteVar", None)
                     if w:
@@ -103,6 +106,7 @@ def completion(
                         # print(f"*** TOK: '{ch['text']}'")
                     elif log_level > 0:
                         print(ch["text"], end="")
+                logs[idx] += ch["logs"]
                 texts[idx] += ch["text"]
         elif decoded_line == "data: [DONE]":
             if log_level > 0:
