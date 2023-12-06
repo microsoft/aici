@@ -1,21 +1,6 @@
 import aici
 import re
 
-
-def check_var(name: str, value: str):
-    v = aici.get_var(name)
-    if v is None:
-        raise AssertionError(f"Variable {name} is unset")
-    v = v.decode()
-    if v != value:
-        raise AssertionError(f"Variable {name}: {repr(v)} != {repr(value)}")
-
-
-def check_vars(d: dict[str, str]):
-    for k, v in d.items():
-        check_var(k, v)
-
-
 async def test_backtrack_one():
     await aici.FixedTokens("3+")
     l = aici.Label()
@@ -25,7 +10,7 @@ async def test_backtrack_one():
     await aici.FixedTokens("4", following=l)
     await aici.gen_tokens(regex=r"=\d\d?\.", store_var="y", max_tokens=5)
     print("Y", aici.get_tokens(), aici.detokenize(aici.get_tokens()))
-    check_vars({"x": "=5.", "y": "=7."})
+    aici.check_vars({"x": "=5.", "y": "=7."})
 
 
 async def test_fork():
@@ -41,7 +26,7 @@ async def test_fork():
     elif id == 2:
         await aici.FixedTokens(" French is")
         await aici.gen_tokens(regex=r' "[^"]+"', store_var="french", max_tokens=5)
-    check_vars({"french": ' "bonjour"', "german": ' "Hallo"'})
+    aici.check_vars({"french": ' "bonjour"', "german": ' "Hallo"'})
 
 
 async def test_backtrack_lang():
@@ -51,7 +36,7 @@ async def test_backtrack_lang():
     await aici.gen_tokens(regex=r' "[^"]+"', store_var="french", max_tokens=5)
     await aici.FixedTokens(" German is", following=l)
     await aici.gen_tokens(regex=r' "[^"]+"', store_var="german", max_tokens=5)
-    check_vars({"french": ' "bonjour"', "german": ' "Hallo"'})
+    aici.check_vars({"french": ' "bonjour"', "german": ' "Hallo"'})
 
 
 async def test_main():
@@ -78,7 +63,7 @@ async def test_main():
     )
     await aici.FixedTokens(" is worth about $")
     await aici.gen_tokens(regex=r"\d+\.\d", store_var="dollars")
-    check_vars(
+    aici.check_vars(
         {
             "test": "hello",
             "french": " 'bonjour'.",
@@ -130,7 +115,7 @@ async def test_drugs():
 
     aici.set_var("times", "<drug>" + pos.text_since())
 
-    check_vars(
+    aici.check_vars(
         {
             "times": "<drug>Tylenol</drug> in the evening.\n"
             "Take <drug>Aspirin</drug> in the morning.\n"
@@ -174,7 +159,7 @@ async def test_eos():
     await aici.FixedTokens("The word 'hello' in French is")
     await SampleEos()
     await aici.gen_tokens(regex=r' "[^"]+"', max_tokens=6, store_var="french")
-    check_vars({"french": ' "Bonjour"'})
+    aici.check_vars({"french": ' "Bonjour"'})
 
 
 aici.test(test_drugs())

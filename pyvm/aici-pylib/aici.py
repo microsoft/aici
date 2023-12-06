@@ -517,3 +517,23 @@ async def gen_text(**kwargs: Any) -> str:
     """
     tokens = await gen_tokens(**kwargs)
     return detokenize(tokens).decode(errors="replace")
+
+
+def check_var(name: str, value: str):
+    """
+    Check if the variable has the given value.
+    """
+    v = get_var(name)
+    if v is None:
+        raise AssertionError(f"Variable {name} is unset")
+    v = v.decode()
+    if v != value:
+        raise AssertionError(f"Variable {name}: {repr(v)} != {repr(value)}")
+
+
+def check_vars(d: dict[str, str]):
+    """
+    Check if all the variables have the given values.
+    """
+    for k, v in d.items():
+        check_var(k, v)
