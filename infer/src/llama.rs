@@ -4,7 +4,9 @@ use candle::{DType, Device, IndexOp, Result, Tensor, D};
 use candle_nn::{linear_no_bias, Embedding, Linear, Module, RmsNorm, VarBuilder};
 use serde::Deserialize;
 
-use crate::{config::ModelConfig, get_trace, kernels, seq::BatchInfo};
+use crate::{config::ModelConfig, get_trace, kernels, seq::BatchInfo, util::check_all_close};
+
+const DOUBLE_CHECK: bool = true;
 
 #[derive(Deserialize)]
 pub struct LlamaConfig {
@@ -105,6 +107,73 @@ struct CausalSelfAttention {
     cache: Cache,
 }
 
+pub fn naive_attn(
+    q: &Tensor,
+    k: &Tensor,
+    v: &Tensor,
+    seqlens_q: &Tensor,
+    seqlens_k: &Tensor,
+    max_seqlen_q: usize,
+    max_seqlen_k: usize,
+    softmax_scale: f32,
+    causal: bool,
+) -> Result<Tensor> {
+    let seqlens_q = seqlens_q.to_vec1::<u32>()?;
+    let seqlens_k = seqlens_k.to_vec1::<u32>()?;
+    assert!(seqlens_q.len() == seqlens_k.len());
+    let batch_size = seqlens_k.len() - 1;
+
+    let softmax_scale = softmax_scale as f64;
+
+    // flash-attn expects (seq_len, nheads, head_dim)
+
+    let mut attns = Vec::with_capacity(batch_size);
+
+    for i in 0..batch_size {
+        let ptr_q = seqlens_q[i] as usize;
+        let ptr_k = seqlens_k[i] as usize;
+        let len_q = seqlens_q[i + 1] as usize - ptr_q;
+        let len_k = seqlens_k[i + 1] as usize - ptr_k;
+
+        assert!(len_q <= max_seqlen_q);
+        assert!(len_k <= max_seqlen_k);
+
+        let q = q.i((ptr_q..ptr_q + len_q, .., ..))?.transpose(0, 1)?;
+        let k = k.i((ptr_k..ptr_k + len_k, .., ..))?.transpose(0, 1)?;
+        let v = v.i((ptr_k..ptr_k + len_k, .., ..))?.transpose(0, 1)?;
+
+        let mut attn = q.contiguous()?.matmul(&k.t()?.contiguous()?)?;
+        attn = (attn * softmax_scale)?;
+        if causal {
+            let mask: Vec<_> = (0..len_q)
+                .flat_map(|i| {
+                    (0..len_k).map(move |j| {
+                        if i + (len_k - len_q) >= j {
+                            0f32
+                        } else {
+                            f32::NEG_INFINITY
+                        }
+                    })
+                })
+                .collect();
+            let mask =
+                Tensor::from_slice(&mask, (len_q, len_k), q.device())?.to_dtype(attn.dtype())?;
+            println!("mask: {mask}");
+            attn = attn.broadcast_add(&mask)?;
+        }
+
+        attn = candle_nn::ops::softmax(&attn, D::Minus1)?;
+        // Convert to contiguous as matmul doesn't support strided vs for now.
+        attn = attn.matmul(&v.contiguous()?)?;
+        attn = attn.transpose(0, 1)?;
+
+        attns.push(attn);
+    }
+
+    let attn = Tensor::cat(&attns, 0)?;
+    Ok(attn)
+}
+
 impl CausalSelfAttention {
     fn forward(&self, x: &Tensor, batch_info: &BatchInfo, block_idx: usize) -> Result<Tensor> {
         let (b_sz, seq_len, hidden_size) = x.dims3()?;
@@ -171,7 +240,7 @@ impl CausalSelfAttention {
                 println!("Q {q:?} K {k:?} V {v:?}");
             }
             let causal = true;
-            candle_flash_attn::flash_attn_varlen(
+            let y = candle_flash_attn::flash_attn_varlen(
                 &q,
                 &k,
                 &v,
@@ -181,7 +250,24 @@ impl CausalSelfAttention {
                 batch_info.max_seqlen_k,
                 softmax_scale,
                 causal,
-            )?
+            )?;
+
+            if DOUBLE_CHECK {
+                let y2 = naive_attn(
+                    &q,
+                    &k,
+                    &v,
+                    &batch_info.seqlens_q,
+                    &batch_info.seqlens_k,
+                    batch_info.max_seqlen_q,
+                    batch_info.max_seqlen_k,
+                    softmax_scale,
+                    causal,
+                )?;
+                check_all_close(&y, &y2);
+            }
+
+            y
         };
 
         if trace {
