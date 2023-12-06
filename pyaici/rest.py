@@ -46,7 +46,7 @@ def completion(
     prompt,
     aici_module,
     aici_arg,
-    temperature=0,
+    temperature=0.0,
     max_tokens=200,
     n=1,
     ignore_eos=False,
