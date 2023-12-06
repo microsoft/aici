@@ -246,9 +246,12 @@ async def create_completion(request: AiciCompletionRequest, raw_request: Request
                 aici_arg = ""
             else:
                 aici_arg = request.aici_arg
-            await aici.instantiate_async(
-                request_id, prompt, request.aici_module, aici_arg
-            )
+            try:
+                await aici.instantiate_async(
+                    request_id, prompt, request.aici_module, aici_arg
+                )
+            except ChildProcessError as e:
+                return create_error_response(HTTPStatus.BAD_REQUEST, str(e))
     except ValueError as e:
         return create_error_response(HTTPStatus.BAD_REQUEST, str(e))
 
