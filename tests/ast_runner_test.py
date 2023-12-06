@@ -158,7 +158,7 @@ def test_ff_0():
 
 def test_ff_1():
     expect(
-        ", 7 + 8 = 15",
+        ", 7 + 8 = 15  ",
         "Hello",
         [
             ast.gen(rx=", "),
@@ -170,7 +170,7 @@ def test_ff_1():
 
 def test_ff_2():
     expect(
-        ", 7 + 8 = 15",
+        ", 7 + 8 = 15  ",
         "Hello",
         [
             ast.gen(rx=", "),

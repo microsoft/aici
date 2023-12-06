@@ -7,6 +7,19 @@ log_level = 1
 ast_module = ""
 
 
+def response_error(kind: str, resp: requests.Response):
+    text = resp.text
+    try:
+        d = ujson.decode(text)
+        if "message" in d:
+            text = d["message"]
+    except:
+        pass
+    return RuntimeError(
+        f"bad response to {kind} {resp.status_code} {resp.reason}: {text}"
+    )
+
+
 def upload_module(file_path: str) -> str:
     """
     Upload a WASM module to the server.
@@ -26,16 +39,14 @@ def upload_module(file_path: str) -> str:
                 )
             return mod_id
         else:
-            raise RuntimeError(
-                f"bad response to model upload: {resp.status_code} {resp.reason}: {resp.text}"
-            )
+            raise response_error("module upload", resp)
 
 
 def completion(
     prompt,
     aici_module,
     aici_arg,
-    temperature=0,
+    temperature=0.0,
     max_tokens=200,
     n=1,
     ignore_eos=False,
@@ -53,16 +64,16 @@ def completion(
     }
     resp = requests.post(base_url + "completions", json=json, stream=True)
     if resp.status_code != 200:
-        raise RuntimeError(
-            f"bad response to completions: {resp.status_code} {resp.reason}: {resp.text}"
-        )
+        raise response_error("completions", resp)
     texts = [""] * n
+    logs = [""] * n
     full_resp = []
     storage = {}
     res = {
         "request": json,
         "response": full_resp,
         "text": texts,
+        "logs": logs,
         "raw_storage": storage,
         "error": None,
     }
@@ -82,6 +93,7 @@ def completion(
                 idx = ch["index"]
                 while len(texts) <= idx:
                     texts.append("")
+                    logs.append("")
                 for s in ch.get("storage", []):
                     w = s.get("WriteVar", None)
                     if w:
@@ -94,6 +106,7 @@ def completion(
                         # print(f"*** TOK: '{ch['text']}'")
                     elif log_level > 0:
                         print(ch["text"], end="")
+                logs[idx] += ch["logs"]
                 texts[idx] += ch["text"]
         elif decoded_line == "data: [DONE]":
             if log_level > 0:

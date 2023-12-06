@@ -975,6 +975,13 @@ impl Runner {
             );
         }
 
+        if token == self.ctx.trie.special_token(SpecialToken::EndOfSentence) {
+            if self.state_idx < self.states.len() - 1 {
+                wprintln!("EOS: advancing to next state");
+                self.state_idx += 1;
+            }
+        }
+
         // skip as many states as we can (that allow EOS), and find the last one that allows the token
         let mut last_idx = usize::MAX;
         let mut labels = Vec::new();
