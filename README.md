@@ -54,9 +54,9 @@ graph TD
     UserN <-- HTTP --> vLLM["vLLM Server<br>(batching)"]
     vLLM <-- CUDA/pytorch --> GPU
     vLLM <-- POSIX SHM --> aicirt[AICI-runtime]
-    aicirt <-- Rust<br>Threading --> Worker1[Worker1<br>Running WASM]
-    aicirt <-- Rust<br>Threading --> Worker2[Worker2<br>Running WASM]
-    aicirt <-- Rust<br>Threading --> WorkerM[WorkerM<br>Running WASM]
+    aicirt <-- Sockets+SHM --> Worker1[Worker1<br>Running WASM]
+    aicirt <-- Sockets+SHM --> Worker2[Worker2<br>Running WASM]
+    aicirt <-- Sockets+SHM --> WorkerM[WorkerM<br>Running WASM]
 ```
 
 ```mermaid
