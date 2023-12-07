@@ -10,6 +10,7 @@ use std::{
     collections::HashSet,
     fmt::Display,
     path::PathBuf,
+    rc::Rc,
     sync::{Arc, Mutex},
     time::Instant,
 };
@@ -115,7 +116,7 @@ impl Stats {
 }
 
 pub struct RllmEngine {
-    pub tokenizer: Tokenizer,
+    pub tokenizer: Rc<Tokenizer>,
     pub model: Model,
     seq_id: SeqId,
     step_no: usize,
@@ -204,7 +205,7 @@ impl RllmEngine {
         let cache_engine = CacheEngine::new(rllm_config.clone());
 
         Ok(RllmEngine {
-            tokenizer,
+            tokenizer: Rc::new(tokenizer),
             model,
             seq_id: 1,
             step_no: 0,
@@ -222,6 +223,14 @@ impl RllmEngine {
         format!("_{}", self.req_id_cnt)
     }
 
+    pub fn abort_request(&mut self, request_id: &str) {
+        self.scheduler.abort_seq_group(request_id);
+    }
+
+    pub fn num_pending_requests(&self) -> usize {
+        self.scheduler.get_num_unfinished_seq_groups()
+    }
+
     pub fn add_request(
         &mut self,
         request_id: String,
@@ -237,7 +246,7 @@ impl RllmEngine {
         let seq = Sequence::new(self.seq_id, &tokens, self.scheduler.config.cache.block_size);
         self.seq_id += 1;
 
-        let logits_processor = LogitsProcessor::new(&sampling_params);
+        let logits_processor = LogitsProcessor::new(&sampling_params, self.tokenizer.clone());
         let sg = SequenceGroup {
             request_id,
             prompt: prompt.to_string(),
@@ -264,6 +273,7 @@ impl RllmEngine {
             let mut outp = RequestOutput {
                 request_id: sg.request_id.clone(),
                 seq_outputs: Vec::new(),
+                is_ambiguous: false,
             };
             for seq in sg.seqs.iter_mut() {
                 if seq.sched_phase == SchedulingPhase::Running {
@@ -294,6 +304,7 @@ impl RllmEngine {
                 }
                 outp.seq_outputs.push(seq.get_output());
             }
+            outp.is_ambiguous = sg.logits_processor.num_ambiguous > 0;
             outputs.push(outp);
         }
 

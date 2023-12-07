@@ -1,7 +1,10 @@
 // based on https://github.com/huggingface/candle/blob/main/candle-transformers/src/generation/mod.rs
 
+use std::rc::Rc;
+
 use candle::{DType, Error, Result, Tensor};
 use rand::{distributions::Distribution, SeedableRng};
+use tokenizers::Tokenizer;
 
 use crate::config::{SamplingParams, SAMPLING_EPS};
 
@@ -9,10 +12,12 @@ pub struct LogitsProcessor {
     rng: rand::rngs::StdRng,
     temperature: Option<f32>,
     top_p: f32,
+    tokenizer: Rc<Tokenizer>,
+    pub num_ambiguous: usize,
 }
 
 impl LogitsProcessor {
-    pub fn new(sampling_params: &SamplingParams) -> Self {
+    pub fn new(sampling_params: &SamplingParams, tokenizer: Rc<Tokenizer>) -> Self {
         let temperature = if sampling_params.temperature < SAMPLING_EPS {
             None
         } else {
@@ -23,18 +28,32 @@ impl LogitsProcessor {
             rng: rand::rngs::StdRng::seed_from_u64(42),
             temperature,
             top_p: sampling_params.top_p,
+            tokenizer,
+            num_ambiguous: 0,
         }
     }
 
     fn sample_argmax(&mut self, logits: Tensor) -> Result<u32> {
         let mut logits_v: Vec<_> = logits.to_vec1::<f32>()?.into_iter().enumerate().collect();
         logits_v.sort_by(|u, v| v.1.total_cmp(&u.1));
-        log::trace!(
-            "argmax: {:?} {:?} {:?}",
-            logits_v[0],
-            logits_v[1],
-            logits_v[2]
-        );
+        let d = (logits_v[0].1 - logits_v[1].1) / logits_v[0].1;
+        if d < 0.05 {
+            self.num_ambiguous += 1;
+            log::debug!(
+                "argmax: {:?} {:?} {:?} {:?}",
+                logits_v[0],
+                self.tokenizer.decode(&vec![logits_v[0].0 as u32], false).unwrap(),
+                logits_v[1],
+                self.tokenizer.decode(&vec![logits_v[1].0 as u32], false).unwrap(),
+            );
+        } else {
+            log::trace!(
+                "argmax: {:?} {:?} {:?}",
+                logits_v[0],
+                logits_v[1],
+                logits_v[2]
+            );
+        }
         Ok(logits_v[0].0 as u32)
         // let next_token = logits_v
         //     .iter()

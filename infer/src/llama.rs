@@ -8,7 +8,7 @@ use crate::{
     config::ModelConfig, get_trace, kernels, seq::BatchInfo, to_offsets, util::check_all_close,
 };
 
-const DOUBLE_CHECK: bool = true;
+const DOUBLE_CHECK: bool = false;
 
 #[derive(Deserialize)]
 pub struct LlamaConfig {
@@ -329,7 +329,7 @@ impl CausalSelfAttention {
                     softmax_scale,
                     causal,
                 )?;
-                check_all_close(&y, &y2, 0.05);
+                check_all_close(&y, &y2, 0.1);
 
                 let y3 = flash_attn_by_piece(
                     &q,

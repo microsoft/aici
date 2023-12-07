@@ -1,6 +1,9 @@
+use std::collections::HashMap;
+
 use anyhow::Result;
 use clap::Parser;
 
+use rand::Rng;
 use rllm::{config::SamplingParams, playground_1, LoaderArgs, RllmEngine};
 
 const DEFAULT_PROMPT: &str = "Tarski's fixed-point theorem was proven by";
@@ -97,6 +100,40 @@ fn main() -> Result<()> {
                 let t = infer.seq_output_text(so)?;
                 let rid = &sgo.request_id;
                 println!("{rid} {t}");
+            }
+        }
+    } else if args.alt == 8 {
+        let s = String::from_utf8(std::fs::read("words.txt").unwrap()).unwrap();
+        let words: Vec<_> = s.split_whitespace().collect();
+        let mut rng = rand::thread_rng();
+
+        let mut idx = 0;
+        let l = args.sample_len;
+        let mut prompts = HashMap::new();
+        loop {
+            while infer.num_pending_requests() < 30 {
+                let start = rng.gen_range(0..words.len() - 50);
+                let len = rng.gen_range(4..10);
+                let prompt = words[start..start + len].join(" ");
+                let id = format!("R{}", idx);
+                prompts.insert(id.clone(), prompt.clone());
+                infer.add_request(id, &prompt, p.clone())?;
+                idx += 1;
+                eprint!("*");
+            }
+            let res = infer.step().unwrap();
+            for sgo in &res {
+                assert!(sgo.seq_outputs.len() == 1);
+                if sgo.is_ambiguous {
+                    infer.abort_request(&sgo.request_id);
+                } else {
+                    let so = &sgo.seq_outputs[0];
+                    if so.output_tokens.len() >= l {
+                        let t = infer.seq_output_text(so)?;
+                        println!("\nFOUND {:?} {:?}", prompts[&sgo.request_id], t);
+                        infer.abort_request(&sgo.request_id);
+                    }
+                }
             }
         }
     } else {

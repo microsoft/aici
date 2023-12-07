@@ -161,10 +161,12 @@ pub struct BatchInfo {
 
 impl BatchInfo {
     pub fn log_tensor(&self, key: &str, value: &Tensor) {
-        self.infer_log
-            .lock()
-            .unwrap()
-            .push((key.to_string(), value.clone()));
+        if false {
+            self.infer_log
+                .lock()
+                .unwrap()
+                .push((key.to_string(), value.clone()));
+        }
     }
 
     pub fn save_log(&self, filename: &str) {
@@ -268,6 +270,7 @@ pub struct SeqOutput {
 pub struct RequestOutput {
     pub request_id: String,
     pub seq_outputs: Vec<SeqOutput>,
+    pub is_ambiguous: bool,
 }
 
 /*

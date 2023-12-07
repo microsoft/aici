@@ -102,24 +102,25 @@ impl Scheduler {
         self.waiting.push(seq_group);
     }
 
-    // pub fn abort_seq_groups(&mut self, request_ids: Vec<String>) {
-    //     let request_ids: HashSet<String> = request_ids.into_iter().collect();
-    //     for state_queue in [&mut self.waiting, &mut self.on_gpu, &mut self.swapped].iter_mut() {
-    //         state_queue.retain(|seq_group| {
-    //             if request_ids.contains(&seq_group.request_id) {
-    //                 for seq in &mut seq_group.seqs {
-    //                     if !seq.is_finished() {
-    //                         seq.status = SequenceStatus::Finished(FinishReason::Aborted);
-    //                         self.free_seq(seq);
-    //                     }
-    //                 }
-    //                 false
-    //             } else {
-    //                 true
-    //             }
-    //         });
-    //     }
-    // }
+    fn abort_in(&self, request_id: &str, mut q: Vec<SequenceGroup>) -> Vec<SequenceGroup> {
+        for seq_group in q.iter_mut() {
+            if seq_group.request_id == request_id {
+                self.set_phase(seq_group, SchedulingPhase::Finished(FinishReason::Aborted));
+            }
+        }
+        q
+    }
+
+    pub fn abort_seq_group(&mut self, request_id: &str) {
+        let q = std::mem::take(&mut self.waiting);
+        self.waiting = self.abort_in(request_id, q);
+
+        let q = std::mem::take(&mut self.on_gpu);
+        self.on_gpu = self.abort_in(request_id, q);
+
+        let q = std::mem::take(&mut self.swapped);
+        self.swapped = self.abort_in(request_id, q);
+    }
 
     pub fn has_unfinished_seqs(&self) -> bool {
         self.get_num_unfinished_seq_groups() > 0
@@ -150,7 +151,7 @@ impl Scheduler {
     }
 
     fn step_drop_finished(&mut self, outputs: &mut SchedulerOutputs) {
-        let mut waiting = std::mem::replace(&mut self.waiting, Vec::new());
+        let mut waiting = std::mem::take(&mut self.waiting);
         for seq_group in waiting.iter_mut() {
             assert!(seq_group.seqs.len() == 1);
             let num_prompt_tokens = seq_group.get_seqs(None)[0].get_len();
