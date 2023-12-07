@@ -8,7 +8,7 @@ use crate::{
     config::ModelConfig, get_trace, kernels, seq::BatchInfo, to_offsets, util::check_all_close,
 };
 
-const DOUBLE_CHECK: bool = false;
+const DOUBLE_CHECK: bool = true;
 
 #[derive(Deserialize)]
 pub struct LlamaConfig {
@@ -343,6 +343,19 @@ impl CausalSelfAttention {
                     causal,
                 )?;
                 check_all_close(&y, &y3, 0.0001);
+
+                let y4 = candle_flash_attn2::flash_attn_varlen(
+                    &q,
+                    &k,
+                    &v,
+                    &batch_info.seqlens_q,
+                    &batch_info.seqlens_k,
+                    batch_info.max_seqlen_q,
+                    batch_info.max_seqlen_k,
+                    softmax_scale,
+                    causal,
+                )?;
+                check_all_close(&y, &y4, 0.0001);
 
                 y3
             } else {

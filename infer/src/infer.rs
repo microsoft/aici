@@ -6,7 +6,7 @@ use clap::Parser;
 use rand::Rng;
 use rllm::{config::SamplingParams, playground_1, LoaderArgs, RllmEngine};
 
-const DEFAULT_PROMPT: &str = "Tarski's fixed-point theorem was proven by";
+const DEFAULT_PROMPT: &str = "over millions of years,";
 
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]

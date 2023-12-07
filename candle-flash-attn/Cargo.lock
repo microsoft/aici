@@ -101,7 +101,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "candle-flash-attn"
+name = "candle-flash-attn2"
 version = "0.3.1"
 dependencies = [
  "anyhow",
