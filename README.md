@@ -143,10 +143,12 @@ They also cannot spin threads or access any timers (this is relevant for Spectre
 Conceptually, the lowest level interface to AICI constraint is this:
 
 ```rust
-type TokenId = u32, SeqId = u32;
+type TokenId = u32;
+type SeqId = u32;
+
 trait AiciVm {
     /// Called with the initial prompt. ~1000ms time limit.
-    fn init_prompt(prompt: [TokenId]);
+    fn init_prompt(prompt: Vec<TokenId>);
 
     /// Called before mid_process(), can fork or suspend. ~1ms.
     fn pre_process() -> enum {
@@ -157,14 +159,14 @@ trait AiciVm {
     }
 
     /// This is the main entry point for the module. ~20ms.
-    fn mid_process(fork_group: [SeqId]) -> enum {
+    fn mid_process(fork_group: Vec<SeqId>) -> enum {
         Stop,
-        SampleWithBias { allowed_tokens: [bool] },
-        Splice { backtrack: u32, ff_tokens: [TokenId] }
+        SampleWithBias { bias: Vec<f32> },
+        Splice { backtrack: u32, ff_tokens: Vec<TokenId> }
     };
 
     /// Called after tokens are appended. ~1ms.
-    fn post_process(tokens: [TokenId]) -> enum { Stop, Continue };
+    fn post_process(tokens: Vec<TokenId>) -> enum { Stop, Continue };
 }
 ```
 
@@ -182,7 +184,7 @@ First, there are functions for accessing the current tokenizer:
 
 ```rust
 /// Given a byte sequence, return a sequence of token Ids.
-fn tokenize_bytes(s: [u8]) -> [TokenId];
+fn tokenize_bytes(s: Vec<u8>) -> Vec<TokenId>;
 
 /// Represents trie of all tokens in the current tokenizer.
 impl TokTrie {
@@ -191,9 +193,9 @@ impl TokTrie {
     /// Number of tokens.
     fn vocab_size() -> usize;
     /// Convert token Id to bytes (often UTF-8 string).
-    fn token(token: TokenId) -> [u8];
+    fn token(token: TokenId) -> Vec<u8>;
     /// Given a Recognizer, compute the set of allowed tokens. 
-    fn compute_bias(rec: impl Recognizer) -> [bool];
+    fn compute_bias(rec: impl Recognizer) -> Vec<bool>;
 }
 ```
 
@@ -204,9 +206,9 @@ Different forks in a sequence can communicate via shared variables:
 fn self_seq_id() -> SeqId;
 
 trait VariableStorage {
-    fn get(name: str) -> Option<[u8]>;
-    fn set(name: str, value: [u8]);
-    fn append(name: str, value: [u8]);
+    fn get(name: str) -> Option<Vec<u8>>;
+    fn set(name: str, value: Vec<u8>);
+    fn append(name: str, value: Vec<u8>);
 }
 ```
 
