@@ -143,27 +143,77 @@ They also cannot spin threads or access any timers (this is relevant for Spectre
 Conceptually, the lowest level interface to AICI constraint is this:
 
 ```rust
-pub trait AiciVm {
-    /// Process prompt and return logit bias for first token.
-    fn process_prompt(&mut self, tokens: &[u32]) -> Vec<f32>;
-    /// Compute logit bias for the next token, provided `token` was sampled
-    fn append_token(&mut self, token: u32) -> Vec<f32>;
+type TokenId = u32, SeqId = u32;
+trait AiciVm {
+    /// Called with the initial prompt. ~1000ms time limit.
+    fn init_prompt(prompt: [TokenId]);
+
+    /// Called before mid_process(), can fork or suspend. ~1ms.
+    fn pre_process() -> enum {
+        Stop,
+        Continue, // Same as Fork { num_forks: 1 }
+        Suspend,  // skip this generation round
+        Fork { num_forks: u32 },
+    }
+
+    /// This is the main entry point for the module. ~20ms.
+    fn mid_process(fork_group: [SeqId]) -> enum {
+        Stop,
+        SampleWithBias { allowed_tokens: [bool] },
+        Splice { backtrack: u32, ff_tokens: [TokenId] }
+    };
+
+    /// Called after tokens are appended. ~1ms.
+    fn post_process(tokens: [TokenId]) -> enum { Stop, Continue };
 }
 ```
 
 Tokens depend on the tokenizer used (eg., for Llama there 32000 tokens, and for GPT-4 there is ~100k).
 
-The actual binary interface is a bit more complicated - it asks for the memory to be allocated
-for prompt, has a type to represent constraint, and a way to allocate it.
-A WASM module instance is created for each token sequence, so
-there is no need to deallocate the constraint type.
+The actual binary interface is a bit more complicated, due
+to limitations in passing values to and from WASM.
+A WASM module instance is created for each token sequence.
 Also, when the sequence forks (as in beam search), the module instance is cloned.
-See the [AiciVm Rust trait](aici_abi/src/lib.rs) as well as the 
-[C header file](aici_abi/src/aici_iface.h) for details
-(the C header is currently not used other than for documentation).
+See the [AiciVm Rust trait](aici_abi/src/lib.rs) for details.
 
-This interface may need to be extended in the future to allow for say scoring different
-beam search branches or backtracking.
+A number of functions are exposed to the WASM module.
+
+First, there are functions for accessing the current tokenizer:
+
+```rust
+/// Given a byte sequence, return a sequence of token Ids.
+fn tokenize_bytes(s: [u8]) -> [TokenId];
+
+/// Represents trie of all tokens in the current tokenizer.
+impl TokTrie {
+    /// Get Id for EOS token etc.
+    fn special_token(tok: SpecialToken) -> TokenId;
+    /// Number of tokens.
+    fn vocab_size() -> usize;
+    /// Convert token Id to bytes (often UTF-8 string).
+    fn token(token: TokenId) -> [u8];
+    /// Given a Recognizer, compute the set of allowed tokens. 
+    fn compute_bias(rec: impl Recognizer) -> [bool];
+}
+```
+
+Different forks in a sequence can communicate via shared variables:
+
+```rust
+/// This can be looked up in fork_group.
+fn self_seq_id() -> SeqId;
+
+trait VariableStorage {
+    fn get(name: str) -> Option<[u8]>;
+    fn set(name: str, value: [u8]);
+    fn append(name: str, value: [u8]);
+}
+```
+
+Additionally, the `stdout` and `stderr` file descriptors are captured by the runtime
+and returned to user when streaming results.
+
+This interface may need to be extended in the future.
 
 ### Byte stack interface
 
