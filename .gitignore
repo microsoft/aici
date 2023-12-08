@@ -13,3 +13,4 @@ perf.data
 tokenizer.bin
 log.txt
 infer/*.safetensor
+*.ncu-rep
