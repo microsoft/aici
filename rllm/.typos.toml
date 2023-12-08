@@ -1,4 +1,0 @@
-[default]
-extend-ignore-identifiers-re = [
-    "mmaped",
-]
