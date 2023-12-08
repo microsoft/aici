@@ -21,10 +21,19 @@ candle-transformers = { path = "../candle/candle-transformers", features = ["cud
 log = "0.4.20"
 env_logger = "0.10.1"
 cudarc = { version = "0.9.14", features = ["f16"] }
+actix-web = "4.4.0"
+tokio = { version = "1.34.0", features = ["sync"] }
+futures = "0.3.29"
+uuid = "1.6.1"
+derive_more = "0.99.17"
 
 [[bin]]
 name = "rllm"
 path = "src/rllm.rs"
+
+[[bin]]
+name = "rllm-server"
+path = "src/server.rs"
 
 [build-dependencies]
 anyhow = { version = "1", features = ["backtrace"] }
