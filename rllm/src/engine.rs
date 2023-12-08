@@ -138,6 +138,15 @@ pub struct RllmEngine {
 }
 
 impl RllmEngine {
+    pub fn load_tokenizer(args: &LoaderArgs) -> Result<Tokenizer> {
+        let repo = Repo::from(&args)?;
+        log::info!("loading the model weights from {}", repo);
+
+        let tokenizer_filename = repo.get("tokenizer.json")?;
+        let tokenizer = Tokenizer::from_file(tokenizer_filename).map_err(anyhow::Error::msg)?;
+
+        Ok(tokenizer)
+    }
     pub fn load(args: LoaderArgs) -> Result<RllmEngine> {
         let device = Device::new_cuda(0)?;
         let dtype = DType::BF16;
@@ -145,7 +154,7 @@ impl RllmEngine {
         let repo = Repo::from(&args)?;
         log::info!("loading the model weights from {}", repo);
 
-        let tokenizer_filename = repo.get("tokenizer.json")?;
+        let tokenizer = Self::load_tokenizer(&args)?;
 
         let json_config: LlamaConfig = serde_json::from_slice(&repo.read("config.json")?)?;
         let model_config: ModelConfig = json_config.into_config();
@@ -185,7 +194,6 @@ impl RllmEngine {
         log::info!("building the model");
 
         let vb = unsafe { VarBuilder::from_mmaped_safetensors(&filenames, dtype, &device)? };
-        let tokenizer = Tokenizer::from_file(tokenizer_filename).map_err(anyhow::Error::msg)?;
 
         let eos_token_id = tokenizer
             .token_to_id("</s>")
@@ -366,7 +374,9 @@ impl RllmEngine {
     fn run_model(&mut self, sched_out: &mut SchedulerOutputs) -> Result<Vec<RequestOutput>> {
         if sched_out.is_empty() {
             log::debug!("no seqs to run");
-            return Ok(Vec::new());
+            let logits = Tensor::new(&[0u8], &self.device)?;
+            // still run generate_outputs() to finish the dropped seqs
+            return self.generate_outputs(&logits, sched_out);
         }
 
         let mut issued_cache_op = false;

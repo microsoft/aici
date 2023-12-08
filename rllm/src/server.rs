@@ -14,6 +14,8 @@ mod openai;
 use openai::responses::APIError;
 use tokio::sync::mpsc::{channel, error::TryRecvError, Receiver, Sender};
 
+use crate::openai::openai_server::completions;
+
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
 struct Args {
@@ -148,41 +150,48 @@ async fn main() -> Result<()> {
     builder.init();
 
     let args = Args::parse();
+    let loader_args = LoaderArgs {
+        model_id: args.model_id,
+        revision: args.revision,
+        local_weights: args.local_weights,
+        use_reference: false,
+        alt: 0,
+    };
+    let tokenizer = RllmEngine::load_tokenizer(&loader_args)?;
 
     let (handle, recv) = InferenceWorker::new();
     let handle = Arc::new(Mutex::new(handle));
+    let app_data = openai::OpenAIServerData {
+        worker: handle.clone(),
+        pipeline_config: openai::PipelineConfig {
+            max_model_len: 1024,
+        },
+        tokenizer: Arc::new(tokenizer),
+    };
+    let app_data = web::Data::new(app_data);
     let handle2 = handle.clone();
 
     std::thread::spawn(move || {
-        let engine = RllmEngine::load(LoaderArgs {
-            model_id: args.model_id,
-            revision: args.revision,
-            local_weights: args.local_weights,
-            use_reference: false,
-            alt: 0,
-        })
-        .expect("failed to load model");
+        let engine = RllmEngine::load(loader_args).expect("failed to load model");
         inference_loop(handle2, engine, recv)
     });
 
     let host = "127.0.0.1";
 
     println!("Listening at http://{}:{}", host, args.port);
-    if args.verbose {
-        HttpServer::new(move || App::new().wrap(Logger::default()).service(models))
-            .bind((host, args.port))
-            .map_err(|e| APIError::new(e.to_string()))?
-            .run()
-            .await
-            .map_err(|e| APIError::new(e.to_string()))?;
-    } else {
-        HttpServer::new(move || App::new().service(models))
-            .bind((host, args.port))
-            .map_err(|e| APIError::new(e.to_string()))?
-            .run()
-            .await
-            .map_err(|e| APIError::new(e.to_string()))?;
-    }
+    HttpServer::new(move || {
+        App::new()
+            .wrap(Logger::default())
+            .service(models)
+            .service(completions)
+            .app_data(app_data.clone())
+    })
+    .workers(3)
+    .bind((host, args.port))
+    .map_err(|e| APIError::new(e.to_string()))?
+    .run()
+    .await
+    .map_err(|e| APIError::new(e.to_string()))?;
 
     Ok(())
 }

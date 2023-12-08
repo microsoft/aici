@@ -143,7 +143,11 @@ impl futures::Stream for Client {
     ) -> std::task::Poll<Option<Self::Item>> {
         self.0.poll_recv(cx).map(|x| match x {
             Some(Ok(x)) => {
-                let res = serde_json::to_vec(&x).unwrap();
+                let res = serde_json::to_string(&x).unwrap();
+                let mut res = format!("data: {}\n\n", res);
+                if x.is_final {
+                    res.push_str("data: [DONE]\n\n");
+                }
                 Some(Ok(Bytes::from(res)))
             }
             Some(Err(e)) => Some(Err(APIError::from(e))),
