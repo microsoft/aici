@@ -224,7 +224,7 @@ pub struct SamplingParams {
     pub top_p: f32,
 
     /// Integer that controls the number of top tokens to consider. Default is -1.
-    pub top_k: i32,
+    pub top_k: isize,
 
     /// Whether to use beam search instead of sampling.
     pub use_beam_search: bool,

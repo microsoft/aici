@@ -10,7 +10,6 @@ use std::{
     collections::HashSet,
     fmt::Display,
     path::PathBuf,
-    rc::Rc,
     sync::{Arc, Mutex},
     time::Instant,
 };
@@ -36,6 +35,12 @@ use crate::{
     seq::{BatchInfo, SeqId, Sequence},
 };
 use crate::{seq::SeqOutput, LogitsProcessor};
+
+pub struct AddRequest {
+    pub request_id: String,
+    pub prompt: Vec<Token>,
+    pub sampling_params: SamplingParams,
+}
 
 enum Repo {
     Api(ApiRepo),
@@ -116,7 +121,8 @@ impl Stats {
 }
 
 pub struct RllmEngine {
-    pub tokenizer: Rc<Tokenizer>,
+    pub tokenizer: Arc<Tokenizer>,
+    pub model_id: String,
     pub model: Model,
     seq_id: SeqId,
     step_no: usize,
@@ -206,7 +212,8 @@ impl RllmEngine {
         let cache_engine = CacheEngine::new(rllm_config.clone());
 
         Ok(RllmEngine {
-            tokenizer: Rc::new(tokenizer),
+            tokenizer: Arc::new(tokenizer),
+            model_id: format!("{}", repo),
             model,
             seq_id: 1,
             step_no: 0,
@@ -241,22 +248,25 @@ impl RllmEngine {
         Ok(tokens.get_ids().to_vec())
     }
 
-    pub fn add_request(
-        &mut self,
-        request_id: String,
-        prompt: &str,
-        sampling_params: SamplingParams,
-    ) -> Result<()> {
-        let tokens = self.tokenize(prompt, true)?;
-        let seq = Sequence::new(self.seq_id, &tokens, self.scheduler.config.cache.block_size);
+    pub fn queue_request(&mut self, req: AddRequest) -> Result<()> {
+        let seq = Sequence::new(
+            self.seq_id,
+            &req.prompt,
+            self.scheduler.config.cache.block_size,
+        );
         self.seq_id += 1;
 
-        let logits_processor = LogitsProcessor::new(&sampling_params, self.tokenizer.clone());
+        let logits_processor = LogitsProcessor::new(&req.sampling_params, self.tokenizer.clone());
+        let prompt = self
+            .tokenizer
+            .decode(&req.prompt, false)
+            .map_err(anyhow::Error::msg)?;
+
         let sg = SequenceGroup {
-            request_id,
-            prompt: prompt.to_string(),
+            request_id: req.request_id,
+            prompt,
             seqs: vec![seq],
-            sampling_params,
+            sampling_params: req.sampling_params,
             arrival_time: Instant::now(),
             logits_processor,
         };
@@ -264,6 +274,20 @@ impl RllmEngine {
         self.scheduler.add_seq_group(sg);
 
         Ok(())
+    }
+
+    pub fn add_request(
+        &mut self,
+        request_id: String,
+        prompt: &str,
+        sampling_params: SamplingParams,
+    ) -> Result<()> {
+        let tokens = self.tokenize(prompt, true)?;
+        self.queue_request(AddRequest {
+            request_id,
+            prompt: tokens,
+            sampling_params,
+        })
     }
 
     pub fn splice_seq(&mut self, seq_id: SeqId, backtrack: usize, tokens: &[Token]) {
@@ -286,11 +310,22 @@ impl RllmEngine {
         let mut outputs = Vec::new();
         let mut idx = 0;
 
+        for sg in sched_out.dropped_seq_groups.iter() {
+            let outp = RequestOutput {
+                request_id: sg.request_id.clone(),
+                seq_outputs: Vec::new(),
+                is_ambiguous: false,
+                is_final: true,
+            };
+            outputs.push(outp);
+        }
+
         for sg in sched_out.next_seq_groups.iter_mut() {
             let mut outp = RequestOutput {
                 request_id: sg.request_id.clone(),
                 seq_outputs: Vec::new(),
                 is_ambiguous: false,
+                is_final: false,
             };
             for seq in sg.seqs.iter_mut() {
                 if seq.sched_phase == SchedulingPhase::Running {

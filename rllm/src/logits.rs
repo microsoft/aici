@@ -1,6 +1,6 @@
 // based on https://github.com/huggingface/candle/blob/main/candle-transformers/src/generation/mod.rs
 
-use std::rc::Rc;
+use std::sync::Arc;
 
 use candle_core::{DType, Error, Result, Tensor};
 use rand::{distributions::Distribution, SeedableRng};
@@ -12,12 +12,12 @@ pub struct LogitsProcessor {
     rng: rand::rngs::StdRng,
     temperature: Option<f32>,
     top_p: f32,
-    tokenizer: Rc<Tokenizer>,
+    tokenizer: Arc<Tokenizer>,
     pub num_ambiguous: usize,
 }
 
 impl LogitsProcessor {
-    pub fn new(sampling_params: &SamplingParams, tokenizer: Rc<Tokenizer>) -> Self {
+    pub fn new(sampling_params: &SamplingParams, tokenizer: Arc<Tokenizer>) -> Self {
         let temperature = if sampling_params.temperature < SAMPLING_EPS {
             None
         } else {
@@ -42,9 +42,13 @@ impl LogitsProcessor {
             log::debug!(
                 "argmax: {:?} {:?} {:?} {:?}",
                 logits_v[0],
-                self.tokenizer.decode(&vec![logits_v[0].0 as u32], false).unwrap(),
+                self.tokenizer
+                    .decode(&vec![logits_v[0].0 as u32], false)
+                    .unwrap(),
                 logits_v[1],
-                self.tokenizer.decode(&vec![logits_v[1].0 as u32], false).unwrap(),
+                self.tokenizer
+                    .decode(&vec![logits_v[1].0 as u32], false)
+                    .unwrap(),
             );
         } else {
             log::trace!(

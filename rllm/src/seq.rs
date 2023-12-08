@@ -264,6 +264,7 @@ pub struct SeqOutput {
 pub struct RequestOutput {
     pub request_id: String,
     pub seq_outputs: Vec<SeqOutput>,
+    pub is_final: bool,
     pub is_ambiguous: bool,
 }
 

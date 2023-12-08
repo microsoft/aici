@@ -15,6 +15,7 @@ mod scheduler;
 use std::sync::atomic::AtomicBool;
 
 pub use engine::RllmEngine;
+pub use engine::AddRequest;
 pub use kernels::*;
 pub use logits::LogitsProcessor;
 pub use playground::playground_1;

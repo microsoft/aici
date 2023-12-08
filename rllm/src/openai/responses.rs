@@ -59,6 +59,23 @@ pub struct ChatCompletionResponse {
     pub usage: ChatCompletionUsageResponse,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CompletionChoice {
+    pub text: String,
+    pub finish_reason: Option<String>,
+    pub index: usize,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CompletionResponse {
+    pub id: String,
+    pub choices: Vec<CompletionChoice>,
+    pub created: u64,
+    pub model: String,
+    pub object: &'static str, // "text_completion"
+    pub usage: ChatCompletionUsageResponse,
+}
+
 // tool_calls, function_call not supported!
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct StreamingChoiceData {
@@ -80,4 +97,27 @@ pub struct StreamingChatCompletionResponse {
     pub created: u64,
     pub model: String,
     pub object: &'static str,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct List<T> {
+    pub object: &'static str, // "list"
+    pub data: Vec<T>,
+}
+
+impl<T> List<T> {
+    pub fn new(data: Vec<T>) -> Self {
+        Self {
+            object: "list",
+            data,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Model {
+    pub object: &'static str, // "model"
+    pub id: String,
+    pub created: u64,
+    pub owned_by: String,
 }
