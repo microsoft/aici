@@ -33,7 +33,7 @@ use crate::{
 };
 use crate::{
     scheduler::Scheduler,
-    seq::{BatchInfo, SeqId, Sequence, StepType},
+    seq::{BatchInfo, SeqId, Sequence},
 };
 use crate::{seq::SeqOutput, LogitsProcessor};
 
@@ -266,7 +266,17 @@ impl RllmEngine {
         Ok(())
     }
 
-    pub fn splice_seq(&mut self, ) {}
+    pub fn splice_seq(&mut self, seq_id: SeqId, backtrack: usize, tokens: &[Token]) {
+        self.scheduler.for_each_sg(|sg| {
+            sg.seqs.iter_mut().for_each(|seq| {
+                if seq.seq_id == seq_id {
+                    seq.tokens.truncate(seq.tokens.len() - backtrack);
+                    self.scheduler.block_manager.trim_physical_blocks(seq);
+                    seq.tokens.extend_from_slice(tokens);
+                }
+            })
+        })
+    }
 
     fn generate_outputs(
         &self,
@@ -286,8 +296,8 @@ impl RllmEngine {
                 if seq.sched_phase == SchedulingPhase::Running {
                     let logits = logits.i((idx, ..))?;
                     let next_token = sg.logits_processor.sample(&logits)?;
+                    seq.num_kv_computed = seq.tokens.len();
                     seq.tokens.push(next_token);
-                    seq.step_type = StepType::Gen;
                     idx += 1;
 
                     let tok = self
@@ -385,11 +395,8 @@ impl RllmEngine {
 
                 let seq_len = seq.tokens.len();
                 let k_len = seq_len;
-                let q_len = match seq.step_type {
-                    StepType::Prompt => seq_len,
-                    StepType::Fixed(len) => len,
-                    StepType::Gen => 1,
-                };
+                let q_len = seq.tokens.len() - seq.num_kv_computed;
+                assert!(q_len > 0); // TODO if it's 0, we can probably bump it up to 1 (re-compute)
                 let off = k_len - q_len;
                 for idx in off..off + q_len {
                     assert!(idx < max_seq);

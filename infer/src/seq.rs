@@ -28,18 +28,11 @@ pub enum SchedulingPhase {
     Finished(FinishReason),
 }
 
-#[derive(Debug, Clone, Copy)]
-pub enum StepType {
-    Prompt,
-    Fixed(usize),
-    Gen,
-}
-
 pub struct Sequence {
     pub seq_id: SeqId,
-    pub step_type: StepType,
     pub tokens: Vec<Token>,
     pub prompt_len: usize,
+    pub(crate) num_kv_computed: usize,
 
     // state for Scheduler and BlockSpaceManager
     pub(crate) sched_phase: SchedulingPhase,
@@ -53,7 +46,7 @@ impl Debug for Sequence {
         f.debug_struct("Sequence")
             .field("seq_id", &self.seq_id)
             .field("sched_phase", &self.sched_phase)
-            .field("step_type", &self.step_type)
+            .field("kv_computed", &self.num_kv_computed)
             .field("tokens", &self.tokens)
             .field("prompt_len", &self.prompt_len)
             .finish()
@@ -66,8 +59,8 @@ impl Sequence {
         let mut seq = Self {
             seq_id,
             sched_phase: SchedulingPhase::Waiting,
-            step_type: StepType::Prompt,
             tokens: Vec::new(),
+            num_kv_computed: 0,
             prompt_len,
             gpu_blocks: Vec::new(),
             cpu_blocks: Vec::new(),
@@ -96,7 +89,7 @@ impl Sequence {
         let mut seq = Self {
             seq_id,
             sched_phase: self.sched_phase,
-            step_type: self.step_type,
+            num_kv_computed: self.num_kv_computed,
             tokens: self.tokens.clone(),
             prompt_len: self.prompt_len,
             gpu_blocks: self.gpu_blocks.iter().map(|x| x.fork()).collect(),

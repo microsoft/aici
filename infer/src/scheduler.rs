@@ -51,6 +51,13 @@ impl SchedulerOutputs {
             && self.blocks_to_swap_out.is_empty()
             && self.blocks_to_copy.is_empty()
     }
+
+    pub fn copy_block(&mut self, src_block: usize, dst_block: usize) {
+        self.blocks_to_copy
+            .entry(src_block)
+            .or_insert_with(Vec::new)
+            .push(dst_block);
+    }
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -103,7 +110,7 @@ impl Scheduler {
         self.q_with(q, |q| q.pop())
     }
 
-    fn for_each_sg(&self, mut f: impl FnMut(&mut SequenceGroup)) {
+    pub fn for_each_sg(&self, mut f: impl FnMut(&mut SequenceGroup)) {
         self.queues
             .lock()
             .unwrap()
@@ -264,7 +271,7 @@ impl Scheduler {
                 }
             }
 
-            self._append_slot(&mut seq_group, outputs);
+            self._append_slots(&mut seq_group, outputs);
             outputs.next_seq_groups.push(seq_group);
         }
         return did_preempt;
@@ -275,16 +282,10 @@ impl Scheduler {
         self.set_phase(seq_group, SchedulingPhase::Running);
     }
 
-    fn _append_slot(&mut self, seq_group: &mut SequenceGroup, outputs: &mut SchedulerOutputs) {
+    fn _append_slots(&mut self, seq_group: &mut SequenceGroup, outputs: &mut SchedulerOutputs) {
         for seq in &mut seq_group.seqs {
             if seq.sched_phase == SchedulingPhase::Running {
-                if let Some((src_block, dst_block)) = self.block_manager.append_slot(seq) {
-                    outputs
-                        .blocks_to_copy
-                        .entry(src_block)
-                        .or_insert_with(Vec::new)
-                        .push(dst_block);
-                }
+                self.block_manager.append_slots(seq, outputs);
             }
         }
     }
@@ -330,7 +331,7 @@ impl Scheduler {
                 break;
             }
             self._swap_in(&mut seq_group, outputs);
-            self._append_slot(&mut seq_group, outputs);
+            self._append_slots(&mut seq_group, outputs);
             num_curr_seqs += num_new_seqs;
             self.q_push(Queue::OnGpu, seq_group);
         }

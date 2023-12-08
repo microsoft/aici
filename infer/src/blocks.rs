@@ -4,6 +4,7 @@ use std::vec::Vec;
 
 use crate::cache_engine::CacheEngine;
 use crate::config::RllmConfig;
+use crate::scheduler::SchedulerOutputs;
 use crate::seq::{SchedulingPhase, Sequence, SequenceGroup};
 
 #[derive(Debug, Clone, Copy)]
@@ -184,6 +185,7 @@ impl BlockSpaceManager {
 
     pub fn allocate(&mut self, seq_group: &mut SequenceGroup) {
         let seq = seq_group.only_seq();
+        assert!(seq.num_kv_computed == 0);
         assert!(seq.gpu_blocks.is_empty());
         seq_group.seqs[0].gpu_blocks = (0..self.num_logical_blocks(seq))
             .map(|_| self.alloc_gpu())
@@ -196,8 +198,8 @@ impl BlockSpaceManager {
         self.can_alloc_gpu(num_seqs)
     }
 
-    #[allow(dead_code)]
-    pub fn trim_physical_blocks(&mut self, seq: &mut Sequence) {
+    pub fn trim_physical_blocks(&self, seq: &mut Sequence) {
+        seq.num_kv_computed = std::cmp::min(seq.num_kv_computed, seq.tokens.len());
         let num_logical = self.num_logical_blocks(seq);
         if seq.gpu_blocks.len() > num_logical {
             seq.gpu_blocks.truncate(num_logical);
@@ -207,28 +209,31 @@ impl BlockSpaceManager {
         }
     }
 
-    pub fn append_slot(&mut self, seq: &mut Sequence) -> Option<(usize, usize)> {
-        let num_logical = self.num_logical_blocks(seq);
+    pub fn append_slots(&mut self, seq: &mut Sequence, outputs: &mut SchedulerOutputs) {
         let block_table = &mut seq.gpu_blocks;
         assert!(block_table.len() > 0); // TODO?
+        assert!(block_table.len() * self.block_size >= seq.num_kv_computed);
 
-        if block_table.len() < num_logical {
-            block_table.push(self.alloc_gpu());
-            assert!(block_table.len() == num_logical);
-            return None;
+        let mut ptr = seq.num_kv_computed;
+        while ptr < seq.tokens.len() {
+            let block_idx = ptr / self.block_size;
+            if block_idx < block_table.len() {
+                let curr_block = &mut block_table[block_idx];
+                if !curr_block.is_singlular() {
+                    let new_block = self.alloc_gpu();
+                    let old_block_number = curr_block.block_idx;
+                    let new_block_number = new_block.block_idx;
+                    *curr_block = new_block;
+                    outputs.copy_block(old_block_number, new_block_number);
+                }
+            } else {
+                assert!(block_table.len() == block_idx);
+                block_table.push(self.alloc_gpu());
+            }
+            ptr = (block_idx + 1) * self.block_size;
         }
 
-        assert!(block_table.len() == num_logical);
-        let last_block = block_table.last_mut().unwrap();
-        if last_block.is_singlular() {
-            None
-        } else {
-            let new_block = self.alloc_gpu();
-            let old_block_number = last_block.block_idx;
-            let new_block_number = new_block.block_idx;
-            *last_block = new_block;
-            Some((old_block_number, new_block_number))
-        }
+        assert!(block_table.len() == self.num_logical_blocks(seq));
     }
 
     fn num_phys_blocks(&self, seq_group: &SequenceGroup) -> usize {
