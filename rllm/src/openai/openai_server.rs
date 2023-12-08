@@ -2,7 +2,9 @@ use crate::openai::utils::get_created_time_secs;
 use crate::InferenceResult;
 
 use super::requests::CompletionRequest;
-use super::responses::{APIError, CompletionResponse};
+use super::responses::{
+    APIError, CompletionResponse, StreamingCompletionChoice, StreamingCompletionResponse,
+};
 use super::{OpenAIServerData, TokenizerWrapper};
 use actix_web::web::Bytes;
 use actix_web::{post, web, Either, HttpResponse};
@@ -142,10 +144,25 @@ impl futures::Stream for Client {
         cx: &mut std::task::Context<'_>,
     ) -> std::task::Poll<Option<Self::Item>> {
         self.0.poll_recv(cx).map(|x| match x {
-            Some(Ok(x)) => {
-                let res = serde_json::to_string(&x).unwrap();
+            Some(Ok(so)) => {
+                let r = StreamingCompletionResponse {
+                    object: "text_completion",
+                    id: so.request_id,
+                    model: "current".to_string(),
+                    created: get_created_time_secs(),
+                    choices: so
+                        .seq_outputs
+                        .iter()
+                        .map(|choice| StreamingCompletionChoice {
+                            text: choice.new_text.clone(),
+                            index: choice.index,
+                            finish_reason: choice.finish_reason.map(|r| r.short_name()),
+                        })
+                        .collect(),
+                };
+                let res = serde_json::to_string(&r).unwrap();
                 let mut res = format!("data: {}\n\n", res);
-                if x.is_final {
+                if so.is_final {
                     res.push_str("data: [DONE]\n\n");
                 }
                 Some(Ok(Bytes::from(res)))

@@ -84,7 +84,7 @@ pub struct StreamingChoiceData {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct StreamingChoice {
+pub struct StreamingChatChoice {
     pub delta: StreamingChoiceData,
     pub finish_reason: Option<String>,
     pub index: usize,
@@ -93,7 +93,7 @@ pub struct StreamingChoice {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct StreamingChatCompletionResponse {
     pub id: String,
-    pub choices: Vec<StreamingChoice>,
+    pub choices: Vec<StreamingChatChoice>,
     pub created: u64,
     pub model: String,
     pub object: &'static str,
@@ -120,4 +120,21 @@ pub struct Model {
     pub id: String,
     pub created: u64,
     pub owned_by: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct StreamingCompletionChoice {
+    pub index: usize,
+    pub finish_reason: Option<String>,
+    pub text: String,
+    // pub logprobs: Option<LogProbs>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct StreamingCompletionResponse {
+    pub object: &'static str, // "text_completion"
+    pub id: String,
+    pub model: String,
+    pub created: u64,
+    pub choices: Vec<StreamingCompletionChoice>,
 }

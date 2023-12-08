@@ -362,7 +362,10 @@ impl RllmEngine {
                             .finish_seq(seq, FinishReason::MaxTokensReached);
                     }
                 }
-                outp.seq_outputs.push(seq.get_output());
+
+                let mut out = seq.gen_output();
+                out.new_text = self.decode_seq(&out.new_output_tokens)?;
+                outp.seq_outputs.push(out);
             }
             outp.is_ambiguous = sg.logits_processor.num_ambiguous > 0;
             outputs.push(outp);
