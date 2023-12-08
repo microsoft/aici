@@ -9,7 +9,7 @@ anyhow = "1.0.75"
 candle-nn = { path = "../candle/candle-nn", features = ["cuda"] }
 candle-flash-attn = { path = "../candle/candle-flash-attn" }
 candle-flash-attn2 = { path = "../candle-flash-attn" }
-candle = { path = "../candle/candle-core", features = ["cuda", "cudnn"], package = "candle-core" }
+candle-core = { path = "../candle/candle-core", features = ["cuda", "cudnn"] }
 clap = "4.4.8"
 hf-hub = "0.3.2"
 tokenizers = { version = "0.15.0", features = ["hf-hub"] }

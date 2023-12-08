@@ -1,5 +1,5 @@
 use anyhow::Result;
-use candle::{DType, Device, IndexOp, Shape, Tensor};
+use candle_core::{DType, Device, IndexOp, Shape, Tensor};
 
 use crate::{to_offsets, util::check_all_close};
 

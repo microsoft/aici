@@ -1,6 +1,6 @@
 use std::{collections::HashMap, fmt::Debug, sync::Mutex};
 
-use candle::Tensor;
+use candle_core::Tensor;
 use serde::{Deserialize, Serialize};
 
 use crate::{blocks::BlockRef, config::SamplingParams, LogitsProcessor};
@@ -174,7 +174,7 @@ impl BatchInfo {
             .map(|(i, (k, v))| (format!("{:0>4}_{}", i, k), v.clone()))
             .collect();
         lck.clear();
-        candle::safetensors::save(&tensors, filename).unwrap()
+        candle_core::safetensors::save(&tensors, filename).unwrap()
     }
 }
 

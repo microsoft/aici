@@ -1,5 +1,5 @@
 use anyhow::{anyhow, Error as E, Result};
-use candle::{DType, Device, IndexOp, Tensor};
+use candle_core::{DType, Device, IndexOp, Tensor};
 use candle_nn::VarBuilder;
 use hf_hub::{
     api::sync::{Api, ApiRepo},

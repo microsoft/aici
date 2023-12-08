@@ -2,7 +2,7 @@
 
 use std::rc::Rc;
 
-use candle::{DType, Error, Result, Tensor};
+use candle_core::{DType, Error, Result, Tensor};
 use rand::{distributions::Distribution, SeedableRng};
 use tokenizers::Tokenizer;
 

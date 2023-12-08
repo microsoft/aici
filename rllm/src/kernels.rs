@@ -1,7 +1,7 @@
 use core::panic;
 use std::collections::HashMap;
 
-use candle::{
+use candle_core::{
     backend::BackendStorage,
     cuda_backend::{
         cudarc::driver::{CudaStream, CudaView, DevicePtr, DeviceRepr},
@@ -103,7 +103,7 @@ pub fn rotary_embedding(
     head_size: usize,
     cos_sin_cache: &Tensor, // [max_position, rot_dim]
 ) {
-    assert!(positions.dtype() == candle::DType::I64);
+    assert!(positions.dtype() == candle_core::DType::I64);
     assert!(is_bf16(query));
     assert!(is_bf16(key));
     assert!(is_bf16(cos_sin_cache));
@@ -355,7 +355,7 @@ struct UnsetTensor {
     shape: Shape,
 }
 
-unsafe fn alloc_vec<T: candle::WithDType>(elts: usize) -> Vec<T> {
+unsafe fn alloc_vec<T: candle_core::WithDType>(elts: usize) -> Vec<T> {
     let mut r = Vec::with_capacity(elts);
     unsafe { r.set_len(elts) }
     r
@@ -375,7 +375,7 @@ impl CustomOp1 for UnsetTensor {
         &self,
         storage: &CpuStorage,
         _layout: &Layout,
-    ) -> candle::Result<(CpuStorage, Shape)> {
+    ) -> candle_core::Result<(CpuStorage, Shape)> {
         let elts = self.shape.elem_count();
         let stor = unsafe {
             match storage.dtype() {
@@ -395,7 +395,7 @@ impl CustomOp1 for UnsetTensor {
         &self,
         storage: &CudaStorage,
         _layout: &Layout,
-    ) -> candle::Result<(CudaStorage, Shape)> {
+    ) -> candle_core::Result<(CudaStorage, Shape)> {
         let elts = self.shape.elem_count();
         let device = storage.device();
         let stor = unsafe {

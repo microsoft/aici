@@ -1,7 +1,7 @@
 // based on https://github.com/vllm-project/vllm/blob/b9fe4616f98b77b4b9458bce203aa6544cb31ef2/vllm/config.py
 
 use anyhow::{bail, Result};
-use candle::{DType, Device};
+use candle_core::{DType, Device};
 use log::warn;
 use serde::{Deserialize, Serialize};
 

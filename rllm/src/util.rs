@@ -1,5 +1,5 @@
 use anyhow::Result;
-use candle::{DType, Tensor};
+use candle_core::{DType, Tensor};
 
 pub fn limit_str(s: &str, max_len: usize) -> String {
     limit_bytes(s.as_bytes(), max_len)

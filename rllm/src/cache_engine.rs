@@ -3,8 +3,8 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use candle::cuda_backend::cudarc::driver::CudaStream;
-use candle::{Device, Tensor};
+use candle_core::cuda_backend::cudarc::driver::CudaStream;
+use candle_core::{Device, Tensor};
 
 use crate::config::RllmConfig;
 use crate::kernels;
@@ -28,7 +28,7 @@ pub struct CacheEngine {
 
     cache_stream: CudaStream,
     events: Vec<CudaEvent>,
-    cuda_device: candle::CudaDevice,
+    cuda_device: candle_core::CudaDevice,
 }
 
 impl CacheEngine {
