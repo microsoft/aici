@@ -14,3 +14,5 @@ tokenizer.bin
 log.txt
 infer/*.safetensor
 *.ncu-rep
+*.nsys-rep
+infer/report*.sqlite

@@ -157,6 +157,7 @@ pub struct BatchInfo {
     pub kv_cache: Vec<(Tensor, Tensor)>,
 
     pub infer_log: Mutex<Vec<(String, Tensor)>>,
+    pub step_no: usize,
 }
 
 impl BatchInfo {

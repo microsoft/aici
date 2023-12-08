@@ -20,6 +20,7 @@ half = "2.3.1"
 candle-transformers = { path = "../candle/candle-transformers", features = ["cuda"] }
 log = "0.4.20"
 env_logger = "0.10.1"
+cudarc = { version = "0.9.14", features = ["f16"] }
 
 [[bin]]
 name = "infer"

@@ -43,6 +43,9 @@ struct Args {
     /// (same structure as huggingface online)
     #[arg(long)]
     local_weights: Option<String>,
+
+    #[arg(long, default_value_t = false)]
+    nv_profile: bool,
 }
 
 fn main() -> Result<()> {
@@ -137,6 +140,16 @@ fn main() -> Result<()> {
             }
         }
     } else {
+        {
+            log::info!("pre-heating...");
+            let mut pre_heat = p.clone();
+            pre_heat.max_tokens = 1;
+            let _ = infer.generate(prompt, pre_heat)?;
+            log::info!("pre-heating done");
+        }
+
+        infer.nv_profile = args.nv_profile;
+
         let gen = infer.generate(prompt, p)?;
         let dt = start_gen.elapsed();
         println!("\n{gen}\n");

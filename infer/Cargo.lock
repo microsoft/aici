@@ -1330,6 +1330,7 @@ dependencies = [
  "candle-nn",
  "candle-transformers",
  "clap",
+ "cudarc",
  "env_logger",
  "half",
  "hf-hub",

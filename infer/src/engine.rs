@@ -125,6 +125,7 @@ pub struct RllmEngine {
     pub alt: usize,
     pub device: Device,
     pub eos_token_id: u32,
+    pub nv_profile: bool,
 
     cache_engine: CacheEngine,
     scheduler: Scheduler,
@@ -215,6 +216,7 @@ impl RllmEngine {
             alt: args.alt,
             scheduler,
             cache_engine,
+            nv_profile: false,
         })
     }
 
@@ -337,15 +339,27 @@ impl RllmEngine {
 
         let info = self.build_batch_info(sched_out)?;
 
-        log::trace!("batch_info #{}: {:?}", self.step_no, info);
-        log::trace!("{}", info.positions);
-        log::trace!("{}", info.gather_mapping);
-        log::trace!("{}", info.slot_mapping);
+        log::trace!("batch_info #{}: {:?}", info.step_no, info);
+        // log::trace!("{}", info.positions);
+        // log::trace!("{}", info.gather_mapping);
+        // log::trace!("{}", info.slot_mapping);
+
+        if self.nv_profile {
+            cudarc::driver::safe::profiler_start()?;
+        }
+
+        let t0 = Instant::now();
         let logits = self.model.forward(&info)?;
+        let r = self.generate_outputs(&logits, sched_out);
+        log::debug!("model forward: {:?}", t0.elapsed());
+
+        if self.nv_profile {
+            cudarc::driver::safe::profiler_stop()?;
+        }
+
         info.save_log(&format!("step-{}.safetensor", self.step_no));
         log::trace!("logits: {:?}", logits);
-
-        self.generate_outputs(&logits, sched_out)
+        r
     }
 
     fn build_batch_info(&self, sched_out: &mut SchedulerOutputs) -> Result<BatchInfo> {
@@ -409,6 +423,7 @@ impl RllmEngine {
             max_seqlen_k,
             kv_cache,
             infer_log: Mutex::new(Vec::new()),
+            step_no: self.step_no,
         })
     }
 

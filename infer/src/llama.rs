@@ -8,7 +8,7 @@ use crate::{
     config::ModelConfig, get_trace, kernels, seq::BatchInfo, to_offsets, util::check_all_close,
 };
 
-const DOUBLE_CHECK: bool = true;
+const DOUBLE_CHECK: bool = false;
 
 #[derive(Deserialize)]
 pub struct LlamaConfig {
@@ -298,7 +298,7 @@ impl CausalSelfAttention {
             batch_info.log_tensor("q", &q);
             batch_info.log_tensor("k", &k);
             batch_info.log_tensor("v", &v);
-            
+
             // flash-attn expects (seq_len, nheads, head_dim)
             let softmax_scale = 1f32 / (self.head_dim as f32).sqrt();
             if trace {
