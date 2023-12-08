@@ -1,6 +1,6 @@
 use std::cell::RefCell;
 use std::collections::HashMap;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::vec::Vec;
 
 use log::warn;
@@ -53,6 +53,20 @@ impl SchedulerOutputs {
     }
 }
 
+#[derive(Debug, Clone, Copy)]
+enum Queue {
+    /// These have no KV cache stored anywhere. Each sequence group has only 1 sequence.
+    Waiting,
+
+    /// These currently sit on GPU but are not scheduled to run next. The ones to run next are in SchedulerOutputs.
+    OnGpu,
+
+    /// These are swapped out to CPU memory.
+    Swapped,
+}
+
+const NUM_QUEUES: usize = Queue::Swapped as usize + 1;
+
 /// Scheduler.
 pub struct Scheduler {
     pub(crate) config: Arc<RllmConfig>,
@@ -60,12 +74,42 @@ pub struct Scheduler {
     pub(crate) block_manager: BlockSpaceManager,
     freed_seq_ids: RefCell<Vec<SeqId>>,
 
-    /// These have no KV cache stored anywhere. Each sequence group has only 1 sequence.
-    waiting: Vec<SequenceGroup>,
-    /// These currently sit on GPU but are not scheduled to run next. The ones to run next are in SchedulerOutputs.
-    on_gpu: Vec<SequenceGroup>,
-    /// These are swapped out to CPU memory.
-    swapped: Vec<SequenceGroup>,
+    queues: Mutex<Vec<Vec<SequenceGroup>>>,
+}
+
+impl Scheduler {
+    fn q_with<T>(&self, q: Queue, f: impl FnOnce(&mut Vec<SequenceGroup>) -> T) -> T {
+        let mut queues = self.queues.lock().unwrap();
+        f(&mut queues[q as usize])
+    }
+
+    fn q_map<T>(&self, q: Queue, mut f: impl FnMut(&mut SequenceGroup) -> T) -> Vec<T> {
+        self.q_with(q, |q| q.iter_mut().map(&mut f).collect())
+    }
+
+    fn q_for_each(&self, q: Queue, mut f: impl FnMut(&mut SequenceGroup)) {
+        self.q_with(q, |q| q.iter_mut().for_each(&mut f));
+    }
+
+    fn q_len(&self, q: Queue) -> usize {
+        self.q_with(q, |q| q.len())
+    }
+
+    fn q_push(&self, q: Queue, sg: SequenceGroup) {
+        self.q_with(q, move |q| q.push(sg));
+    }
+
+    fn q_pop(&self, q: Queue) -> Option<SequenceGroup> {
+        self.q_with(q, |q| q.pop())
+    }
+
+    fn for_each_sg(&self, mut f: impl FnMut(&mut SequenceGroup)) {
+        self.queues
+            .lock()
+            .unwrap()
+            .iter_mut()
+            .for_each(|q| q.iter_mut().for_each(&mut f));
+    }
 }
 
 impl Scheduler {
@@ -87,9 +131,7 @@ impl Scheduler {
             prompt_limit,
             block_manager,
             freed_seq_ids: RefCell::new(Vec::new()),
-            waiting: Vec::new(),
-            on_gpu: Vec::new(),
-            swapped: Vec::new(),
+            queues: Mutex::new((0..NUM_QUEUES).map(|_| Vec::new()).collect()),
         }
     }
 
@@ -99,27 +141,15 @@ impl Scheduler {
             seq_group.request_id,
             limit_str(&seq_group.prompt, 200)
         );
-        self.waiting.push(seq_group);
-    }
-
-    fn abort_in(&self, request_id: &str, mut q: Vec<SequenceGroup>) -> Vec<SequenceGroup> {
-        for seq_group in q.iter_mut() {
-            if seq_group.request_id == request_id {
-                self.set_phase(seq_group, SchedulingPhase::Finished(FinishReason::Aborted));
-            }
-        }
-        q
+        self.q_push(Queue::Waiting, seq_group);
     }
 
     pub fn abort_seq_group(&mut self, request_id: &str) {
-        let q = std::mem::take(&mut self.waiting);
-        self.waiting = self.abort_in(request_id, q);
-
-        let q = std::mem::take(&mut self.on_gpu);
-        self.on_gpu = self.abort_in(request_id, q);
-
-        let q = std::mem::take(&mut self.swapped);
-        self.swapped = self.abort_in(request_id, q);
+        self.for_each_sg(|seq_group| {
+            if seq_group.request_id == request_id {
+                self.set_phase(seq_group, SchedulingPhase::Finished(FinishReason::Aborted));
+            }
+        });
     }
 
     pub fn has_unfinished_seqs(&self) -> bool {
@@ -127,7 +157,7 @@ impl Scheduler {
     }
 
     pub fn get_num_unfinished_seq_groups(&self) -> usize {
-        self.waiting.len() + self.on_gpu.len() + self.swapped.len()
+        self.queues.lock().unwrap().iter().map(|q| q.len()).sum()
     }
 
     fn drop_finished(outputs: &mut SchedulerOutputs, q: &mut Vec<SequenceGroup>) {
@@ -151,8 +181,7 @@ impl Scheduler {
     }
 
     fn step_drop_finished(&mut self, outputs: &mut SchedulerOutputs) {
-        let mut waiting = std::mem::take(&mut self.waiting);
-        for seq_group in waiting.iter_mut() {
+        self.q_for_each(Queue::Waiting, |seq_group| {
             assert!(seq_group.seqs.len() == 1);
             let num_prompt_tokens = seq_group.get_seqs(None)[0].get_len();
             if num_prompt_tokens > self.prompt_limit {
@@ -162,25 +191,25 @@ impl Scheduler {
                 );
                 self.set_phase(seq_group, SchedulingPhase::Finished(FinishReason::Failed));
             }
-        }
-        self.waiting = waiting;
+        });
 
-        Self::drop_finished(outputs, &mut self.waiting);
-        Self::drop_finished(outputs, &mut self.on_gpu);
-        Self::drop_finished(outputs, &mut self.swapped);
+        self.queues.lock().unwrap().iter_mut().for_each(|q| {
+            Self::drop_finished(outputs, q);
+        });
+    }
+
+    fn max_num_running_seq(&self, q: Queue) -> usize {
+        self.q_map(q, |sg| sg.get_max_num_running_seqs())
+            .iter()
+            .sum()
     }
 
     fn step_start_waiting(&mut self, outputs: &mut SchedulerOutputs) {
-        log::trace!("step_start_waiting ({} seqs)", self.waiting.len());
-        Self::sort_by_priority(&mut self.waiting);
+        log::trace!("step_start_waiting ({} seqs)", self.q_len(Queue::Waiting));
+        self.sort_by_priority(Queue::Waiting);
 
-        let mut num_curr_seqs = self
-            .on_gpu
-            .iter()
-            .map(|sg| sg.get_max_num_running_seqs())
-            .sum::<usize>();
-
-        while let Some(mut seq_group) = self.waiting.pop() {
+        let mut num_curr_seqs = self.max_num_running_seq(Queue::OnGpu);
+        while let Some(mut seq_group) = self.q_pop(Queue::Waiting) {
             assert!(seq_group.seqs.len() == 1);
             let num_prompt_tokens = seq_group.get_seqs(None)[0].get_len();
             let num_new_seqs = seq_group.get_max_num_running_seqs();
@@ -198,7 +227,7 @@ impl Scheduler {
                     > self.config.scheduler.max_num_batched_tokens
                 || num_curr_seqs + num_new_seqs > self.config.scheduler.max_num_seqs
             {
-                self.waiting.push(seq_group); // Put back the sequence group
+                self.q_push(Queue::Waiting, seq_group); // Put back the sequence group
                 break;
             }
 
@@ -209,22 +238,24 @@ impl Scheduler {
         }
     }
 
-    fn sort_by_priority(seq_groups: &mut Vec<SequenceGroup>) {
-        // note that we take elements first from the end of the queue (Vec::pop())
-        seq_groups.sort_by_key(|g| g.arrival_time);
-        seq_groups.reverse();
+    fn sort_by_priority(&self, q: Queue) {
+        self.q_with(q, |seq_groups| {
+            // note that we take elements first from the end of the queue (Vec::pop())
+            seq_groups.sort_by_key(|g| g.arrival_time);
+            seq_groups.reverse();
+        });
     }
 
     fn step_preempt(&mut self, outputs: &mut SchedulerOutputs) -> bool {
         let mut did_preempt = false;
-        Self::sort_by_priority(&mut self.on_gpu);
+        self.sort_by_priority(Queue::OnGpu);
 
-        while let Some(mut seq_group) = self.on_gpu.pop() {
+        while let Some(mut seq_group) = self.q_pop(Queue::OnGpu) {
             while !self.block_manager.can_append_slot(&seq_group) {
                 did_preempt = true;
-                if !self.on_gpu.is_empty() {
+                if self.q_len(Queue::OnGpu) > 0 {
                     // take the first group in queue (lowest priority)
-                    let victim_seq_group = self.on_gpu.remove(0);
+                    let victim_seq_group = self.q_with(Queue::OnGpu, |q| q.remove(0));
                     self._preempt(victim_seq_group, outputs);
                 } else {
                     // preempt the current sequence group and stop
@@ -277,41 +308,39 @@ impl Scheduler {
                 }
                 let map = self.block_manager.swap_out(&mut seq_group);
                 outputs.blocks_to_swap_out.extend(map);
-                self.swapped.push(seq_group);
+                self.q_push(Queue::Swapped, seq_group);
             }
             PreemptionMode::Recompute => {
                 self.set_phase(&mut seq_group, SchedulingPhase::Waiting);
-                self.waiting.push(seq_group);
+                self.q_push(Queue::Waiting, seq_group);
             }
         }
     }
 
     fn step_swap_in(&mut self, outputs: &mut SchedulerOutputs) {
-        Self::sort_by_priority(&mut self.swapped);
+        self.sort_by_priority(Queue::Swapped);
 
-        let mut num_curr_seqs = self
-            .on_gpu
-            .iter()
-            .map(|sg| sg.get_max_num_running_seqs())
-            .sum::<usize>();
-        while let Some(mut seq_group) = self.swapped.pop() {
+        let mut num_curr_seqs = self.max_num_running_seq(Queue::OnGpu);
+        while let Some(mut seq_group) = self.q_pop(Queue::Swapped) {
             let num_new_seqs = seq_group.get_max_num_running_seqs();
             if !self.block_manager.can_swap_in(&seq_group)
                 || num_curr_seqs + num_new_seqs > self.config.scheduler.max_num_seqs
             {
-                self.swapped.push(seq_group);
+                self.q_push(Queue::Swapped, seq_group);
                 break;
             }
             self._swap_in(&mut seq_group, outputs);
             self._append_slot(&mut seq_group, outputs);
             num_curr_seqs += num_new_seqs;
-            self.on_gpu.push(seq_group);
+            self.q_push(Queue::OnGpu, seq_group);
         }
     }
 
     pub fn step_finished(&mut self, mut outputs: SchedulerOutputs) {
         // everything that used to be "next_step" is now just on the GPU
-        self.on_gpu.append(&mut outputs.next_seq_groups);
+        self.q_with(Queue::OnGpu, |seq_groups| {
+            seq_groups.append(&mut outputs.next_seq_groups);
+        });
     }
 
     pub fn schedule(&mut self) -> SchedulerOutputs {
@@ -327,7 +356,7 @@ impl Scheduler {
 
         self.step_drop_finished(&mut outputs);
 
-        if self.swapped.is_empty() {
+        if self.q_len(Queue::Swapped) == 0 {
             self.step_start_waiting(&mut outputs);
         }
 
@@ -342,10 +371,13 @@ impl Scheduler {
 
             // Update num_batched_tokens based on the sequences in the RUNNING state
             outputs.num_batched_tokens = self
-                .on_gpu
+                .q_map(Queue::OnGpu, |sg| {
+                    sg.get_seqs(Some(SchedulingPhase::Running))
+                        .iter()
+                        .map(|seq| seq.get_len())
+                        .sum()
+                })
                 .iter()
-                .flat_map(|sg| sg.get_seqs(Some(SchedulingPhase::Running)))
-                .map(|seq| seq.get_len())
                 .sum();
         }
 

@@ -233,18 +233,21 @@ impl RllmEngine {
         self.scheduler.get_num_unfinished_seq_groups()
     }
 
+    pub fn tokenize(&self, text: &str, add_special_tokens: bool) -> Result<Vec<Token>> {
+        let tokens = self
+            .tokenizer
+            .encode(text, add_special_tokens)
+            .map_err(anyhow::Error::msg)?;
+        Ok(tokens.get_ids().to_vec())
+    }
+
     pub fn add_request(
         &mut self,
         request_id: String,
         prompt: &str,
         sampling_params: SamplingParams,
     ) -> Result<()> {
-        let tokens = self
-            .tokenizer
-            .encode(prompt, true)
-            .map_err(anyhow::Error::msg)?
-            .get_ids()
-            .to_vec();
+        let tokens = self.tokenize(prompt, true)?;
         let seq = Sequence::new(self.seq_id, &tokens, self.scheduler.config.cache.block_size);
         self.seq_id += 1;
 
@@ -262,6 +265,8 @@ impl RllmEngine {
 
         Ok(())
     }
+
+    pub fn splice_seq(&mut self, ) {}
 
     fn generate_outputs(
         &self,

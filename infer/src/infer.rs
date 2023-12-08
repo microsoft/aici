@@ -140,7 +140,7 @@ fn main() -> Result<()> {
             }
         }
     } else {
-        {
+        if args.nv_profile {
             log::info!("pre-heating...");
             let mut pre_heat = p.clone();
             pre_heat.max_tokens = 1;
