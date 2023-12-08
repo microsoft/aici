@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use rllm::{config::SamplingParams, LoaderArgs, RllmEngine};
 
 struct Ctx {
-    infer: RllmEngine,
+    engine: RllmEngine,
     sampling_params: SamplingParams,
 }
 
@@ -12,7 +12,7 @@ impl Ctx {
         let mut sampling_params = SamplingParams::default();
         sampling_params.max_tokens = 10;
         Self {
-            infer: RllmEngine::load(LoaderArgs::default()).unwrap(),
+            engine: RllmEngine::load(LoaderArgs::default()).unwrap(),
             sampling_params,
         }
     }
@@ -20,7 +20,7 @@ impl Ctx {
 
 fn expect(ctx: &mut Ctx, prompt: &str, expected: &str) {
     let gen = ctx
-        .infer
+        .engine
         .generate(prompt, ctx.sampling_params.clone())
         .unwrap();
     if gen != expected {
@@ -71,7 +71,7 @@ fn test_infer1() {
 
     let mut ctx = Ctx::new();
 
-    let stats0 = ctx.infer.get_stats();
+    let stats0 = ctx.engine.get_stats();
 
     if true {
         // make sure we get deterministic results
@@ -83,20 +83,20 @@ fn test_infer1() {
             expect(&mut ctx, QUERIES[idx].0, QUERIES[idx].1);
         }
 
-        assert!(ctx.infer.get_stats().same_as(&stats0));
+        assert!(ctx.engine.get_stats().same_as(&stats0));
     }
 
     let mut expected_map = HashMap::new();
     for idx in 0..QUERIES.len() {
-        let id = ctx.infer.gen_req_id();
+        let id = ctx.engine.gen_req_id();
         expected_map.insert(id.clone(), QUERIES[idx].1.to_string());
-        ctx.infer
+        ctx.engine
             .add_request(id, QUERIES[idx].0, ctx.sampling_params.clone())
             .unwrap();
     }
 
     loop {
-        let res = ctx.infer.step().unwrap();
+        let res = ctx.engine.step().unwrap();
         if res.is_empty() {
             break;
         }
@@ -104,7 +104,7 @@ fn test_infer1() {
             assert!(sgo.seq_outputs.len() == 1);
             let so = &sgo.seq_outputs[0];
             if so.finish_reason.is_some() {
-                let outp = ctx.infer.seq_output_text(so).unwrap();
+                let outp = ctx.engine.seq_output_text(so).unwrap();
                 let expected = expected_map.remove(&sgo.request_id).unwrap();
                 if outp != expected {
                     // TODO this fails
@@ -114,5 +114,5 @@ fn test_infer1() {
         }
     }
     assert!(expected_map.is_empty());
-    assert!(ctx.infer.get_stats().same_as(&stats0));
+    assert!(ctx.engine.get_stats().same_as(&stats0));
 }

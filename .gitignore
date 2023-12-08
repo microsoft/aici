@@ -12,7 +12,7 @@ perf.data
 */src/tokenizers
 tokenizer.bin
 log.txt
-infer/*.safetensor
+rllm/*.safetensor
+rllm/report*.sqlite
 *.ncu-rep
 *.nsys-rep
-infer/report*.sqlite

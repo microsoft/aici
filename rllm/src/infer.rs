@@ -60,7 +60,7 @@ fn main() -> Result<()> {
         return Ok(());
     }
 
-    let mut infer = RllmEngine::load(LoaderArgs {
+    let mut engine = RllmEngine::load(LoaderArgs {
         model_id: args.model_id,
         revision: args.revision,
         local_weights: args.local_weights,
@@ -81,26 +81,26 @@ fn main() -> Result<()> {
 
     if args.alt == 7 {
         // "the color of nature, the color of the earth",
-        infer.add_request("R1".to_string(), "Color green is", p.clone())?;
+        engine.add_request("R1".to_string(), "Color green is", p.clone())?;
         // "Alfred Tarski in 1936."
-        infer.add_request(
+        engine.add_request(
             "R2".to_string(),
             "Tarski's fixed-point theorem was proven by",
             p.clone(),
         )?;
         // "the existence of a fixed point in a certain relation",
-        infer.add_request(
+        engine.add_request(
             "R3".to_string(),
             "Tarski's fixed-point theorem is about",
             p.clone(),
         )?;
 
         for _ in 0..1 {
-            let res = infer.step().unwrap();
+            let res = engine.step().unwrap();
             for sgo in &res {
                 assert!(sgo.seq_outputs.len() == 1);
                 let so = &sgo.seq_outputs[0];
-                let t = infer.seq_output_text(so)?;
+                let t = engine.seq_output_text(so)?;
                 let rid = &sgo.request_id;
                 println!("{rid} {t}");
             }
@@ -114,27 +114,27 @@ fn main() -> Result<()> {
         let l = args.sample_len;
         let mut prompts = HashMap::new();
         loop {
-            while infer.num_pending_requests() < 30 {
+            while engine.num_pending_requests() < 30 {
                 let start = rng.gen_range(0..words.len() - 50);
                 let len = rng.gen_range(4..10);
                 let prompt = words[start..start + len].join(" ");
                 let id = format!("R{}", idx);
                 prompts.insert(id.clone(), prompt.clone());
-                infer.add_request(id, &prompt, p.clone())?;
+                engine.add_request(id, &prompt, p.clone())?;
                 idx += 1;
                 eprint!("*");
             }
-            let res = infer.step().unwrap();
+            let res = engine.step().unwrap();
             for sgo in &res {
                 assert!(sgo.seq_outputs.len() == 1);
                 if sgo.is_ambiguous {
-                    infer.abort_request(&sgo.request_id);
+                    engine.abort_request(&sgo.request_id);
                 } else {
                     let so = &sgo.seq_outputs[0];
                     if so.output_tokens.len() >= l {
-                        let t = infer.seq_output_text(so)?;
+                        let t = engine.seq_output_text(so)?;
                         println!("\nFOUND {:?} {:?}", prompts[&sgo.request_id], t);
-                        infer.abort_request(&sgo.request_id);
+                        engine.abort_request(&sgo.request_id);
                     }
                 }
             }
@@ -144,13 +144,13 @@ fn main() -> Result<()> {
             log::info!("pre-heating...");
             let mut pre_heat = p.clone();
             pre_heat.max_tokens = 1;
-            let _ = infer.generate(prompt, pre_heat)?;
+            let _ = engine.generate(prompt, pre_heat)?;
             log::info!("pre-heating done");
         }
 
-        infer.nv_profile = args.nv_profile;
+        engine.nv_profile = args.nv_profile;
 
-        let gen = infer.generate(prompt, p)?;
+        let gen = engine.generate(prompt, p)?;
         let dt = start_gen.elapsed();
         println!("\n{gen}\n");
         log::info!("time: {dt:?}");

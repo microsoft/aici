@@ -23,8 +23,8 @@ env_logger = "0.10.1"
 cudarc = { version = "0.9.14", features = ["f16"] }
 
 [[bin]]
-name = "infer"
-path = "src/infer.rs"
+name = "rllm"
+path = "src/rllm.rs"
 
 [build-dependencies]
 anyhow = { version = "1", features = ["backtrace"] }
