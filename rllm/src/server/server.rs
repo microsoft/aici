@@ -4,7 +4,9 @@ use std::{
 };
 
 use actix_web::{middleware::Logger, web, App, HttpServer};
+use aicirt::api::{MkModuleReq, MkModuleResp};
 use anyhow::Result;
+use base64::Engine;
 use clap::Parser;
 
 use rllm::{seq::RequestOutput, AddRequest, LoaderArgs, RllmEngine};
@@ -13,9 +15,10 @@ use openai::responses::APIError;
 use tokio::sync::mpsc::{channel, error::TryRecvError, Receiver, Sender};
 
 use crate::openai::openai_server::completions;
+use crate::openai::OpenAIServerData;
 
+pub mod iface;
 mod openai;
-mod iface;
 
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
@@ -64,6 +67,24 @@ pub struct Args {
     /// Shm/semaphore name prefix
     #[arg(long, default_value = "/aici0-")]
     shm_prefix: String,
+}
+
+#[actix_web::post("/v1/aici_modules")]
+async fn upload_aici_module(
+    data: web::Data<OpenAIServerData>,
+    body: web::Bytes,
+) -> Result<web::Json<MkModuleResp>, APIError> {
+    body.len();
+    let binary = base64::engine::general_purpose::STANDARD.encode(body);
+    let r = data
+        .side_cmd_ch
+        .mk_module(MkModuleReq {
+            binary,
+            meta: serde_json::Value::Null,
+        })
+        .await
+        .map_err(APIError::from)?;
+    Ok(web::Json(r))
 }
 
 #[actix_web::get("/v1/models")]
@@ -187,7 +208,7 @@ async fn main() -> Result<()> {
     let (tokenizer, tok_trie) = RllmEngine::load_tokenizer(&loader_args)?;
     let model_config = RllmEngine::load_model_config(&loader_args)?;
 
-    let _iface = iface::AiciRtIface::start_aicirt(&args, &tok_trie)?;
+    let iface = iface::AiciRtIface::start_aicirt(&args, &tok_trie)?;
 
     let (handle, recv) = InferenceWorker::new();
     let handle = Arc::new(Mutex::new(handle));
@@ -196,6 +217,7 @@ async fn main() -> Result<()> {
         model_config,
         tokenizer: Arc::new(tokenizer),
         tok_trie: Arc::new(tok_trie),
+        side_cmd_ch: iface.side_cmd.clone(),
     };
     let app_data = web::Data::new(app_data);
     let handle2 = handle.clone();
@@ -213,6 +235,7 @@ async fn main() -> Result<()> {
             .wrap(Logger::default())
             .service(models)
             .service(completions)
+            .service(upload_aici_module)
             .app_data(app_data.clone())
     })
     .workers(3)

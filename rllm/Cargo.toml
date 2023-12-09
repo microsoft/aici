@@ -31,6 +31,7 @@ aicirt = { path = "../aicirt" }
 aici_abi = { path = "../aici_abi" }
 aici_tokenizers = { path = "../aici_tokenizers" }
 libc = "0.2.150"
+base64 = "0.21.5"
 
 [[bin]]
 name = "rllm"

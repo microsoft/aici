@@ -49,6 +49,15 @@ pub struct MkModuleReq {
     pub meta: Value,
 }
 
+#[derive(Serialize, Deserialize)]
+pub struct MkModuleResp {
+    pub module_id: String,
+    pub wasm_size: usize,
+    pub meta_size: usize,
+    pub compiled_size: usize,
+    pub time: u64,
+}
+
 #[derive(Serialize, Deserialize, Clone)]
 pub struct InstantiateReq {
     pub req_id: String,

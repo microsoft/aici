@@ -2264,6 +2264,7 @@ dependencies = [
  "aici_tokenizers",
  "aicirt",
  "anyhow",
+ "base64 0.21.5",
  "candle-core",
  "candle-flash-attn",
  "candle-flash-attn2",

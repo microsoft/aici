@@ -251,7 +251,7 @@ impl ModuleRegistry {
         }
 
         let compiled_size = fs::metadata(self.elf_path(module_id))?.len() as usize;
-        let time = timer.elapsed().as_millis();
+        let time = timer.elapsed().as_millis() as u64;
 
         info!(
             "module {}: {}kB -> {}kB; {}ms",
@@ -261,13 +261,13 @@ impl ModuleRegistry {
             time
         );
 
-        Ok(json!({
-            "module_id": module_id,
-            "wasm_size": wasm_bytes.len(),
-            "meta_size": meta_bytes.len(),
-            "compiled_size": compiled_size,
-            "time": time
-        }))
+        Ok(serde_json::to_value(MkModuleResp {
+            module_id: module_id.to_string(),
+            wasm_size: wasm_bytes.len(),
+            meta_size: meta_bytes.len(),
+            compiled_size,
+            time,
+        })?)
     }
 
     fn write_and_compile(

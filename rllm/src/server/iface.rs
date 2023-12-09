@@ -2,16 +2,23 @@ use aici_abi::{
     bytes::{limit_bytes, limit_str},
     toktree::TokTrie,
 };
-use aicirt::{api::TokensResp, msgchannel::MessageChannel, shm::Shm};
+use aicirt::{
+    api::{InstantiateReq, MkModuleReq, MkModuleResp, TokensResp},
+    msgchannel::MessageChannel,
+    shm::Shm,
+};
 use anyhow::Result;
 use futures::future::select_all;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
+use std::collections::HashMap;
+use std::sync::{Arc, Mutex};
+use std::thread;
 use std::{
     process::{Child, Command},
     time::Duration,
 };
-use tokio::signal::unix::SignalKind;
+use tokio::{signal::unix::SignalKind, sync::oneshot};
 
 use crate::Args;
 
@@ -90,8 +97,8 @@ impl CmdChannel {
 
 pub struct AiciRtIface {
     cmd: CmdChannel,
-    side_cmd: Arc<AsyncCmdChannel>,
     bin_shm: Shm,
+    pub side_cmd: AsyncCmdChannel,
     #[allow(dead_code)]
     child: Child,
 }
@@ -101,11 +108,7 @@ impl AiciRtIface {
         let busy_wait_time = Duration::from_millis(args.busy_wait_time);
         let shm_name = MessageChannel::shm_name(&args.shm_prefix) + "-bin";
         let cmd = CmdChannel::new(args.json_size, &args.shm_prefix, "", busy_wait_time)?;
-        let side_cmd = Arc::new(AsyncCmdChannel::new(
-            args.json_size,
-            &args.shm_prefix,
-            "-side",
-        )?);
+        let side_cmd = AsyncCmdChannel::new(args.json_size, &args.shm_prefix, "-side")?;
         let bin_shm = Shm::new(&shm_name, args.bin_size * M)?;
 
         let child = Command::new(&args.aicirt)
@@ -178,55 +181,40 @@ impl AiciRtIface {
     }
 }
 
-use std::collections::HashMap;
-use std::sync::{Arc, Mutex};
-use std::thread;
-use tokio::sync::Notify;
-
-struct PendingRequest {
-    resp: Option<Value>,
-    ev: Arc<Notify>,
-}
-
-impl PendingRequest {
-    fn new() -> Self {
-        PendingRequest {
-            resp: None,
-            ev: Arc::new(Notify::new()),
-        }
-    }
-}
-
-struct AsyncCmdChannel {
-    pending_reqs: Arc<Mutex<HashMap<String, PendingRequest>>>,
-    cmd_ch: MessageChannel,
+#[derive(Clone)]
+pub struct AsyncCmdChannel {
+    pending_reqs: Arc<Mutex<HashMap<String, oneshot::Sender<Value>>>>,
+    cmd_ch: Arc<Mutex<MessageChannel>>,
 }
 
 impl AsyncCmdChannel {
     pub fn new(json_size: usize, pref: &str, suff: &str) -> Result<Self> {
         let cmd = CmdChannel::new(json_size, pref, suff, Duration::ZERO)?;
-        let pending_reqs = Arc::new(Mutex::new(HashMap::<String, PendingRequest>::new()));
+        let pending_reqs = Arc::new(Mutex::new(HashMap::<String, oneshot::Sender<Value>>::new()));
         {
             let resp_ch = cmd.resp_ch;
             let pending_reqs = pending_reqs.clone();
-            let loop_handle = tokio::runtime::Handle::current();
-
             thread::spawn(move || loop {
                 let resp = resp_ch.recv(&Duration::ZERO).unwrap();
                 let resp: Value = serde_json::from_slice(&resp).unwrap();
                 let rid = resp["$rid"].as_str().unwrap().to_string();
-                let mut reqs = pending_reqs.lock().unwrap();
-                let req = reqs.get_mut(&rid).unwrap();
-                req.resp = Some(resp);
-                let ev = req.ev.clone();
-                loop_handle.spawn_blocking(move || ev.notify_one());
+                let tx = pending_reqs.lock().unwrap().remove(&rid).unwrap();
+                tx.send(resp).unwrap();
             });
         }
 
         Ok(Self {
             pending_reqs,
-            cmd_ch: cmd.cmd_ch,
+            cmd_ch: Arc::new(Mutex::new(cmd.cmd_ch)),
         })
+    }
+
+    pub async fn mk_module(&self, req: MkModuleReq) -> Result<MkModuleResp> {
+        self.exec("mk_module", req).await
+    }
+
+    pub async fn instantiate(&self, req: InstantiateReq) -> Result<()> {
+        self.exec("instantiate", req).await
     }
 
     pub async fn exec<T: Serialize, R>(&self, op: &str, data: T) -> Result<R>
@@ -238,16 +226,15 @@ impl AsyncCmdChannel {
         data["op"] = Value::String(op.to_string());
         data["$rid"] = Value::String(rid.clone());
 
-        let req = PendingRequest::new();
-        let ev = req.ev.clone();
-        self.pending_reqs.lock().unwrap().insert(rid.clone(), req);
+        let (tx, rx) = oneshot::channel();
+        self.pending_reqs.lock().unwrap().insert(rid.clone(), tx);
 
-        self.cmd_ch.send(&serde_json::to_vec(&data)?)?;
+        self.cmd_ch
+            .lock()
+            .unwrap()
+            .send(&serde_json::to_vec(&data)?)?;
 
-        ev.notified().await;
-
-        let req = self.pending_reqs.lock().unwrap().remove(&rid).unwrap();
-        let mut resp = req.resp.unwrap();
+        let mut resp = rx.await?;
 
         match resp["type"].as_str() {
             Some("ok") => {

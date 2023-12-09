@@ -27,6 +27,7 @@ pub struct OpenAIServerData {
     pub model_config: ModelConfig,
     pub tokenizer: Arc<Tokenizer>,
     pub tok_trie: Arc<TokTrie>,
+    pub side_cmd_ch: super::iface::AsyncCmdChannel,
 }
 
 // pub mod conversation;
