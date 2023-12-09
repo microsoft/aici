@@ -4,6 +4,7 @@ use aici_abi::{
 };
 use aicirt::{
     api::{
+        AiciMidProcessReq, AiciMidProcessResp, AiciPostProcessReq, AiciPostProcessResp,
         AiciPreProcessReq, AiciPreProcessResp, InstantiateReq, MkModuleReq, MkModuleResp,
         TokensResp,
     },
@@ -98,6 +99,7 @@ impl CmdChannel {
 
 pub struct AiciRtIface {
     cmd: CmdChannel,
+    pub pending_mid_size: usize,
     pub bin_shm: Shm,
     pub side_cmd: AsyncCmdChannel,
     #[allow(dead_code)]
@@ -173,6 +175,7 @@ impl AiciRtIface {
             side_cmd,
             bin_shm,
             child,
+            pending_mid_size: usize::MAX,
         };
 
         let _: Value = r.cmd.exec("ping", json!({}))?;
@@ -190,8 +193,27 @@ impl AiciRtIface {
         Ok(r)
     }
 
-    pub fn aici_pre(&mut self, req: AiciPreProcessReq) -> Result<AiciPreProcessResp> {
+    pub fn pre_process(&mut self, req: AiciPreProcessReq) -> Result<AiciPreProcessResp> {
+        assert!(self.pending_mid_size == usize::MAX);
         self.cmd.exec("pre_process", req)
+    }
+
+    pub fn start_mid_process(&mut self, req: AiciMidProcessReq) -> Result<()> {
+        assert!(self.pending_mid_size == usize::MAX);
+        self.pending_mid_size = req.ops.len();
+        self.cmd.send("start_mid_process", req)
+    }
+
+    pub fn finish_mid_process(&mut self) -> Result<AiciMidProcessResp> {
+        assert!(self.pending_mid_size < usize::MAX);
+        let r: AiciMidProcessResp = self.cmd.expect("async:mid_process")?;
+        assert!(r.num_seqs == self.pending_mid_size);
+        self.pending_mid_size = usize::MAX;
+        Ok(r)
+    }
+
+    pub fn post_process(&mut self, req: AiciPostProcessReq) -> Result<AiciPostProcessResp> {
+        self.cmd.exec("post_process", req)
     }
 }
 

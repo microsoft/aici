@@ -117,6 +117,10 @@ impl Scheduler {
             .iter_mut()
             .for_each(|q| q.iter_mut().for_each(&mut f));
     }
+
+    pub fn for_each_seq(&self, mut f: impl FnMut(&mut Sequence)) {
+        self.for_each_sg(|sg| sg.seqs.iter_mut().for_each(&mut f));
+    }
 }
 
 impl Scheduler {
@@ -346,6 +350,11 @@ impl Scheduler {
         self.q_with(Queue::OnGpu, |seq_groups| {
             seq_groups.append(&mut outputs.next_seq_groups);
         });
+        self.for_each_seq(|seq| {
+            if seq.sched_phase == SchedulingPhase::Suspended {
+                seq.sched_phase = SchedulingPhase::Running;
+            }
+        });
     }
 
     pub fn schedule(&mut self) -> SchedulerOutputs {
@@ -404,6 +413,7 @@ impl Scheduler {
     fn set_phase(&self, seq_group: &mut SequenceGroup, status: SchedulingPhase) {
         let to_waiting = match status {
             SchedulingPhase::Waiting => true,
+            SchedulingPhase::Suspended => false,
             SchedulingPhase::Running => false,
             SchedulingPhase::Swapped => false,
             SchedulingPhase::Finished(reason) => {

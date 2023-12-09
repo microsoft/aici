@@ -1,5 +1,7 @@
 use std::{collections::HashMap, fmt::Debug, sync::Mutex};
 
+use aici_abi::TokenId;
+use aicirt::api::SequenceResult;
 use candle_core::Tensor;
 use serde::{Deserialize, Serialize};
 
@@ -12,6 +14,8 @@ pub type SeqId = usize;
 pub enum FinishReason {
     /// EOS token was generated.
     FoundEos,
+    /// Stopped by AICI.
+    AiciStop,
     /// SamplingParams.max_tokens reached.
     MaxTokensReached,
     /// Explicit abort request on the engine.
@@ -27,6 +31,7 @@ impl FinishReason {
             FinishReason::MaxTokensReached => "length",
             FinishReason::Aborted => "abort",
             FinishReason::Failed => "fail",
+            FinishReason::AiciStop => "aici",
         };
         r.to_string()
     }
@@ -36,8 +41,27 @@ impl FinishReason {
 pub enum SchedulingPhase {
     Waiting,
     Running,
+    Suspended,
     Swapped,
     Finished(FinishReason),
+}
+
+#[derive(Debug, Clone)]
+pub enum AiciSampling {
+    Regular,
+    SampleWithBias {
+        offset: usize,
+    },
+    Splice {
+        backtrack: u32,
+        ff_tokens: Vec<TokenId>,
+    },
+}
+
+impl Default for AiciSampling {
+    fn default() -> Self {
+        Self::Regular
+    }
 }
 
 pub struct Sequence {
@@ -48,6 +72,8 @@ pub struct Sequence {
     output_ptr: usize,
     pub(crate) num_kv_computed: usize,
     pub(crate) has_aici: bool,
+    pub(crate) aici_sampling: AiciSampling,
+    pub aici_logs: Vec<SequenceResult>,
 
     // state for Scheduler and BlockSpaceManager
     pub(crate) sched_phase: SchedulingPhase,
@@ -83,6 +109,8 @@ impl Sequence {
             cpu_blocks: Vec::new(),
             block_size,
             has_aici: false,
+            aici_logs: Vec::new(),
+            aici_sampling: AiciSampling::Regular,
         };
         seq._append_tokens_to_blocks(tokens);
         seq
@@ -116,6 +144,8 @@ impl Sequence {
             cpu_blocks: self.cpu_blocks.iter().map(|x| x.fork()).collect(),
             block_size: self.block_size,
             has_aici: false,
+            aici_logs: Vec::new(),
+            aici_sampling: AiciSampling::Regular,
         };
         seq._append_tokens_to_blocks(&self.tokens);
         seq
@@ -162,6 +192,7 @@ pub struct SequenceGroup {
     pub sampling_params: SamplingParams,
     pub arrival_time: std::time::Instant,
     pub logits_processor: LogitsProcessor,
+    pub max_index: usize,
 }
 
 pub struct BatchInfo {
@@ -264,12 +295,6 @@ impl SequenceGroup {
     /// Returns the number of sequences, optionally filtered by status.
     pub fn num_seqs(&self, status: Option<SchedulingPhase>) -> usize {
         self.get_seqs(status).len()
-    }
-
-    /// Adds a sequence.
-    #[allow(dead_code)]
-    pub(crate) fn add(&mut self, seq: Sequence) {
-        self.seqs.push(seq)
     }
 
     /// Checks if all sequences are finished.
