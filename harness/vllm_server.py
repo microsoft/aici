@@ -289,7 +289,7 @@ async def create_completion(request: AiciCompletionRequest, raw_request: Request
             text=text,
             logs=aici.get("logs", ""),
             storage=aici.get("storage", []),
-            millis=aici.get("millis", 0),
+            millis=aici.get("micros", 0) / 1000.0,
             logprobs=logprobs,
             finish_reason=finish_reason,
         )

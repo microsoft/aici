@@ -1,4 +1,4 @@
-use crate::{InferenceResult, get_unix_time};
+use crate::{get_unix_time, InferenceResult};
 
 use crate::openai::requests::CompletionRequest;
 use crate::openai::responses::{
@@ -8,9 +8,11 @@ use crate::OpenAIServerData;
 
 use actix_web::web::Bytes;
 use actix_web::{post, web, Either, HttpResponse};
+use aicirt::api::InstantiateReq;
 use rllm::config::SamplingParams;
 use rllm::seq::Token;
 use rllm::AddRequest;
+use serde_json::{json, Value};
 use tokio::sync::mpsc::Receiver;
 use uuid::Uuid;
 
@@ -57,6 +59,14 @@ macro_rules! set_fields_if_some {
     };
 }
 
+macro_rules! bail_if_error {
+    ($e:expr) => {
+        if let Err(e) = $e {
+            return Either::Left(Err(APIError::from(e)));
+        }
+    };
+}
+
 #[post("/v1/completions")]
 async fn completions(
     data: web::Data<OpenAIServerData>,
@@ -71,9 +81,8 @@ async fn completions(
     }
 
     let token_ids = check_length(&request, &data);
-    if token_ids.is_err() {
-        return Either::Left(Err(token_ids.err().unwrap()));
-    }
+    bail_if_error!(token_ids);
+
     let token_ids = token_ids.unwrap();
 
     let request_id = format!("cmpl-{}", Uuid::new_v4());
@@ -95,12 +104,32 @@ async fn completions(
         max_tokens
     );
 
+    if let Some(mod_id) = &request.aici_module {
+        sampling_params.aici_module = Some(mod_id.clone());
+        sampling_params.aici_arg = match &request.aici_arg {
+            None => "".to_string(),
+            Some(Value::String(s)) => s.clone(),
+            Some(v) => serde_json::to_string(v).unwrap(),
+        };
+    }
+
     if let Some(stop) = request.stop.as_ref() {
         sampling_params.stop = stop.clone();
     }
 
-    if let Err(e) = sampling_params.verify_args() {
-        return Either::Left(Err(APIError::from(e)));
+    bail_if_error!(sampling_params.verify_args());
+
+    if let Some(mod_id) = sampling_params.aici_module.as_ref() {
+        let inst = data
+            .side_cmd_ch
+            .instantiate(InstantiateReq {
+                req_id: request_id.clone(),
+                prompt: json!(token_ids),
+                module_id: mod_id.clone(),
+                module_arg: json!(sampling_params.aici_arg),
+            })
+            .await;
+        bail_if_error!(inst);
     }
 
     let rx = data.worker.lock().unwrap().add_request(AddRequest {
@@ -109,9 +138,7 @@ async fn completions(
         sampling_params,
     });
 
-    if let Err(e) = rx {
-        return Either::Left(Err(APIError::from(e)));
-    }
+    bail_if_error!(rx);
     let rx = rx.unwrap();
 
     let _stream = request.stream.is_some_and(|x| x);

@@ -405,7 +405,7 @@ impl Stepper {
         Ok(())
     }
 
-    fn aici_pre_process(&mut self, req: AiciPreProcessReq) -> Result<Value> {
+    fn aici_pre_process(&mut self, req: AiciPreProcessReq) -> Result<AiciPreProcessResp> {
         for id in req.freed {
             info!("free module {}", id);
             self.instances.remove(&id);
@@ -417,7 +417,7 @@ impl Stepper {
         }
 
         let mut used_ids = Vec::new();
-        let mut outputs = serde_json::Map::new();
+        let mut outputs = HashMap::new();
         let block_elts = req.max_context_len;
         let mut idx = 0;
 
@@ -455,7 +455,7 @@ impl Stepper {
             let timeout = deadline.saturating_duration_since(Instant::now());
             match h.check_pre_process(timeout, &self.pre_recv_timer) {
                 Ok(mut data) => {
-                    outputs.insert(id.to_string(), data.json);
+                    outputs.insert(id, data.json);
                     let len = data.attn_masks.len();
                     if data.suspend {
                         suspend_ids.push(op_idx);
@@ -479,26 +479,24 @@ impl Stepper {
         all_masks.append(&mut curr_req_masks);
 
         let mut block_off = 0;
-        let mut fork_map = Vec::new();
+        let mut fork_map = Vec::<usize>::new();
         for (op_idx, mask) in &all_masks {
             let dst = self.shm.slice_at_byte_offset(block_off, block_elts);
             block_off += block_elts * 4;
             dst.iter_mut().for_each(|v| *v = 1.0 as f32);
             let len = std::cmp::min(mask.len(), block_elts);
             dst[0..len].copy_from_slice(&mask[0..len]);
-            fork_map.push(op_idx);
+            fork_map.push(*op_idx);
         }
 
-        outputs.insert("fork_map".to_string(), serde_json::to_value(fork_map)?);
-        outputs.insert(
-            "suspend_ids".to_string(),
-            serde_json::to_value(suspend_ids)?,
-        );
-
-        Ok(Value::Object(outputs))
+        Ok(AiciPreProcessResp {
+            seqs: outputs,
+            fork_map,
+            suspend_ids,
+        })
     }
 
-    fn aici_mid_process(&mut self, req: AiciProcessReq) -> Result<Value> {
+    fn aici_mid_process(&mut self, req: AiciMidProcessReq) -> Result<AiciMidProcessResp> {
         let block_elts = self.globals.tokrx_info.vocab_size as usize;
 
         // first, execute forks
@@ -524,7 +522,7 @@ impl Stepper {
 
         let mut logit_offset = 0;
         let mut used_ids = Vec::new();
-        let mut outputs = serde_json::Map::new();
+        let mut outputs = HashMap::new();
 
         // initialize shm
         let slice = self.shm.slice_at_byte_offset::<f32>(0, numops * block_elts);
@@ -562,7 +560,7 @@ impl Stepper {
             let timeout = deadline.saturating_duration_since(Instant::now());
             match h.check_process(timeout) {
                 Ok(data) => {
-                    outputs.insert(id.to_string(), data);
+                    outputs.insert(id, data);
                     if log::log_enabled!(log::Level::Debug) {
                         let slice = self.logit_bias_at_byte_offset(off);
                         let allow_set = slice
@@ -587,10 +585,10 @@ impl Stepper {
             }
         }
 
-        Ok(Value::Object(outputs))
+        Ok(AiciMidProcessResp { seqs: outputs })
     }
 
-    fn aici_post_process(&mut self, req: AiciPostProcessReq) -> Result<Value> {
+    fn aici_post_process(&mut self, req: AiciPostProcessReq) -> Result<AiciPostProcessResp> {
         // this if forking due to n= parameter in sampling
         // in general, we want to avoid that and instead use forking in the program,
         // as it is executed with a long time limit
@@ -599,7 +597,7 @@ impl Stepper {
         }
 
         let mut used_ids = Vec::new();
-        let mut outputs = serde_json::Map::new();
+        let mut outputs = HashMap::new();
 
         for op in req.ops.into_iter() {
             let instid = op.id;
@@ -628,13 +626,13 @@ impl Stepper {
             let timeout = deadline.saturating_duration_since(Instant::now());
             match h.check_post_process(timeout) {
                 Ok(data) => {
-                    outputs.insert(id.to_string(), data);
+                    outputs.insert(id, data);
                 }
                 Err(e) => self.worker_error(id, &mut outputs, e),
             }
         }
 
-        Ok(Value::Object(outputs))
+        Ok(AiciPostProcessResp { seqs: outputs })
     }
 
     fn logit_bias_at_byte_offset(&self, off: usize) -> &'static mut [f32] {
@@ -642,14 +640,23 @@ impl Stepper {
             .slice_at_byte_offset(off, self.globals.tokrx_info.vocab_size as usize)
     }
 
-    fn worker_error(
+    fn worker_error<T>(
         &mut self,
         instid: usize,
-        map: &mut serde_json::Map<String, Value>,
+        map: &mut HashMap<usize, SequenceResult<T>>,
         e: anyhow::Error,
     ) {
         warn!("worker error: {e:?}");
-        map.insert(instid.to_string(), json!({ "error": format!("{e:?}") }));
+        map.insert(
+            instid,
+            SequenceResult {
+                is_success: false,
+                logs: format!("{e:?}"),
+                storage: vec![],
+                micros: 0,
+                result: None,
+            },
+        );
         self.instances.remove(&instid);
     }
 }
@@ -661,10 +668,16 @@ impl Exec for Stepper {
             Some("tokens") => Ok(json!({ "vocab_size": self.globals.tokrx_info.vocab_size })),
             Some("pre_process") => {
                 let json = serde_json::from_value(json)?;
-                with_timer!(self.pre_timer, { self.aici_pre_process(json) })
+                with_timer!(self.pre_timer, {
+                    Ok(serde_json::to_value(&self.aici_pre_process(json)?)?)
+                })
             }
-            Some("mid_process") => self.aici_mid_process(serde_json::from_value(json)?),
-            Some("post_process") => self.aici_post_process(serde_json::from_value(json)?),
+            Some("mid_process") => Ok(serde_json::to_value(
+                &self.aici_mid_process(serde_json::from_value(json)?)?,
+            )?),
+            Some("post_process") => Ok(serde_json::to_value(
+                &self.aici_post_process(serde_json::from_value(json)?)?,
+            )?),
             _ => return Err(anyhow!("bad op")),
         }
     }

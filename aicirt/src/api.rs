@@ -1,4 +1,6 @@
-use aici_abi::TokenId;
+use std::collections::HashMap;
+
+use aici_abi::{StorageCmd, TokenId};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
@@ -12,13 +14,41 @@ pub struct AiciPreProcessReq {
 }
 
 #[derive(Serialize, Deserialize)]
-pub struct AiciProcessReq {
+pub struct AiciPreProcessResp {
+    pub seqs: HashMap<ModuleInstId, SequenceResult>,
+    pub fork_map: Vec<usize>,
+    pub suspend_ids: Vec<ModuleInstId>,
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct AiciMidProcessReq {
     pub ops: Vec<AiciMidOp>,
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct AiciMidProcessResp {
+    pub seqs: HashMap<ModuleInstId, SequenceResult<AiciMidProcessResultInner>>,
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct AiciMidProcessResultInner {
+    pub ff_tokens: Vec<TokenId>,
+    pub backtrack: u32,
 }
 
 #[derive(Serialize, Deserialize)]
 pub struct AiciPostProcessReq {
     pub ops: Vec<AiciPostOp>,
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct AiciPostProcessResp {
+    pub seqs: HashMap<ModuleInstId, SequenceResult<AiciPostProcessResultInner>>,
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct AiciPostProcessResultInner {
+    pub stop: bool,
 }
 
 #[derive(Clone, Serialize, Deserialize, Debug)]
@@ -40,6 +70,16 @@ pub struct AiciPostOp {
     #[serde(default)]
     pub backtrack: u32,
     pub clone_id: Option<ModuleInstId>,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct SequenceResult<T = ()> {
+    pub is_success: bool,
+    pub logs: String,
+    // StorageCmd::ReadVar are not recorded
+    pub storage: Vec<StorageCmd>,
+    pub micros: u64,
+    pub result: Option<T>,
 }
 
 #[derive(Serialize, Deserialize)]

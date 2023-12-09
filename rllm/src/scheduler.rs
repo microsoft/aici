@@ -142,6 +142,10 @@ impl Scheduler {
         }
     }
 
+    pub(crate) fn get_freed_seq_ids(&self) -> Vec<SeqId> {
+        self.freed_seq_ids.borrow_mut().drain(..).collect()
+    }
+
     pub fn add_seq_group(&mut self, seq_group: SequenceGroup) {
         log::debug!(
             "add_seq_group: {} {:?}",

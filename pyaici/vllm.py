@@ -128,7 +128,7 @@ def install(runner: AiciRunner):
             assert not seq.skip_round
             runner.recent_seqs[seq.seq_id] = seq
             # lookup by parent - the child wasn't born yet when response was generated
-            resp = runner.response_by_seq_id(parent.seq_id)
+            resp = runner.response_by_seq_id(parent.seq_id).get("result", None) or {}
             backtrack: int = resp.get("backtrack", 0)
             ff: List[int] = resp.get("ff_tokens", None)
             if backtrack:

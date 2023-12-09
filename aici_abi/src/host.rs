@@ -161,7 +161,7 @@ pub fn return_process_result(res: &[u8]) {
     }
 }
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub enum StorageOp {
     Set,
     Append,
@@ -204,7 +204,7 @@ pub mod hex_string {
     }
 }
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub enum StorageCmd {
     /// Read variable. Returns StorageResp::ReadVar or StorageResp::VariableMissing.
     ReadVar { name: String },

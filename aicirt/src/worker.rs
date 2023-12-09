@@ -7,6 +7,7 @@ use crate::api::ModuleInstId;
 use aici_abi::{
     MidProcessArg, PostProcessArg, PreProcessArg, StorageCmd, StorageOp, StorageResp, TokenId,
 };
+use aicirt::api::{AiciMidProcessResultInner, AiciPostProcessResultInner, SequenceResult};
 use anyhow::{anyhow, Result};
 use ipc_channel::ipc::{self, IpcOneShotServer, IpcReceiver, IpcReceiverSet, IpcSender};
 use libc::pid_t;
@@ -21,8 +22,6 @@ use crate::{
     shm::Shm,
     InstantiateReq,
 };
-
-pub type JSON = serde_json::Value;
 
 const QUICK_OP_MS: u64 = 10;
 
@@ -159,13 +158,13 @@ enum SeqCmd {
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct RtPreProcessResult {
-    pub json: JSON,
+    pub json: SequenceResult,
     pub suspend: bool,
     pub attn_masks: Vec<Vec<f32>>,
 }
 
 impl RtPreProcessResult {
-    pub fn just_json(json: JSON) -> Self {
+    pub fn just_json(json: SequenceResult) -> Self {
         RtPreProcessResult {
             json,
             suspend: false,
@@ -499,7 +498,10 @@ impl SeqWorkerHandle {
         }
     }
 
-    pub fn check_process(&self, timeout: Duration) -> Result<JSON> {
+    pub fn check_process(
+        &self,
+        timeout: Duration,
+    ) -> Result<SequenceResult<AiciMidProcessResultInner>> {
         match self.handle.recv_with_timeout(timeout) {
             Ok(SeqResp::MidProcess { json }) => Ok(serde_json::from_str(&json)?),
             Ok(r) => Err(anyhow!("unexpected response (process) {r:?}")),
@@ -507,7 +509,10 @@ impl SeqWorkerHandle {
         }
     }
 
-    pub fn check_post_process(&self, timeout: Duration) -> Result<JSON> {
+    pub fn check_post_process(
+        &self,
+        timeout: Duration,
+    ) -> Result<SequenceResult<AiciPostProcessResultInner>> {
         match self.handle.recv_with_timeout(timeout) {
             Ok(SeqResp::PostProcess { json }) => Ok(serde_json::from_str(&json)?),
             Ok(r) => Err(anyhow!("unexpected response (post_process) {r:?}")),

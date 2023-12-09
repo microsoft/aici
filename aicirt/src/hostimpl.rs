@@ -40,7 +40,7 @@ pub struct ModuleData {
     tokenizer: Option<Tokenizer>,
     pub store_limits: wasmtime::StoreLimits,
     pub had_error: bool,
-    pub storage_log: Vec<serde_json::Value>,
+    pub storage_log: Vec<StorageCmd>,
     blobs: Vec<Rc<Vec<u8>>>,
 }
 
@@ -209,17 +209,14 @@ impl ModuleData {
         self.clear_blob(BlobId::STORAGE_RESULT);
         match serde_json::from_slice(&m) {
             Ok(cmd) => {
-                let log = match &cmd {
-                    StorageCmd::WriteVar { .. } => {
-                        let v = serde_json::to_value(&cmd).unwrap();
-                        Some(v)
-                    }
+                let save = match &cmd {
+                    StorageCmd::WriteVar { .. } => Some(cmd.clone()),
                     StorageCmd::ReadVar { .. } => None,
                 };
                 let res = self.group_channel.send_cmd(GroupCmd::StorageCmd { cmd });
                 match res {
                     Ok(GroupResp::StorageResp { resp }) => {
-                        if let Some(log) = log {
+                        if let Some(log) = save {
                             self.storage_log.push(log)
                         }
                         let res_bytes = serde_json::to_vec(&resp).unwrap();

@@ -3,7 +3,10 @@ use aici_abi::{
     toktree::TokTrie,
 };
 use aicirt::{
-    api::{InstantiateReq, MkModuleReq, MkModuleResp, TokensResp},
+    api::{
+        AiciPreProcessReq, AiciPreProcessResp, InstantiateReq, MkModuleReq, MkModuleResp,
+        TokensResp,
+    },
     msgchannel::MessageChannel,
     shm::Shm,
 };
@@ -185,6 +188,10 @@ impl AiciRtIface {
         }
 
         Ok(r)
+    }
+
+    pub fn aici_pre(&mut self, req: AiciPreProcessReq) -> Result<AiciPreProcessResp> {
+        self.cmd.exec("pre_process", req)
     }
 }
 

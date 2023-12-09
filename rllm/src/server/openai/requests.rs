@@ -60,6 +60,11 @@ pub struct CompletionRequest {
     pub prompt: String,
 
     #[serde(default)]
+    pub aici_module: Option<String>,
+    #[serde(default)]
+    pub aici_arg: Option<serde_json::Value>,
+
+    #[serde(default)]
     pub temperature: Option<f32>, //0.7
     #[serde(default)]
     pub top_p: Option<f32>, //1.0

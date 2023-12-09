@@ -1,4 +1,5 @@
 use aici_abi::toktree::TokTrie;
+use aicirt::api::{AiciPreOp, AiciPreProcessReq};
 use anyhow::{Error as E, Result};
 use candle_core::{DType, Device, IndexOp, Tensor};
 use candle_nn::VarBuilder;
@@ -23,9 +24,10 @@ use crate::{
     config::{
         CacheConfig, ModelConfig, ParallelConfig, RllmConfig, SamplingParams, SchedulerConfig,
     },
+    iface::AiciRtIface,
     scheduler::SchedulerOutputs,
     seq::{FinishReason, RequestOutput, SchedulingPhase, SequenceGroup, Token},
-    to_offsets, iface::AiciRtIface,
+    to_offsets,
 };
 use crate::{
     llama::{Llama, LlamaConfig},
@@ -511,6 +513,44 @@ impl RllmEngine {
     pub fn step(&mut self) -> Result<Vec<RequestOutput>> {
         self.step_no += 1;
         let mut sched_out = self.scheduler.schedule();
+
+        let mut max_context_len = 0;
+        let mut ops = Vec::new();
+
+        for sg in sched_out.next_seq_groups.iter_mut() {
+            if sg.sampling_params.aici_module.is_none() {
+                continue;
+            }
+            if sg.seqs.len() == 1 && !sg.seqs[0].has_aici {
+                let seq = &mut sg.seqs[0];
+                max_context_len = std::cmp::max(max_context_len, seq.tokens.len());
+                seq.has_aici = true;
+                ops.push(AiciPreOp {
+                    id: seq.seq_id,
+                    req_id: Some(sg.request_id.clone()),
+                });
+            } else {
+                for seq in sg.seqs.iter_mut() {
+                    if seq.sched_phase != SchedulingPhase::Running {
+                        continue;
+                    }
+                    assert!(seq.has_aici);
+                    ops.push(AiciPreOp {
+                        id: seq.seq_id,
+                        req_id: None,
+                    });
+                    max_context_len = std::cmp::max(max_context_len, seq.tokens.len());
+                }
+            }
+        }
+
+        let _req = AiciPreProcessReq {
+            max_context_len,
+            freed: self.scheduler.get_freed_seq_ids(),
+            ops,
+        };
+        // let r = self.aicirt.unwrap().aici_pre(req)?;
+
         log::trace!(
             "scheduled: {} groups, dropped: {}",
             sched_out.next_seq_groups.len(),

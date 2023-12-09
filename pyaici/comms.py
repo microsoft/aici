@@ -525,9 +525,7 @@ class AiciRunner:
     def _process_forks(self, response):
         fork_map: list[int] = response["fork_map"]
         suspend_ids: list[int] = response["suspend_ids"]
-        del response["fork_map"]
-        del response["suspend_ids"]
-        self.last_pre_response = response
+        self.last_pre_response = response["seqs"]
         n = len(fork_map)
         if self.disable_attn_mask:
             self.disable_attn_mask = False
@@ -552,11 +550,11 @@ class AiciRunner:
             self.last_post_response = {}
             return []
         assert not self.logit_pending
-        self.last_post_response = self.cmd.exec("post_process", cmd)["data"]
+        self.last_post_response = self.cmd.exec("post_process", cmd)["data"]["seqs"]
         stop_seqs = []
         for (k, v) in self.last_post_response.items():
             v: dict
-            if v.get("stop", False):
+            if v.get("result", {}).get("stop", False):
                 stop_seqs.append(int(k))
         return stop_seqs
 
@@ -575,7 +573,7 @@ class AiciRunner:
         """
         assert self.logit_pending
         self.logit_pending = False
-        self.last_mid_response = self.cmd.expect("recv")["data"]
+        self.last_mid_response = self.cmd.expect("recv")["data"]["seqs"]
         n = self.batch_size
         arr = np.frombuffer(
             self.bin_shm, dtype=np.float32, offset=0, count=n * self.vocab_size
@@ -593,21 +591,22 @@ class AiciRunner:
         """
         Get the response for a given batch entry ID.
         """
-        pre: dict[str, str] = self.last_pre_response.get(str(seq_id), {})
-        mid: dict[str, str] = self.last_mid_response.get(str(seq_id), {})
-        post: dict[str, str] = self.last_post_response.get(str(seq_id), {})
+        pre: dict[str, Any] = self.last_pre_response.get(str(seq_id), {})
+        mid: dict[str, Any] = self.last_mid_response.get(str(seq_id), {})
+        post: dict[str, Any] = self.last_post_response.get(str(seq_id), {})
         logs = pre.get("logs", "") + mid.get("logs", "") + post.get("logs", "")
         storage = (
             pre.get("storage", []) + mid.get("storage", []) + post.get("storage", [])
         )
-        millis = (
-            pre.get("millis", 0.0) + mid.get("millis", 0.0) + post.get("millis", 0.0)
+        micros = (
+            pre.get("micros", 0.0) + mid.get("micros", 0.0) + post.get("micros", 0.0)
         )
+        is_success = pre.get("is_success", False) and mid.get("is_success", False) and post.get("is_success", False)
         return {
-            "type": post.get("type", mid.get("type", pre.get("type", "unk"))),
+            "is_success": is_success,
             "storage": storage,
             "logs": logs,
-            "millis": millis,
+            "micros": micros,
         }
 
     def response_by_seq_id(self, seq_id: int) -> Dict[str, Any]:

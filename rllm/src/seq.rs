@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 use crate::{blocks::BlockRef, config::SamplingParams, LogitsProcessor};
 
 pub type Token = u32;
-pub type SeqId = u32;
+pub type SeqId = usize;
 
 #[derive(Debug, PartialEq, Eq, Clone, Copy, Serialize, Deserialize)]
 pub enum FinishReason {
@@ -47,6 +47,7 @@ pub struct Sequence {
     pub prompt_len: usize,
     output_ptr: usize,
     pub(crate) num_kv_computed: usize,
+    pub(crate) has_aici: bool,
 
     // state for Scheduler and BlockSpaceManager
     pub(crate) sched_phase: SchedulingPhase,
@@ -81,6 +82,7 @@ impl Sequence {
             gpu_blocks: Vec::new(),
             cpu_blocks: Vec::new(),
             block_size,
+            has_aici: false,
         };
         seq._append_tokens_to_blocks(tokens);
         seq
@@ -113,6 +115,7 @@ impl Sequence {
             gpu_blocks: self.gpu_blocks.iter().map(|x| x.fork()).collect(),
             cpu_blocks: self.cpu_blocks.iter().map(|x| x.fork()).collect(),
             block_size: self.block_size,
+            has_aici: false,
         };
         seq._append_tokens_to_blocks(&self.tokens);
         seq

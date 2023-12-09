@@ -205,6 +205,12 @@ pub enum EarlyStopping {
 /// In addition, we support beam search, which is not supported by OpenAI.
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct SamplingParams {
+    /// Which AICI module to run, if any.
+    pub aici_module: Option<String>,
+
+    /// What argument to pass to the module.
+    pub aici_arg: String,
+
     /// Number of output sequences to return for the given prompt.
     pub n: usize,
 
@@ -251,6 +257,8 @@ pub struct SamplingParams {
 impl SamplingParams {
     pub fn default() -> Self {
         let r = Self {
+            aici_module: None,
+            aici_arg: String::new(),
             n: 1,
             best_of: 1,
             presence_penalty: 0.0,
@@ -285,6 +293,16 @@ impl SamplingParams {
     }
 
     fn _verify_args(&self) -> Result<()> {
+        fn is_hex_string(s: &str) -> bool {
+            s.chars().all(|c| c.is_digit(16))
+        }
+
+        if let Some(mod_id) = self.aici_module.as_ref() {
+            if !is_hex_string(mod_id) || mod_id.len() != 64 {
+                bail!("aici_module must be a 64-char hex string, got {}.", mod_id);
+            }
+        }
+
         if self.n < 1 {
             bail!("n must be at least 1, got {}.", self.n);
         }

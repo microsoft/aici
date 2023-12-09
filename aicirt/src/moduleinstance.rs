@@ -2,10 +2,10 @@ use crate::api::ModuleInstId;
 use aici_abi::toktree::TokTrie;
 use aici_abi::{InitPromptArg, MidProcessResult, PostProcessResult, PreProcessResult, TokenId};
 use aici_tokenizers::Tokenizer;
+use aicirt::api::{AiciMidProcessResultInner, AiciPostProcessResultInner, SequenceResult};
 use anyhow::{anyhow, bail, ensure, Result};
 use log::warn;
 use serde::Deserialize;
-use serde_json::{json, Value};
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Instant;
@@ -13,8 +13,7 @@ use wasmtime;
 
 use crate::bench::TimerSet;
 use crate::hostimpl::{
-    setup_linker, AiciLimits, GlobalInfo, ModuleData,  LOGIT_BIAS_ALLOW,
-    LOGIT_BIAS_DISALLOW,
+    setup_linker, AiciLimits, GlobalInfo, ModuleData, LOGIT_BIAS_ALLOW, LOGIT_BIAS_DISALLOW,
 };
 use crate::shm::Shm;
 use crate::worker::{
@@ -250,7 +249,7 @@ impl ModuleInstance {
         }
     }
 
-    fn do_pre_process(&mut self, rtarg: RtPreProcessArg) -> Result<RtPreProcessResult> {
+    fn do_pre_process(&mut self, rtarg: RtPreProcessArg) -> Result<PreProcessResult> {
         let attn_elts = rtarg.max_context_size;
         self.store.data_mut().set_pre_process_data(rtarg.op);
         self.call_func::<WasmAici, ()>("aici_pre_process", self.handle)?;
@@ -270,18 +269,18 @@ impl ModuleInstance {
                 attn_elts
             );
         }
-        Ok(RtPreProcessResult {
-            json: json!({}),
-            suspend: res.suspend,
-            attn_masks: res.attention_masks,
-        })
+        Ok(res)
     }
 
-    fn do_mid_process(&mut self, op: RtMidProcessArg, shm: &Shm) -> Result<Value> {
+    fn do_mid_process(
+        &mut self,
+        op: RtMidProcessArg,
+        shm: &Shm,
+    ) -> Result<Option<AiciMidProcessResultInner>> {
         self.store.data_mut().set_mid_process_data(op, shm);
         self.call_func::<WasmAici, ()>("aici_mid_process", self.handle)?;
         match self.proc_result()? {
-            MidProcessResult::SampleWithBias { .. } => Ok(json!({})),
+            MidProcessResult::SampleWithBias { .. } => Ok(None),
             MidProcessResult::Stop { .. } => {
                 let eos = self.store.data().globals.tokrx_info.tok_eos;
                 self.store
@@ -290,7 +289,7 @@ impl ModuleInstance {
                     .iter_mut()
                     .for_each(|v| *v = LOGIT_BIAS_DISALLOW);
                 self.store.data_mut().logit_ptr[eos as usize] = LOGIT_BIAS_ALLOW;
-                Ok(json!({}))
+                Ok(None)
             }
             MidProcessResult::Splice {
                 mut backtrack,
@@ -322,89 +321,95 @@ impl ModuleInstance {
                             .iter_mut()
                             .for_each(|v| *v = LOGIT_BIAS_ALLOW);
                         // don't remove anything from ff_tokens - they all need to be appended after backtracking
-                        
+
                         // backtrack needs to include also the next token to be generated
                         backtrack += 1;
                     }
-                    Ok(json!({
-                        "ff_tokens": ff_tokens,
-                        "backtrack": backtrack,
+                    Ok(Some(AiciMidProcessResultInner {
+                        ff_tokens,
+                        backtrack,
                     }))
                 }
             }
         }
     }
 
-    fn do_post_process(&mut self, rtarg: RtPostProcessArg) -> Result<Value> {
+    fn do_post_process(&mut self, rtarg: RtPostProcessArg) -> Result<AiciPostProcessResultInner> {
         self.store.data_mut().set_post_process_data(rtarg.op);
         self.call_func::<WasmAici, ()>("aici_post_process", self.handle)?;
         let res: PostProcessResult = self.proc_result()?;
-        Ok(json!({
-            "stop": res.stop,
-        }))
+        Ok(AiciPostProcessResultInner { stop: res.stop })
     }
 
-    fn json_result(&mut self, lbl: &str, t0: Instant, res: Result<Value>) -> Value {
-        let mut m = match &res {
-            Ok(v) => v.as_object().unwrap().clone(),
-            Err(_) => serde_json::Map::new(),
-        };
-
+    fn json_result<T>(
+        &mut self,
+        lbl: &str,
+        t0: Instant,
+        res: Result<Option<T>>,
+    ) -> SequenceResult<T> {
         // 10us accuracy for Spectre mitigation
-        let t = (t0.elapsed().as_micros() as u64 / 10) as f64 / 100.0;
-        m.insert("millis".to_string(), json!(t));
-
+        let micros = (t0.elapsed().as_micros() as u64 / 10) * 10;
         let logs = self.store.data_mut().string_log();
         let storage = std::mem::take(&mut self.store.data_mut().storage_log);
-        let spec = match res {
-            Ok(_) => json!({
-                "type": "ok",
-                "logs": logs,
-                "storage": storage,
-            }),
+        match res {
+            Ok(r) => SequenceResult {
+                is_success: true,
+                logs,
+                storage,
+                micros,
+                result: r,
+            },
 
             Err(e) => {
                 let suffix = format!("\nError: {:?}", e);
                 warn!("exec error ({lbl}):{}", suffix);
-                json!({
-                    "type": "error",
-                    "logs": logs + &suffix,
-                    "storage": storage,
-                })
+                SequenceResult {
+                    is_success: false,
+                    logs: logs + &suffix,
+                    storage,
+                    micros,
+                    result: None,
+                }
             }
-        };
-        spec.as_object().unwrap().iter().for_each(|(k, v)| {
-            m.insert(k.to_string(), v.clone());
-        });
-        Value::Object(m)
+        }
     }
 
     pub fn pre_process(&mut self, op: RtPreProcessArg) -> RtPreProcessResult {
         let t0 = Instant::now();
         match self.do_pre_process(op) {
             Err(e) => RtPreProcessResult::just_json(self.json_result("pre0", t0, Err(e))),
-            Ok(mut res) => {
-                res.json = self.json_result("pre", t0, Ok(res.json));
-                res
-            }
+            Ok(res) => RtPreProcessResult {
+                json: self.json_result("pre", t0, Ok(None)),
+                suspend: res.suspend,
+                attn_masks: res.attention_masks,
+            },
         }
     }
 
-    pub fn mid_process(&mut self, op: RtMidProcessArg, shm: &Shm) -> Value {
+    pub fn mid_process(
+        &mut self,
+        op: RtMidProcessArg,
+        shm: &Shm,
+    ) -> SequenceResult<AiciMidProcessResultInner> {
         let t0 = Instant::now();
         let res = self.do_mid_process(op, shm);
         self.json_result("mid", t0, res)
     }
 
-    pub fn post_process(&mut self, op: RtPostProcessArg) -> Value {
+    pub fn post_process(
+        &mut self,
+        op: RtPostProcessArg,
+    ) -> SequenceResult<AiciPostProcessResultInner> {
         let t0 = Instant::now();
         let res = self.do_post_process(op);
-        let force_stop = res.is_err();
-        let mut r = self.json_result("post", t0, res);
-        if force_stop {
-            r["stop"] = json!(true);
+        match res {
+            Err(e) => {
+                let mut r = self.json_result("post", t0, Err(e));
+                r.result = Some(AiciPostProcessResultInner { stop: true });
+                r
+            }
+            Ok(res) => self.json_result("post", t0, Ok(Some(res))),
         }
-        r
     }
 
     pub fn tokenize(&mut self, s: &str) -> Result<Vec<u32>> {
