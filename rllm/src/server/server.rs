@@ -9,16 +9,17 @@ use clap::Parser;
 
 use rllm::{seq::RequestOutput, AddRequest, LoaderArgs, RllmEngine};
 
-mod openai;
-
 use openai::responses::APIError;
 use tokio::sync::mpsc::{channel, error::TryRecvError, Receiver, Sender};
 
 use crate::openai::openai_server::completions;
 
+mod openai;
+mod iface;
+
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
-struct Args {
+pub struct Args {
     /// Port to serve on (localhost:port)
     #[arg(long)]
     port: u16,
@@ -176,11 +177,11 @@ async fn main() -> Result<()> {
     let args = Args::parse();
 
     let loader_args = LoaderArgs {
-        model_id: args.model_id,
-        revision: args.revision,
-        local_weights: args.local_weights,
+        model_id: args.model_id.clone(),
+        revision: args.revision.clone(),
+        local_weights: args.local_weights.clone(),
         use_reference: false,
-        tokenizer: args.tokenizer,
+        tokenizer: args.tokenizer.clone(),
         alt: 0,
     };
     let (tokenizer, tok_trie) = RllmEngine::load_tokenizer(&loader_args)?;
@@ -201,6 +202,8 @@ async fn main() -> Result<()> {
         let engine = RllmEngine::load(loader_args).expect("failed to load model");
         inference_loop(handle2, engine, recv)
     });
+
+    let _iface = iface::AiciRtIface::start_aicirt(&args)?;
 
     let host = "127.0.0.1";
 

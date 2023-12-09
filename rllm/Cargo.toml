@@ -30,6 +30,7 @@ derive_more = "0.99.17"
 aicirt = { path = "../aicirt" }
 aici_abi = { path = "../aici_abi" }
 aici_tokenizers = { path = "../aici_tokenizers" }
+libc = "0.2.150"
 
 [[bin]]
 name = "rllm"
