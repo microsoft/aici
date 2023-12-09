@@ -1,15 +1,13 @@
 mod bench;
 mod hostimpl;
 mod moduleinstance;
-mod msgchannel;
-mod semaphore;
-mod shm;
 mod worker;
 
 use aici_abi::bytes::limit_str;
 use aici_abi::toktree::TokTrie;
 use aici_abi::{MidProcessArg, PostProcessArg, PreProcessArg, SeqId};
 use aici_tokenizers::find_tokenizer;
+use aicirt::*;
 use anyhow::{anyhow, ensure, Result};
 use base64;
 use base64::Engine as _;
@@ -34,7 +32,7 @@ use crate::msgchannel::MessageChannel;
 use crate::shm::Shm;
 use crate::worker::{bench_ipc, RtMidProcessArg, WorkerForker};
 
-use aici_abi::api::*;
+use crate::api::*;
 
 // Both of these are percentage of available cores
 const BG_THREADS_FRACTION: usize = 50;

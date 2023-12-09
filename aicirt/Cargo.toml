@@ -18,12 +18,8 @@ serde = { version = "1.0.192", features = ["derive"] }
 serde_json = { version = "1.0.108", features = ["preserve_order"] }
 sha2 = "0.10.7"
 wasmtime = { version = "13.0.0", default-features = false, features = ["cranelift", "parallel-compilation", "pooling-allocator", "vtune"] }
-aici_abi = "0.1.0"
-aici_tokenizers = "0.1.0"
+aici_abi = { path = "../aici_abi" }
+aici_tokenizers = { path = "../aici_tokenizers" }
 tokenizers = "0.14.1"
 thread-priority = "0.13.1"
 ipc-channel = "0.18.0"
-
-[patch.crates-io]
-aici_abi = { path = "../aici_abi" }
-aici_tokenizers = { path = "../aici_tokenizers" }

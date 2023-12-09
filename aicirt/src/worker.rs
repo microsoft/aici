@@ -3,7 +3,7 @@ use std::rc::Rc;
 use std::time::Instant;
 use std::{collections::HashMap, path::PathBuf, time::Duration};
 
-use aici_abi::api::ModuleInstId;
+use crate::api::ModuleInstId;
 use aici_abi::{
     MidProcessArg, PostProcessArg, PreProcessArg, StorageCmd, StorageOp, StorageResp, TokenId,
 };

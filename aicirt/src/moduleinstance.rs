@@ -1,4 +1,4 @@
-use aici_abi::api::ModuleInstId;
+use crate::api::ModuleInstId;
 use aici_abi::toktree::TokTrie;
 use aici_abi::{InitPromptArg, MidProcessResult, PostProcessResult, PreProcessResult, TokenId};
 use aici_tokenizers::Tokenizer;

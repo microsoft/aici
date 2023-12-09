@@ -1,7 +1,7 @@
+use aici_abi::TokenId;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-use crate::TokenId;
 
 pub type ModuleInstId = usize;
 

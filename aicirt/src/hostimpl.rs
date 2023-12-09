@@ -22,7 +22,7 @@ pub struct AiciLimits {
     pub busy_wait_duration: Duration,
 }
 
-type ModuleInstId = aici_abi::api::ModuleInstId;
+type ModuleInstId = crate::api::ModuleInstId;
 
 // this is available to functions called from wasm
 pub struct ModuleData {
