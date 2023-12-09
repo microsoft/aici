@@ -187,6 +187,8 @@ async fn main() -> Result<()> {
     let (tokenizer, tok_trie) = RllmEngine::load_tokenizer(&loader_args)?;
     let model_config = RllmEngine::load_model_config(&loader_args)?;
 
+    let _iface = iface::AiciRtIface::start_aicirt(&args, &tok_trie)?;
+
     let (handle, recv) = InferenceWorker::new();
     let handle = Arc::new(Mutex::new(handle));
     let app_data = openai::OpenAIServerData {
@@ -202,8 +204,6 @@ async fn main() -> Result<()> {
         let engine = RllmEngine::load(loader_args).expect("failed to load model");
         inference_loop(handle2, engine, recv)
     });
-
-    let _iface = iface::AiciRtIface::start_aicirt(&args)?;
 
     let host = "127.0.0.1";
 

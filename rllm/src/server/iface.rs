@@ -1,5 +1,5 @@
-use aici_abi::bytes::limit_bytes;
-use aicirt::{msgchannel::MessageChannel, shm::Shm};
+use aici_abi::{bytes::limit_bytes, toktree::TokTrie};
+use aicirt::{api::TokensResp, msgchannel::MessageChannel, shm::Shm};
 use anyhow::Result;
 use futures::future::select_all;
 use serde::{Deserialize, Serialize};
@@ -8,12 +8,11 @@ use std::{
     process::{Child, Command},
     time::Duration,
 };
-use tokio::{signal::unix::SignalKind, task::JoinHandle};
+use tokio::signal::unix::SignalKind;
 
 use crate::Args;
 
 pub struct CmdChannel {
-    suff: String,
     cmd_pending: bool,
     cmd_ch: MessageChannel,
     resp_ch: MessageChannel,
@@ -30,7 +29,6 @@ impl CmdChannel {
         busy_wait_duration: Duration,
     ) -> Result<Self> {
         Ok(Self {
-            suff: suff.to_string(),
             cmd_pending: false,
             cmd_ch: MessageChannel::new(&format!("{}cmd{}", pref, suff), json_size * M)?,
             resp_ch: MessageChannel::new(&format!("{}resp{}", pref, suff), json_size * M)?,
@@ -45,7 +43,7 @@ impl CmdChannel {
         Ok(())
     }
 
-    pub fn exec<T: Serialize, R>(&mut self, op: &str, data: Option<T>) -> Result<()>
+    pub fn exec<T: Serialize, R>(&mut self, op: &str, data: T) -> Result<R>
     where
         R: for<'d> Deserialize<'d>,
     {
@@ -53,11 +51,8 @@ impl CmdChannel {
         self.expect(&format!("cmd:{}", op))
     }
 
-    pub fn send<T: Serialize>(&mut self, op: &str, data: Option<T>) -> Result<()> {
-        let mut value = match data {
-            Some(d) => serde_json::to_value(d)?,
-            None => json!({}),
-        };
+    pub fn send<T: Serialize>(&mut self, op: &str, data: T) -> Result<()> {
+        let mut value = serde_json::to_value(data)?;
         value["op"] = json!(op);
         let bytes = serde_json::to_vec(&value)?;
         self.send_bytes(&bytes)
@@ -94,11 +89,12 @@ pub struct AiciRtIface {
     cmd: CmdChannel,
     side_cmd: CmdChannel,
     bin_shm: Shm,
+    #[allow(dead_code)]
     child: Child,
 }
 
 impl AiciRtIface {
-    pub fn start_aicirt(args: &Args) -> Result<Self> {
+    pub fn start_aicirt(args: &Args, tok_trie: &TokTrie) -> Result<Self> {
         let busy_wait_time = Duration::from_millis(args.busy_wait_time);
         let shm_name = MessageChannel::shm_name(&args.shm_prefix) + "-bin";
         let cmd = CmdChannel::new(args.json_size, &args.shm_prefix, "", busy_wait_time)?;
@@ -152,11 +148,25 @@ impl AiciRtIface {
             }
         });
 
-        Ok(Self {
+        let mut r = Self {
             cmd,
             side_cmd,
             bin_shm,
             child,
-        })
+        };
+
+        let _: Value = r.cmd.exec("ping", json!({}))?;
+        let tokens: TokensResp = r.cmd.exec("tokens", json!({}))?;
+
+        // well, this is somewhat unlikely as we're passing the same toknizer name down...
+        if tokens.vocab_size != tok_trie.info().vocab_size {
+            return Err(anyhow::anyhow!(
+                "Vocab size mismatch: {:?} != {:?}",
+                tokens,
+                tok_trie.info()
+            ));
+        }
+
+        Ok(r)
     }
 }

@@ -2,7 +2,6 @@ use aici_abi::TokenId;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-
 pub type ModuleInstId = usize;
 
 #[derive(Serialize, Deserialize)]
@@ -62,19 +61,7 @@ pub struct InstantiateReq {
 
 pub type Token = TokenId;
 
-#[derive(Serialize, Deserialize)]
-pub struct SpecialTokenIds {
-    pub bos: Option<Token>,
-    pub eos: Option<Token>,
-    pub unk: Option<Token>,
-    pub sep: Option<Token>,
-    pub pad: Option<Token>,
-    pub cls: Option<Token>,
+#[derive(Serialize, Deserialize, Debug)]
+pub struct TokensResp {
+    pub vocab_size: u32,
 }
-
-#[derive(Serialize, Deserialize)]
-pub struct TokensReq {
-    pub tokens: Vec<String>,
-    pub special: SpecialTokenIds,
-}
-
