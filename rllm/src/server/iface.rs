@@ -1,4 +1,7 @@
-use aici_abi::{bytes::limit_bytes, toktree::TokTrie};
+use aici_abi::{
+    bytes::{limit_bytes, limit_str},
+    toktree::TokTrie,
+};
 use aicirt::{api::TokensResp, msgchannel::MessageChannel, shm::Shm};
 use anyhow::Result;
 use futures::future::select_all;
@@ -87,7 +90,7 @@ impl CmdChannel {
 
 pub struct AiciRtIface {
     cmd: CmdChannel,
-    side_cmd: CmdChannel,
+    side_cmd: Arc<AsyncCmdChannel>,
     bin_shm: Shm,
     #[allow(dead_code)]
     child: Child,
@@ -98,7 +101,11 @@ impl AiciRtIface {
         let busy_wait_time = Duration::from_millis(args.busy_wait_time);
         let shm_name = MessageChannel::shm_name(&args.shm_prefix) + "-bin";
         let cmd = CmdChannel::new(args.json_size, &args.shm_prefix, "", busy_wait_time)?;
-        let side_cmd = CmdChannel::new(args.json_size, &args.shm_prefix, "-side", busy_wait_time)?;
+        let side_cmd = Arc::new(AsyncCmdChannel::new(
+            args.json_size,
+            &args.shm_prefix,
+            "-side",
+        )?);
         let bin_shm = Shm::new(&shm_name, args.bin_size * M)?;
 
         let child = Command::new(&args.aicirt)
@@ -168,5 +175,103 @@ impl AiciRtIface {
         }
 
         Ok(r)
+    }
+}
+
+use std::collections::HashMap;
+use std::sync::{Arc, Mutex};
+use std::thread;
+use tokio::sync::Notify;
+
+struct PendingRequest {
+    resp: Option<Value>,
+    ev: Arc<Notify>,
+}
+
+impl PendingRequest {
+    fn new() -> Self {
+        PendingRequest {
+            resp: None,
+            ev: Arc::new(Notify::new()),
+        }
+    }
+}
+
+struct AsyncCmdChannel {
+    pending_reqs: Arc<Mutex<HashMap<String, PendingRequest>>>,
+    cmd_ch: MessageChannel,
+}
+
+impl AsyncCmdChannel {
+    pub fn new(json_size: usize, pref: &str, suff: &str) -> Result<Self> {
+        let cmd = CmdChannel::new(json_size, pref, suff, Duration::ZERO)?;
+        let pending_reqs = Arc::new(Mutex::new(HashMap::<String, PendingRequest>::new()));
+        {
+            let resp_ch = cmd.resp_ch;
+            let pending_reqs = pending_reqs.clone();
+            let loop_handle = tokio::runtime::Handle::current();
+
+            thread::spawn(move || loop {
+                let resp = resp_ch.recv(&Duration::ZERO).unwrap();
+                let resp: Value = serde_json::from_slice(&resp).unwrap();
+                let rid = resp["$rid"].as_str().unwrap().to_string();
+                let mut reqs = pending_reqs.lock().unwrap();
+                let req = reqs.get_mut(&rid).unwrap();
+                req.resp = Some(resp);
+                let ev = req.ev.clone();
+                loop_handle.spawn_blocking(move || ev.notify_one());
+            });
+        }
+
+        Ok(Self {
+            pending_reqs,
+            cmd_ch: cmd.cmd_ch,
+        })
+    }
+
+    pub async fn exec<T: Serialize, R>(&self, op: &str, data: T) -> Result<R>
+    where
+        R: for<'d> Deserialize<'d>,
+    {
+        let rid = uuid::Uuid::new_v4().to_string();
+        let mut data = serde_json::to_value(data)?;
+        data["op"] = Value::String(op.to_string());
+        data["$rid"] = Value::String(rid.clone());
+
+        let req = PendingRequest::new();
+        let ev = req.ev.clone();
+        self.pending_reqs.lock().unwrap().insert(rid.clone(), req);
+
+        self.cmd_ch.send(&serde_json::to_vec(&data)?)?;
+
+        ev.notified().await;
+
+        let req = self.pending_reqs.lock().unwrap().remove(&rid).unwrap();
+        let mut resp = req.resp.unwrap();
+
+        match resp["type"].as_str() {
+            Some("ok") => {
+                let data = resp
+                    .as_object_mut()
+                    .unwrap()
+                    .remove("data")
+                    .ok_or(anyhow::anyhow!(
+                        "Bad response  ({op}) - no 'data': {}",
+                        limit_bytes(&serde_json::to_vec(&resp)?, 500)
+                    ))?;
+                let resp = serde_json::from_value(data)?;
+                Ok(resp)
+            }
+            _ => {
+                let info = match resp["error"].as_str() {
+                    Some(text) => text.to_string(),
+                    _ => serde_json::to_string(&resp)?,
+                };
+                Err(anyhow::anyhow!(
+                    "Bad response  ({op}): {}",
+                    limit_str(&info, 2000)
+                ))
+            }
+        }
     }
 }
