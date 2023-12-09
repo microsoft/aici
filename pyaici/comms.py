@@ -199,7 +199,7 @@ class CmdChannel:
                 info = json.dumps(resp)[0:20000]
             raise ChildProcessError(f"Bad response to async {op}: {info}")
 
-        return resp
+        return resp["data"]
 
     def _trace_resp(self, cmd, resp):
         if self.trace_file is None:

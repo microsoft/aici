@@ -30,8 +30,7 @@ def upload_module(file_path: str) -> str:
     with open(file_path, "rb") as f:
         resp = requests.post(base_url + "aici_modules", data=f)
         if resp.status_code == 200:
-            d = resp.json()
-            dd = d["data"]
+            dd = resp.json()
             mod_id = dd["module_id"]
             if log_level > 0:
                 print(

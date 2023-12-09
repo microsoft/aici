@@ -46,8 +46,7 @@ def _upload_wasm(base_url, wasm_runner_path):
     with open(wasm_runner_path, "rb") as f:
         resp = requests.post(base_url + "aici_modules", data=f)
         if resp.status_code == 200:
-            d = resp.json()
-            dd = d["data"]
+            dd = resp.json()
             mod_id = dd["module_id"]
             print(
                 f"{dd['wasm_size']//1024}kB -> {dd['compiled_size']//1024}kB id:{mod_id[0:8]}"
