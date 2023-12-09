@@ -8,7 +8,7 @@ mod worker;
 
 use aici_abi::bytes::limit_str;
 use aici_abi::toktree::TokTrie;
-use aici_abi::{MidProcessArg, PostProcessArg, PreProcessArg, SeqId, TokenId};
+use aici_abi::{MidProcessArg, PostProcessArg, PreProcessArg, SeqId};
 use aici_tokenizers::find_tokenizer;
 use anyhow::{anyhow, ensure, Result};
 use base64;
@@ -18,7 +18,6 @@ use clap::Parser;
 use hex;
 use hostimpl::GlobalInfo;
 use log::{debug, info, warn};
-use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 use std::collections::HashMap;
@@ -34,6 +33,8 @@ use crate::moduleinstance::*;
 use crate::msgchannel::MessageChannel;
 use crate::shm::Shm;
 use crate::worker::{bench_ipc, RtMidProcessArg, WorkerForker};
+
+use aici_abi::api::*;
 
 // Both of these are percentage of available cores
 const BG_THREADS_FRACTION: usize = 50;
@@ -150,79 +151,6 @@ struct Stepper {
 
 fn is_hex_string(s: &str) -> bool {
     s.chars().all(|c| c.is_digit(16))
-}
-
-#[derive(Serialize, Deserialize)]
-struct AiciPreProcessReq {
-    max_context_len: usize, // in tokens
-    freed: Vec<ModuleInstId>,
-    ops: Vec<AiciPreOp>,
-}
-
-#[derive(Serialize, Deserialize)]
-struct AiciProcessReq {
-    ops: Vec<AiciMidOp>,
-}
-
-#[derive(Serialize, Deserialize)]
-struct AiciPostProcessReq {
-    ops: Vec<AiciPostOp>,
-}
-
-#[derive(Clone, Serialize, Deserialize, Debug)]
-pub struct AiciPreOp {
-    id: ModuleInstId,
-    req_id: Option<String>,
-}
-
-#[derive(Clone, Serialize, Deserialize, Debug)]
-pub struct AiciMidOp {
-    id: ModuleInstId,
-    clone_id: Option<ModuleInstId>,
-}
-
-#[derive(Serialize, Deserialize)]
-pub struct AiciPostOp {
-    id: ModuleInstId,
-    tokens: Vec<Token>,
-    #[serde(default)]
-    backtrack: u32,
-    clone_id: Option<ModuleInstId>,
-}
-
-#[derive(Serialize, Deserialize)]
-struct MkModuleReq {
-    binary: String,
-    #[serde(default)]
-    meta: Value,
-}
-
-#[derive(Serialize, Deserialize, Clone)]
-pub struct InstantiateReq {
-    req_id: String,
-    // [TokenId] or str
-    prompt: Value,
-    module_id: String,
-    #[serde(default)]
-    module_arg: Value,
-}
-
-type Token = TokenId;
-
-#[derive(Serialize, Deserialize)]
-struct SpecialTokenIds {
-    pub bos: Option<Token>,
-    pub eos: Option<Token>,
-    pub unk: Option<Token>,
-    pub sep: Option<Token>,
-    pub pad: Option<Token>,
-    pub cls: Option<Token>,
-}
-
-#[derive(Serialize, Deserialize)]
-struct TokensReq {
-    tokens: Vec<String>,
-    special: SpecialTokenIds,
 }
 
 impl ModuleRegistry {

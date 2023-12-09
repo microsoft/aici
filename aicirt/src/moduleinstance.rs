@@ -1,3 +1,4 @@
+use aici_abi::api::ModuleInstId;
 use aici_abi::toktree::TokTrie;
 use aici_abi::{InitPromptArg, MidProcessResult, PostProcessResult, PreProcessResult, TokenId};
 use aici_tokenizers::Tokenizer;
@@ -12,7 +13,7 @@ use wasmtime;
 
 use crate::bench::TimerSet;
 use crate::hostimpl::{
-    setup_linker, AiciLimits, GlobalInfo, ModuleData, ModuleInstId, LOGIT_BIAS_ALLOW,
+    setup_linker, AiciLimits, GlobalInfo, ModuleData,  LOGIT_BIAS_ALLOW,
     LOGIT_BIAS_DISALLOW,
 };
 use crate::shm::Shm;

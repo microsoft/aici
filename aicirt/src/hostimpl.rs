@@ -12,8 +12,6 @@ use crate::{
     worker::{GroupCmd, GroupHandle, GroupResp, RtMidProcessArg},
 };
 
-pub type ModuleInstId = usize;
-
 #[derive(Debug, Clone)]
 pub struct AiciLimits {
     pub max_memory_bytes: usize,
@@ -23,6 +21,8 @@ pub struct AiciLimits {
     pub logit_memory_bytes: usize,
     pub busy_wait_duration: Duration,
 }
+
+type ModuleInstId = aici_abi::api::ModuleInstId;
 
 // this is available to functions called from wasm
 pub struct ModuleData {

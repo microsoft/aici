@@ -7,6 +7,7 @@ pub mod recognizer;
 pub mod rng;
 pub mod svob;
 pub mod toktree;
+pub mod api;
 
 pub type TokenId = bytes::TokenId;
 
