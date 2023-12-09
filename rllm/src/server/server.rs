@@ -39,6 +39,26 @@ struct Args {
     /// (same structure as huggingface online)
     #[arg(long)]
     local_weights: Option<String>,
+
+    /// Tokenizer to use; try --tokenizer list to see options
+    #[arg(short, long, default_value = "llama")]
+    tokenizer: String,
+
+    /// Size of JSON comm buffer in megabytes
+    #[arg(long, default_value = "32")]
+    json_size: usize,
+
+    /// Size of binary comm buffer in megabytes
+    #[arg(long, default_value = "32")]
+    bin_size: usize,
+
+    /// How many milliseconds to spin-wait for a message over IPC and SHM.
+    #[arg(long, default_value = "200")]
+    busy_wait_time: u64,
+
+    /// Shm/semaphore name prefix
+    #[arg(long, default_value = "/aici0-")]
+    shm_prefix: String,
 }
 
 #[actix_web::get("/v1/models")]
@@ -150,14 +170,16 @@ async fn main() -> Result<()> {
     builder.init();
 
     let args = Args::parse();
+
     let loader_args = LoaderArgs {
         model_id: args.model_id,
         revision: args.revision,
         local_weights: args.local_weights,
         use_reference: false,
+        tokenizer: args.tokenizer,
         alt: 0,
     };
-    let tokenizer = RllmEngine::load_tokenizer(&loader_args)?;
+    let (tokenizer, tok_trie) = RllmEngine::load_tokenizer(&loader_args)?;
 
     let (handle, recv) = InferenceWorker::new();
     let handle = Arc::new(Mutex::new(handle));
@@ -167,6 +189,7 @@ async fn main() -> Result<()> {
             max_model_len: 1024,
         },
         tokenizer: Arc::new(tokenizer),
+        tok_trie: Arc::new(tok_trie),
     };
     let app_data = web::Data::new(app_data);
     let handle2 = handle.clone();

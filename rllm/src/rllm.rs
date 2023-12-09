@@ -36,6 +36,10 @@ struct Args {
     #[arg(long, default_value_t = false)]
     reference: bool,
 
+    /// Tokenizer to use; try --tokenizer list to see options
+    #[arg(short, long, default_value = "llama")]
+    tokenizer: String,
+
     #[arg(long, default_value_t = 0)]
     alt: usize,
 
@@ -66,6 +70,7 @@ fn main() -> Result<()> {
         local_weights: args.local_weights,
         use_reference: args.reference,
         alt: args.alt,
+        tokenizer: args.tokenizer,
     })?;
 
     let prompt = args.prompt.as_ref().map_or(DEFAULT_PROMPT, |p| p.as_str());

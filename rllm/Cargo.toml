@@ -10,7 +10,6 @@ candle-nn = { path = "../candle/candle-nn", features = ["cuda"] }
 candle-flash-attn = { path = "../candle/candle-flash-attn" }
 candle-flash-attn2 = { path = "../candle-flash-attn" }
 candle-core = { path = "../candle/candle-core", features = ["cuda", "cudnn"] }
-aicirt = { path = "../aicirt" }
 clap = "4.4.8"
 hf-hub = "0.3.2"
 tokenizers = { version = "0.15.0", features = ["hf-hub"] }
@@ -27,6 +26,10 @@ tokio = { version = "1.34.0", features = ["sync"] }
 futures = "0.3.29"
 uuid = { version = "1.6.1", features = ["v4"] }
 derive_more = "0.99.17"
+
+aicirt = { path = "../aicirt" }
+aici_abi = { path = "../aici_abi" }
+aici_tokenizers = { path = "../aici_tokenizers" }
 
 [[bin]]
 name = "rllm"

@@ -1,4 +1,5 @@
-use anyhow::{anyhow, Error as E, Result};
+use aici_abi::toktree::TokTrie;
+use anyhow::{Error as E, Result};
 use candle_core::{DType, Device, IndexOp, Tensor};
 use candle_nn::VarBuilder;
 use hf_hub::{
@@ -122,6 +123,7 @@ impl Stats {
 
 pub struct RllmEngine {
     pub tokenizer: Arc<Tokenizer>,
+    pub tok_trie: Arc<TokTrie>,
     pub model_id: String,
     pub model: Model,
     seq_id: SeqId,
@@ -138,15 +140,16 @@ pub struct RllmEngine {
 }
 
 impl RllmEngine {
-    pub fn load_tokenizer(args: &LoaderArgs) -> Result<Tokenizer> {
-        let repo = Repo::from(&args)?;
-        log::info!("loading the model weights from {}", repo);
-
-        let tokenizer_filename = repo.get("tokenizer.json")?;
-        let tokenizer = Tokenizer::from_file(tokenizer_filename).map_err(anyhow::Error::msg)?;
-
-        Ok(tokenizer)
+    pub fn load_tokenizer(args: &LoaderArgs) -> Result<(Tokenizer, TokTrie)> {
+        let byte_tokenizer = aici_tokenizers::find_tokenizer(&args.tokenizer)?;
+        let tokenizer =
+            Tokenizer::from_bytes(byte_tokenizer.hf_bytes).map_err(anyhow::Error::msg)?;
+        let tokens = byte_tokenizer.token_bytes();
+        let trie = TokTrie::from(&byte_tokenizer.tokrx_info(), &tokens);
+        trie.check_against(&tokens);
+        Ok((tokenizer, trie))
     }
+
     pub fn load(args: LoaderArgs) -> Result<RllmEngine> {
         let device = Device::new_cuda(0)?;
         let dtype = DType::BF16;
@@ -154,7 +157,7 @@ impl RllmEngine {
         let repo = Repo::from(&args)?;
         log::info!("loading the model weights from {}", repo);
 
-        let tokenizer = Self::load_tokenizer(&args)?;
+        let (tokenizer, tok_trie) = Self::load_tokenizer(&args)?;
 
         let json_config: LlamaConfig = serde_json::from_slice(&repo.read("config.json")?)?;
         let model_config: ModelConfig = json_config.into_config();
@@ -195,9 +198,7 @@ impl RllmEngine {
 
         let vb = unsafe { VarBuilder::from_mmaped_safetensors(&filenames, dtype, &device)? };
 
-        let eos_token_id = tokenizer
-            .token_to_id("</s>")
-            .ok_or(anyhow!("</s> not found"))?;
+        let eos_token_id = tok_trie.info().tok_eos;
 
         let model = if args.use_reference {
             let config: llama_ref::LlamaConfig =
@@ -221,6 +222,7 @@ impl RllmEngine {
 
         Ok(RllmEngine {
             tokenizer: Arc::new(tokenizer),
+            tok_trie: Arc::new(tok_trie),
             model_id: format!("{}", repo),
             model,
             seq_id: 1,
@@ -364,7 +366,7 @@ impl RllmEngine {
                 }
 
                 let mut out = seq.gen_output();
-                out.new_text = self.decode_seq(&out.new_output_tokens)?;
+                out.new_text = self.tok_trie.decode_str(&out.new_output_tokens);
                 outp.seq_outputs.push(out);
             }
             outp.is_ambiguous = sg.logits_processor.num_ambiguous > 0;

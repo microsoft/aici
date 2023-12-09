@@ -22,6 +22,7 @@ pub use playground::playground_1;
 
 #[derive(Default)]
 pub struct LoaderArgs {
+    pub tokenizer: String, // one of aici_tokenizer; eg "llama"
     pub model_id: Option<String>,
     pub revision: Option<String>,
     pub local_weights: Option<String>,

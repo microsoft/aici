@@ -193,6 +193,17 @@ impl TokTrie {
         &self.token_data[off..(off + len as usize)]
     }
 
+    pub fn decode(&self, tokens: &[TokenId]) -> Vec<u8> {
+        tokens
+            .iter()
+            .flat_map(|t| self.token(*t).to_vec())
+            .collect()
+    }
+
+    pub fn decode_str(&self, tokens: &[TokenId]) -> String {
+        String::from_utf8_lossy(&self.decode(tokens)).to_string()
+    }
+
     pub fn greedy_tokenize(&self, bytes: &[u8]) -> Vec<TokenId> {
         let mut r = Vec::new();
         if bytes.len() == 0 {

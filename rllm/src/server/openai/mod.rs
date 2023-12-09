@@ -1,6 +1,7 @@
 use self::responses::APIError;
 use crate::InferenceWorker;
 use std::sync::{Arc, Mutex};
+use aici_abi::toktree::TokTrie;
 use tokenizers::{Encoding, Tokenizer};
 
 pub mod requests;
@@ -29,6 +30,7 @@ pub struct OpenAIServerData {
     pub worker: Arc<Mutex<InferenceWorker>>,
     pub pipeline_config: PipelineConfig,
     pub tokenizer: Arc<Tokenizer>,
+    pub tok_trie: Arc<TokTrie>,
 }
 
 // pub mod conversation;

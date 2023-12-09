@@ -2260,6 +2260,8 @@ name = "rllm"
 version = "0.1.0"
 dependencies = [
  "actix-web",
+ "aici_abi",
+ "aici_tokenizers",
  "aicirt",
  "anyhow",
  "candle-core",
