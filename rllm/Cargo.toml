@@ -34,7 +34,7 @@ path = "src/rllm.rs"
 
 [[bin]]
 name = "rllm-server"
-path = "src/server.rs"
+path = "src/server/server.rs"
 
 [build-dependencies]
 anyhow = { version = "1", features = ["backtrace"] }
