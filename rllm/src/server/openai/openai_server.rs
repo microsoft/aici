@@ -27,16 +27,16 @@ fn check_length(
     let max_tokens = if let Some(max_toks) = request.max_tokens {
         max_toks
     } else {
-        data.pipeline_config.max_model_len - token_ids.len()
+        data.model_config.max_sequence_length - token_ids.len()
     };
 
-    if token_ids.len() + max_tokens > data.pipeline_config.max_model_len {
+    if token_ids.len() + max_tokens > data.model_config.max_sequence_length {
         Err(APIError::new(format!(
             "This model's maximum context length is {} tokens. \
             However, you requested {} tokens ({} in the messages, \
             {} in the completion). Please reduce the length of the \
             messages or completion.",
-            data.pipeline_config.max_model_len,
+            data.model_config.max_sequence_length,
             max_tokens + token_ids.len(),
             token_ids.len(),
             max_tokens

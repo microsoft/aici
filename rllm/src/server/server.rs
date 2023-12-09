@@ -24,7 +24,7 @@ struct Args {
     port: u16,
 
     /// Set verbose mode (print all requests)
-    #[arg(long)]
+    #[arg(long, default_value_t = false)]
     verbose: bool,
 
     /// Huggingface model name
@@ -43,6 +43,10 @@ struct Args {
     /// Tokenizer to use; try --tokenizer list to see options
     #[arg(short, long, default_value = "llama")]
     tokenizer: String,
+
+    /// Path to the aicirt binary.
+    #[arg(long)]
+    aicirt: String,
 
     /// Size of JSON comm buffer in megabytes
     #[arg(long, default_value = "32")]
@@ -180,14 +184,13 @@ async fn main() -> Result<()> {
         alt: 0,
     };
     let (tokenizer, tok_trie) = RllmEngine::load_tokenizer(&loader_args)?;
+    let model_config = RllmEngine::load_model_config(&loader_args)?;
 
     let (handle, recv) = InferenceWorker::new();
     let handle = Arc::new(Mutex::new(handle));
     let app_data = openai::OpenAIServerData {
         worker: handle.clone(),
-        pipeline_config: openai::PipelineConfig {
-            max_model_len: 1024,
-        },
+        model_config,
         tokenizer: Arc::new(tokenizer),
         tok_trie: Arc::new(tok_trie),
     };

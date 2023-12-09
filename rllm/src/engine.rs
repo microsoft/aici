@@ -150,17 +150,21 @@ impl RllmEngine {
         Ok((tokenizer, trie))
     }
 
+    pub fn load_model_config(args: &LoaderArgs) -> Result<ModelConfig> {
+        let repo = Repo::from(args)?;
+        log::info!("loading the model from {}", repo);
+        let json_config: LlamaConfig = serde_json::from_slice(&repo.read("config.json")?)?;
+        Ok(json_config.into_config())
+    }
+
     pub fn load(args: LoaderArgs) -> Result<RllmEngine> {
         let device = Device::new_cuda(0)?;
         let dtype = DType::BF16;
 
         let repo = Repo::from(&args)?;
-        log::info!("loading the model weights from {}", repo);
 
         let (tokenizer, tok_trie) = Self::load_tokenizer(&args)?;
-
-        let json_config: LlamaConfig = serde_json::from_slice(&repo.read("config.json")?)?;
-        let model_config: ModelConfig = json_config.into_config();
+        let model_config = Self::load_model_config(&args)?;
 
         let mut rllm_config = RllmConfig {
             model: model_config.clone(),

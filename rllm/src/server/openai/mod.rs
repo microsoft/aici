@@ -2,6 +2,7 @@ use self::responses::APIError;
 use crate::InferenceWorker;
 use std::sync::{Arc, Mutex};
 use aici_abi::toktree::TokTrie;
+use rllm::config::ModelConfig;
 use tokenizers::{Encoding, Tokenizer};
 
 pub mod requests;
@@ -21,14 +22,9 @@ impl TokenizerWrapper for Tokenizer {
 }
 
 #[derive(Clone)]
-pub struct PipelineConfig {
-    pub max_model_len: usize,
-}
-
-#[derive(Clone)]
 pub struct OpenAIServerData {
     pub worker: Arc<Mutex<InferenceWorker>>,
-    pub pipeline_config: PipelineConfig,
+    pub model_config: ModelConfig,
     pub tokenizer: Arc<Tokenizer>,
     pub tok_trie: Arc<TokTrie>,
 }
