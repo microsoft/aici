@@ -20,8 +20,6 @@ use std::{
 };
 use tokio::{signal::unix::SignalKind, sync::oneshot};
 
-use crate::Args;
-
 pub struct CmdChannel {
     cmd_pending: bool,
     cmd_ch: MessageChannel,
@@ -97,10 +95,19 @@ impl CmdChannel {
 
 pub struct AiciRtIface {
     cmd: CmdChannel,
-    bin_shm: Shm,
+    pub bin_shm: Shm,
     pub side_cmd: AsyncCmdChannel,
     #[allow(dead_code)]
     child: Child,
+}
+
+pub struct Args {
+    pub aicirt: String,
+    pub tokenizer: String,
+    pub json_size: usize,
+    pub bin_size: usize,
+    pub shm_prefix: String,
+    pub busy_wait_time: u64,
 }
 
 impl AiciRtIface {

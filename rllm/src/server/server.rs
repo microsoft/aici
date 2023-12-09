@@ -10,14 +10,17 @@ use anyhow::Result;
 use base64::Engine;
 use clap::Parser;
 
-use rllm::{config::ModelConfig, seq::RequestOutput, AddRequest, LoaderArgs, RllmEngine};
+use rllm::{
+    config::ModelConfig,
+    iface::{AiciRtIface, AsyncCmdChannel},
+    seq::RequestOutput,
+    AddRequest, LoaderArgs, RllmEngine,
+};
 
 use openai::responses::APIError;
 use tokio::sync::mpsc::{channel, error::TryRecvError, Receiver, Sender};
 
-
 mod completion;
-pub mod iface;
 mod openai;
 
 #[derive(Clone)]
@@ -26,7 +29,7 @@ pub struct OpenAIServerData {
     pub model_config: ModelConfig,
     pub tokenizer: Arc<tokenizers::Tokenizer>,
     pub tok_trie: Arc<TokTrie>,
-    pub side_cmd_ch: iface::AsyncCmdChannel,
+    pub side_cmd_ch: AsyncCmdChannel,
 }
 
 #[derive(Parser, Debug)]
@@ -217,7 +220,15 @@ async fn main() -> Result<()> {
     let (tokenizer, tok_trie) = RllmEngine::load_tokenizer(&loader_args)?;
     let model_config = RllmEngine::load_model_config(&loader_args)?;
 
-    let iface = iface::AiciRtIface::start_aicirt(&args, &tok_trie)?;
+    let rt_args = rllm::iface::Args {
+        aicirt: args.aicirt.clone(),
+        tokenizer: args.tokenizer.clone(),
+        json_size: args.json_size,
+        bin_size: args.bin_size,
+        shm_prefix: args.shm_prefix.clone(),
+        busy_wait_time: args.busy_wait_time,
+    };
+    let iface = AiciRtIface::start_aicirt(&rt_args, &tok_trie)?;
 
     let (handle, recv) = InferenceWorker::new();
     let handle = Arc::new(Mutex::new(handle));
@@ -232,7 +243,8 @@ async fn main() -> Result<()> {
     let handle2 = handle.clone();
 
     std::thread::spawn(move || {
-        let engine = RllmEngine::load(loader_args).expect("failed to load model");
+        let mut engine = RllmEngine::load(loader_args).expect("failed to load model");
+        engine.set_aicirt(iface);
         inference_loop(handle2, engine, recv)
     });
 

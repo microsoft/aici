@@ -11,6 +11,7 @@ pub mod config;
 pub mod util;
 mod engine;
 mod scheduler;
+pub mod iface;
 
 use std::sync::atomic::AtomicBool;
 

@@ -25,7 +25,7 @@ use crate::{
     },
     scheduler::SchedulerOutputs,
     seq::{FinishReason, RequestOutput, SchedulingPhase, SequenceGroup, Token},
-    to_offsets,
+    to_offsets, iface::AiciRtIface,
 };
 use crate::{
     llama::{Llama, LlamaConfig},
@@ -135,6 +135,8 @@ pub struct RllmEngine {
     pub eos_token_id: u32,
     pub nv_profile: bool,
 
+    aicirt: Option<AiciRtIface>,
+
     cache_engine: CacheEngine,
     scheduler: Scheduler,
 }
@@ -238,7 +240,12 @@ impl RllmEngine {
             scheduler,
             cache_engine,
             nv_profile: false,
+            aicirt: None,
         })
+    }
+
+    pub fn set_aicirt(&mut self, aicirt: AiciRtIface) {
+        self.aicirt = Some(aicirt);
     }
 
     pub fn gen_req_id(&mut self) -> String {
