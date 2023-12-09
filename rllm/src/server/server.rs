@@ -4,21 +4,30 @@ use std::{
 };
 
 use actix_web::{middleware::Logger, web, App, HttpServer};
+use aici_abi::toktree::TokTrie;
 use aicirt::api::{MkModuleReq, MkModuleResp};
 use anyhow::Result;
 use base64::Engine;
 use clap::Parser;
 
-use rllm::{seq::RequestOutput, AddRequest, LoaderArgs, RllmEngine};
+use rllm::{config::ModelConfig, seq::RequestOutput, AddRequest, LoaderArgs, RllmEngine};
 
 use openai::responses::APIError;
 use tokio::sync::mpsc::{channel, error::TryRecvError, Receiver, Sender};
 
-use crate::openai::openai_server::completions;
-use crate::openai::OpenAIServerData;
 
+mod completion;
 pub mod iface;
 mod openai;
+
+#[derive(Clone)]
+pub struct OpenAIServerData {
+    pub worker: Arc<Mutex<InferenceWorker>>,
+    pub model_config: ModelConfig,
+    pub tokenizer: Arc<tokenizers::Tokenizer>,
+    pub tok_trie: Arc<TokTrie>,
+    pub side_cmd_ch: iface::AsyncCmdChannel,
+}
 
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
@@ -212,7 +221,7 @@ async fn main() -> Result<()> {
 
     let (handle, recv) = InferenceWorker::new();
     let handle = Arc::new(Mutex::new(handle));
-    let app_data = openai::OpenAIServerData {
+    let app_data = OpenAIServerData {
         worker: handle.clone(),
         model_config,
         tokenizer: Arc::new(tokenizer),
@@ -234,7 +243,7 @@ async fn main() -> Result<()> {
         App::new()
             .wrap(Logger::default())
             .service(models)
-            .service(completions)
+            .service(completion::completions)
             .service(upload_aici_module)
             .app_data(app_data.clone())
     })
@@ -246,4 +255,11 @@ async fn main() -> Result<()> {
     .map_err(|e| APIError::new(e.to_string()))?;
 
     Ok(())
+}
+
+pub(crate) fn get_unix_time() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_secs()
 }

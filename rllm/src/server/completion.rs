@@ -1,11 +1,11 @@
-use crate::openai::utils::get_created_time_secs;
-use crate::InferenceResult;
+use crate::{InferenceResult, get_unix_time};
 
-use super::requests::CompletionRequest;
-use super::responses::{
+use crate::openai::requests::CompletionRequest;
+use crate::openai::responses::{
     APIError, CompletionResponse, StreamingCompletionChoice, StreamingCompletionResponse,
 };
-use super::{OpenAIServerData, TokenizerWrapper};
+use crate::OpenAIServerData;
+
 use actix_web::web::Bytes;
 use actix_web::{post, web, Either, HttpResponse};
 use rllm::config::SamplingParams;
@@ -20,7 +20,8 @@ fn check_length(
 ) -> Result<Vec<Token>, APIError> {
     let token_ids = data
         .tokenizer
-        .tokenize(&request.prompt, true)?
+        .encode(request.prompt.clone(), true)
+        .map_err(APIError::from)?
         .get_ids()
         .to_vec();
 
@@ -102,8 +103,6 @@ async fn completions(
         return Either::Left(Err(APIError::from(e)));
     }
 
-    let _created = get_created_time_secs();
-
     let rx = data.worker.lock().unwrap().add_request(AddRequest {
         request_id: request_id.clone(),
         prompt: token_ids,
@@ -149,7 +148,7 @@ impl futures::Stream for Client {
                     object: "text_completion",
                     id: so.request_id,
                     model: "current".to_string(),
-                    created: get_created_time_secs(),
+                    created: get_unix_time(),
                     choices: so
                         .seq_outputs
                         .iter()
