@@ -417,6 +417,7 @@ impl RllmEngine {
                             ff_tokens,
                         } => {
                             log::trace!("seq {}/{}: skip sampling (ff)", sg.request_id, seq.seq_id);
+                            self.splice_seq(seq, backtrack as usize, &ff_tokens);
                             idx += 1;
                             post_ops.push(AiciPostOp {
                                 id: seq.seq_id,
