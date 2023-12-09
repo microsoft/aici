@@ -675,6 +675,8 @@ impl RllmEngine {
             }
         }
 
+        let fork_indir = ops.iter().map(|e| e.id).collect::<Vec<_>>();
+
         let pre_res = self
             .aicirt
             .as_mut()
@@ -701,15 +703,24 @@ impl RllmEngine {
                     seq.sched_phase = SchedulingPhase::Suspended;
                     continue;
                 }
-                let parent_idx = pre_res.fork_map[mid_ops.len()];
-                assert!(parent_idx == seq.seq_id);
+                let parent_idx = fork_indir[pre_res.fork_map[mid_ops.len()]];
+                if parent_idx != seq.seq_id {
+                    panic!(
+                        "out of sync, forks: {:?} @{} = {}, seq: {}",
+                        pre_res.fork_map,
+                        mid_ops.len(),
+                        parent_idx,
+                        seq.seq_id
+                    );
+                }
+
                 mid_ops.push(AiciMidOp {
                     id: seq.seq_id,
                     clone_id: None,
                 });
             }
             while mid_ops.len() < pre_res.fork_map.len() {
-                let parent_idx = pre_res.fork_map[mid_ops.len()];
+                let parent_idx = fork_indir[pre_res.fork_map[mid_ops.len()]];
                 let mut found = false;
                 let mut to_add = Vec::new();
                 for seq in sg.seqs.iter() {

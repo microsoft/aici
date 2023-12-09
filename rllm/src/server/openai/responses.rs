@@ -1,4 +1,7 @@
+use std::fmt::Debug;
+
 use actix_web::error;
+use aici_abi::StorageCmd;
 use derive_more::{Display, Error};
 
 use serde::{Deserialize, Serialize};
@@ -22,9 +25,10 @@ impl APIError {
         }
     }
 
-    pub fn from<T: ToString>(value: T) -> Self {
-        //panic!("{}", value.to_string());
-        Self::new(value.to_string())
+    pub fn from<T: Debug>(value: T) -> Self {
+        log::warn!("APIError: {value:?}");
+        // panic!("APIError: {value:?}");
+        Self::new(format!("{value:?}"))
     }
 }
 
@@ -127,6 +131,10 @@ pub struct StreamingCompletionChoice {
     pub index: usize,
     pub finish_reason: Option<String>,
     pub text: String,
+    
+    pub logs: String,
+    pub storage: Vec<StorageCmd>,
+
     // pub logprobs: Option<LogProbs>,
 }
 

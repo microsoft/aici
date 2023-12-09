@@ -31,6 +31,9 @@ pub struct CmdChannel {
     busy_wait_duration: Duration,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Empty {}
+
 const M: usize = 1 << 20;
 
 impl CmdChannel {
@@ -201,7 +204,7 @@ impl AiciRtIface {
     pub fn start_mid_process(&mut self, req: AiciMidProcessReq) -> Result<()> {
         assert!(self.pending_mid_size == usize::MAX);
         self.pending_mid_size = req.ops.len();
-        self.cmd.send("start_mid_process", req)
+        self.cmd.send("mid_process", req)
     }
 
     pub fn finish_mid_process(&mut self) -> Result<AiciMidProcessResp> {
@@ -249,7 +252,7 @@ impl AsyncCmdChannel {
         self.exec("mk_module", req).await
     }
 
-    pub async fn instantiate(&self, req: InstantiateReq) -> Result<()> {
+    pub async fn instantiate(&self, req: InstantiateReq) -> Result<Empty> {
         self.exec("instantiate", req).await
     }
 
@@ -279,10 +282,12 @@ impl AsyncCmdChannel {
                     .unwrap()
                     .remove("data")
                     .ok_or(anyhow::anyhow!(
-                        "Bad response  ({op}) - no 'data': {}",
+                        "Bad response ({op}) - no 'data': {}",
                         limit_bytes(&serde_json::to_vec(&resp)?, 500)
                     ))?;
-                let resp = serde_json::from_value(data)?;
+                let data_copy = limit_bytes(&serde_json::to_vec(&data).unwrap(), 500);
+                let resp = serde_json::from_value(data)
+                    .map_err(|e| anyhow::anyhow!("Bad response ({op}): {e} {}", data_copy))?;
                 Ok(resp)
             }
             _ => {

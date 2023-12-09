@@ -73,7 +73,7 @@ pub struct AiciPostOp {
     pub clone_id: Option<ModuleInstId>,
 }
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct SequenceResult<T = ()> {
     pub is_success: bool,
     pub logs: String,

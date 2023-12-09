@@ -183,6 +183,17 @@ impl futures::Stream for Client {
                             text: choice.new_text.clone(),
                             index: choice.index,
                             finish_reason: choice.finish_reason.map(|r| r.short_name()),
+                            logs: choice
+                                .aici_logs
+                                .iter()
+                                .map(|e| e.logs.clone())
+                                .collect::<Vec<_>>()
+                                .join(""),
+                            storage: choice
+                                .aici_logs
+                                .iter()
+                                .flat_map(|e| e.storage.clone())
+                                .collect::<Vec<_>>(),
                         })
                         .collect(),
                 };
