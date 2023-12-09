@@ -28,6 +28,7 @@ pub struct AiciMidProcessReq {
 #[derive(Serialize, Deserialize)]
 pub struct AiciMidProcessResp {
     pub seqs: HashMap<ModuleInstId, SequenceResult<AiciMidProcessResultInner>>,
+    pub num_seqs: usize,
 }
 
 #[derive(Serialize, Deserialize)]

@@ -293,7 +293,7 @@ impl ModuleInstance {
             }
             MidProcessResult::Splice {
                 mut backtrack,
-                mut ff_tokens,
+                ff_tokens,
             } => {
                 let vocab_size = self.store.data().logit_ptr.len();
                 if let Some((idx, val)) = ff_tokens.iter().enumerate().find_map(|(idx, t)| {
@@ -310,7 +310,7 @@ impl ModuleInstance {
                             bail!("empty Splice (both backtrack == 0 and ff_tokens == [])")
                         }
                         // first token will be sampled; next tokens will be passed via "ff_tokens"
-                        let t0 = ff_tokens.remove(0);
+                        let t0 = ff_tokens[0];
                         self.store.data_mut().logit_ptr[t0 as usize] = LOGIT_BIAS_ALLOW;
                     } else {
                         // we don't really care about biases, as we're going to backtrack this token anyways

@@ -554,7 +554,7 @@ class AiciRunner:
         stop_seqs = []
         for (k, v) in self.last_post_response.items():
             v: dict
-            if v.get("result", {}).get("stop", False):
+            if (v.get("result", None) or {}).get("stop", False):
                 stop_seqs.append(int(k))
         return stop_seqs
 

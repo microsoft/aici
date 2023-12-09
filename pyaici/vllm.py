@@ -130,7 +130,7 @@ def install(runner: AiciRunner):
             # lookup by parent - the child wasn't born yet when response was generated
             resp = runner.response_by_seq_id(parent.seq_id).get("result", None) or {}
             backtrack: int = resp.get("backtrack", 0)
-            ff: List[int] = resp.get("ff_tokens", None)
+            ff: List[int] = resp.get("ff_tokens", []).copy()
             if backtrack:
                 assert seq is parent
                 seq.backtrack(backtrack)
@@ -138,6 +138,9 @@ def install(runner: AiciRunner):
                 assert ff
                 t = ff.pop(0)
                 seq.append_token_id(t, {t: 0.0})
+            elif ff:
+                t = ff.pop(0)
+                assert t == seq.data.output_token_ids[-1], ("FF", t, seq.data.output_token_ids, ff)
             last_tok = seq.data.output_token_ids[-1]
             # replace sampled EOS with space - at least Llama models get confused by EOS
             if (

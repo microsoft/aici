@@ -527,6 +527,7 @@ impl Stepper {
         // initialize shm
         let slice = self.shm.slice_at_byte_offset::<f32>(0, numops * block_elts);
         slice.iter_mut().for_each(|v| *v = 0.0);
+        let num_seqs = req.ops.len();
 
         for op in req.ops.into_iter() {
             let instid = op.id;
@@ -585,7 +586,10 @@ impl Stepper {
             }
         }
 
-        Ok(AiciMidProcessResp { seqs: outputs })
+        Ok(AiciMidProcessResp {
+            seqs: outputs,
+            num_seqs,
+        })
     }
 
     fn aici_post_process(&mut self, req: AiciPostProcessReq) -> Result<AiciPostProcessResp> {
