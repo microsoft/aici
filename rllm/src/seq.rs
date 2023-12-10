@@ -69,7 +69,7 @@ pub struct Sequence {
     pub index: usize, // within the sequence group
     pub tokens: Vec<Token>,
     pub prompt_len: usize,
-    output_ptr: usize,
+    pub(crate) output_ptr: usize,
     pub(crate) num_kv_computed: usize,
     pub(crate) has_aici: bool,
     pub(crate) aici_sampling: AiciSampling,

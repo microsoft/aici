@@ -201,8 +201,7 @@ fn inference_loop(
 }
 
 #[actix_web::main]
-
-async fn main() -> Result<()> {
+async fn main() -> () {
     let mut builder = env_logger::Builder::from_default_env();
     builder.format_timestamp(None);
     builder.init();
@@ -217,8 +216,11 @@ async fn main() -> Result<()> {
         tokenizer: args.tokenizer.clone(),
         alt: 0,
     };
-    let (tokenizer, tok_trie) = RllmEngine::load_tokenizer(&loader_args)?;
-    let model_config = RllmEngine::load_model_config(&loader_args)?;
+
+    let (tokenizer, tok_trie) =
+        RllmEngine::load_tokenizer(&loader_args).expect("failed to load tokenizer");
+    let model_config =
+        RllmEngine::load_model_config(&loader_args).expect("failed to load model config");
 
     let rt_args = rllm::iface::Args {
         aicirt: args.aicirt.clone(),
@@ -228,7 +230,7 @@ async fn main() -> Result<()> {
         shm_prefix: args.shm_prefix.clone(),
         busy_wait_time: args.busy_wait_time,
     };
-    let iface = AiciRtIface::start_aicirt(&rt_args, &tok_trie)?;
+    let iface = AiciRtIface::start_aicirt(&rt_args, &tok_trie).expect("failed to start aicirt");
 
     let (handle, recv) = InferenceWorker::new();
     let handle = Arc::new(Mutex::new(handle));
@@ -264,12 +266,10 @@ async fn main() -> Result<()> {
     })
     .workers(3)
     .bind((host, args.port))
-    .map_err(|e| APIError::new(e.to_string()))?
+    .expect("failed to start server (bind)")
     .run()
     .await
-    .map_err(|e| APIError::new(e.to_string()))?;
-
-    Ok(())
+    .expect("failed to start server (run)");
 }
 
 pub(crate) fn get_unix_time() -> u64 {

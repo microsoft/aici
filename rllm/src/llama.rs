@@ -517,6 +517,14 @@ impl Llama {
     }
 
     pub fn load(vb: VarBuilder, cfg: &ModelConfig) -> Result<Self> {
+        let bar = indicatif::ProgressBar::new(cfg.num_hidden_layers as u64);
+        bar.set_style(
+            indicatif::ProgressStyle::with_template(
+                "[{elapsed_precise}/{eta_precise}] {bar:60.cyan/blue} {pos:>7}/{len:7} {msg}",
+            )
+            .unwrap(),
+        );
+
         let cache = Cache::new(cfg.get_dtype(), cfg, vb.device())?;
         let wte = embedding(cfg, vb.pp("model.embed_tokens"))?;
         let lm_head = linear_no_bias(cfg.hidden_size, cfg.vocab_size, vb.pp("lm_head"))?;
@@ -527,13 +535,13 @@ impl Llama {
         )?;
         let blocks: Vec<_> = (0..cfg.num_hidden_layers)
             .map(|i| {
-                eprint!(".");
+                bar.inc(1);
                 // log::info!("loading block {}/{}", i, cfg.num_hidden_layers);
                 Block::load(vb.pp(&format!("model.layers.{i}")), &cache, cfg).unwrap()
             })
             .collect();
 
-        eprintln!(" loaded.");
+        bar.finish();
         Ok(Self {
             wte,
             blocks,

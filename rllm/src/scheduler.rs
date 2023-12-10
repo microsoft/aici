@@ -41,8 +41,6 @@ impl SchedulerOutputs {
         // swapping not impl yet
         assert!(self.blocks_to_swap_in.is_empty());
         assert!(self.blocks_to_swap_out.is_empty());
-        // CoW not impl yet
-        assert!(self.blocks_to_copy.is_empty());
     }
     pub fn is_empty(&self) -> bool {
         // We do not consider the ignored sequence groups.

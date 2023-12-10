@@ -282,7 +282,7 @@ impl RllmEngine {
         );
         self.seq_id += 1;
 
-        let logits_processor = LogitsProcessor::new(&req.sampling_params, self.tokenizer.clone());
+        let logits_processor = LogitsProcessor::new(&req.sampling_params, self.tok_trie.clone());
         let prompt = self
             .tokenizer
             .decode(&req.prompt, false)
@@ -319,6 +319,7 @@ impl RllmEngine {
 
     fn splice_seq(&self, seq: &mut Sequence, backtrack: usize, tokens: &[Token]) {
         seq.tokens.truncate(seq.tokens.len() - backtrack);
+        seq.output_ptr = std::cmp::min(seq.output_ptr, seq.tokens.len());
         self.scheduler.block_manager.trim_physical_blocks(seq);
         seq.tokens.extend_from_slice(tokens);
     }
@@ -366,8 +367,19 @@ impl RllmEngine {
 
         let shm = &self.aicirt.as_mut().unwrap().bin_shm;
         let num_elts = mid_res.num_seqs * self.tok_trie.vocab_size();
+        let slice = shm.slice_at_byte_offset::<f32>(0, num_elts);
+        if num_elts > 0 {
+            log::info!(
+                "aici_bias: [{},{}] {} {} {}",
+                mid_res.num_seqs,
+                self.tok_trie.vocab_size(),
+                slice[0],
+                slice[1],
+                slice[2]
+            );
+        }
         let t = Tensor::from_slice(
-            shm.slice_at_byte_offset::<f32>(0, num_elts),
+            slice,
             &[mid_res.num_seqs, self.tok_trie.vocab_size()],
             &self.device,
         )?;
@@ -409,6 +421,12 @@ impl RllmEngine {
                     match std::mem::take(&mut seq.aici_sampling) {
                         AiciSampling::Regular => {}
                         AiciSampling::SampleWithBias { offset } => {
+                            log::trace!(
+                                "sample {}/{}: bias at {}",
+                                sg.request_id,
+                                seq.seq_id,
+                                offset
+                            );
                             let logits_aici = aici_bias.i((offset, ..))?;
                             logits = (logits + logits_aici)?;
                         }
@@ -416,7 +434,11 @@ impl RllmEngine {
                             backtrack,
                             ff_tokens,
                         } => {
-                            log::trace!("seq {}/{}: skip sampling (ff)", sg.request_id, seq.seq_id);
+                            log::trace!(
+                                "sample {}/{}: skip sampling (ff)",
+                                sg.request_id,
+                                seq.seq_id
+                            );
                             self.splice_seq(seq, backtrack as usize, &ff_tokens);
                             idx += 1;
                             post_ops.push(AiciPostOp {
@@ -440,16 +462,11 @@ impl RllmEngine {
                         clone_id: None,
                     });
 
-                    let tok = self
-                        .tokenizer
-                        .decode(&[next_token], true)
-                        .unwrap_or("???".to_string());
                     log::trace!(
-                        "seq {}/{}: {} {:?}",
+                        "sample {}/{}: {}",
                         sg.request_id,
                         seq.seq_id,
-                        next_token,
-                        tok
+                        self.tok_trie.token_dbg(next_token)
                     );
 
                     if next_token == self.eos_token_id {

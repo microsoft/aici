@@ -200,7 +200,7 @@ pub fn copy_blocks(
     let device = key_caches[0].device();
     assert!(device.is_cuda());
 
-    let (_num_blocks, num_heads, head_size, block_size) = key_caches[0].dims4().unwrap();
+    let (_num_blocks, num_heads, head_size, block_size) = value_caches[0].dims4().unwrap();
     let numel_per_block = (num_heads * head_size * block_size) as i32;
 
     let tsize = key_caches[0].elem_count();

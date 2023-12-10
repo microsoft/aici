@@ -95,7 +95,9 @@ impl CmdChannel {
                 "Bad response ({ctx}) - no 'data': {}",
                 limit_bytes(&bytes, 500)
             ))?;
-        let resp = serde_json::from_value(data)?;
+        let resp = serde_json::from_value(data).map_err(|e| {
+            anyhow::anyhow!("Bad response ({ctx}): {e} {}", limit_bytes(&bytes, 500))
+        })?;
         Ok(resp)
     }
 }
@@ -121,7 +123,7 @@ pub struct Args {
 impl AiciRtIface {
     pub fn start_aicirt(args: &Args, tok_trie: &TokTrie) -> Result<Self> {
         let busy_wait_time = Duration::from_millis(args.busy_wait_time);
-        let shm_name = MessageChannel::shm_name(&args.shm_prefix) + "-bin";
+        let shm_name = MessageChannel::shm_name(&(args.shm_prefix.clone() + "bin"));
         let cmd = CmdChannel::new(args.json_size, &args.shm_prefix, "", busy_wait_time)?;
         let side_cmd = AsyncCmdChannel::new(args.json_size, &args.shm_prefix, "-side")?;
         let bin_shm = Shm::new(&shm_name, args.bin_size * M)?;
@@ -182,7 +184,10 @@ impl AiciRtIface {
         };
 
         let _: Value = r.cmd.exec("ping", json!({}))?;
-        let tokens: TokensResp = r.cmd.exec("tokens", json!({}))?;
+        let tokens: TokensResp = r
+            .cmd
+            .exec("tokens", json!({}))
+            .map_err(|e| anyhow::anyhow!("check for pending aicirt processes! {e}"))?;
 
         // well, this is somewhat unlikely as we're passing the same toknizer name down...
         if tokens.vocab_size != tok_trie.info().vocab_size {

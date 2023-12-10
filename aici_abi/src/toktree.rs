@@ -182,6 +182,10 @@ impl TokTrie {
         vec![0.0; self.vocab_size() + 1]
     }
 
+    pub fn token_dbg(&self, idx: u32) -> String {
+        format!("{:?}[{}]", self.token_str(idx), idx)
+    }
+
     pub fn token_str(&self, idx: u32) -> String {
         String::from_utf8_lossy(self.token(idx)).to_string()
     }

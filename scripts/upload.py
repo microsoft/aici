@@ -129,11 +129,23 @@ def main():
     }
 
     arg = {
+        "prompt": "The word 'hello'",
         "steps": [
-            ast.fixed("The word 'hello' in French is"),
-            ast.gen(max_tokens=10),
+            ast.fixed(" in French is"),
+            ast.gen(max_tokens=5),
         ]
     }
+
+    arg = {
+        "steps": [
+            ast.fixed("I am about "),
+            ast.gen(max_tokens=5, rx=r"\d+"),
+            ast.fixed(" years and "),
+            ast.gen(max_tokens=5, rx=r"\d+"),
+            ast.fixed(" months."),
+        ]
+    }
+
 
     if len(sys.argv) > 1 and sys.argv[1].endswith(".py"):
         mod = upload_wasm("pyvm")

@@ -305,6 +305,7 @@ impl ModuleInstance {
                 }) {
                     bail!("ff_token out of range ({val} >= {vocab_size} at {idx})")
                 } else {
+                    log::debug!("backtrack: {backtrack}, ff_tokens:{ff_tokens:?}");
                     if backtrack == 0 {
                         if ff_tokens.len() == 0 {
                             bail!("empty Splice (both backtrack == 0 and ff_tokens == [])")

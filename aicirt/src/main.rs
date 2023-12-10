@@ -705,7 +705,7 @@ trait Exec {
         match serde_json::from_slice::<Value>(msg) {
             Ok(json) => {
                 let rid = json["$rid"].as_str().map(|v| v.to_string());
-                debug!("dispatch: rid={:?} op={:?}", rid, json["op"]);
+                log::trace!("dispatch: rid={:?} op={:?}", rid, json["op"]);
                 let val = match json["op"].as_str() {
                     Some("ping") => Ok(json!({ "pong": 1 })),
                     Some("stop") => worker::stop_process(),
@@ -940,7 +940,9 @@ fn install_from_cmdline(cli: &Cli, wasm_ctx: WasmContext, shm: Shm) {
 }
 
 fn main() -> () {
-    env_logger::init();
+    let mut builder = env_logger::Builder::from_default_env();
+    builder.format_timestamp(None);
+    builder.init();
 
     let cli = Cli::parse();
 

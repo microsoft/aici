@@ -2277,6 +2277,7 @@ dependencies = [
  "futures",
  "half",
  "hf-hub",
+ "indicatif",
  "libc",
  "log",
  "num_cpus",

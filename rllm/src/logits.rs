@@ -2,9 +2,9 @@
 
 use std::sync::Arc;
 
+use aici_abi::toktree::TokTrie;
 use candle_core::{DType, Error, Result, Tensor};
 use rand::{distributions::Distribution, SeedableRng};
-use tokenizers::Tokenizer;
 
 use crate::config::{SamplingParams, SAMPLING_EPS};
 
@@ -12,12 +12,12 @@ pub struct LogitsProcessor {
     rng: rand::rngs::StdRng,
     temperature: Option<f32>,
     top_p: f32,
-    tokenizer: Arc<Tokenizer>,
+    tokenizer: Arc<TokTrie>,
     pub num_ambiguous: usize,
 }
 
 impl LogitsProcessor {
-    pub fn new(sampling_params: &SamplingParams, tokenizer: Arc<Tokenizer>) -> Self {
+    pub fn new(sampling_params: &SamplingParams, tokenizer: Arc<TokTrie>) -> Self {
         let temperature = if sampling_params.temperature < SAMPLING_EPS {
             None
         } else {
@@ -40,22 +40,19 @@ impl LogitsProcessor {
         if d < 0.05 {
             self.num_ambiguous += 1;
             log::debug!(
-                "argmax: {:?} {:?} {:?} {:?}",
-                logits_v[0],
-                self.tokenizer
-                    .decode(&vec![logits_v[0].0 as u32], false)
-                    .unwrap(),
-                logits_v[1],
-                self.tokenizer
-                    .decode(&vec![logits_v[1].0 as u32], false)
-                    .unwrap(),
+                "argmax: {}={} {}={}",
+                self.tokenizer.token_dbg(logits_v[0].0 as u32),
+                logits_v[0].1,
+                self.tokenizer.token_dbg(logits_v[1].0 as u32),
+                logits_v[1].1,
             );
         } else {
             log::trace!(
-                "argmax: {:?} {:?} {:?}",
-                logits_v[0],
-                logits_v[1],
-                logits_v[2]
+                "argmax: {}={} {}={}",
+                self.tokenizer.token_dbg(logits_v[0].0 as u32),
+                logits_v[0].1,
+                self.tokenizer.token_dbg(logits_v[1].0 as u32),
+                logits_v[1].1,
             );
         }
         Ok(logits_v[0].0 as u32)

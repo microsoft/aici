@@ -234,7 +234,7 @@ where
     fn recv_with_timeout(&self, timeout: Duration) -> Result<Resp> {
         match self.cmd_resp.try_recv_timeout(timeout) {
             Ok(r) => {
-                debug!("recv t/o {r:?}");
+                log::trace!("recv t/o {r:?}");
                 Ok(r)
             }
             Err(ipc_channel::ipc::TryRecvError::Empty) => {
@@ -384,7 +384,7 @@ impl SeqCtx {
     fn dispatch_loop(&mut self) -> ! {
         loop {
             let cmd = busy_recv(&self.cmd, &self.wasm_ctx.limits.busy_wait_duration).unwrap();
-            debug!("seq recv {cmd:?}");
+            log::trace!("seq recv {cmd:?}");
             let resp = match self.dispatch_one(cmd) {
                 Ok(v) => v,
                 Err(e) => SeqResp::Error {
