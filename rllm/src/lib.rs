@@ -27,7 +27,6 @@ pub struct LoaderArgs {
     pub model_id: Option<String>,
     pub revision: Option<String>,
     pub local_weights: Option<String>,
-    pub use_reference: bool,
     pub alt: usize,
 }
 

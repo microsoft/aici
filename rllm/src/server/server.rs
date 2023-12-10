@@ -210,7 +210,6 @@ async fn main() -> () {
         model_id: args.model_id.clone(),
         revision: args.revision.clone(),
         local_weights: args.local_weights.clone(),
-        use_reference: false,
         tokenizer: args.tokenizer.clone(),
         alt: 0,
     };

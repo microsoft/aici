@@ -20,8 +20,6 @@ use std::{
 };
 use tokenizers::Tokenizer;
 
-use candle_transformers::models::llama as llama_ref;
-
 use crate::{
     cache_engine::CacheEngine,
     config::{
@@ -97,18 +95,12 @@ impl Display for Repo {
 
 pub enum Model {
     Llama(Llama),
-    Reference(llama_ref::Llama),
 }
 
 impl Model {
     pub fn forward(&self, info: &BatchInfo) -> Result<Tensor> {
         match self {
             Model::Llama(llama) => Ok(llama.forward(info)?),
-            Model::Reference(llama) => {
-                let index_pos = info.positions.i(0..1)?.to_vec1::<i64>()?[0];
-                let input = info.tokens.unsqueeze(0)?;
-                Ok(llama.forward(&input, index_pos as usize)?)
-            }
         }
     }
 }
@@ -211,16 +203,7 @@ impl RllmEngine {
 
         let eos_token_id = tok_trie.info().tok_eos;
 
-        let model = if args.use_reference {
-            let config: llama_ref::LlamaConfig =
-                serde_json::from_slice(&repo.read("config.json")?)?;
-            let use_flash_attn = true;
-            let config = config.into_config(use_flash_attn);
-            let use_kv_cache = true;
-            let cache = llama_ref::Cache::new(use_kv_cache, dtype, &config, &device)?;
-            let llama = llama_ref::Llama::load(vb, &cache, &config)?;
-            Model::Reference(llama)
-        } else {
+        let model = {
             let llama = Llama::load(vb, &model_config)?;
             Model::Llama(llama)
         };

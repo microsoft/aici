@@ -34,9 +34,6 @@ struct Args {
     #[arg(long)]
     revision: Option<String>,
 
-    #[arg(long, default_value_t = false)]
-    reference: bool,
-
     /// Tokenizer to use; try --tokenizer list to see options
     #[arg(short, long, default_value = "llama")]
     tokenizer: String,
@@ -67,7 +64,6 @@ fn main() -> Result<()> {
         model_id: args.model_id,
         revision: args.revision,
         local_weights: args.local_weights,
-        use_reference: args.reference,
         alt: args.alt,
         tokenizer: args.tokenizer,
     })?;
