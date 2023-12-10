@@ -99,7 +99,7 @@ struct Cli {
     wasm_max_pre_step_time: u64,
 
     /// Maximum time WASM module can execute step in milliseconds
-    #[arg(long, default_value = "50")]
+    #[arg(long, default_value = "150")]
     wasm_max_step_time: u64,
 
     /// Maximum time WASM module can execute initialization code in milliseconds

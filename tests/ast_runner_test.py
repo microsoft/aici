@@ -44,7 +44,8 @@ def expect(expected: Union[list[str], str], prompt: str, steps: list):
         pytest.fail(f"query output length mismatch {len(res)} != {len(expected)}")
     for i in range(len(res)):
         # ░ is used as a placeholder; will be removed
-        r = res[i].replace("░", "")
+        r: str = res[i]
+        r = r.replace("░", "").rstrip(" ")
         r2 = r
         e = expected[i]
         if e.startswith("<...>") and len(r) > len(e) - 5:
@@ -158,7 +159,7 @@ def test_ff_0():
 
 def test_ff_1():
     expect(
-        ", 7 + 8 = 15  ",
+        ", 7 + 8 = 15",
         "Hello",
         [
             ast.gen(rx=", "),
@@ -170,7 +171,7 @@ def test_ff_1():
 
 def test_ff_2():
     expect(
-        ", 7 + 8 = 15  ",
+        ", 7 + 8 = 15",
         "Hello",
         [
             ast.gen(rx=", "),

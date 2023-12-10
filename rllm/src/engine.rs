@@ -350,6 +350,10 @@ impl RllmEngine {
                 assert!(seq.has_aici);
                 match self.save_aici_log(seq, &mid_res.seqs) {
                     Some(r) if r.ff_tokens.len() > 0 || r.backtrack > 0 => {
+                        // save the computed prefix
+                        // we may drop some of it but self.splice_seq() takes care of that
+                        seq.num_kv_computed = seq.tokens.len();
+
                         seq.aici_sampling = AiciSampling::Splice {
                             backtrack: r.backtrack,
                             ff_tokens: r.ff_tokens.clone(),
@@ -368,16 +372,6 @@ impl RllmEngine {
         let shm = &self.aicirt.as_mut().unwrap().bin_shm;
         let num_elts = mid_res.num_seqs * self.tok_trie.vocab_size();
         let slice = shm.slice_at_byte_offset::<f32>(0, num_elts);
-        if num_elts > 0 {
-            log::info!(
-                "aici_bias: [{},{}] {} {} {}",
-                mid_res.num_seqs,
-                self.tok_trie.vocab_size(),
-                slice[0],
-                slice[1],
-                slice[2]
-            );
-        }
         let t = Tensor::from_slice(
             slice,
             &[mid_res.num_seqs, self.tok_trie.vocab_size()],
@@ -450,9 +444,20 @@ impl RllmEngine {
                             continue;
                         }
                     }
-                    let next_token = sg.logits_processor.sample(&logits)?;
                     seq.num_kv_computed = seq.tokens.len();
-                    seq.tokens.push(next_token);
+
+                    let mut info = "";
+                    let next_token = sg.logits_processor.sample(&logits)?;
+                    if seq.has_aici && next_token == self.tok_trie.info().tok_eos {
+                        // replace with space, so the model doesn't get confused
+                        // note that aici will still get the real EOS token
+                        let space = self.tok_trie.greedy_tokenize(b" ")[0];
+                        seq.tokens.push(space);
+                        info = " -> space";
+                    } else {
+                        seq.tokens.push(next_token);
+                    }
+
                     idx += 1;
 
                     post_ops.push(AiciPostOp {
@@ -463,13 +468,14 @@ impl RllmEngine {
                     });
 
                     log::trace!(
-                        "sample {}/{}: {}",
+                        "sample {}/{}: {}{}",
                         sg.request_id,
                         seq.seq_id,
-                        self.tok_trie.token_dbg(next_token)
+                        self.tok_trie.token_dbg(next_token),
+                        info
                     );
 
-                    if next_token == self.eos_token_id {
+                    if !sg.sampling_params.ignore_eos && next_token == self.eos_token_id {
                         self.scheduler.finish_seq(seq, FinishReason::FoundEos);
                     } else if seq.get_gen_len() >= sg.sampling_params.max_tokens {
                         self.scheduler
@@ -559,6 +565,7 @@ impl RllmEngine {
 
                 let seq_len = seq.tokens.len();
                 let k_len = seq_len;
+                log::trace!("seq: {seq:?}");
                 let q_len = seq.tokens.len() - seq.num_kv_computed;
                 assert!(q_len > 0); // TODO if it's 0, we can probably bump it up to 1 (re-compute)
                 let off = k_len - q_len;
@@ -744,10 +751,11 @@ impl RllmEngine {
                 for seq in sg.seqs.iter() {
                     if seq.seq_id == parent_idx {
                         assert!(seq.sched_phase == SchedulingPhase::Running);
-                        let mut copy = seq.fork_as(self.seq_id, sg.max_index);
+                        let mut copy = seq.fork_as(self.seq_id, sg.max_index + 1);
                         copy.has_aici = true;
                         sg.max_index += 1;
                         self.seq_id += 1;
+                        log::debug!("forked: {:?} -> {:?}", seq, copy);
                         mid_ops.push(AiciMidOp {
                             id: copy.seq_id,
                             clone_id: Some(seq.seq_id),

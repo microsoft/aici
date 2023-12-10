@@ -536,12 +536,19 @@ impl Llama {
         let blocks: Vec<_> = (0..cfg.num_hidden_layers)
             .map(|i| {
                 bar.inc(1);
+                if bar.is_hidden() {
+                    eprint!(".");
+                }
                 // log::info!("loading block {}/{}", i, cfg.num_hidden_layers);
                 Block::load(vb.pp(&format!("model.layers.{i}")), &cache, cfg).unwrap()
             })
             .collect();
 
+        if bar.is_hidden() {
+            eprintln!(" done");
+        }
         bar.finish();
+
         Ok(Self {
             wte,
             blocks,

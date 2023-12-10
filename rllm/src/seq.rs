@@ -88,6 +88,7 @@ impl Debug for Sequence {
             .field("seq_id", &self.seq_id)
             .field("sched_phase", &self.sched_phase)
             .field("kv_computed", &self.num_kv_computed)
+            .field("aici_sampling", &self.aici_sampling)
             .field("tokens", &self.tokens)
             .field("prompt_len", &self.prompt_len)
             .finish()
@@ -97,11 +98,11 @@ impl Debug for Sequence {
 impl Sequence {
     pub(crate) fn new(seq_id: SeqId, tokens: &[Token], block_size: usize) -> Self {
         let prompt_len = tokens.len();
-        let mut seq = Self {
+        Self {
             seq_id,
             index: 0,
             sched_phase: SchedulingPhase::Waiting,
-            tokens: Vec::new(),
+            tokens: tokens.to_vec(),
             num_kv_computed: 0,
             prompt_len,
             output_ptr: prompt_len,
@@ -111,9 +112,7 @@ impl Sequence {
             has_aici: false,
             aici_logs: Vec::new(),
             aici_sampling: AiciSampling::Regular,
-        };
-        seq._append_tokens_to_blocks(tokens);
-        seq
+        }
     }
 
     pub fn get_len(&self) -> usize {
@@ -132,7 +131,7 @@ impl Sequence {
 
     #[allow(dead_code)]
     pub(crate) fn fork_as(&self, seq_id: SeqId, index: usize) -> Self {
-        let mut seq = Self {
+        Self {
             seq_id,
             index,
             sched_phase: self.sched_phase,
@@ -146,17 +145,11 @@ impl Sequence {
             has_aici: false,
             aici_logs: Vec::new(),
             aici_sampling: AiciSampling::Regular,
-        };
-        seq._append_tokens_to_blocks(&self.tokens);
-        seq
-    }
-
-    fn _append_tokens_to_blocks(&mut self, token_ids: &[Token]) {
-        self.tokens.extend_from_slice(token_ids);
+        }
     }
 
     pub fn append_token_id(&mut self, token_id: Token) {
-        self._append_tokens_to_blocks(&[token_id]);
+        self.tokens.push(token_id)
     }
 
     pub fn finish_reason(&self) -> Option<FinishReason> {
