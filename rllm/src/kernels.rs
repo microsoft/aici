@@ -103,7 +103,7 @@ pub fn rotary_embedding(
     head_size: usize,
     cos_sin_cache: &Tensor, // [max_position, rot_dim]
 ) {
-    assert!(positions.dtype() == candle_core::DType::I64);
+    assert!(positions.dtype() == DType::I64);
     assert!(is_bf16(query));
     assert!(is_bf16(key));
     assert!(is_bf16(cos_sin_cache));

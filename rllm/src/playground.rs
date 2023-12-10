@@ -1,7 +1,6 @@
-use anyhow::Result;
-use candle_core::{DType, Device, IndexOp, Shape, Tensor};
-
 use crate::{to_offsets, util::check_all_close};
+use crate::{DType, Device, IndexOp, Shape, Tensor};
+use anyhow::Result;
 
 struct XorShiftRng {
     state: u32,
@@ -98,7 +97,6 @@ fn flash_attn(
 
     Ok(r)
 }
-
 
 #[allow(dead_code)]
 pub fn playground_1() {

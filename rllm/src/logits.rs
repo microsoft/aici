@@ -2,8 +2,9 @@
 
 use std::sync::Arc;
 
+use crate::{DType, Tensor};
 use aici_abi::toktree::TokTrie;
-use candle_core::{DType, Error, Result, Tensor};
+use anyhow::Result;
 use rand::{distributions::Distribution, SeedableRng};
 
 use crate::config::{SamplingParams, SAMPLING_EPS};
@@ -66,7 +67,7 @@ impl LogitsProcessor {
     }
 
     fn sample_multinomial(&mut self, prs: &Vec<f32>) -> Result<u32> {
-        let distr = rand::distributions::WeightedIndex::new(prs).map_err(Error::wrap)?;
+        let distr = rand::distributions::WeightedIndex::new(prs)?;
         let next_token = distr.sample(&mut self.rng) as u32;
         Ok(next_token)
     }

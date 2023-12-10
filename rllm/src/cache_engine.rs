@@ -4,7 +4,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use candle_core::cuda_backend::cudarc::driver::CudaStream;
-use candle_core::{Device, Tensor};
+use crate::{Device, Tensor};
 
 use crate::config::RllmConfig;
 use crate::kernels;

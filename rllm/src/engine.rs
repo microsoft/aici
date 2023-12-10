@@ -1,10 +1,10 @@
+use crate::{DType, Device, Tensor, IndexOp};
 use aici_abi::toktree::TokTrie;
 use aicirt::api::{
     AiciMidOp, AiciMidProcessReq, AiciPostOp, AiciPostProcessReq, AiciPreOp, AiciPreProcessReq,
     ModuleInstId, SequenceResult,
 };
 use anyhow::{anyhow, Error as E, Result};
-use candle_core::{DType, Device, IndexOp, Tensor};
 use candle_nn::VarBuilder;
 use hf_hub::{
     api::sync::{Api, ApiRepo},

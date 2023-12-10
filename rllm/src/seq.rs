@@ -1,8 +1,8 @@
 use std::{collections::HashMap, fmt::Debug, sync::Mutex};
 
+use crate::Tensor;
 use aici_abi::TokenId;
 use aicirt::api::SequenceResult;
-use candle_core::Tensor;
 use serde::{Deserialize, Serialize};
 
 use crate::{blocks::BlockRef, config::SamplingParams, LogitsProcessor};
