@@ -15,9 +15,15 @@ pub struct AiciPreProcessReq {
 
 #[derive(Serialize, Deserialize)]
 pub struct AiciPreProcessResp {
-    pub seqs: HashMap<ModuleInstId, SequenceResult>,
+    pub seqs: HashMap<ModuleInstId, SequenceResult<AiciPreProcessResultInner>>,
     pub fork_map: Vec<usize>,
     pub suspend_ids: Vec<ModuleInstId>,
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct AiciPreProcessResultInner {
+    pub suspend: bool,
+    pub num_forks: usize,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -81,6 +87,18 @@ pub struct SequenceResult<T = ()> {
     pub storage: Vec<StorageCmd>,
     pub logs: String,
     pub micros: u64,
+}
+
+impl<T> SequenceResult<T> {
+    pub fn clone_with<S>(&self, result: Option<S>) -> SequenceResult<S> {
+        SequenceResult {
+            is_success: self.is_success,
+            result,
+            storage: self.storage.clone(),
+            logs: self.logs.clone(),
+            micros: self.micros,
+        }
+    }
 }
 
 #[derive(Serialize, Deserialize)]

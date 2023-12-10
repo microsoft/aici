@@ -3,7 +3,7 @@ use aicirt::api::{
     AiciMidOp, AiciMidProcessReq, AiciPostOp, AiciPostProcessReq, AiciPreOp, AiciPreProcessReq,
     ModuleInstId, SequenceResult,
 };
-use anyhow::{Error as E, Result};
+use anyhow::{anyhow, Error as E, Result};
 use candle_core::{DType, Device, IndexOp, Tensor};
 use candle_nn::VarBuilder;
 use hf_hub::{
@@ -635,13 +635,7 @@ impl RllmEngine {
         seqs: &'a HashMap<ModuleInstId, SequenceResult<T>>,
     ) -> Option<&'a T> {
         if let Some(r) = seqs.get(&seq.seq_id) {
-            seq.aici_logs.push(SequenceResult {
-                is_success: r.is_success,
-                logs: r.logs.clone(),
-                storage: r.storage.clone(),
-                micros: r.micros,
-                result: None,
-            });
+            seq.aici_logs.push(r.clone_with(None));
             match &r.result {
                 Some(r) => Some(r),
                 None => None,
@@ -683,8 +677,9 @@ impl RllmEngine {
     fn aici_pre(&mut self, sched_out: &mut SchedulerOutputs) -> Result<()> {
         let mut max_context_len = 0;
         let mut ops = Vec::new();
+        let mut seq_ptr = HashMap::new();
 
-        for sg in sched_out.next_seq_groups.iter_mut() {
+        for (sg_idx, sg) in sched_out.next_seq_groups.iter_mut().enumerate() {
             if sg.sampling_params.aici_module.is_none() {
                 continue;
             }
@@ -692,12 +687,13 @@ impl RllmEngine {
                 let seq = &mut sg.seqs[0];
                 max_context_len = std::cmp::max(max_context_len, seq.tokens.len());
                 seq.has_aici = true;
+                seq_ptr.insert(seq.seq_id, (sg_idx, 0));
                 ops.push(AiciPreOp {
                     id: seq.seq_id,
                     req_id: Some(sg.request_id.clone()),
                 });
             } else {
-                for seq in sg.seqs.iter_mut() {
+                for (seq_idx, seq) in sg.seqs.iter_mut().enumerate() {
                     if seq.sched_phase != SchedulingPhase::Running {
                         continue;
                     }
@@ -706,13 +702,13 @@ impl RllmEngine {
                         id: seq.seq_id,
                         req_id: None,
                     });
+                    seq_ptr.insert(seq.seq_id, (sg_idx, seq_idx));
                     max_context_len = std::cmp::max(max_context_len, seq.tokens.len());
                 }
             }
         }
 
-        let fork_indir = ops.iter().map(|e| e.id).collect::<Vec<_>>();
-
+        let ids = ops.iter().map(|op| op.id).collect::<Vec<_>>();
         let pre_res = self
             .aicirt
             .as_mut()
@@ -725,64 +721,53 @@ impl RllmEngine {
 
         let mut mid_ops = Vec::new();
 
-        for sg in sched_out.next_seq_groups.iter_mut() {
-            if sg.sampling_params.aici_module.is_none() {
+        for seq_id in ids {
+            let res = pre_res
+                .seqs
+                .get(&seq_id)
+                .ok_or(anyhow!("missing seq {}", seq_id))?;
+            let (sg_idx, seq_idx) = seq_ptr[&seq_id];
+            let sg = &mut sched_out.next_seq_groups[sg_idx];
+            let seq = &mut sg.seqs[seq_idx];
+            
+            assert!(seq.has_aici);
+            self.save_aici_log(seq, &pre_res.seqs);
+
+            let suspend = res.result.as_ref().map(|r| r.suspend).unwrap_or(false);
+            if suspend {
+                seq.sched_phase = SchedulingPhase::Suspended;
                 continue;
             }
-            for seq in sg.seqs.iter_mut() {
-                if seq.sched_phase != SchedulingPhase::Running {
-                    continue;
-                }
-                assert!(seq.has_aici);
-                self.save_aici_log(seq, &pre_res.seqs);
-                if pre_res.suspend_ids.contains(&seq.seq_id) {
-                    seq.sched_phase = SchedulingPhase::Suspended;
-                    continue;
-                }
-                let parent_idx = fork_indir[pre_res.fork_map[mid_ops.len()]];
-                if parent_idx != seq.seq_id {
-                    panic!(
-                        "out of sync, forks: {:?} @{} = {}, seq: {}",
-                        pre_res.fork_map,
-                        mid_ops.len(),
-                        parent_idx,
-                        seq.seq_id
-                    );
-                }
 
+            let num_forks = res.result.as_ref().map(|r| r.num_forks).unwrap_or(0);
+            if num_forks == 0 {
+                self.scheduler.finish_seq(seq, FinishReason::AiciStop);
+                continue;
+            }
+
+            mid_ops.push(AiciMidOp {
+                id: seq_id,
+                clone_id: None,
+            });
+
+            let mut to_add = Vec::new();
+            for _ in 1..num_forks {
+                let mut copy = seq.fork_as(self.seq_id, sg.max_index + 1);
+                copy.has_aici = true;
+                sg.max_index += 1;
+                self.seq_id += 1;
+                log::debug!("forked: {:?} -> {:?}", seq, copy);
                 mid_ops.push(AiciMidOp {
-                    id: seq.seq_id,
-                    clone_id: None,
+                    id: copy.seq_id,
+                    clone_id: Some(seq.seq_id),
                 });
+                to_add.push(copy);
             }
-            while mid_ops.len() < pre_res.fork_map.len() {
-                let parent_idx = fork_indir[pre_res.fork_map[mid_ops.len()]];
-                let mut found = false;
-                let mut to_add = Vec::new();
-                for seq in sg.seqs.iter() {
-                    if seq.seq_id == parent_idx {
-                        assert!(seq.sched_phase == SchedulingPhase::Running);
-                        let mut copy = seq.fork_as(self.seq_id, sg.max_index + 1);
-                        copy.has_aici = true;
-                        sg.max_index += 1;
-                        self.seq_id += 1;
-                        log::debug!("forked: {:?} -> {:?}", seq, copy);
-                        mid_ops.push(AiciMidOp {
-                            id: copy.seq_id,
-                            clone_id: Some(seq.seq_id),
-                        });
-                        to_add.push(copy);
-                        found = true;
-                        break;
-                    }
-                }
-                sg.seqs.extend(to_add);
-                if !found {
-                    break;
-                }
-            }
+
+            sg.seqs.extend(to_add);
         }
 
+        // fork_map was for python impl
         assert!(mid_ops.len() == pre_res.fork_map.len());
 
         self.aicirt

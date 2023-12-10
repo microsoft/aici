@@ -455,7 +455,13 @@ impl Stepper {
             let timeout = deadline.saturating_duration_since(Instant::now());
             match h.check_pre_process(timeout, &self.pre_recv_timer) {
                 Ok(mut data) => {
-                    outputs.insert(id, data.json);
+                    outputs.insert(
+                        id,
+                        data.json.clone_with(Some(AiciPreProcessResultInner {
+                            suspend: data.suspend,
+                            num_forks: data.attn_masks.len(),
+                        })),
+                    );
                     let len = data.attn_masks.len();
                     if data.suspend {
                         suspend_ids.push(op_idx);
@@ -940,9 +946,7 @@ fn install_from_cmdline(cli: &Cli, wasm_ctx: WasmContext, shm: Shm) {
 }
 
 fn main() -> () {
-    let mut builder = env_logger::Builder::from_default_env();
-    builder.format_timestamp(None);
-    builder.init();
+    setup_log();
 
     let cli = Cli::parse();
 
