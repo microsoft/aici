@@ -5,7 +5,7 @@ use std::{
 
 use actix_web::{middleware::Logger, web, App, HttpServer};
 use aici_abi::toktree::TokTrie;
-use aicirt::api::{MkModuleReq, MkModuleResp};
+use aicirt::{api::{MkModuleReq, MkModuleResp}, setup_log};
 use anyhow::Result;
 use base64::Engine;
 use clap::Parser;
@@ -202,9 +202,7 @@ fn inference_loop(
 
 #[actix_web::main]
 async fn main() -> () {
-    let mut builder = env_logger::Builder::from_default_env();
-    builder.format_timestamp(None);
-    builder.init();
+    setup_log();
 
     let args = Args::parse();
 

@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 
+use aicirt::setup_log_for_test;
 use rllm::{config::SamplingParams, LoaderArgs, RllmEngine};
 
 struct Ctx {
@@ -67,7 +68,7 @@ const QUERIES: &'static [(&'static str, &'static str)] = &[
 
 #[test]
 fn test_infer1() {
-    let _ = env_logger::builder().is_test(true).try_init();
+    setup_log_for_test();
 
     let mut ctx = Ctx::new();
 

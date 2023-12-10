@@ -9,7 +9,6 @@ edition = "2021"
 anyhow = "1.0.75"
 base64 = "0.21.4"
 clap = { version = "4.4.4", features = ["derive"] }
-env_logger = "0.10.0"
 hex = "0.4.3"
 libc = "0.2.148"
 log = "0.4.20"
@@ -23,3 +22,4 @@ aici_tokenizers = { path = "../aici_tokenizers" }
 tokenizers = "0.14.1"
 thread-priority = "0.13.1"
 ipc-channel = "0.18.0"
+flexi_logger = "0.27.3"

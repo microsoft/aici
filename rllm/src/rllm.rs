@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 
+use aicirt::setup_log;
 use anyhow::Result;
 use clap::Parser;
 
@@ -53,9 +54,7 @@ struct Args {
 }
 
 fn main() -> Result<()> {
-    let mut builder = env_logger::Builder::from_default_env();
-    builder.format_timestamp(None);
-    builder.init();
+    setup_log();
 
     let args = Args::parse();
 
