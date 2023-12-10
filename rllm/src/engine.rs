@@ -355,7 +355,9 @@ impl RllmEngine {
                         seq.num_kv_computed = seq.tokens.len();
 
                         seq.aici_sampling = AiciSampling::Splice {
-                            backtrack: r.backtrack,
+                            // backtrack count includes the token that was supposed to be appended
+                            // due to current sampling; however we never append it
+                            backtrack: r.backtrack.saturating_sub(1),
                             ff_tokens: r.ff_tokens.clone(),
                         }
                     }
@@ -386,10 +388,11 @@ impl RllmEngine {
         logits: &mut Tensor,
         aici_bias: &Tensor,
     ) -> Option<AiciPostOp> {
+        let sid = seq.seq_id;
         match std::mem::take(&mut seq.aici_sampling) {
             AiciSampling::Regular => None,
             AiciSampling::SampleWithBias { offset } => {
-                log::trace!("sample *{}: bias at {}", seq.seq_id, offset);
+                log::trace!("sample *{sid}: bias at {offset}");
                 let logits_aici = aici_bias.i((offset, ..)).unwrap();
                 *logits = (&*logits + logits_aici).unwrap();
                 None
@@ -398,7 +401,7 @@ impl RllmEngine {
                 backtrack,
                 ff_tokens,
             } => {
-                log::trace!("sample *{}: skip sampling (ff)", seq.seq_id);
+                log::trace!("sample *{sid}: backtrack:{backtrack} ff_tokens:{ff_tokens:?}",);
                 self.splice_seq(seq, backtrack as usize, &ff_tokens);
                 Some(AiciPostOp {
                     id: seq.seq_id,

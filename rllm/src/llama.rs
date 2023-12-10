@@ -520,7 +520,7 @@ impl Llama {
         let bar = indicatif::ProgressBar::new(cfg.num_hidden_layers as u64);
         bar.set_style(
             indicatif::ProgressStyle::with_template(
-                "[{elapsed_precise}/{eta_precise}] {bar:60.cyan/blue} {pos:>7}/{len:7} {msg}",
+                "[{elapsed_precise}] {bar:60.cyan/blue} {pos:>4}/{len:4} [{eta_precise}] {msg}",
             )
             .unwrap(),
         );
