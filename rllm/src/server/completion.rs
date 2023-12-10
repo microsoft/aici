@@ -104,6 +104,10 @@ async fn completions(
         max_tokens
     );
 
+    if request.best_of.is_none() {
+        sampling_params.best_of = sampling_params.n;
+    }
+
     if let Some(mod_id) = &request.aici_module {
         sampling_params.aici_module = Some(mod_id.clone());
         sampling_params.aici_arg = match &request.aici_arg {

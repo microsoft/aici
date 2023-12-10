@@ -74,6 +74,7 @@ pub struct Sequence {
     pub(crate) has_aici: bool,
     pub(crate) aici_sampling: AiciSampling,
     pub aici_logs: Vec<SequenceResult>,
+    pub pending_fork_ids: Vec<SeqId>,
 
     // state for Scheduler and BlockSpaceManager
     pub(crate) sched_phase: SchedulingPhase,
@@ -112,6 +113,7 @@ impl Sequence {
             has_aici: false,
             aici_logs: Vec::new(),
             aici_sampling: AiciSampling::Regular,
+            pending_fork_ids: Vec::new(),
         }
     }
 
@@ -142,8 +144,9 @@ impl Sequence {
             gpu_blocks: self.gpu_blocks.iter().map(|x| x.fork()).collect(),
             cpu_blocks: self.cpu_blocks.iter().map(|x| x.fork()).collect(),
             block_size: self.block_size,
-            has_aici: false,
+            has_aici: self.has_aici,
             aici_logs: Vec::new(),
+            pending_fork_ids: Vec::new(),
             aici_sampling: AiciSampling::Regular,
         }
     }

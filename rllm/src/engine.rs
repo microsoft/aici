@@ -275,12 +275,15 @@ impl RllmEngine {
     }
 
     pub fn queue_request(&mut self, req: AddRequest) -> Result<()> {
-        let seq = Sequence::new(
+        let mut seq = Sequence::new(
             self.seq_id,
             &req.prompt,
             self.scheduler.config.cache.block_size,
         );
-        self.seq_id += 1;
+        seq.pending_fork_ids = (1..req.sampling_params.n)
+            .map(|i| self.seq_id + i)
+            .collect::<Vec<_>>();
+        self.seq_id += req.sampling_params.n;
 
         let logits_processor = LogitsProcessor::new(&req.sampling_params, self.tok_trie.clone());
         let prompt = self
@@ -420,7 +423,34 @@ impl RllmEngine {
     ) -> Result<Vec<RequestOutput>> {
         let mut idx = 0;
 
+        let mut seq_id_to_logit_idx = HashMap::new();
+        for sg in sched_out.next_seq_groups.iter_mut() {
+            let mut to_add = Vec::new();
+            for seq in sg.seqs.iter_mut() {
+                if seq.sched_phase != SchedulingPhase::Running {
+                    continue;
+                }
+                seq_id_to_logit_idx.insert(seq.seq_id, idx);
+                let pending = std::mem::take(&mut seq.pending_fork_ids);
+                for copy_id in pending {
+                    seq_id_to_logit_idx.insert(copy_id, idx);
+                    let copy = seq.fork_as(copy_id, sg.max_index + 1);
+                    sg.max_index += 1;
+                    log::debug!("forked: {:?} -> {:?}", seq, copy);
+                    to_add.push(copy);
+                }
+                idx += 1;
+            }
+            sg.seqs.extend(to_add);
+        }
+
         let aici_bias = self.aici_bias(sched_out)?;
+
+        if idx > 0 {
+            let (num_seq, vocab_size) = logits.dims2()?;
+            assert!(vocab_size == self.tok_trie.vocab_size());
+            assert!(num_seq == idx);
+        }
 
         let mut outputs = Vec::new();
         for sg in sched_out.dropped_seq_groups.iter_mut() {
@@ -435,11 +465,11 @@ impl RllmEngine {
                     continue;
                 }
 
+                let idx = seq_id_to_logit_idx[&seq.seq_id];
                 let mut logits = logits.i((idx, ..))?;
 
                 if let Some(op) = self.aici_apply_bias(seq, &mut logits, &aici_bias) {
                     post_ops.push(op);
-                    idx += 1;
                     continue;
                 }
 
@@ -463,7 +493,6 @@ impl RllmEngine {
                     backtrack: 0,
                     clone_id: None,
                 });
-                idx += 1;
 
                 log::trace!(
                     "sample *{}: {}{}",
@@ -729,7 +758,7 @@ impl RllmEngine {
             let (sg_idx, seq_idx) = seq_ptr[&seq_id];
             let sg = &mut sched_out.next_seq_groups[sg_idx];
             let seq = &mut sg.seqs[seq_idx];
-            
+
             assert!(seq.has_aici);
             self.save_aici_log(seq, &pre_res.seqs);
 
@@ -750,25 +779,18 @@ impl RllmEngine {
                 clone_id: None,
             });
 
-            let mut to_add = Vec::new();
-            for _ in 1..num_forks {
-                let mut copy = seq.fork_as(self.seq_id, sg.max_index + 1);
-                copy.has_aici = true;
-                sg.max_index += 1;
+            while seq.pending_fork_ids.len() < num_forks - 1 {
+                seq.pending_fork_ids.push(self.seq_id);
                 self.seq_id += 1;
-                log::debug!("forked: {:?} -> {:?}", seq, copy);
-                mid_ops.push(AiciMidOp {
-                    id: copy.seq_id,
-                    clone_id: Some(seq.seq_id),
-                });
-                to_add.push(copy);
             }
 
-            sg.seqs.extend(to_add);
+            for copy_id in &seq.pending_fork_ids {
+                mid_ops.push(AiciMidOp {
+                    id: *copy_id,
+                    clone_id: Some(seq.seq_id),
+                });
+            }
         }
-
-        // fork_map was for python impl
-        assert!(mid_ops.len() == pre_res.fork_map.len());
 
         self.aicirt
             .as_mut()

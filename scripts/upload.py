@@ -98,7 +98,7 @@ def main():
     notes = "The patient should take some tylenol in the evening and aspirin in the morning. They should also take something for indigestion.\n"
     notes = "Start doctor note:\n" + notes + "\nEnd doctor note.\n"
 
-    arg = {
+    _arg = {
         "steps": [
             ast.fixed("[INST] "),
             # there is currently a bug going back to the first token, so we label the stuff after [INST] instead
@@ -131,7 +131,7 @@ def main():
         ]
     }
 
-    arg = {
+    _arg = {
         "prompt": "The word 'hello'",
         "steps": [
             ast.fixed(" in French is"),
@@ -139,7 +139,7 @@ def main():
         ],
     }
 
-    arg = {
+    _arg = {
         "steps": [
             ast.fixed("I am about "),
             ast.gen(max_tokens=5, rx=r"\d+"),
@@ -149,7 +149,7 @@ def main():
         ]
     }
 
-    arg = {
+    _arg = {
         "steps": [
             ast.fixed("Please remember the following items:\nFoo\nZzzzz"),
             ast.label("l", ast.fixed("\nBar\nBaz")),
