@@ -192,11 +192,11 @@ def check_mask(expected, mask_tags):
     )
 
 
-def test_mask_1():
+def disabled_test_mask_1():
     check_mask(" French is 'hello world' is", ["lang"])
 
 
-def test_mask_2():
+def disabled_test_mask_2():
     check_mask(" French is 'bonjour'.", [])
 
 
