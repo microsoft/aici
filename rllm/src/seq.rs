@@ -137,7 +137,7 @@ impl Sequence {
             sched_phase: self.sched_phase,
             num_kv_computed: self.num_kv_computed,
             tokens: self.tokens.clone(),
-            output_ptr: self.output_ptr,
+            output_ptr: self.prompt_len,
             prompt_len: self.prompt_len,
             gpu_blocks: self.gpu_blocks.iter().map(|x| x.fork()).collect(),
             cpu_blocks: self.cpu_blocks.iter().map(|x| x.fork()).collect(),

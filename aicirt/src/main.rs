@@ -574,7 +574,7 @@ impl Stepper {
                         } else {
                             allow_set
                                 .iter()
-                                .take(40)
+                                .take(50)
                                 .map(|idx| self.token_name(*idx))
                                 .collect::<Vec<_>>()
                                 .join(", ")

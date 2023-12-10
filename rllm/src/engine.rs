@@ -380,120 +380,128 @@ impl RllmEngine {
         Ok(t)
     }
 
+    fn aici_apply_bias(
+        &self,
+        seq: &mut Sequence,
+        logits: &mut Tensor,
+        aici_bias: &Tensor,
+    ) -> Option<AiciPostOp> {
+        match std::mem::take(&mut seq.aici_sampling) {
+            AiciSampling::Regular => None,
+            AiciSampling::SampleWithBias { offset } => {
+                log::trace!("sample *{}: bias at {}", seq.seq_id, offset);
+                let logits_aici = aici_bias.i((offset, ..)).unwrap();
+                *logits = (&*logits + logits_aici).unwrap();
+                None
+            }
+            AiciSampling::Splice {
+                backtrack,
+                ff_tokens,
+            } => {
+                log::trace!("sample *{}: skip sampling (ff)", seq.seq_id);
+                self.splice_seq(seq, backtrack as usize, &ff_tokens);
+                Some(AiciPostOp {
+                    id: seq.seq_id,
+                    tokens: ff_tokens,
+                    backtrack: backtrack,
+                    clone_id: None,
+                })
+            }
+        }
+    }
+
     fn generate_outputs(
         &mut self,
         logits: &Tensor,
         sched_out: &mut SchedulerOutputs,
     ) -> Result<Vec<RequestOutput>> {
-        let mut outputs = Vec::new();
         let mut idx = 0;
 
         let aici_bias = self.aici_bias(sched_out)?;
 
-        for sg in sched_out.dropped_seq_groups.iter() {
-            let outp = RequestOutput {
-                request_id: sg.request_id.clone(),
-                seq_outputs: Vec::new(),
-                is_ambiguous: false,
-                is_final: true,
-            };
-            outputs.push(outp);
+        let mut outputs = Vec::new();
+        for sg in sched_out.dropped_seq_groups.iter_mut() {
+            outputs.push(self.req_output(sg, true));
         }
 
         let mut post_ops = Vec::new();
 
         for sg in sched_out.next_seq_groups.iter_mut() {
-            let mut outp = RequestOutput {
-                request_id: sg.request_id.clone(),
-                seq_outputs: Vec::new(),
-                is_ambiguous: false,
-                is_final: false,
-            };
             for seq in sg.seqs.iter_mut() {
-                if seq.sched_phase == SchedulingPhase::Running {
-                    let mut logits = logits.i((idx, ..))?;
-                    match std::mem::take(&mut seq.aici_sampling) {
-                        AiciSampling::Regular => {}
-                        AiciSampling::SampleWithBias { offset } => {
-                            log::trace!(
-                                "sample {}/{}: bias at {}",
-                                sg.request_id,
-                                seq.seq_id,
-                                offset
-                            );
-                            let logits_aici = aici_bias.i((offset, ..))?;
-                            logits = (logits + logits_aici)?;
-                        }
-                        AiciSampling::Splice {
-                            backtrack,
-                            ff_tokens,
-                        } => {
-                            log::trace!(
-                                "sample {}/{}: skip sampling (ff)",
-                                sg.request_id,
-                                seq.seq_id
-                            );
-                            self.splice_seq(seq, backtrack as usize, &ff_tokens);
-                            idx += 1;
-                            post_ops.push(AiciPostOp {
-                                id: seq.seq_id,
-                                tokens: ff_tokens,
-                                backtrack: backtrack,
-                                clone_id: None,
-                            });
-                            continue;
-                        }
-                    }
-                    seq.num_kv_computed = seq.tokens.len();
-
-                    let mut info = "";
-                    let next_token = sg.logits_processor.sample(&logits)?;
-                    if seq.has_aici && next_token == self.tok_trie.info().tok_eos {
-                        // replace with space, so the model doesn't get confused
-                        // note that aici will still get the real EOS token
-                        let space = self.tok_trie.greedy_tokenize(b" ")[0];
-                        seq.tokens.push(space);
-                        info = " -> space";
-                    } else {
-                        seq.tokens.push(next_token);
-                    }
-
-                    idx += 1;
-
-                    post_ops.push(AiciPostOp {
-                        id: seq.seq_id,
-                        tokens: vec![next_token],
-                        backtrack: 0,
-                        clone_id: None,
-                    });
-
-                    log::trace!(
-                        "sample {}/{}: {}{}",
-                        sg.request_id,
-                        seq.seq_id,
-                        self.tok_trie.token_dbg(next_token),
-                        info
-                    );
-
-                    if !sg.sampling_params.ignore_eos && next_token == self.eos_token_id {
-                        self.scheduler.finish_seq(seq, FinishReason::FoundEos);
-                    } else if seq.get_gen_len() >= sg.sampling_params.max_tokens {
-                        self.scheduler
-                            .finish_seq(seq, FinishReason::MaxTokensReached);
-                    }
+                if seq.sched_phase != SchedulingPhase::Running {
+                    continue;
                 }
 
-                let mut out = seq.gen_output();
-                out.new_text = self.tok_trie.decode_str(&out.new_output_tokens);
-                outp.seq_outputs.push(out);
+                let mut logits = logits.i((idx, ..))?;
+
+                if let Some(op) = self.aici_apply_bias(seq, &mut logits, &aici_bias) {
+                    post_ops.push(op);
+                    idx += 1;
+                    continue;
+                }
+
+                seq.num_kv_computed = seq.tokens.len();
+
+                let mut info = "";
+                let next_token = sg.logits_processor.sample(&logits)?;
+                if seq.has_aici && next_token == self.tok_trie.info().tok_eos {
+                    // replace with space, so the model doesn't get confused
+                    // note that aici will still get the real EOS token
+                    let space = self.tok_trie.greedy_tokenize(b" ")[0];
+                    seq.tokens.push(space);
+                    info = " -> space";
+                } else {
+                    seq.tokens.push(next_token);
+                }
+
+                post_ops.push(AiciPostOp {
+                    id: seq.seq_id,
+                    tokens: vec![next_token],
+                    backtrack: 0,
+                    clone_id: None,
+                });
+                idx += 1;
+
+                log::trace!(
+                    "sample *{}: {}{}",
+                    seq.seq_id,
+                    self.tok_trie.token_dbg(next_token),
+                    info
+                );
+
+                if !sg.sampling_params.ignore_eos && next_token == self.eos_token_id {
+                    self.scheduler.finish_seq(seq, FinishReason::FoundEos);
+                } else if seq.get_gen_len() >= sg.sampling_params.max_tokens {
+                    self.scheduler
+                        .finish_seq(seq, FinishReason::MaxTokensReached);
+                }
             }
-            outp.is_ambiguous = sg.logits_processor.num_ambiguous > 0;
-            outputs.push(outp);
         }
 
         self.aici_post(sched_out, AiciPostProcessReq { ops: post_ops })?;
 
+        for sg in sched_out.next_seq_groups.iter_mut() {
+            outputs.push(self.req_output(sg, false));
+        }
+
         Ok(outputs)
+    }
+
+    fn req_output(&self, sg: &mut SequenceGroup, is_final: bool) -> RequestOutput {
+        RequestOutput {
+            request_id: sg.request_id.clone(),
+            seq_outputs: sg
+                .seqs
+                .iter_mut()
+                .map(|seq| {
+                    let mut out = seq.gen_output();
+                    out.new_text = self.tok_trie.decode_str(&out.new_output_tokens);
+                    out
+                })
+                .collect(),
+            is_ambiguous: sg.logits_processor.num_ambiguous > 0,
+            is_final,
+        }
     }
 
     fn run_model(&mut self, sched_out: &mut SchedulerOutputs) -> Result<Vec<RequestOutput>> {

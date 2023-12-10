@@ -113,18 +113,21 @@ def main():
                 max_tokens=100,
                 stop_at="DONE",
                 set={
-                    "drugs": ast.e_extract_all(
-                        r"<drug>([^<]*</drug>)", ast.e_current()
-                    )
+                    "drugs": ast.e_extract_all(r"<drug>([^<]*</drug>)", ast.e_current())
                 },
             ),
-            ast.fixed("For each drug in the following doctor's notes give the time to take it. "
-                        "Use <drug>Drug Name</drug> syntax when referring to any drugs. [/INST]\n"
-                        + notes,
-                        following="start"),
-            ast.gen(max_tokens=100, inner={
-                "<drug>": ast.e_var("drugs"),
-            })
+            ast.fixed(
+                "For each drug in the following doctor's notes give the time to take it. "
+                "Use <drug>Drug Name</drug> syntax when referring to any drugs. [/INST]\n"
+                + notes,
+                following="start",
+            ),
+            ast.gen(
+                max_tokens=100,
+                inner={
+                    "<drug>": ast.e_var("drugs"),
+                },
+            ),
         ]
     }
 
@@ -133,7 +136,7 @@ def main():
         "steps": [
             ast.fixed(" in French is"),
             ast.gen(max_tokens=5),
-        ]
+        ],
     }
 
     arg = {
@@ -146,6 +149,19 @@ def main():
         ]
     }
 
+    arg = {
+        "steps": [
+            ast.fixed("Please remember the following items:\nFoo\nZzzzz"),
+            ast.label("l", ast.fixed("\nBar\nBaz")),
+            ast.fixed("\nPlease repeat the list, say DONE when done:\n"),
+            ast.gen(max_tokens=20, stop_at="DONE", set_var="x"),
+            ast.fixed(
+                "\nQux\nMux\nPlease repeat the list, say DONE when done:\n",
+                following="l",
+            ),
+            ast.gen(max_tokens=20, stop_at="DONE", set_var="y"),
+        ],
+    }
 
     if len(sys.argv) > 1 and sys.argv[1].endswith(".py"):
         mod = upload_wasm("pyvm")

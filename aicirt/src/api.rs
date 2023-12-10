@@ -76,11 +76,11 @@ pub struct AiciPostOp {
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct SequenceResult<T = ()> {
     pub is_success: bool,
-    pub logs: String,
+    pub result: Option<T>,
     // StorageCmd::ReadVar are not recorded
     pub storage: Vec<StorageCmd>,
+    pub logs: String,
     pub micros: u64,
-    pub result: Option<T>,
 }
 
 #[derive(Serialize, Deserialize)]
