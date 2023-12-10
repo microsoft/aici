@@ -550,6 +550,15 @@ fn val_to_list(val: &[u8]) -> Vec<Vec<u8>> {
     split_vec(val, SEP.as_bytes())
 }
 
+impl StepSpecific {
+    fn is_fork(&self) -> bool {
+        match self {
+            StepSpecific::Fork { .. } => true,
+            _ => false,
+        }
+    }
+}
+
 impl StepState {
     #[allow(dead_code)]
     fn pp(&self) -> String {
@@ -1236,15 +1245,19 @@ impl AiciVm for Runner {
 
         if arg.fork_group.len() > 1 {
             wprintln!("fork group: {:?}", arg.fork_group);
-            let st = self.states.remove(self.state_idx);
-            if let StepSpecific::Fork { mut branches } = st.specific {
-                assert!(arg.fork_group.len() == branches.len());
-                let my_id = aici_abi::self_seq_id();
-                let idx = arg.fork_group.iter().position(|id| *id == my_id).unwrap();
-                let branch = branches.remove(idx);
-                self.states.splice(self.state_idx..self.state_idx, branch);
+            if self.state_idx == 0 && !self.curr_state().specific.is_fork() {
+                wprintln!("initial fork; nothing to see here");
             } else {
-                panic!("current step not a fork");
+                let st = self.states.remove(self.state_idx);
+                if let StepSpecific::Fork { mut branches } = st.specific {
+                    assert!(arg.fork_group.len() == branches.len());
+                    let my_id = aici_abi::self_seq_id();
+                    let idx = arg.fork_group.iter().position(|id| *id == my_id).unwrap();
+                    let branch = branches.remove(idx);
+                    self.states.splice(self.state_idx..self.state_idx, branch);
+                } else {
+                    panic!("current step not a fork");
+                }
             }
         }
 
