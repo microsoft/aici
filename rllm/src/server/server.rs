@@ -79,6 +79,10 @@ pub struct Args {
     /// Shm/semaphore name prefix
     #[arg(long, default_value = "/aici0-")]
     shm_prefix: String,
+
+    /// Enable nvprof profiling for given engine step
+    #[arg(long, default_value_t = 0)]
+    profile_step: usize,
 }
 
 #[actix_web::post("/v1/aici_modules")]
@@ -241,8 +245,10 @@ async fn main() -> () {
     let app_data = web::Data::new(app_data);
     let handle2 = handle.clone();
 
+    let profile_step = args.profile_step;
     std::thread::spawn(move || {
         let mut engine = RllmEngine::load(loader_args).expect("failed to load model");
+        engine.profile_step_no = profile_step;
         engine.set_aicirt(iface);
         inference_loop(handle2, engine, recv)
     });

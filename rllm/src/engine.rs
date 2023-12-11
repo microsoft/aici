@@ -125,6 +125,7 @@ pub struct RllmEngine {
     pub model: Model,
     seq_id: SeqId,
     step_no: usize,
+    pub profile_step_no: usize,
     req_id_cnt: usize,
     #[allow(dead_code)]
     pub alt: usize,
@@ -221,6 +222,7 @@ impl RllmEngine {
             model,
             seq_id: 1,
             step_no: 0,
+            profile_step_no: 0,
             req_id_cnt: 0,
             device,
             eos_token_id,
@@ -561,7 +563,13 @@ impl RllmEngine {
         let t0 = Instant::now();
         let logits = self.model.forward(&info)?;
         let r = self.generate_outputs(&logits, sched_out);
-        log::debug!("model forward: {:?}; {} toks", t0.elapsed(), info.tokens.elem_count());
+        log::info!(
+            "model forward: step #{} {:?}; {} toks; {:?}/tok",
+            self.step_no,
+            t0.elapsed(),
+            info.tokens.elem_count(),
+            t0.elapsed() / info.tokens.elem_count() as u32
+        );
 
         if self.nv_profile {
             cudarc::driver::safe::profiler_stop()?;
@@ -787,6 +795,11 @@ impl RllmEngine {
 
     pub fn step(&mut self) -> Result<Vec<RequestOutput>> {
         self.step_no += 1;
+
+        if self.step_no == self.profile_step_no {
+            cudarc::driver::safe::profiler_start()?;
+        }
+
         let mut sched_out = self.scheduler.schedule();
 
         self.aici_pre(&mut sched_out)?;
@@ -799,6 +812,10 @@ impl RllmEngine {
         let outputs = self.run_model(&mut sched_out);
         // we run step_finished() regardless if model failed
         self.scheduler.step_finished(sched_out);
+
+        if self.step_no == self.profile_step_no {
+            cudarc::driver::safe::profiler_stop()?;
+        }
 
         let outputs = outputs?;
         if outputs.is_empty() {

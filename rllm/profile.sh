@@ -6,7 +6,7 @@ set -x
 rm -f profile.ncu-rep report1.*
 cargo build --release
 
-RUST_LOG=info,rllm=trace \
+RUST_LOG=info \
 nsys profile -c cudaProfilerApi \
     --stats true \
     ./target/release/rllm --nv-profile
