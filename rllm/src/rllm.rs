@@ -5,7 +5,7 @@ use anyhow::Result;
 use clap::Parser;
 
 use rand::Rng;
-use rllm::{config::SamplingParams, playground_1, LoaderArgs, RllmEngine};
+use rllm::{config::SamplingParams, playground_1, AddRequest, LoaderArgs, RllmEngine};
 
 const DEFAULT_PROMPT: &str = "over millions of years,";
 
@@ -27,6 +27,10 @@ struct Args {
     /// The initial prompt.
     #[arg(long)]
     prompt: Option<String>,
+
+    /// File with prompt.
+    #[arg(long)]
+    prompt_file: Option<String>,
 
     #[arg(long)]
     model_id: Option<String>,
@@ -68,7 +72,13 @@ fn main() -> Result<()> {
         tokenizer: args.tokenizer,
     })?;
 
-    let prompt = args.prompt.as_ref().map_or(DEFAULT_PROMPT, |p| p.as_str());
+    let prompt = match &args.prompt {
+        Some(p) => p.clone(),
+        None => match &args.prompt_file {
+            Some(f) => std::fs::read_to_string(f)?,
+            None => DEFAULT_PROMPT.to_string(),
+        },
+    };
 
     println!("{prompt}");
 
@@ -139,18 +149,33 @@ fn main() -> Result<()> {
                 }
             }
         }
+    } else if args.alt == 9 {
+        let tokens = engine.tokenize(&prompt, true)?;
+        let mut len = 10;
+        while len < tokens.len() {
+            let tokens = &tokens[..len];
+            engine.queue_request(AddRequest {
+                request_id: format!("R{len}"),
+                prompt: tokens.to_vec(),
+                sampling_params: p.clone(),
+            })?;
+            while engine.num_pending_requests() > 0 {
+                let _ = engine.step()?;
+            }
+            len = len / 10 * 11;
+        }
     } else {
         if args.nv_profile {
             log::info!("pre-heating...");
             let mut pre_heat = p.clone();
             pre_heat.max_tokens = 1;
-            let _ = engine.generate(prompt, pre_heat)?;
+            let _ = engine.generate(&prompt, pre_heat)?;
             log::info!("pre-heating done");
         }
 
         engine.nv_profile = args.nv_profile;
 
-        let gen = engine.generate(prompt, p)?;
+        let gen = engine.generate(&prompt, p)?;
         let dt = start_gen.elapsed();
         println!("\n{gen}\n");
         log::info!("time: {dt:?}");

@@ -1,4 +1,4 @@
-use crate::{DType, Device, Tensor, IndexOp};
+use crate::{DType, Device, IndexOp, Tensor};
 use aici_abi::toktree::TokTrie;
 use aicirt::api::{
     AiciMidOp, AiciMidProcessReq, AiciPostOp, AiciPostProcessReq, AiciPreOp, AiciPreProcessReq,
@@ -470,12 +470,14 @@ impl RllmEngine {
                     seq.tokens.push(next_token);
                 }
 
-                post_ops.push(AiciPostOp {
-                    id: seq.seq_id,
-                    tokens: vec![next_token],
-                    backtrack: 0,
-                    clone_id: None,
-                });
+                if seq.has_aici {
+                    post_ops.push(AiciPostOp {
+                        id: seq.seq_id,
+                        tokens: vec![next_token],
+                        backtrack: 0,
+                        clone_id: None,
+                    });
+                }
 
                 log::trace!(
                     "sample *{}: {}{}",
@@ -559,7 +561,7 @@ impl RllmEngine {
         let t0 = Instant::now();
         let logits = self.model.forward(&info)?;
         let r = self.generate_outputs(&logits, sched_out);
-        log::debug!("model forward: {:?}", t0.elapsed());
+        log::debug!("model forward: {:?}; {} toks", t0.elapsed(), info.tokens.elem_count());
 
         if self.nv_profile {
             cudarc::driver::safe::profiler_stop()?;

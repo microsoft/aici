@@ -43,8 +43,8 @@ def upload_module(file_path: str) -> str:
 
 def completion(
     prompt,
-    aici_module,
-    aici_arg,
+    aici_module=None,
+    aici_arg="",
     temperature=0.0,
     max_tokens=200,
     n=1,

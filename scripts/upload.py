@@ -163,6 +163,18 @@ def main():
         ],
     }
 
+    if len(sys.argv) > 1 and sys.argv[1].endswith(".txt"):
+        pyaici.rest.log_level = 2
+        prompt = open(sys.argv[1]).read()
+        ask_completion(
+            prompt=prompt,
+            aici_module=None,
+            aici_arg=None,
+            ignore_eos=True,
+            max_tokens=1,
+        )
+        return
+
     if len(sys.argv) > 1 and sys.argv[1].endswith(".py"):
         mod = upload_wasm("pyvm")
         pyaici.rest.log_level = 2
