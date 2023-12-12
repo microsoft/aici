@@ -408,6 +408,18 @@ def start(f: Coroutine[CbType, None, None]):
     return AiciAsync(f)
 
 
+def test(f: Coroutine[CbType, None, None]):
+    """
+    Runs the loop as a test.
+    """
+
+    async def wrap():
+        await f
+        print("TEST OK")
+
+    return AiciAsync(wrap())
+
+
 class Label:
     def __init__(self):
         """
@@ -491,9 +503,6 @@ async def gen_tokens(
             if stop_at in text:
                 break
 
-        if text.endswith("\n\n\n\n"):
-            break  # HACK - we don't seem to be getting EOS
-
         if next_token.finished:
             break
     if store_var is not None:
@@ -508,3 +517,23 @@ async def gen_text(**kwargs: Any) -> str:
     """
     tokens = await gen_tokens(**kwargs)
     return detokenize(tokens).decode(errors="replace")
+
+
+def check_var(name: str, value: str):
+    """
+    Check if the variable has the given value.
+    """
+    v = get_var(name)
+    if v is None:
+        raise AssertionError(f"Variable {name} is unset")
+    v = v.decode()
+    if v != value:
+        raise AssertionError(f"Variable {name}: {repr(v)} != {repr(value)}")
+
+
+def check_vars(d: dict[str, str]):
+    """
+    Check if all the variables have the given values.
+    """
+    for k, v in d.items():
+        check_var(k, v)

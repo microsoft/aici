@@ -163,13 +163,13 @@ def main():
         )
     else:
         ask_completion(
-            prompt="",
+            prompt=arg.get("prompt", ""),
             # prompt=wrap("Write fib function in C, respond in code only"),
             aici_module=mod,
             aici_arg=arg,
             n=1,
             temperature=0,
-            max_tokens=1000,
+            max_tokens=200,
         )
 
 

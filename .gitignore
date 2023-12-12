@@ -13,3 +13,4 @@ perf.data
 tokenizer.bin
 log.txt
 candle/
+candle-flash-attn/

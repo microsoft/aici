@@ -67,6 +67,7 @@ class TokenSet(Sequence[bool]):
     Represents a set of tokens.
     The value is true at indicies corresponding to tokens in the set.
     """
+
     def __init__(self):
         """
         Create an empty set (with len() set to the total number of tokens).
@@ -135,5 +136,6 @@ class RegexConstraint(Constraint):
     A constraint that allows only tokens that match the regex.
     The regex is implicitly anchored at the start and end of the generation.
     """
+
     def __init__(self, pattern: str):
         ...

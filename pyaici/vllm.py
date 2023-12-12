@@ -150,8 +150,8 @@ def install(runner: AiciRunner):
                     runner.space_token = cast(
                         int, llm_engine.tokenizer.convert_tokens_to_ids(sp)
                     )
-                last_tok = runner.space_token
-                seq.data.output_token_ids[-1] = last_tok
+                # note that we keep last_tok as EOS, to pass to the post_process()
+                seq.data.output_token_ids[-1] = runner.space_token
             toks = [last_tok]
             if ff:
                 # first, decode with only one token
