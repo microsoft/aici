@@ -179,7 +179,7 @@ extern "C" {
         key_cache_ptrs_tensor: *const C_tensor,
         value_cache_ptrs_tensor: *const C_tensor,
         block_mapping_tensor: *const C_tensor,
-        numel_per_block: i32,
+        key0: *const C_tensor,
     ) -> *mut libc::c_char;
 }
 
@@ -299,8 +299,8 @@ pub fn copy_blocks(
     let mut block_mapping_vec = Vec::new();
     for (&src_block_number, dst_block_numbers) in block_mapping {
         for &dst_block_number in dst_block_numbers {
-            block_mapping_vec.push(src_block_number as i32);
-            block_mapping_vec.push(dst_block_number as i32);
+            block_mapping_vec.push(src_block_number as i64);
+            block_mapping_vec.push(dst_block_number as i64);
         }
     }
 
@@ -315,7 +315,7 @@ pub fn copy_blocks(
                 key_cache_ptrs_tensor.as_ptr(),
                 value_cache_ptrs_tensor.as_ptr(),
                 block_mapping_tensor.as_ptr(),
-                numel_per_block,
+                key_caches[0].as_ptr(),
             ),
         );
     }

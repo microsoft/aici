@@ -153,6 +153,11 @@ const KERNEL_FILES: [&str; 16] = [
 ];
 
 fn main() -> Result<()> {
+    if std::env::var("VSCODE_CWD").is_ok() {
+        // do not compile from rust-analyzer
+        return Ok(());
+    }
+
     let num_cpus = std::env::var("RAYON_NUM_THREADS").map_or_else(
         |_| num_cpus::get_physical(),
         |s| usize::from_str(&s).unwrap(),

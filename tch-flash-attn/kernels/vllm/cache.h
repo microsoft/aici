@@ -31,4 +31,4 @@ void copy_blocks_2(
   torch::Tensor& key_cache_ptrs_tensor,
   torch::Tensor& value_cache_ptrs_tensor,
   torch::Tensor& block_mapping_tensor,
-  const int numel_per_block);
+  torch::Tensor& key0);

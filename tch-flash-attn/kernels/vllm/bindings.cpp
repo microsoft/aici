@@ -75,9 +75,9 @@ char *gather_cached_kv_C(tensor key, tensor value, tensor key_cache,
 
 char *copy_blocks_2_C(tensor key_cache_ptrs_tensor,
                       tensor value_cache_ptrs_tensor,
-                      tensor block_mapping_tensor, const int numel_per_block) {
+                      tensor block_mapping_tensor, tensor key0) {
   PROTECT(copy_blocks_2(*key_cache_ptrs_tensor, *value_cache_ptrs_tensor,
-                        *block_mapping_tensor, numel_per_block));
+                        *block_mapping_tensor, *key0));
 }
 }
 // END GENERATED SECTION

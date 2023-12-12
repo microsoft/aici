@@ -138,6 +138,31 @@ void copy_blocks(
     }));
 }
 
+void copy_blocks_2(
+  torch::Tensor& key_cache_ptrs_tensor,
+  torch::Tensor& value_cache_ptrs_tensor,
+  torch::Tensor& block_mapping_tensor,
+  torch::Tensor& key0) {
+
+  int num_layers = key_cache_ptrs_tensor.size(0);
+  int num_pairs = block_mapping_tensor.size(0) / 2;
+  const int numel_per_block = key0[0].numel();
+
+  dim3 grid(num_layers, num_pairs);
+  dim3 block(std::min(1024, numel_per_block));
+  const cudaStream_t stream = at::cuda::getCurrentCUDAStream();
+  VLLM_DISPATCH_FLOATING_TYPES(
+    key0.scalar_type(), "copy_blocks_kernel", ([&] {
+      vllm::copy_blocks_kernel<scalar_t><<<grid, block, 0, stream>>>(
+        key_cache_ptrs_tensor.data_ptr<int64_t>(),
+        value_cache_ptrs_tensor.data_ptr<int64_t>(),
+        block_mapping_tensor.data_ptr<int64_t>(),
+        numel_per_block);
+    }));
+
+}
+
+
 namespace vllm {
 
 template<typename scalar_t>
