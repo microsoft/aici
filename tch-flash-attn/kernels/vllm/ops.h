@@ -1,5 +1,6 @@
 #include <torch/extension.h>
 
+extern "C" {
 void paged_attention_v1(
   torch::Tensor& out,
   torch::Tensor& query,
@@ -60,6 +61,7 @@ void gelu_new(
 void gelu_fast(
   torch::Tensor& out,
   torch::Tensor& input);
+}
 
 #ifndef USE_ROCM
 torch::Tensor awq_gemm(

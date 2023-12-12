@@ -3,6 +3,7 @@
 
 #include "cuda_compat.h"
 #include "dispatch_utils.h"
+#include "ops.h"
 
 namespace vllm {
 
