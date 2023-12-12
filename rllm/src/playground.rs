@@ -1,6 +1,7 @@
 use crate::{to_offsets, util::check_all_close};
 use crate::{DType, Device, IndexOp, Shape, Tensor};
 use anyhow::Result;
+use torch_sys::IntList;
 
 struct XorShiftRng {
     state: u32,
@@ -28,19 +29,19 @@ impl XorShiftRng {
         self.urandom() * 2.0 - 1.0
     }
 
-    fn rand_tensor<S: Into<Shape>>(&mut self, shape: S, device: &Device) -> Tensor {
-        let shape: Shape = shape.into();
-        let n = shape.elem_count();
+    fn rand_tensor(&mut self, shape: &[i64], device: Device) -> Tensor {
+        let mut n = 1;
+        for k in shape {
+            n *= *k as usize;
+        }
         let mut data = Vec::with_capacity(n);
         for _ in 0..n {
             data.push(self.srandom());
         }
-        Tensor::new(data.as_slice(), device)
-            .unwrap()
+        Tensor::from_slice(data.as_slice())
+            .to(device)
             .reshape(shape)
-            .unwrap()
-            .to_dtype(DType::BF16)
-            .unwrap()
+            .to_dtype(DType::BFloat16, false, false)
     }
 }
 
@@ -60,13 +61,13 @@ fn flash_attn(
     println!("kv_seqlen: {kv_seqlen:?}");
 
     // flash-attn expects (seq_len, nheads, head_dim)
-    let q = q.contiguous()?;
-    let k = k.contiguous()?;
-    let v = v.contiguous()?;
-    let cuda = Device::new_cuda(0)?;
-    let device = &cuda;
+    let q = q.contiguous();
+    let k = k.contiguous();
+    let v = v.contiguous();
+    let cuda = Device::Cuda(0);
+    let device = cuda;
     let causal = true;
-    let r = candle_flash_attn::flash_attn_varlen(
+    let r = tch_flash_attn::flash_attn_varlen(
         &q,
         &k,
         &v,
@@ -76,7 +77,7 @@ fn flash_attn(
         *kv_seqlen.iter().max().unwrap(),
         softmax_scale,
         causal,
-    )?;
+    );
 
     let r2 = crate::llama::naive_attn(
         &q,
@@ -101,17 +102,17 @@ fn flash_attn(
 #[allow(dead_code)]
 pub fn playground_1() {
     let mut xor = XorShiftRng::new();
-    let device = Device::new_cuda(0).unwrap();
+    let device = Device::Cuda(0);
 
     let slen = 5;
     let pref = 2;
     let head_dim = 16;
     let n_heads = 8;
-    let query = xor.rand_tensor(&[slen, n_heads, head_dim], &device);
-    let key = xor.rand_tensor(&[slen, n_heads, head_dim], &device);
-    let value = xor.rand_tensor(&[slen, n_heads, head_dim], &device);
+    let query = xor.rand_tensor(&[slen, n_heads, head_dim], device);
+    let key = xor.rand_tensor(&[slen, n_heads, head_dim], device);
+    let value = xor.rand_tensor(&[slen, n_heads, head_dim], device);
 
-    let q2 = query.i((pref.., .., ..)).unwrap();
+    let q2 = query.i((pref.., .., ..));
 
     // let q1 = query.i((0..pref, .., ..)).unwrap();
     // let k1 = key.i((0..pref, .., ..)).unwrap();
@@ -121,7 +122,15 @@ pub fn playground_1() {
     // println!("out\n{out}");
     // let o1 = flash_attn(&q1, &k1, &v1, &[pref], &[pref], 0.0, 1.0).unwrap();
     // println!("o1\n{o1}");
-    let _o2 = flash_attn(&q2, &key, &value, &[slen - pref], &[slen], 0.0, 1.0).unwrap();
+    let _o2 = flash_attn(
+        &q2,
+        &key,
+        &value,
+        &[(slen - pref) as usize],
+        &[slen as usize],
+        0.0,
+        1.0,
+    );
     // println!("o2\n{o2}");
     // println!("{:?}", out.dims());
     // println!("{:?}", o1.dims());

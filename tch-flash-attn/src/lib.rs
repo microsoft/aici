@@ -188,7 +188,7 @@ pub fn reshape_and_cache(
     value: &Tensor,           // [num_tokens, num_heads, head_size]
     key_cache: &mut Tensor,   // [num_blocks, num_heads, head_size/x, block_size, x]
     value_cache: &mut Tensor, // [num_blocks, num_heads, head_size, block_size]
-    slot_mapping: &Tensor,    // [num_tokens]
+    slot_mapping: &Tensor,    // [num_tokens], int
 ) {
     unsafe {
         check_res(
@@ -209,7 +209,7 @@ pub fn gather_cached_kv(
     value: &mut Tensor,    // [num_tokens, num_heads, head_size]
     key_cache: &Tensor,    // [num_blocks, num_heads, head_size/x, block_size, x]
     value_cache: &Tensor,  // [num_blocks, num_heads, head_size, block_size]
-    slot_mapping: &Tensor, // [num_tokens]
+    slot_mapping: &Tensor, // [num_tokens], int
 ) {
     unsafe {
         check_res(
@@ -265,8 +265,8 @@ fn check_cont_bf16(t: &Tensor) {
 // }
 
 pub fn copy_blocks(
-    key_caches: &Vec<&mut Tensor>,
-    value_caches: &Vec<&mut Tensor>,
+    key_caches: &mut Vec<Tensor>,
+    value_caches: &mut Vec<Tensor>,
     block_mapping: &HashMap<usize, Vec<usize>>,
 ) {
     let num_layers = key_caches.len();
@@ -278,12 +278,12 @@ pub fn copy_blocks(
     assert!(device.is_cuda());
 
     let (_num_blocks, num_heads, head_size, block_size) = value_caches[0].size4().unwrap();
-    let numel_per_block = (num_heads * head_size * block_size) as i32;
+    let _numel_per_block = (num_heads * head_size * block_size) as i32;
 
     let tsize = key_caches[0].numel();
 
-    let key_cache_ptrs: Vec<i64> = key_caches.iter().map(|t| to_cuda_ptr(*t)).collect();
-    let value_cache_ptrs: Vec<i64> = value_caches.iter().map(|t| to_cuda_ptr(*t)).collect();
+    let key_cache_ptrs: Vec<i64> = key_caches.iter().map(|t| to_cuda_ptr(t)).collect();
+    let value_cache_ptrs: Vec<i64> = value_caches.iter().map(|t| to_cuda_ptr(t)).collect();
 
     for layer_idx in 0..(2 * num_layers) {
         let e = if layer_idx < num_layers {

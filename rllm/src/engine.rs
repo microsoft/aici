@@ -5,7 +5,6 @@ use aicirt::api::{
     ModuleInstId, SequenceResult,
 };
 use anyhow::{anyhow, Error as E, Result};
-use candle_nn::VarBuilder;
 use hf_hub::{
     api::sync::{Api, ApiRepo},
     RepoType,
@@ -18,6 +17,7 @@ use std::{
     sync::{Arc, Mutex},
     time::Instant,
 };
+use tch::nn::VarStore;
 use tokenizers::Tokenizer;
 
 use crate::{
@@ -158,8 +158,8 @@ impl RllmEngine {
     }
 
     pub fn load(args: LoaderArgs) -> Result<RllmEngine> {
-        let device = Device::new_cuda(0)?;
-        let dtype = DType::BF16;
+        let device = Device::Cuda(0);
+        let dtype = DType::BFloat16;
 
         let repo = Repo::from(&args)?;
 
@@ -200,7 +200,12 @@ impl RllmEngine {
 
         log::info!("building the model");
 
-        let vb = unsafe { VarBuilder::from_mmaped_safetensors(&filenames, dtype, &device)? };
+        let mut vb = VarStore::new(device.clone());
+        for f in &filenames {
+            vb.load(&f)?;
+        }
+
+        // let vb = unsafe { VarBuilder::from_mmaped_safetensors(&filenames, dtype, &device)? };
 
         let eos_token_id = tok_trie.info().tok_eos;
 
@@ -362,11 +367,9 @@ impl RllmEngine {
         let shm = &self.aicirt.as_mut().unwrap().bin_shm;
         let num_elts = mid_res.num_seqs * self.tok_trie.vocab_size();
         let slice = shm.slice_at_byte_offset::<f32>(0, num_elts);
-        let t = Tensor::from_slice(
-            slice,
-            &[mid_res.num_seqs, self.tok_trie.vocab_size()],
-            &self.device,
-        )?;
+        let t = Tensor::from_slice(slice)
+            .to(self.device)
+            .reshape(&[mid_res.num_seqs as i64, self.tok_trie.vocab_size() as i64]);
         Ok(t)
     }
 
@@ -381,8 +384,8 @@ impl RllmEngine {
             AiciSampling::Regular => None,
             AiciSampling::SampleWithBias { offset } => {
                 log::trace!("sample *{sid}: bias at {offset}");
-                let logits_aici = aici_bias.i((offset, ..)).unwrap();
-                *logits = (&*logits + logits_aici).unwrap();
+                let logits_aici = aici_bias.i((offset as i64, ..));
+                *logits = &*logits + logits_aici;
                 None
             }
             AiciSampling::Splice {
@@ -432,8 +435,8 @@ impl RllmEngine {
         let aici_bias = self.aici_bias(sched_out)?;
 
         if idx > 0 {
-            let (num_seq, vocab_size) = logits.dims2()?;
-            assert!(vocab_size == self.tok_trie.vocab_size());
+            let (num_seq, vocab_size) = logits.size2()?;
+            assert!(vocab_size == self.tok_trie.vocab_size() as i64);
             assert!(num_seq == idx);
         }
 
@@ -451,7 +454,7 @@ impl RllmEngine {
                 }
 
                 let idx = seq_id_to_logit_idx[&seq.seq_id];
-                let mut logits = logits.i((idx, ..))?;
+                let mut logits = logits.i((idx as i64, ..));
 
                 if let Some(op) = self.aici_apply_bias(seq, &mut logits, &aici_bias) {
                     post_ops.push(op);
@@ -526,7 +529,7 @@ impl RllmEngine {
     fn run_model(&mut self, sched_out: &mut SchedulerOutputs) -> Result<Vec<RequestOutput>> {
         if sched_out.is_empty() {
             log::debug!("no seqs to run");
-            let logits = Tensor::new(&[0u8], &self.device)?;
+            let logits = Tensor::from_slice(&[0u8]).to(self.device);
             // still run generate_outputs() to finish the dropped seqs
             return self.generate_outputs(&logits, sched_out);
         }
@@ -567,8 +570,8 @@ impl RllmEngine {
             "model forward: step #{} {:?}; {} toks; {:?}/tok",
             self.step_no,
             t0.elapsed(),
-            info.tokens.elem_count(),
-            t0.elapsed() / info.tokens.elem_count() as u32
+            info.tokens.numel(),
+            t0.elapsed() / info.tokens.numel() as u32
         );
 
         if self.nv_profile {
@@ -582,11 +585,11 @@ impl RllmEngine {
 
     fn build_batch_info(&self, sched_out: &mut SchedulerOutputs) -> Result<BatchInfo> {
         let mut positions: Vec<i64> = Vec::new();
-        let mut tokens: Vec<Token> = Vec::new();
+        let mut tokens: Vec<i32> = Vec::new();
         let mut seqlens_q = Vec::new();
         let mut seqlens_k = Vec::new();
-        let mut gather_mapping: Vec<u32> = Vec::new();
-        let mut slot_mapping: Vec<u32> = Vec::new();
+        let mut gather_mapping: Vec<i32> = Vec::new();
+        let mut slot_mapping: Vec<i32> = Vec::new();
 
         let max_seq = self.scheduler.config.model.max_sequence_length;
 
@@ -605,26 +608,26 @@ impl RllmEngine {
                 for idx in off..off + q_len {
                     assert!(idx < max_seq);
                     positions.push(idx as i64);
-                    tokens.push(seq.tokens[idx]);
-                    slot_mapping.push(seq.get_gpu_slot(idx) as u32);
+                    tokens.push(seq.tokens[idx] as i32);
+                    slot_mapping.push(seq.get_gpu_slot(idx) as i32);
                 }
                 for idx in 0..k_len {
-                    gather_mapping.push(seq.get_gpu_slot(idx) as u32);
+                    gather_mapping.push(seq.get_gpu_slot(idx) as i32);
                 }
                 seqlens_q.push(q_len);
                 seqlens_k.push(k_len);
             }
         }
 
-        let device = &self.device;
+        let device = self.device;
         let (max_seqlen_q, seqlens_q) = to_offsets(&seqlens_q, device);
         let (max_seqlen_k, seqlens_k) = to_offsets(&seqlens_k, device);
 
         // TODO positions, tokens should be padded to 8? see worker.py, search for multiple_of=8
-        let positions = Tensor::new(positions.as_slice(), device)?;
-        let tokens = Tensor::new(tokens.as_slice(), device)?;
-        let slot_mapping = Tensor::new(slot_mapping.as_slice(), device)?;
-        let gather_mapping = Tensor::new(gather_mapping.as_slice(), device)?;
+        let positions = Tensor::from_slice(positions.as_slice()).to(device);
+        let tokens = Tensor::from_slice(tokens.as_slice()).to(device);
+        let slot_mapping = Tensor::from_slice(slot_mapping.as_slice()).to(device);
+        let gather_mapping = Tensor::from_slice(gather_mapping.as_slice()).to(device);
 
         let kv_cache = self.cache_engine.get_gpu_cache();
 

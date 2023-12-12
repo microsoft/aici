@@ -2,7 +2,7 @@
 
 use std::sync::Arc;
 
-use crate::{DType, Tensor};
+use crate::{util::to_vec1, DType, Tensor};
 use aici_abi::toktree::TokTrie;
 use anyhow::Result;
 use rand::{distributions::Distribution, SeedableRng};
@@ -34,8 +34,8 @@ impl LogitsProcessor {
         }
     }
 
-    fn sample_argmax(&mut self, logits: Tensor) -> Result<u32> {
-        let mut logits_v: Vec<_> = logits.to_vec1::<f32>()?.into_iter().enumerate().collect();
+    fn sample_argmax(&mut self, logits: &Tensor) -> Result<u32> {
+        let mut logits_v: Vec<_> = to_vec1::<f32>(logits).into_iter().enumerate().collect();
         logits_v.sort_by(|u, v| v.1.total_cmp(&u.1));
         let d = (logits_v[0].1 - logits_v[1].1) / logits_v[0].1;
         if d < 0.05 {
@@ -95,13 +95,14 @@ impl LogitsProcessor {
     }
 
     pub fn sample(&mut self, logits: &Tensor) -> Result<u32> {
-        let logits = logits.to_dtype(DType::F32)?;
+        let logits = logits.to_dtype(DType::Float, true, true);
         let next_token = match self.temperature {
-            None => self.sample_argmax(logits)?,
+            None => self.sample_argmax(&logits)?,
             Some(temperature) => {
-                let logits = &(&logits / (temperature as f64))?;
-                let prs = candle_nn::ops::softmax_last_dim(logits)?;
-                let mut prs: Vec<f32> = prs.to_vec1()?;
+                let logits = logits / (temperature as f64);
+                let prs = logits.softmax(-1, DType::Float);
+                // let prs = candle_nn::ops::softmax_last_dim(logits)?;
+                let mut prs: Vec<f32> = to_vec1(&prs);
                 let top_p = self.top_p;
                 if top_p <= 0.0 || top_p >= 1.0 {
                     // simply sample from the predicted probability distribution

@@ -213,7 +213,7 @@ impl BatchInfo {
             self.infer_log
                 .lock()
                 .unwrap()
-                .push((key.to_string(), value.clone()));
+                .push((key.to_string(), value.copy()));
         }
     }
 
@@ -222,13 +222,13 @@ impl BatchInfo {
         if lck.len() == 0 {
             return;
         }
-        let tensors: HashMap<String, Tensor> = lck
+        let tensors = lck
             .iter()
             .enumerate()
-            .map(|(i, (k, v))| (format!("{:0>4}_{}", i, k), v.clone()))
-            .collect();
+            .map(|(i, (k, v))| (format!("{:0>4}_{}", i, k), v.copy()))
+            .collect::<Vec<_>>();
         lck.clear();
-        candle_core::safetensors::save(&tensors, filename).unwrap()
+        Tensor::write_safetensors(&tensors, filename).unwrap();
     }
 }
 

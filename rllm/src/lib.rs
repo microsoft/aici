@@ -21,7 +21,8 @@ pub use kernels::*;
 pub use logits::LogitsProcessor;
 pub use playground::playground_1;
 
-pub use candle_core::{Device, Tensor, DType, IndexOp, Shape, D};
+pub use tch::{Device, Tensor, IndexOp, Shape};
+pub use tch::Kind as DType;
 
 #[derive(Default)]
 pub struct LoaderArgs {

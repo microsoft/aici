@@ -87,9 +87,9 @@ pub struct ModelConfig {
 impl ModelConfig {
     pub fn get_dtype(&self) -> DType {
         match self.dtype_str.as_str() {
-            "f32" => DType::F32,
-            "f16" => DType::F16,
-            "bf16" => DType::BF16,
+            "f32" => DType::Float,
+            "f16" => DType::Half,
+            "bf16" => DType::BFloat16,
             _ => panic!(),
         }
     }
