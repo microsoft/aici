@@ -98,7 +98,7 @@ pub enum Model {
 }
 
 impl Model {
-    pub fn forward(&self, info: &BatchInfo) -> Result<Tensor> {
+    pub fn forward(&self, info: &mut BatchInfo) -> Result<Tensor> {
         match self {
             Model::Llama(llama) => Ok(llama.forward(info)?),
         }
@@ -554,7 +554,7 @@ impl RllmEngine {
             self.cache_engine.wait_for_copy();
         }
 
-        let info = self.build_batch_info(sched_out)?;
+        let mut info = self.build_batch_info(sched_out)?;
 
         log::trace!("batch_info #{}: {:?}", info.step_no, info);
         // log::trace!("{}", info.positions);
@@ -566,7 +566,7 @@ impl RllmEngine {
         }
 
         let t0 = Instant::now();
-        let logits = self.model.forward(&info)?;
+        let logits = self.model.forward(&mut info)?;
         let r = self.generate_outputs(&logits, sched_out);
         log::info!(
             "model forward: step #{} {:?}; {} toks; {:?}/tok",

@@ -37,10 +37,10 @@ impl CacheEngine {
 
         let (gpu_cache, cpu_cache) = Self::allocate_caches(&config);
 
-        let cuda_device = match &config.device {
-            Device::Cuda(c) => c.clone(),
-            _ => panic!(),
-        };
+        // let cuda_device = match &config.device {
+        //     Device::Cuda(c) => c.clone(),
+        //     _ => panic!(),
+        // };
 
         // let cache_stream = cuda_device.fork_default_stream().unwrap();
         let events = (0..num_layers).map(|_| CudaEvent::new()).collect();
@@ -59,7 +59,10 @@ impl CacheEngine {
     }
 
     pub fn get_gpu_cache(&self) -> Vec<KVCache> {
-        self.gpu_cache.iter().map(|(k, v)| (k.shallow_clone(), v.shallow_clone())).collect()
+        self.gpu_cache
+            .iter()
+            .map(|(k, v)| (k.shallow_clone(), v.shallow_clone()))
+            .collect()
     }
 
     pub fn swap_in(&self, src_to_dst: &HashMap<usize, usize>) {
@@ -85,7 +88,7 @@ impl CacheEngine {
             )
         };
 
-        let value_block = |num_bl, device| unsafe {
+        let value_block = |num_bl, device| {
             Tensor::empty(&[num_bl, num_heads, head_size, block_size], (dtype, device))
         };
 
@@ -131,8 +134,16 @@ impl CacheEngine {
     }
 
     pub fn copy(&self, src_to_dsts: &HashMap<usize, Vec<usize>>) {
-        let mut key_caches: Vec<_> = self.gpu_cache.iter().map(|(key, _)| key.shallow_clone()).collect();
-        let mut value_caches: Vec<_> = self.gpu_cache.iter().map(|(_, value)| value.shallow_clone()).collect();
+        let mut key_caches: Vec<_> = self
+            .gpu_cache
+            .iter()
+            .map(|(key, _)| key.shallow_clone())
+            .collect();
+        let mut value_caches: Vec<_> = self
+            .gpu_cache
+            .iter()
+            .map(|(_, value)| value.shallow_clone())
+            .collect();
         kernels::copy_blocks(&mut key_caches, &mut value_caches, &src_to_dsts);
     }
 

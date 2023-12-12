@@ -1,4 +1,4 @@
-use crate::{DType, Tensor};
+use crate::Tensor;
 use anyhow::Result;
 use tch::kind::Element;
 
@@ -15,7 +15,7 @@ pub fn limit_bytes(s: &[u8], max_len: usize) -> String {
 }
 
 pub fn max_diff(t1: &Tensor, t2: &Tensor) -> Result<f64> {
-    let mut diff = (t1 - t2).abs();
+    let diff = (t1 - t2).abs();
     let max = diff.max().double_value(&[]);
     Ok(max)
 }

@@ -1,7 +1,6 @@
 use crate::{to_offsets, util::check_all_close};
-use crate::{DType, Device, IndexOp, Shape, Tensor};
+use crate::{DType, Device, IndexOp, Tensor};
 use anyhow::Result;
-use torch_sys::IntList;
 
 struct XorShiftRng {
     state: u32,

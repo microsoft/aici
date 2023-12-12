@@ -5,13 +5,9 @@ use anyhow::Result;
 // use candle_core::Result;
 // use candle_nn::{linear_no_bias, Embedding, Linear, Module, RmsNorm, VarBuilder};
 use serde::Deserialize;
-use tch::nn::{self, Module, Path, VarStore};
+use tch::nn::{self, Module, Path};
 
-use crate::{
-    config::ModelConfig, get_trace, kernels, seq::BatchInfo, to_offsets, util::check_all_close,
-};
-
-const DOUBLE_CHECK: bool = false;
+use crate::{config::ModelConfig, get_trace, kernels, seq::BatchInfo};
 
 #[derive(Deserialize)]
 pub struct LlamaConfig {
@@ -212,7 +208,7 @@ pub fn naive_attn(
 }
 
 impl CausalSelfAttention {
-    fn forward(&self, x: &Tensor, batch_info: &BatchInfo, block_idx: usize) -> Tensor {
+    fn forward(&self, x: &Tensor, batch_info: &mut BatchInfo, block_idx: usize) -> Tensor {
         let (b_sz, seq_len, hidden_size) = x.size3().unwrap();
         assert!(b_sz == 1);
 
@@ -346,10 +342,10 @@ impl CausalSelfAttention {
         let size_in = cfg.hidden_size;
         let size_q = (cfg.hidden_size / cfg.num_attention_heads) * cfg.num_attention_heads;
         let size_kv = (cfg.hidden_size / cfg.num_attention_heads) * cfg.num_key_value_heads;
-        let q_proj = linear_no_bias(size_in, size_q, vb / "q_proj");
-        let k_proj = linear_no_bias(size_in, size_kv, vb / "k_proj");
-        let v_proj = linear_no_bias(size_in, size_kv, vb / "v_proj");
-        let o_proj = linear_no_bias(size_q, size_in, vb / "o_proj");
+        let q_proj = linear_no_bias(size_in, size_q, &vb / "q_proj");
+        let k_proj = linear_no_bias(size_in, size_kv, &vb / "k_proj");
+        let v_proj = linear_no_bias(size_in, size_kv, &vb / "v_proj");
+        let o_proj = linear_no_bias(size_q, size_in, &vb / "o_proj");
         Ok(Self {
             q_proj,
             k_proj,
@@ -386,9 +382,9 @@ impl Mlp {
     fn load(vb: Path, cfg: &ModelConfig) -> Result<Self> {
         let h_size = cfg.hidden_size;
         let i_size = cfg.intermediate_size;
-        let c_fc1 = linear_no_bias(h_size, i_size, vb / "gate_proj");
-        let c_fc2 = linear_no_bias(h_size, i_size, vb / "up_proj");
-        let c_proj = linear_no_bias(i_size, h_size, vb / "down_proj");
+        let c_fc1 = linear_no_bias(h_size, i_size, &vb / "gate_proj");
+        let c_fc2 = linear_no_bias(h_size, i_size, &vb / "up_proj");
+        let c_proj = linear_no_bias(i_size, h_size, &vb / "down_proj");
         Ok(Self {
             c_fc1,
             c_fc2,
@@ -405,7 +401,7 @@ struct Block {
 }
 
 impl Block {
-    fn forward(&self, x: &Tensor, batch_info: &BatchInfo, block_idx: usize) -> Result<Tensor> {
+    fn forward(&self, x: &Tensor, batch_info: &mut BatchInfo, block_idx: usize) -> Result<Tensor> {
         let residual = x;
         let x = self.rms_1.forward(x);
         let x = self.attn.forward(&x, batch_info, block_idx) + residual;
@@ -422,11 +418,11 @@ impl Block {
     }
 
     fn load(vb: Path, cache: &Cache, cfg: &ModelConfig) -> Result<Self> {
-        let attn = CausalSelfAttention::load(vb / "self_attn", cache, cfg)?;
-        let mlp = Mlp::load(vb / "mlp", cfg)?;
-        let rms_1 = RmsNorm::new(vb / "input_layernorm", cfg.hidden_size, cfg.rms_norm_eps);
+        let attn = CausalSelfAttention::load(&vb / "self_attn", cache, cfg)?;
+        let mlp = Mlp::load(&vb / "mlp", cfg)?;
+        let rms_1 = RmsNorm::new(&vb / "input_layernorm", cfg.hidden_size, cfg.rms_norm_eps);
         let rms_2 = RmsNorm::new(
-            vb / "post_attention_layernorm",
+            &vb / "post_attention_layernorm",
             cfg.hidden_size,
             cfg.rms_norm_eps,
         );
@@ -455,7 +451,7 @@ pub fn linear_no_bias(in_dim: usize, out_dim: usize, vb: Path) -> nn::Linear {
 }
 
 impl Llama {
-    pub fn forward(&self, batch_info: &BatchInfo) -> Result<Tensor> {
+    pub fn forward(&self, batch_info: &mut BatchInfo) -> Result<Tensor> {
         let mut x = self.wte.forward(&batch_info.tokens).unsqueeze(0);
         for (block_idx, block) in self.blocks.iter().enumerate() {
             x = block.forward(&x, batch_info, block_idx)?;
@@ -466,7 +462,8 @@ impl Llama {
         // skip first zero
         let mut idx = batch_info.seqlens_q.i(1..);
         // subtract 1 from each index
-        idx = idx - Tensor::ones_like(&idx);
+        let ones = Tensor::ones_like(&idx);
+        idx = idx - ones;
         let x = x0.i((.., &idx, ..));
         // println!("x0 {:?} x {:?} idx {}", x0, x, idx);
 
@@ -485,7 +482,7 @@ impl Llama {
 
         let cache = Cache::new(cfg.get_dtype(), cfg, vs.device())?;
 
-        let lm_head = linear_no_bias(cfg.hidden_size, cfg.vocab_size, vs / "lm_head");
+        let lm_head = linear_no_bias(cfg.hidden_size, cfg.vocab_size, &vs / "lm_head");
 
         let wte = nn::embedding(
             &vs / "model" / "embed_tokens",

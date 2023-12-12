@@ -1,4 +1,4 @@
-use std::{collections::HashMap, fmt::Debug, sync::Mutex};
+use std::{fmt::Debug, sync::Mutex};
 
 use crate::Tensor;
 use aici_abi::TokenId;
