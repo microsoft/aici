@@ -115,7 +115,7 @@ struct Flash_fwd_params : public Qkv_params {
     int window_size_left, window_size_right;
 
     // Random state.
-    at::PhiloxCudaState philox_args;
+    // at::PhiloxCudaState philox_args;
 
     // Pointer to the RNG seed (idx 0) and offset (idx 1).
     uint64_t * rng_state;

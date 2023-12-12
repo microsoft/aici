@@ -107,11 +107,13 @@ inline __device__ void compute_attn_1rowblock(const Params &params, const int bi
     if ((Is_causal || Is_local || !Is_even_MN) && n_block_max <= n_block_min) {
         // Save seed and offset for backward. If we don't have this here, the 0-th thread block might
         // exit early and no one saves the rng state.
+        #if 0
         if (Is_dropout && blockIdx.x == 0 && blockIdx.y == 0 && blockIdx.z == 0 && tidx == 0) {
             auto seeds = at::cuda::philox::unpack(params.philox_args);
             params.rng_state[0] = std::get<0>(seeds);
             params.rng_state[1] = std::get<1>(seeds);
         }
+        #endif
         const index_t row_offset_o = binfo.q_offset(params.o_batch_stride, params.o_row_stride, bidb)
             + m_block * kBlockM * params.o_row_stride + bidh * params.o_head_stride;
         const index_t row_offset_lse = (bidb * params.h + bidh) * params.seqlen_q + m_block * kBlockM;
@@ -308,15 +310,19 @@ inline __device__ void compute_attn_1rowblock(const Params &params, const int bi
         cute::copy(smem_tiled_copy_Q, tSsQ, tSrQ_copy_view);
     }
 
-    auto seeds = at::cuda::philox::unpack(params.philox_args);
-    unsigned long long seed = std::get<0>(seeds);
-    unsigned long long offset = std::get<1>(seeds) + (bidb * params.h + bidh) * 32 + tidx % 32;
+    // auto seeds = at::cuda::philox::unpack(params.philox_args);
+    // unsigned long long seed = std::get<0>(seeds);
+    // unsigned long long offset = std::get<1>(seeds) + (bidb * params.h + bidh) * 32 + tidx % 32;
+    unsigned long long seed = 0;
+    unsigned long long offset = 0;
 
+    #if 0
     // Save seed and offset for backward.
     if (Is_dropout && blockIdx.x == 0 && blockIdx.y == 0 && blockIdx.z == 0 && tidx == 0) {
         params.rng_state[0] = seed;
         params.rng_state[1] = std::get<1>(seeds);
     }
+    #endif
 
     clear(acc_o);
 
