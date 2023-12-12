@@ -158,6 +158,8 @@ impl RllmEngine {
     }
 
     pub fn load(args: LoaderArgs) -> Result<RllmEngine> {
+        let _no_grad = tch::no_grad_guard();
+
         let device = Device::Cuda(0);
         let dtype = DType::BFloat16;
 
@@ -210,7 +212,7 @@ impl RllmEngine {
         let eos_token_id = tok_trie.info().tok_eos;
 
         let model = {
-            let llama = Llama::load(vb, &model_config)?;
+            let llama = Llama::load(vb.root(), &model_config)?;
             Model::Llama(llama)
         };
 
@@ -797,6 +799,8 @@ impl RllmEngine {
     }
 
     pub fn step(&mut self) -> Result<Vec<RequestOutput>> {
+        let _no_grad = tch::no_grad_guard();
+
         self.step_no += 1;
 
         if self.step_no == self.profile_step_no {

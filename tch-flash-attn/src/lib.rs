@@ -145,11 +145,11 @@ extern "C" {
     ) -> *mut libc::c_char;
 
     fn rotary_embedding_C(
-        positions: *mut C_tensor,
+        positions: *const C_tensor,
         query: *mut C_tensor,
         key: *mut C_tensor,
         head_size: i32,
-        cos_sin_cache: *mut C_tensor,
+        cos_sin_cache: *const C_tensor,
         is_neox: bool,
     ) -> *mut libc::c_char;
 
@@ -316,6 +316,30 @@ pub fn copy_blocks(
                 value_cache_ptrs_tensor.as_ptr(),
                 block_mapping_tensor.as_ptr(),
                 key_caches[0].as_ptr(),
+            ),
+        );
+    }
+}
+
+pub fn rotary_embedding(
+    positions: &Tensor,
+    query: &mut Tensor,
+    key: &mut Tensor,
+    head_size: usize,
+    cos_sin_cache: &Tensor,
+    // is_neox: bool,
+) {
+    let is_neox = true;
+    unsafe {
+        check_res(
+            "rotary_embedding_C",
+            rotary_embedding_C(
+                positions.as_ptr(),
+                query.as_mut_ptr(),
+                key.as_mut_ptr(),
+                head_size as i32,
+                cos_sin_cache.as_ptr(),
+                is_neox,
             ),
         );
     }
