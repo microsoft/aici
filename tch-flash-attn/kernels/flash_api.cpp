@@ -197,17 +197,21 @@ void set_params_dgrad(Flash_bwd_params &params,
 }
 
 void run_mha_fwd(Flash_fwd_params &params, cudaStream_t stream, bool force_split_kernel=false) {
-    params.is_bf16 = true;
-    force_split_kernel = true;
-    FP16_SWITCH(!params.is_bf16, [&] {
+    using elem_type = cutlass::bfloat16_t;
         FWD_HEADDIM_SWITCH(params.d, [&] {
-            if (params.num_splits <= 1 && !force_split_kernel) {  // If we don't set it num_splits == 0
-                run_mha_fwd_<elem_type, kHeadDim>(params, stream);
-            } else {
                 run_mha_fwd_splitkv_dispatch<elem_type, kHeadDim>(params, stream);
-            }
         });
-    });
+
+
+    // FP16_SWITCH(!params.is_bf16, [&] {
+    //     FWD_HEADDIM_SWITCH(params.d, [&] {
+    //         if (params.num_splits <= 1 && !force_split_kernel) {  // If we don't set it num_splits == 0
+    //             run_mha_fwd_<elem_type, kHeadDim>(params, stream);
+    //         } else {
+    //             run_mha_fwd_splitkv_dispatch<elem_type, kHeadDim>(params, stream);
+    //         }
+    //     });
+    // });
 }
 
 // Find the number of splits that maximizes the occupancy. For example, if we have
@@ -468,7 +472,7 @@ mha_varlen_fwd(const at::Tensor &q,  // total_q x num_heads x head_size, total_q
     // TORCH_CHECK(is_sm90 || is_sm8x || is_sm75, "FlashAttention only supports Turing GPUs or newer.");
 
     auto q_dtype = q.dtype();
-    TORCH_CHECK(q_dtype == /*torch::kFloat16 ||*/ q_dtype == torch::kBFloat16,
+    TORCH_CHECK(/*q_dtype == torch::kFloat16 ||*/ q_dtype == torch::kBFloat16,
                 "FlashAttention only support bf16 data type");
     if (q_dtype == torch::kBFloat16) {
         TORCH_CHECK(is_sm90 || is_sm8x, "bfloat16 is only supported on Ampere GPUs or newer");
