@@ -3,11 +3,138 @@
 // variable in order to cache the compiled artifacts and avoid recompiling too often.
 use anyhow::{Context, Result};
 use rayon::prelude::*;
+use std::env;
 use std::path::PathBuf;
 use std::str::FromStr;
 
+const PYTHON_PRINT_PYTORCH_DETAILS: &str = r"
+import torch
+from torch.utils import cpp_extension
+print('LIBTORCH_VERSION:', torch.__version__.split('+')[0])
+print('LIBTORCH_CXX11:', torch._C._GLIBCXX_USE_CXX11_ABI)
+for include_path in cpp_extension.include_paths():
+  print('LIBTORCH_INCLUDE:', include_path)
+for library_path in cpp_extension.library_paths():
+  print('LIBTORCH_LIB:', library_path)
+";
+
+const PYTHON_PRINT_INCLUDE_PATH: &str = r"
+import sysconfig
+print('PYTHON_INCLUDE:', sysconfig.get_path('include'))
+";
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum LinkType {
+    Dynamic,
+    Static,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Os {
+    Linux,
+    Macos,
+    Windows,
+}
+
+#[allow(dead_code)]
+#[derive(Debug, Clone)]
+struct SystemInfo {
+    os: Os,
+    python_interpreter: PathBuf,
+    cxx11_abi: String,
+    libtorch_include_dirs: Vec<PathBuf>,
+    libtorch_lib_dir: PathBuf,
+    link_type: LinkType,
+}
+
+fn env_var_rerun(name: &str) -> Result<String, env::VarError> {
+    println!("cargo:rerun-if-env-changed={name}");
+    env::var(name)
+}
+
+impl SystemInfo {
+    fn new() -> Result<Self> {
+        let os = match env::var("CARGO_CFG_TARGET_OS")
+            .expect("Unable to get TARGET_OS")
+            .as_str()
+        {
+            "linux" => Os::Linux,
+            "windows" => Os::Windows,
+            "macos" => Os::Macos,
+            os => anyhow::bail!("unsupported TARGET_OS '{os}'"),
+        };
+        // Locate the currently active Python binary, similar to:
+        // https://github.com/PyO3/maturin/blob/243b8ec91d07113f97a6fe74d9b2dcb88086e0eb/src/target.rs#L547
+        let python_interpreter = match os {
+            Os::Windows => PathBuf::from("python.exe"),
+            Os::Linux | Os::Macos => {
+                if env::var_os("VIRTUAL_ENV").is_some() {
+                    PathBuf::from("python")
+                } else {
+                    PathBuf::from("python3")
+                }
+            }
+        };
+        let mut libtorch_include_dirs = vec![];
+
+        if true {
+            let output = std::process::Command::new(&python_interpreter)
+                .arg("-c")
+                .arg(PYTHON_PRINT_INCLUDE_PATH)
+                .output()
+                .with_context(|| format!("error running {python_interpreter:?}"))?;
+            for line in String::from_utf8_lossy(&output.stdout).lines() {
+                if let Some(path) = line.strip_prefix("PYTHON_INCLUDE: ") {
+                    libtorch_include_dirs.push(PathBuf::from(path))
+                }
+            }
+        }
+
+        let mut libtorch_lib_dir = None;
+        let cxx11_abi = {
+            let output = std::process::Command::new(&python_interpreter)
+                .arg("-c")
+                .arg(PYTHON_PRINT_PYTORCH_DETAILS)
+                .output()
+                .with_context(|| format!("error running {python_interpreter:?}"))?;
+            let mut cxx11_abi = None;
+            for line in String::from_utf8_lossy(&output.stdout).lines() {
+                match line.strip_prefix("LIBTORCH_CXX11: ") {
+                    Some("True") => cxx11_abi = Some("1".to_owned()),
+                    Some("False") => cxx11_abi = Some("0".to_owned()),
+                    _ => {}
+                }
+                if let Some(path) = line.strip_prefix("LIBTORCH_INCLUDE: ") {
+                    libtorch_include_dirs.push(PathBuf::from(path))
+                }
+                if let Some(path) = line.strip_prefix("LIBTORCH_LIB: ") {
+                    libtorch_lib_dir = Some(PathBuf::from(path))
+                }
+            }
+            match cxx11_abi {
+                Some(cxx11_abi) => cxx11_abi,
+                None => anyhow::bail!("no cxx11 abi returned by python {output:?}"),
+            }
+        };
+
+        let libtorch_lib_dir = libtorch_lib_dir.expect("no libtorch lib dir found");
+        let link_type = match env_var_rerun("LIBTORCH_STATIC").as_deref() {
+            Err(_) | Ok("0") | Ok("false") | Ok("FALSE") => LinkType::Dynamic,
+            Ok(_) => LinkType::Static,
+        };
+        Ok(Self {
+            os,
+            python_interpreter,
+            cxx11_abi,
+            libtorch_include_dirs,
+            libtorch_lib_dir,
+            link_type,
+        })
+    }
+}
+
 const KERNEL_FILES: [&str; 17] = [
-    "flash_api.cu",
+    "flash_api.cpp",
     "flash_fwd_hdim128_fp16_sm80.cu",
     "flash_fwd_hdim160_fp16_sm80.cu",
     "flash_fwd_hdim192_fp16_sm80.cu",
@@ -31,6 +158,9 @@ fn main() -> Result<()> {
         |_| num_cpus::get_physical(),
         |s| usize::from_str(&s).unwrap(),
     );
+
+    let sysinfo = SystemInfo::new()?;
+    println!("sysinfo: {:#?}", sysinfo);
 
     rayon::ThreadPoolBuilder::new()
         .num_threads(num_cpus)
@@ -118,10 +248,17 @@ fn main() -> Result<()> {
                     .args(["-o", obj_file.to_str().unwrap()])
                     .args(["--default-stream", "per-thread"])
                     .arg("-Icutlass/include")
+                    .args(sysinfo.libtorch_include_dirs.iter().map(|p| {
+                        format!(
+                            "-I{}",
+                            p.to_str().unwrap()
+                        )
+                    }))
                     .arg("--expt-relaxed-constexpr")
                     .arg("--expt-extended-lambda")
                     .arg("--use_fast_math")
-                    .arg("--verbose");
+                    .arg("--verbose")
+                    ;
                 if let Ok(ccbin_path) = &ccbin_env {
                     command
                         .arg("-allow-unsupported-compiler")
