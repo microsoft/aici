@@ -2,8 +2,10 @@
  * Copyright (c) 2023, Tri Dao.
  ******************************************************************************/
 
+#define _GLIBCXX_USE_CXX11_ABI 0
+
 // Include these 2 headers instead of torch/extension.h since we don't need all of the torch headers.
-#include <torch/python.h>
+// #include <torch/python.h>
 #include <torch/nn/functional.h>
 #include <ATen/cuda/CUDAContext.h>
 #include <c10/cuda/CUDAGuard.h>
@@ -197,6 +199,8 @@ void set_params_dgrad(Flash_bwd_params &params,
 void run_mha_fwd(Flash_fwd_params &params, cudaStream_t stream, bool force_split_kernel=false) {
     FP16_SWITCH(!params.is_bf16, [&] {
         FWD_HEADDIM_SWITCH(params.d, [&] {
+            params.num_splits = 0;
+            force_split_kernel = false;
             if (params.num_splits <= 1 && !force_split_kernel) {  // If we don't set it num_splits == 0
                 run_mha_fwd_<elem_type, kHeadDim>(params, stream);
             } else {

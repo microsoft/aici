@@ -248,6 +248,7 @@ fn main() -> Result<()> {
                     .args(["-o", obj_file.to_str().unwrap()])
                     .args(["--default-stream", "per-thread"])
                     .arg("-Icutlass/include")
+                    .arg(format!("-D_GLIBCXX_USE_CXX11_ABI={}", sysinfo.cxx11_abi))
                     .args(sysinfo.libtorch_include_dirs.iter().map(|p| {
                         format!(
                             "-I{}",
@@ -300,8 +301,15 @@ fn main() -> Result<()> {
         }
     }
     println!("cargo:rustc-link-search={}", build_dir.display());
+    let cudart_path = sysinfo
+        .libtorch_lib_dir
+        .join("../../nvidia/cuda_runtime/lib")
+        .display()
+        .to_string();
+    println!("cargo:rustc-link-search={cudart_path}");
     println!("cargo:rustc-link-lib=flashattention");
-    println!("cargo:rustc-link-lib=dylib=cudart");
+    println!("cargo:rustc-link-lib=cudart");
+    println!("cargo:rustc-link-lib=c10_cuda");
     println!("cargo:rustc-link-lib=dylib=stdc++");
 
     /* laurent: I tried using the cc cuda integration as below but this lead to ptaxs never
