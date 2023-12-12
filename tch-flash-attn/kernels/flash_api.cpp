@@ -511,6 +511,7 @@ mha_varlen_fwd(const at::Tensor &q,  // total_q x num_heads x head_size, total_q
 
     at::Tensor q_padded, k_padded, v_padded;
     if (head_size_og % 8 != 0) {
+        TORCH_CHECK(false, "MJM head_size_og % 8 != 0 not supported for variable length");
         q_padded = torch::nn::functional::pad(q, torch::nn::functional::PadFuncOptions({0, 8 - head_size_og % 8}));
         k_padded = torch::nn::functional::pad(k, torch::nn::functional::PadFuncOptions({0, 8 - head_size_og % 8}));
         v_padded = torch::nn::functional::pad(v, torch::nn::functional::PadFuncOptions({0, 8 - head_size_og % 8}));
@@ -605,6 +606,43 @@ mha_varlen_fwd(const at::Tensor &q,  // total_q x num_heads x head_size, total_q
     }
 
     return {out, q_padded, k_padded, v_padded, out_padded, softmax_lse, p, rng_state};
+}
+
+
+typedef torch::Tensor *tensor;
+extern "C" char *
+mha_varlen_fwd_C(const tensor q,  // total_q x num_heads x head_size, total_q := \sum_{i=0}^{b} s_i
+               const tensor k,  // total_k x num_heads_k x head_size, total_k := \sum_{i=0}^{b} s_i
+               const tensor v,  // total_k x num_heads_k x head_size, total_k := \sum_{i=0}^{b} s_i
+               const tensor cu_seqlens_q,  // b+1
+               const tensor cu_seqlens_k,  // b+1
+               const tensor seqused_k, // b. If given, only this many elements of each batch element's keys are used. (opt)
+               int max_seqlen_q,
+               int max_seqlen_k,
+               float p_dropout,
+               float softmax_scale,
+               bool zero_tensors,
+               bool is_causal,
+               int window_size_left,
+               int window_size_right,
+               tensor *outp // total_q x num_heads x head_size, total_k := \sum_{i=0}^{b} s_i
+               ) {
+  try {
+    c10::optional<torch::Tensor> out__;
+    c10::optional<torch::Tensor> seqused_k_;
+    c10::optional<at::Generator> gen_;
+    if (seqused_k != nullptr) {
+        seqused_k_ = *seqused_k;
+    }
+    auto r = mha_varlen_fwd(*q, *k, *v,
+    out__, *cu_seqlens_q, *cu_seqlens_k, seqused_k_, max_seqlen_q,
+    max_seqlen_k, p_dropout, softmax_scale, zero_tensors, is_causal,
+    window_size_left, window_size_right, false, gen_);
+    outp[0] = new torch::Tensor(r[0]);
+    return nullptr;
+  } catch (const std::exception& e) {
+      return strdup(e.what());
+  }
 }
 
 #if 0
