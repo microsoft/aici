@@ -8,3 +8,6 @@
 [submodule "candle-flash-attn/cutlass"]
 	path = candle-flash-attn/cutlass
 	url = https://github.com/NVIDIA/cutlass.git
+[submodule "tch-rs"]
+	path = tch-rs
+	url = https://github.com/LaurentMazare/tch-rs
