@@ -1,6 +1,6 @@
 [package]
-name = "candle-flash-attn2"
-version = "0.3.1"
+name = "tch-flash-attn"
+version = "0.1.0"
 edition = "2021"
 
 description = "Flash attention layer for the tch-rs"
@@ -8,7 +8,7 @@ license = "MIT"
 readme = "README.md"
 
 [dependencies]
-tch = { path = "../tch-rs", features = ["cuda"] }
+tch = { path = "../tch-rs" }
 half = { version = "2.3.1", features = ["num-traits"] }
 
 [build-dependencies]
@@ -18,4 +18,3 @@ rayon = "1.7.0"
 
 [dev-dependencies]
 anyhow = { version = "1", features = ["backtrace"] }
-candle-nn = { path = "../candle/candle-nn", version = "0.3.1", features = ["cuda"] }
