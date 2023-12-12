@@ -1,9 +1,6 @@
 #ifdef USE_ROCM
   #include <hip/hip_runtime.h>
 #endif
-
-#include "cuda_utils.h"
-
 int get_device_attribute(
     int attribute,
     int device_id)

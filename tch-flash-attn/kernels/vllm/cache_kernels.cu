@@ -3,7 +3,6 @@
 
 #include "cuda_compat.h"
 #include "dispatch_utils.h"
-#include "ops.h"
 
 #include <algorithm>
 #include <cassert>
