@@ -20,6 +20,7 @@
         "*.sublime-snippet": "xml",
         "*.hbs": "html",
         "*.ejs": "html",
+        "*.emu": "html",
         "lesskey": "lesskey",
         "*.Xresources": "xdefaults",
         "i3/config": "i3",
@@ -43,7 +44,8 @@
         "string_view": "cpp",
         "unordered_map": "cpp",
         "vector": "cpp",
-        "format": "cpp"
+        "format": "cpp",
+        "numbers": "cpp"
     },
     "python.analysis.extraPaths": [
         "./vllm",

@@ -133,7 +133,7 @@ impl SystemInfo {
     }
 }
 
-const KERNEL_FILES: [&str; 9] = [
+const KERNEL_FILES: [&str; 16] = [
     "flash_api.cpp",
     "flash_fwd_split_hdim128_bf16_sm80.cu",
     "flash_fwd_split_hdim160_bf16_sm80.cu",
@@ -143,6 +143,13 @@ const KERNEL_FILES: [&str; 9] = [
     "flash_fwd_split_hdim32_bf16_sm80.cu",
     "flash_fwd_split_hdim64_bf16_sm80.cu",
     "flash_fwd_split_hdim96_bf16_sm80.cu",
+    "vllm/activation_kernels.cu",
+    "vllm/cache_kernels.cu",
+    "vllm/cuda_utils_kernels.cu",
+    "vllm/layernorm_kernels.cu",
+    "vllm/pos_encoding_kernels.cu",
+    "vllm/attention/attention_kernels.cu",
+    "vllm/bindings.cpp",
 ];
 
 fn main() -> Result<()> {
@@ -160,18 +167,7 @@ fn main() -> Result<()> {
         .unwrap();
 
     println!("cargo:rerun-if-changed=build.rs");
-    for kernel_file in KERNEL_FILES.iter() {
-        println!("cargo:rerun-if-changed=kernels/{kernel_file}");
-    }
-    println!("cargo:rerun-if-changed=kernels/flash_fwd_kernel.h");
-    println!("cargo:rerun-if-changed=kernels/flash_fwd_launch_template.h");
-    println!("cargo:rerun-if-changed=kernels/flash.h");
-    println!("cargo:rerun-if-changed=kernels/philox.cuh");
-    println!("cargo:rerun-if-changed=kernels/softmax.h");
-    println!("cargo:rerun-if-changed=kernels/utils.h");
-    println!("cargo:rerun-if-changed=kernels/kernel_traits.h");
-    println!("cargo:rerun-if-changed=kernels/block_info.h");
-    println!("cargo:rerun-if-changed=kernels/static_switch.h");
+
     let out_dir = PathBuf::from(std::env::var("OUT_DIR").context("OUT_DIR not set")?);
     let build_dir = match std::env::var("CANDLE_FLASH_ATTN_BUILD_DIR") {
         Err(_) =>
@@ -190,6 +186,12 @@ fn main() -> Result<()> {
     };
     set_cuda_include_dir()?;
 
+    {
+        let mut inner = out_dir.clone();
+        inner.push("vllm/attention");
+        std::fs::create_dir_all(inner).unwrap();
+    }
+
     let ccbin_env = std::env::var("CANDLE_NVCC_CCBIN");
     println!("cargo:rerun-if-env-changed=CANDLE_NVCC_CCBIN");
 
@@ -206,28 +208,46 @@ fn main() -> Result<()> {
             (kernel_dir.join(f), obj_file)
         })
         .collect();
+
     let out_modified: Result<_, _> = out_file.metadata().and_then(|m| m.modified());
-    let should_compile = if out_file.exists() {
-        kernel_dir
-            .read_dir()
-            .expect("kernels folder should exist")
-            .any(|entry| {
-                if let (Ok(entry), Ok(out_modified)) = (entry, &out_modified) {
-                    let in_modified = entry.metadata().unwrap().modified().unwrap();
-                    in_modified.duration_since(*out_modified).is_ok()
-                } else {
-                    true
+    let mut should_compile = false;
+    if out_modified.is_err() {
+        should_compile = true;
+    }
+
+    for entry in glob::glob("kernels/**/*.*").expect("Failed to read glob pattern") {
+        match entry {
+            Ok(path) => {
+                let str_path = path.to_str().unwrap();
+                if str_path.ends_with(".cu")
+                    || str_path.ends_with(".cuh")
+                    || str_path.ends_with(".cpp")
+                    || str_path.ends_with(".h")
+                {
+                    if let Ok(out_modified) = &out_modified {
+                        let in_modified = path.metadata().unwrap().modified().unwrap();
+                        if in_modified.duration_since(*out_modified).is_ok() {
+                            should_compile = true;
+                        }
+                    } else {
+                        should_compile = true;
+                    }
+                    println!("cargo:rerun-if-changed={str_path}");
                 }
-            })
-    } else {
-        true
-    };
+            }
+            Err(e) => println!("cargo:warning={:?}", e),
+        }
+    }
+
     if should_compile {
         cu_files
             .par_iter()
             .map(|(cu_file, obj_file)| {
+                // $LANG this is set or not depending if running inside terminal or vscode
+                // we set it explicitly to help ccache
                 let mut command = std::process::Command::new("ccache");
                 command
+                    .env("LANG", "en_US.UTF-8") 
                     .arg("nvcc")
                     .arg("-std=c++17")
                     .arg("-O3")

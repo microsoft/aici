@@ -26,3 +26,9 @@ void gather_cached_kv(
   torch::Tensor& key_cache,
   torch::Tensor& value_cache,
   torch::Tensor& slot_mapping);
+
+void copy_blocks_2(
+  torch::Tensor& key_cache_ptrs_tensor,
+  torch::Tensor& value_cache_ptrs_tensor,
+  torch::Tensor& block_mapping_tensor,
+  const int numel_per_block);
