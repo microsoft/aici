@@ -93,7 +93,7 @@ impl Display for Repo {
 }
 
 pub trait RllmModel {
-    fn forward(&self, batch_info: &mut BatchInfo) -> Result<Tensor>;
+    fn forward(&self, batch_info: &mut BatchInfo) -> Tensor;
 }
 
 pub trait RllmModelConfig {
@@ -667,7 +667,7 @@ impl RllmEngine {
         }
 
         let t0 = Instant::now();
-        let logits = self.model.forward(&mut info)?;
+        let logits = self.model.forward(&mut info);
         let r = self.generate_outputs(&logits, sched_out);
         log::info!(
             "model forward: step #{} {:?}; {} toks; {:?}/tok",

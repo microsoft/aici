@@ -5,7 +5,6 @@ use crate::{
     seq::BatchInfo,
     DType, Device, Tensor,
 };
-use anyhow::Result;
 use serde::Deserialize;
 use std::rc::Rc;
 use tch::{
@@ -211,7 +210,7 @@ impl MixFormerSequentialForCausalLM {
 }
 
 impl RllmModel for MixFormerSequentialForCausalLM {
-    fn forward(&self, batch_info: &mut BatchInfo) -> Result<Tensor> {
+    fn forward(&self, batch_info: &mut BatchInfo) -> Tensor {
         // let seq_len = batch_info.tokens.numel() as i64;
         let mut xs = self.embedding.forward(&batch_info.tokens);
         for block in self.blocks.iter() {
@@ -228,7 +227,7 @@ impl RllmModel for MixFormerSequentialForCausalLM {
         let r = r.i((.., 0..(self.config.tok_vocab_size as i64)));
         let r = extract_positions(&r, batch_info);
         // println!("rp: {r:?}");
-        Ok(r)
+        r
         // Ok(xs
         //     .narrow(1, seq_len - 1, 1)
         //     .apply(&self.head)

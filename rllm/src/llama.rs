@@ -152,7 +152,7 @@ struct Block {
 }
 
 impl Block {
-    fn forward(&self, x: &Tensor, batch_info: &mut BatchInfo, block_idx: usize) -> Result<Tensor> {
+    fn forward(&self, x: &Tensor, batch_info: &mut BatchInfo, block_idx: usize) -> Tensor {
         let residual = x;
         let x = self.rms_1.forward(x);
         // println!("x rms: {x:?}");
@@ -166,7 +166,7 @@ impl Block {
         let x = x + residual;
         batch_info.log_tensor("x3", &x);
         // println!("x: {}", x);
-        Ok(x)
+        x
     }
 
     fn load(vb: Path, rotary: &RotaryEmbedding, cfg: &Rc<ModelConfig>) -> Result<Self> {
@@ -191,16 +191,16 @@ pub struct Llama {
 }
 
 impl RllmModel for Llama {
-    fn forward(&self, batch_info: &mut BatchInfo) -> Result<Tensor> {
+    fn forward(&self, batch_info: &mut BatchInfo) -> Tensor {
         let mut x = self.wte.forward(&batch_info.tokens).unsqueeze(0);
         for (block_idx, block) in self.blocks.iter().enumerate() {
-            x = block.forward(&x, batch_info, block_idx)?;
+            x = block.forward(&x, batch_info, block_idx);
         }
         let x0 = self.ln_f.forward(&x);
         // println!("x: {}", x0);
         let x = extract_positions(&x0.squeeze_dim(0), batch_info);
-        let logits = self.lm_head.forward(&x).squeeze_dim(0);
-        Ok(logits.to_kind(DType::Float))
+        let logits = self.lm_head.forward(&x);
+        logits
     }
 }
 
