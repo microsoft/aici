@@ -96,6 +96,28 @@ pub trait RllmModel {
     fn forward(&self, batch_info: &mut BatchInfo) -> Result<Tensor>;
 }
 
+pub trait RllmModelConfig {
+    fn into_config(self, dtype: DType, device: Device) -> ModelConfig;
+}
+
+fn load_one_config<T>(
+    err: &mut String,
+    args: &LoaderArgs,
+    name: &str,
+    bytes: &[u8],
+) -> Option<ModelConfig>
+where
+    T: RllmModelConfig + serde::de::DeserializeOwned,
+{
+    let json = serde_json::from_slice::<T>(bytes);
+    if let Ok(json) = json {
+        Some(json.into_config(args.dtype, args.device))
+    } else {
+        *err += &format!("{name}: {}\n", json.err().unwrap());
+        None
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Stats {
     pub free_gpu_blocks: usize,
@@ -144,20 +166,21 @@ impl RllmEngine {
     pub fn load_model_config(args: &LoaderArgs) -> Result<ModelConfig> {
         let repo = Repo::from(args)?;
         log::info!("loading the model from {}", repo);
+
         let bytes = repo.read("config.json")?;
-        let llama = serde_json::from_slice::<LlamaConfig>(&bytes);
-        if let Ok(llama) = llama {
-            return Ok(llama.into_config(args.dtype, args.device));
+        let mut err = String::new();
+
+        let cfg = load_one_config::<LlamaConfig>(&mut err, args, "llama", &bytes)
+            .or_else(|| load_one_config::<crate::phi::PhiConfig>(&mut err, args, "phi", &bytes));
+
+        match cfg {
+            Some(mut v) => {
+                let tok = aici_tokenizers::find_tokenizer(&args.tokenizer)?;
+                v.tok_vocab_size = tok.tokrx_info().vocab_size as usize;
+                Ok(v)
+            }
+            None => bail!("failed to load model config:\n{}", err),
         }
-        let phi = serde_json::from_slice::<crate::phi::PhiConfig>(&bytes);
-        if let Ok(phi) = phi {
-            return Ok(phi.into_config(args.dtype, args.device));
-        }
-        bail!(
-            "failed to load model config: llama:{} phi:{}",
-            llama.err().unwrap(),
-            phi.err().unwrap()
-        );
     }
 
     pub fn load(args: LoaderArgs) -> Result<RllmEngine> {
@@ -186,18 +209,24 @@ impl RllmEngine {
         rllm_config.cache.num_cpu_blocks = Some(cache_mem / elt_size);
         rllm_config.cache.num_gpu_blocks = Some(cache_mem / elt_size);
 
-        let st_index: serde_json::Value =
-            serde_json::from_slice(&repo.read("model.safetensors.index.json")?)?;
+        let idx = repo.read("model.safetensors.index.json");
 
-        let entries = st_index["weight_map"]
-            .as_object()
-            .unwrap()
-            .values()
-            .map(|v| v.as_str().unwrap().to_owned());
+        let filenames = if let Ok(idx) = idx {
+            let st_index: serde_json::Value = serde_json::from_slice(&idx)?;
+            let entries = st_index["weight_map"]
+                .as_object()
+                .unwrap()
+                .values()
+                .map(|v| v.as_str().unwrap().to_owned());
 
-        let h = HashSet::<String>::from_iter(entries);
-        let mut filenames = h.iter().collect::<Vec<_>>();
-        filenames.sort();
+            let h = HashSet::<String>::from_iter(entries);
+            let mut filenames = h.into_iter().collect::<Vec<_>>();
+            filenames.sort();
+            filenames
+        } else {
+            vec!["model.safetensors".to_string()]
+        };
+
         let filenames = filenames
             .iter()
             .map(|f| repo.get(f))
@@ -236,7 +265,11 @@ impl RllmEngine {
 
             for vname in safetensors.names() {
                 if !vars.contains_key(vname) {
-                    log::warn!("variable {} not found in the model", vname);
+                    if vname.ends_with(".inv_freq") {
+                        // OK
+                    } else {
+                        log::warn!("variable {} not found in the model", vname);
+                    }
                     continue;
                 }
 
@@ -248,6 +281,7 @@ impl RllmEngine {
                     Tensor::from_blob(view.data().as_ptr(), &size, &[], kind, Device::Cpu)
                 };
                 let mut var = vars.remove(vname).unwrap();
+                assert!(var.size() == src_tensor.size());
                 // println!("copying to {var:?} from {src_tensor:?}");
                 var.f_copy_(&src_tensor)?;
 

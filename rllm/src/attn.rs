@@ -118,6 +118,8 @@ impl RotaryEmbedding {
         q: &Tensor,         // [num_tokens, num_heads * head_size]
         k: &Tensor,         // [num_tokens, num_kv_heads * head_size]
     ) -> (Tensor, Tensor) {
+        // println!("q: {q:?}");
+        // println!("k: {k:?}");
         let mut q = q.reshape(&[
             -1,
             (self.config.num_attention_heads * self.config.head_dim) as i64,
@@ -231,6 +233,8 @@ pub fn varlen_attn(
         println!("y: {y:?}\n{y}");
     }
 
+    let y = y.reshape(&[-1, config.hidden_size as i64]);
+
     y
 }
 
@@ -257,7 +261,7 @@ pub struct RmsNorm {
 
 impl RmsNorm {
     pub fn from_cfg(vs: nn::Path, config: &ModelConfig) -> Self {
-        Self::new(vs, config.hidden_size, Some(config.rms_norm_eps))
+        Self::new(vs, config.hidden_size, Some(config.layer_norm_eps))
     }
 
     pub fn new(vs: nn::Path, size: usize, eps: Option<f64>) -> Self {
@@ -271,11 +275,14 @@ impl RmsNorm {
 }
 
 impl Module for RmsNorm {
+    // TODO use kernels::rms_norm
     fn forward(&self, xs: &Tensor) -> Tensor {
-        let norm_xs = (xs * xs).mean_dim(-1, true, xs.kind());
-        let xs_normed = xs * (norm_xs + self.eps).rsqrt();
+        let k = xs.kind();
+        let xs = xs.to_kind(DType::Float);
+        let variance = (&xs * &xs).mean_dim(-1, true, xs.kind());
+        let xs_normed = xs * (variance + self.eps).rsqrt();
         let scale = self.scale.reshape([1, 1, self.size]);
-        scale * xs_normed
+        scale * xs_normed.to_kind(k)
     }
 }
 
@@ -294,4 +301,24 @@ pub fn linear(in_dim: usize, out_dim: usize, vs: Path) -> nn::Linear {
         out_dim as i64,
         nn::LinearConfig::default(),
     )
+}
+
+pub fn layer_norm(vs: nn::Path, config: &ModelConfig) -> nn::LayerNorm {
+    nn::layer_norm(
+        vs,
+        vec![config.hidden_size as i64],
+        nn::LayerNormConfig {
+            eps: config.layer_norm_eps,
+            ..nn::LayerNormConfig::default()
+        },
+    )
+}
+
+pub fn extract_positions(x: &Tensor, batch_info: &BatchInfo) -> Tensor {
+    // skip first zero
+    let mut idx = batch_info.seqlens_q.i(1..);
+    // subtract 1 from each index
+    let ones = Tensor::ones_like(&idx);
+    idx = idx - ones;
+    x.i((&idx, ..))
 }

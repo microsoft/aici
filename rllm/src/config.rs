@@ -87,9 +87,10 @@ pub struct ModelConfig {
 
     pub intermediate_size: usize,
     pub vocab_size: usize,
+    pub tok_vocab_size: usize,
 
-    pub rms_norm_eps: f64, // defl. 1e-5
-    pub rope_theta: f32,   // defl. 10000
+    pub layer_norm_eps: f64, // defl. 1e-5
+    pub rope_theta: f32,     // defl. 10000
 
     pub device: Device,
     pub dtype: DType,

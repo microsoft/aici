@@ -1,14 +1,17 @@
 use crate::{
-    attn::{linear, varlen_attn, RmsNorm, RotaryEmbedding},
+    attn::{extract_positions, layer_norm, linear, varlen_attn, RotaryEmbedding},
     config::{ModelConfig, ModelType},
-    engine::RllmModel,
+    engine::{RllmModel, RllmModelConfig},
     seq::BatchInfo,
     DType, Device, Tensor,
 };
 use anyhow::Result;
 use serde::Deserialize;
 use std::rc::Rc;
-use tch::nn::{self, Module, Path};
+use tch::{
+    nn::{self, Module, Path},
+    IndexOp,
+};
 
 /// MixFormer model.
 /// https://huggingface.co/microsoft/phi-1_5
@@ -25,24 +28,24 @@ pub struct PhiConfig {
     pub(crate) activation_function: String,
     pub(crate) layer_norm_epsilon: f64,
     pub(crate) tie_word_embeddings: bool,
-    pub(crate) max_position_embeddings: usize,
     // pub(crate) pad_vocab_size_multiple: usize,
 }
 
-impl PhiConfig {
-    pub fn into_config(self, dtype: DType, device: Device) -> ModelConfig {
+impl RllmModelConfig for PhiConfig {
+    fn into_config(self, dtype: DType, device: Device) -> ModelConfig {
         ModelConfig {
             model_type: ModelType::Phi,
             hidden_size: self.n_embd,
             intermediate_size: self.n_inner.unwrap_or(4 * self.n_embd),
             vocab_size: self.vocab_size,
+            tok_vocab_size: self.vocab_size,
             num_hidden_layers: self.n_layer,
             num_attention_heads: self.n_head,
             num_key_value_heads: self.n_head,
-            rms_norm_eps: self.layer_norm_epsilon,
+            layer_norm_eps: self.layer_norm_epsilon,
             rope_theta: 10000.0,
-            max_sequence_length: self.max_position_embeddings,
-            head_dim: self.n_embd / self.n_layer,
+            max_sequence_length: self.n_positions,
+            head_dim: self.n_embd / self.n_head,
             dtype,
             device,
         }
@@ -73,13 +76,13 @@ impl Module for MLP {
 
 #[derive(Debug)]
 struct CausalLMHead {
-    ln: RmsNorm,
+    ln: nn::LayerNorm,
     linear: nn::Linear,
 }
 
 impl CausalLMHead {
     fn new(cfg: &ModelConfig, vb: Path) -> Self {
-        let ln = RmsNorm::from_cfg(&vb / "ln", cfg);
+        let ln = layer_norm(&vb / "ln", cfg);
         let linear = linear(cfg.hidden_size, cfg.vocab_size, &vb / "linear");
         Self { ln, linear }
     }
@@ -87,7 +90,9 @@ impl CausalLMHead {
 
 impl Module for CausalLMHead {
     fn forward(&self, xs: &Tensor) -> Tensor {
-        xs.apply(&self.ln).apply(&self.linear)
+        let xs = self.ln.forward(xs);
+        let xs = self.linear.forward(&xs);
+        xs
     }
 }
 
@@ -116,18 +121,21 @@ impl MHA {
     }
 
     fn forward(&self, xs: &Tensor, batch_info: &mut BatchInfo) -> Tensor {
-        let (b_size, seq_len, _hidden_size) = xs.size3().unwrap();
+        let (seq_len, _hidden_size) = xs.size2().unwrap();
+
+        // println!("xs: {xs:?}");
+        // println!("wqkv: {:?}", self.wqkv);
 
         let ((q, k), v) = {
-            let qkv = self.wqkv.forward(xs).reshape(&[
-                b_size,
-                seq_len,
-                3,
-                -1,
-                self.config.head_dim as i64,
-            ]);
+            let qkv = self
+                .wqkv
+                .forward(xs)
+                .reshape(&[seq_len, 3, -1, self.config.head_dim as i64]);
 
-            let mut qkv = qkv.chunk(3, -1);
+            // println!("hd: {}", self.config.head_dim);
+            // println!("qkv: {qkv:?}");
+
+            let mut qkv = qkv.chunk(3, 1);
             let v = qkv.pop().unwrap();
 
             (
@@ -138,20 +146,24 @@ impl MHA {
         };
 
         let y = varlen_attn(&self.config, q, k, v, batch_info, self.block_idx);
+
+        // println!("y: {y:?}");
+        // println!("out_proj: {:?}", self.out_proj);
+
         self.out_proj.forward(&y)
     }
 }
 
 #[derive(Debug)]
 struct ParallelBlock {
-    ln: RmsNorm,
+    ln: nn::LayerNorm,
     mixer: MHA,
     mlp: MLP,
 }
 
 impl ParallelBlock {
     fn new(cfg: &Rc<ModelConfig>, vb: Path, block_idx: usize) -> Self {
-        let ln = RmsNorm::from_cfg(&vb / "ln", cfg);
+        let ln = layer_norm(&vb / "ln", cfg);
         let mixer = MHA::new(cfg, block_idx, &vb / "mixer");
         let mlp = MLP::new(cfg, &vb / "mlp");
         Self { ln, mixer, mlp }
@@ -171,13 +183,14 @@ pub struct MixFormerSequentialForCausalLM {
     embedding: nn::Embedding,
     blocks: Vec<ParallelBlock>,
     head: CausalLMHead,
+    config: Rc<ModelConfig>,
 }
 
 impl MixFormerSequentialForCausalLM {
     pub fn new(cfg: &Rc<ModelConfig>, vb: Path) -> Self {
         let vb = vb / "layers";
         let embedding = nn::embedding(
-            &vb / "wte",
+            &vb / 0 / "wte",
             cfg.vocab_size as i64,
             cfg.hidden_size as i64,
             Default::default(),
@@ -192,20 +205,33 @@ impl MixFormerSequentialForCausalLM {
             embedding,
             blocks,
             head,
+            config: cfg.clone(),
         }
     }
 }
 
 impl RllmModel for MixFormerSequentialForCausalLM {
     fn forward(&self, batch_info: &mut BatchInfo) -> Result<Tensor> {
-        let seq_len = batch_info.tokens.numel() as i64;
+        // let seq_len = batch_info.tokens.numel() as i64;
         let mut xs = self.embedding.forward(&batch_info.tokens);
         for block in self.blocks.iter() {
             xs = block.forward(&xs, batch_info);
         }
-        Ok(xs
-            .narrow(1, seq_len - 1, 1)
-            .apply(&self.head)
-            .squeeze_dim(1))
+        // println!("final xs: {xs:?}");
+        let r = self.head.forward(&xs);
+        // println!("r: {r:?} tok:{}", self.config.tok_vocab_size);
+
+        // it should approximately match...
+        assert!((r.size()[1] as usize) >= self.config.tok_vocab_size);
+        assert!((r.size()[1] as usize) < self.config.tok_vocab_size + 1000);
+
+        let r = r.i((.., 0..(self.config.tok_vocab_size as i64)));
+        let r = extract_positions(&r, batch_info);
+        // println!("rp: {r:?}");
+        Ok(r)
+        // Ok(xs
+        //     .narrow(1, seq_len - 1, 1)
+        //     .apply(&self.head)
+        //     .squeeze_dim(1))
     }
 }

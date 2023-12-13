@@ -1,11 +1,11 @@
 // based on https://github.com/huggingface/candle/blob/main/candle-transformers/src/models/llama.rs
 
 use crate::{
-    attn::{linear_no_bias, varlen_attn, RmsNorm, RotaryEmbedding},
+    attn::{extract_positions, linear_no_bias, varlen_attn, RmsNorm, RotaryEmbedding},
     config::{ModelConfig, ModelType},
-    engine::RllmModel,
+    engine::{RllmModel, RllmModelConfig},
     seq::BatchInfo,
-    DType, Device, IndexOp, Tensor,
+    DType, Device, Tensor,
 };
 use anyhow::Result;
 use serde::Deserialize;
@@ -30,17 +30,18 @@ fn default_rope() -> f32 {
     10_000.0
 }
 
-impl LlamaConfig {
-    pub fn into_config(self, dtype: DType, device: Device) -> ModelConfig {
+impl RllmModelConfig for LlamaConfig {
+    fn into_config(self, dtype: DType, device: Device) -> ModelConfig {
         ModelConfig {
             model_type: ModelType::Llama,
             hidden_size: self.hidden_size,
             intermediate_size: self.intermediate_size,
             vocab_size: self.vocab_size,
+            tok_vocab_size: self.vocab_size,
             num_hidden_layers: self.num_hidden_layers,
             num_attention_heads: self.num_attention_heads,
             num_key_value_heads: self.num_key_value_heads.unwrap_or(self.num_attention_heads),
-            rms_norm_eps: self.rms_norm_eps,
+            layer_norm_eps: self.rms_norm_eps,
             rope_theta: self.rope_theta,
             max_sequence_length: self.max_position_embeddings,
             head_dim: self.hidden_size / self.num_attention_heads,
@@ -197,15 +198,7 @@ impl RllmModel for Llama {
         }
         let x0 = self.ln_f.forward(&x);
         // println!("x: {}", x0);
-
-        // skip first zero
-        let mut idx = batch_info.seqlens_q.i(1..);
-        // subtract 1 from each index
-        let ones = Tensor::ones_like(&idx);
-        idx = idx - ones;
-        let x = x0.i((.., &idx, ..));
-        // println!("x0 {:?} x {:?} idx {}", x0, x, idx);
-
+        let x = extract_positions(&x0.squeeze_dim(0), batch_info);
         let logits = self.lm_head.forward(&x).squeeze_dim(0);
         Ok(logits.to_kind(DType::Float))
     }
