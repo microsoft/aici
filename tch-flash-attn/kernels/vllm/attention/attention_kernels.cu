@@ -19,7 +19,7 @@
 #include <hip/hip_runtime.h>
 #endif
 
-#include <torch/extension.h>
+#include <torch/all.h>
 #include <ATen/cuda/CUDAContext.h>
 
 #include "attention_dtypes.h"

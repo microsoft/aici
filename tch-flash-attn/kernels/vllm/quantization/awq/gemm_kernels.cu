@@ -9,7 +9,7 @@ Adapted from https://github.com/mit-han-lab/llm-awq
  */
 
 
-#include <torch/extension.h>
+#include <torch/all.h>
 #include <c10/cuda/CUDAGuard.h>
 
 #include "dequantize.cuh"

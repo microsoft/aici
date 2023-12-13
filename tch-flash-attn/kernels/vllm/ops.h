@@ -1,4 +1,4 @@
-#include <torch/extension.h>
+#include <torch/all.h>
 
 void paged_attention_v1(
   torch::Tensor& out,
