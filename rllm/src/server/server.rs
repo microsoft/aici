@@ -14,7 +14,7 @@ use base64::Engine;
 use clap::Parser;
 
 use rllm::{
-    config::ModelConfig,
+    config::{ModelConfig, SamplingParams},
     iface::{AiciRtIface, AsyncCmdChannel},
     seq::RequestOutput,
     AddRequest, LoaderArgs, RllmEngine,
@@ -199,8 +199,15 @@ fn inference_loop(
                         }
                     }
                     None => {
-                        log::warn!("output for unknown request {id}");
-                        engine.abort_request(&id);
+                        if id == "warmup" {
+                            if outp.is_final {
+                                let text = engine.seq_output_text(&outp.seq_outputs[0]).unwrap();
+                                log::info!("warmup done: {text:?}");
+                            }
+                        }else {
+                            log::warn!("output for unknown request {id}");
+                            engine.abort_request(&id);
+                        }
                     }
                 }
             }
@@ -263,6 +270,16 @@ async fn main() -> () {
         let mut engine = RllmEngine::load(loader_args).expect("failed to load model");
         engine.profile_step_no = profile_step;
         engine.set_aicirt(iface);
+        engine
+            .add_request(
+                "warmup".to_string(),
+                "The ultimate answer to life,",
+                SamplingParams {
+                    max_tokens: 10,
+                    ..SamplingParams::default()
+                },
+            )
+            .unwrap();
         inference_loop(handle2, engine, recv)
     });
 
