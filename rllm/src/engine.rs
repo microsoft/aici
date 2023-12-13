@@ -15,6 +15,7 @@ use std::{
     collections::{HashMap, HashSet},
     fmt::Display,
     path::PathBuf,
+    rc::Rc,
     sync::{Arc, Mutex},
     time::Instant,
 };
@@ -204,7 +205,7 @@ impl RllmEngine {
         let mut vs = VarStore::new(device.clone());
 
         let model = {
-            let llama = Llama::load(vs.root(), &model_config)?;
+            let llama = Llama::load(vs.root(), &Rc::new(model_config))?;
             Model::Llama(llama)
         };
 

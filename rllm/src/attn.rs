@@ -1,6 +1,7 @@
 use crate::{config::ModelConfig, kernels, seq::BatchInfo};
 use crate::{util::to_vec1, DType, IndexOp, Tensor};
 use anyhow::Result;
+use std::rc::Rc;
 use tch::nn::{self, Module, Path};
 
 pub fn naive_attn(
@@ -76,7 +77,7 @@ pub fn naive_attn(
 
 #[derive(Debug)]
 pub struct RotaryEmbedding {
-    config: ModelConfig,
+    config: Rc<ModelConfig>,
     cos_sin: Tensor,
 }
 
@@ -90,7 +91,7 @@ impl Clone for RotaryEmbedding {
 }
 
 impl RotaryEmbedding {
-    pub fn new(config: &ModelConfig) -> Self {
+    pub fn new(config: &Rc<ModelConfig>) -> Self {
         // precompute freqs_cis
         let rotary_dim = config.hidden_size / config.num_attention_heads;
         let theta: Vec<_> = (0..rotary_dim)

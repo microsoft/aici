@@ -1,14 +1,15 @@
 // based on https://github.com/huggingface/candle/blob/main/candle-transformers/src/models/llama.rs
 
 use crate::{
-    attn::{varlen_attn, RmsNorm, RotaryEmbedding, linear_no_bias},
+    attn::{linear_no_bias, varlen_attn, RmsNorm, RotaryEmbedding},
+    config::ModelConfig,
+    seq::BatchInfo,
     DType, Device, IndexOp, Tensor,
 };
 use anyhow::Result;
 use serde::Deserialize;
+use std::rc::Rc;
 use tch::nn::{self, Module, Path};
-
-use crate::{config::ModelConfig, seq::BatchInfo};
 
 #[derive(Deserialize)]
 pub struct LlamaConfig {
@@ -52,7 +53,7 @@ struct CausalSelfAttention {
     k_proj: nn::Linear,
     v_proj: nn::Linear,
     o_proj: nn::Linear,
-    config: ModelConfig,
+    config: Rc<ModelConfig>,
     rotary: RotaryEmbedding,
 }
 
@@ -87,7 +88,7 @@ impl CausalSelfAttention {
         y
     }
 
-    fn load(vb: Path, rotary: &RotaryEmbedding, cfg: &ModelConfig) -> Result<Self> {
+    fn load(vb: Path, rotary: &RotaryEmbedding, cfg: &Rc<ModelConfig>) -> Result<Self> {
         let size_in = cfg.hidden_size;
         let size_q = (cfg.hidden_size / cfg.num_attention_heads) * cfg.num_attention_heads;
         let size_kv = (cfg.hidden_size / cfg.num_attention_heads) * cfg.num_key_value_heads;
@@ -165,7 +166,7 @@ impl Block {
         Ok(x)
     }
 
-    fn load(vb: Path, rotary: &RotaryEmbedding, cfg: &ModelConfig) -> Result<Self> {
+    fn load(vb: Path, rotary: &RotaryEmbedding, cfg: &Rc<ModelConfig>) -> Result<Self> {
         let attn = CausalSelfAttention::load(&vb / "self_attn", rotary, cfg)?;
         let mlp = Mlp::load(&vb / "mlp", cfg)?;
         let rms_1 = RmsNorm::from_cfg(&vb / "input_layernorm", cfg);
@@ -207,7 +208,7 @@ impl Llama {
         Ok(logits.to_kind(DType::Float))
     }
 
-    pub fn load(vs: Path, cfg: &ModelConfig) -> Result<Self> {
+    pub fn load(vs: Path, cfg: &Rc<ModelConfig>) -> Result<Self> {
         let rotary = RotaryEmbedding::new(cfg);
 
         let lm_head = linear_no_bias(cfg.hidden_size, cfg.vocab_size, &vs / "lm_head");

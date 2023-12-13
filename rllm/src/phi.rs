@@ -1,6 +1,3 @@
-/// MixFormer model.
-/// https://huggingface.co/microsoft/phi-1_5
-/// https://arxiv.org/abs/2309.05463
 use crate::{
     attn::{linear, varlen_attn, RmsNorm, RotaryEmbedding},
     config::ModelConfig,
@@ -9,8 +6,12 @@ use crate::{
 };
 use anyhow::Result;
 use serde::Deserialize;
+use std::rc::Rc;
 use tch::nn::{self, Module, Path};
 
+/// MixFormer model.
+/// https://huggingface.co/microsoft/phi-1_5
+/// https://arxiv.org/abs/2309.05463
 #[derive(Debug, Clone, PartialEq, Deserialize)]
 pub struct PhiConfig {
     pub(crate) vocab_size: usize,
@@ -93,12 +94,12 @@ struct MHA {
     wqkv: nn::Linear,
     out_proj: nn::Linear,
     rotary_emb: RotaryEmbedding,
-    config: ModelConfig,
+    config: Rc<ModelConfig>,
     block_idx: usize,
 }
 
 impl MHA {
-    fn new(cfg: &ModelConfig, block_idx: usize, vb: Path) -> Self {
+    fn new(cfg: &Rc<ModelConfig>, block_idx: usize, vb: Path) -> Self {
         let op_size = cfg.hidden_size;
         let wqkv = linear(cfg.hidden_size, 3 * op_size, &vb / "Wqkv");
         let out_proj = linear(op_size, cfg.hidden_size, &vb / "out_proj");
@@ -147,7 +148,7 @@ struct ParallelBlock {
 }
 
 impl ParallelBlock {
-    fn new(cfg: &ModelConfig, vb: Path, block_idx: usize) -> Self {
+    fn new(cfg: &Rc<ModelConfig>, vb: Path, block_idx: usize) -> Self {
         let ln = RmsNorm::from_cfg(&vb / "ln", cfg);
         let mixer = MHA::new(cfg, block_idx, &vb / "mixer");
         let mlp = MLP::new(cfg, &vb / "mlp");
@@ -171,7 +172,7 @@ pub struct MixFormerSequentialForCausalLM {
 }
 
 impl MixFormerSequentialForCausalLM {
-    pub fn new(cfg: &ModelConfig, vb: Path) -> Result<Self> {
+    pub fn new(cfg: &Rc<ModelConfig>, vb: Path) -> Result<Self> {
         let vb = vb / "layers";
         let embedding = nn::embedding(
             &vb / "wte",
