@@ -144,8 +144,20 @@ impl RllmEngine {
     pub fn load_model_config(args: &LoaderArgs) -> Result<ModelConfig> {
         let repo = Repo::from(args)?;
         log::info!("loading the model from {}", repo);
-        let json_config: LlamaConfig = serde_json::from_slice(&repo.read("config.json")?)?;
-        Ok(json_config.into_config(args.dtype, args.device))
+        let bytes = repo.read("config.json")?;
+        let llama = serde_json::from_slice::<LlamaConfig>(&bytes);
+        if let Ok(llama) = llama {
+            return Ok(llama.into_config(args.dtype, args.device));
+        }
+        let phi = serde_json::from_slice::<crate::phi::PhiConfig>(&bytes);
+        if let Ok(phi) = phi {
+            return Ok(phi.into_config(args.dtype, args.device));
+        }
+        bail!(
+            "failed to load model config: llama:{} phi:{}",
+            llama.err().unwrap(),
+            phi.err().unwrap()
+        );
     }
 
     pub fn load(args: LoaderArgs) -> Result<RllmEngine> {
