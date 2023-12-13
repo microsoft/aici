@@ -22,7 +22,7 @@ impl MessageChannel {
     }
 
     pub fn new(name: &str, size: usize) -> Result<Self> {
-        Self::new_ex(name, size, true)
+        Self::new_ex(name, size, false)
     }
 
     fn new_ex(name: &str, size: usize, unlink: bool) -> Result<Self> {
