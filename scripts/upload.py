@@ -171,7 +171,7 @@ def main():
             aici_module=None,
             aici_arg=None,
             ignore_eos=True,
-            max_tokens=1,
+            max_tokens=10,
         )
         return
 

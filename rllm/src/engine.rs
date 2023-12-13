@@ -4,7 +4,7 @@ use aicirt::api::{
     AiciMidOp, AiciMidProcessReq, AiciPostOp, AiciPostProcessReq, AiciPreOp, AiciPreProcessReq,
     ModuleInstId, SequenceResult,
 };
-use anyhow::{anyhow, Error as E, Result, bail};
+use anyhow::{anyhow, bail, Error as E, Result};
 use hf_hub::{
     api::sync::{Api, ApiRepo},
     RepoType,
@@ -205,12 +205,13 @@ impl RllmEngine {
         let eos_token_id = tok_trie.info().tok_eos;
 
         let mut vs = VarStore::new(device.clone());
-        vs.set_kind(rllm_config.dtype);
 
         let model = {
             let llama = Llama::load(vs.root(), &model_config)?;
             Model::Llama(llama)
         };
+
+        vs.set_kind(rllm_config.dtype);
 
         let mut vars = vs.variables();
 
@@ -241,6 +242,7 @@ impl RllmEngine {
                     Tensor::from_blob(view.data().as_ptr(), &size, &[], kind, Device::Cpu)
                 };
                 let mut var = vars.remove(vname).unwrap();
+                // println!("copying to {var:?} from {src_tensor:?}");
                 var.f_copy_(&src_tensor)?;
 
                 bar.inc(1);

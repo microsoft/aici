@@ -190,6 +190,8 @@ pub fn reshape_and_cache(
     value_cache: &mut Tensor, // [num_blocks, num_heads, head_size, block_size]
     slot_mapping: &Tensor,    // [num_tokens], int
 ) {
+    // it's int64 in here, but int32 in gather*; go figure
+    let slot_mapping = slot_mapping.to_kind(Kind::Int64);
     unsafe {
         check_res(
             "reshape_and_cache_C",

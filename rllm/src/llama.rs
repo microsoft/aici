@@ -91,8 +91,8 @@ impl Cache {
         let idx_theta = Tensor::arange(len, (DType::Float, device))
             .reshape(&[len, 1])
             .matmul(&theta.reshape(&[1, theta.numel() as i64]));
-        let cos = idx_theta.cos().to_dtype(dtype, false, false);
-        let sin = idx_theta.sin().to_dtype(dtype, false, false);
+        let cos = idx_theta.cos().to_kind(dtype);
+        let sin = idx_theta.sin().to_kind(dtype);
         let cos_sin = Tensor::cat(&[&cos, &sin], -1).contiguous();
         Ok(Self { cos_sin })
     }
@@ -118,7 +118,7 @@ impl RmsNorm {
 
 impl Module for RmsNorm {
     fn forward(&self, xs: &Tensor) -> Tensor {
-        let norm_xs = (xs * xs).mean_dim(-1, true, DType::Float);
+        let norm_xs = (xs * xs).mean_dim(-1, true, xs.kind());
         let xs_normed = xs * (norm_xs + self.eps).rsqrt();
         let scale = self.scale.reshape([1, 1, self.size]);
         scale * xs_normed
@@ -188,7 +188,7 @@ pub fn naive_attn(
             let mask = Tensor::from_slice(&mask)
                 .to(q.device())
                 .reshape(&[len_q, len_k])
-                .to_dtype(attn.kind(), false, false);
+                .to_kind(attn.kind());
 
             // println!("mask: {mask}");
             // TODO broadcast?
@@ -220,12 +220,18 @@ impl CausalSelfAttention {
             println!("block #{block_idx}");
         }
 
+        // println!("x: {x:?} qP: {:?}", self.q_proj);
+
         let q = self.q_proj.forward(x);
         let k = self.k_proj.forward(x);
         let v = self.v_proj.forward(x);
 
         let mut q = q.reshape(&[seq_len, (self.num_attention_heads * self.head_dim) as i64]);
         let mut k = k.reshape(&[seq_len, (self.num_key_value_heads * self.head_dim) as i64]);
+
+        // println!("q: {q:?}");
+        // println!("k: {k:?}");
+        // println!("c: {:?}", &self.cache.cos_sin);
 
         kernels::rotary_embedding(
             &batch_info.positions,
@@ -404,6 +410,7 @@ impl Block {
     fn forward(&self, x: &Tensor, batch_info: &mut BatchInfo, block_idx: usize) -> Result<Tensor> {
         let residual = x;
         let x = self.rms_1.forward(x);
+        // println!("x rms: {x:?}");
         let x = self.attn.forward(&x, batch_info, block_idx) + residual;
         let residual = &x;
         batch_info.log_tensor("x0", &x);
@@ -468,7 +475,7 @@ impl Llama {
         // println!("x0 {:?} x {:?} idx {}", x0, x, idx);
 
         let logits = self.lm_head.forward(&x).squeeze_dim(0);
-        Ok(logits.to_dtype(DType::Float, false, false))
+        Ok(logits.to_kind(DType::Float))
     }
 
     pub fn load(vs: Path, cfg: &ModelConfig) -> Result<Self> {
