@@ -107,7 +107,7 @@ struct RmsNorm {
 
 impl RmsNorm {
     fn new(vs: nn::Path, size: usize, eps: Option<f64>) -> Self {
-        let scale = vs.zeros("scale", &[size as i64]);
+        let scale = vs.zeros("weight", &[size as i64]);
         Self {
             scale,
             size: size as i64,
@@ -472,14 +472,6 @@ impl Llama {
     }
 
     pub fn load(vs: Path, cfg: &ModelConfig) -> Result<Self> {
-        let bar = indicatif::ProgressBar::new(cfg.num_hidden_layers as u64);
-        bar.set_style(
-            indicatif::ProgressStyle::with_template(
-                "[{elapsed_precise}] {bar:60.cyan/blue} {pos:>4}/{len:4} [{eta_precise}] {msg}",
-            )
-            .unwrap(),
-        );
-
         let cache = Cache::new(cfg.get_dtype(), cfg, vs.device())?;
 
         let lm_head = linear_no_bias(cfg.hidden_size, cfg.vocab_size, &vs / "lm_head");
@@ -495,19 +487,10 @@ impl Llama {
 
         let blocks: Vec<_> = (0..cfg.num_hidden_layers)
             .map(|i| {
-                bar.inc(1);
-                if bar.is_hidden() {
-                    eprint!(".");
-                }
                 // log::info!("loading block {}/{}", i, cfg.num_hidden_layers);
                 Block::load(&vs / "model" / "layers" / i, &cache, cfg).unwrap()
             })
             .collect();
-
-        if bar.is_hidden() {
-            eprintln!(" done");
-        }
-        bar.finish();
 
         Ok(Self {
             wte,

@@ -4,11 +4,12 @@ use aicirt::api::{
     AiciMidOp, AiciMidProcessReq, AiciPostOp, AiciPostProcessReq, AiciPreOp, AiciPreProcessReq,
     ModuleInstId, SequenceResult,
 };
-use anyhow::{anyhow, Error as E, Result};
+use anyhow::{anyhow, Error as E, Result, bail};
 use hf_hub::{
     api::sync::{Api, ApiRepo},
     RepoType,
 };
+use safetensors::Dtype;
 use serde::{Deserialize, Serialize};
 use std::{
     collections::{HashMap, HashSet},
@@ -17,7 +18,7 @@ use std::{
     sync::{Arc, Mutex},
     time::Instant,
 };
-use tch::nn::VarStore;
+use tch::{nn::VarStore, Kind};
 use tokenizers::Tokenizer;
 
 use crate::{
@@ -201,20 +202,78 @@ impl RllmEngine {
             .collect::<Result<Vec<_>>>()?;
 
         log::info!("building the model");
-
-        let mut vb = VarStore::new(device.clone());
-        for f in &filenames {
-            vb.load(&f)?;
-        }
-
-        // let vb = unsafe { VarBuilder::from_mmaped_safetensors(&filenames, dtype, &device)? };
-
         let eos_token_id = tok_trie.info().tok_eos;
 
+        let mut vs = VarStore::new(device.clone());
+        vs.set_kind(rllm_config.dtype);
+
         let model = {
-            let llama = Llama::load(vb.root(), &model_config)?;
+            let llama = Llama::load(vs.root(), &model_config)?;
             Model::Llama(llama)
         };
+
+        let mut vars = vs.variables();
+
+        let bar = indicatif::ProgressBar::new(vars.len() as u64);
+        bar.set_style(
+            indicatif::ProgressStyle::with_template(
+                "[{elapsed_precise}] {bar:60.cyan/blue} {pos:>4}/{len:4} [{eta_precise}] {msg}",
+            )
+            .unwrap(),
+        );
+
+        for f in &filenames {
+            let fp = std::fs::File::open(f)?;
+            let content = unsafe { memmap2::MmapOptions::new().map(&fp)? };
+            let safetensors = safetensors::SafeTensors::deserialize(&content)?;
+
+            for vname in safetensors.names() {
+                if !vars.contains_key(vname) {
+                    log::warn!("variable {} not found in the model", vname);
+                    continue;
+                }
+
+                let view = safetensors.tensor(vname)?;
+                let size: Vec<i64> = view.shape().iter().map(|&x| x as i64).collect();
+                let kind: DType = kind_from_dt(view.dtype());
+                // Using from_blob here instead of from_data_size avoids some unnecessary copy.
+                let src_tensor = unsafe {
+                    Tensor::from_blob(view.data().as_ptr(), &size, &[], kind, Device::Cpu)
+                };
+                let mut var = vars.remove(vname).unwrap();
+                var.f_copy_(&src_tensor)?;
+
+                bar.inc(1);
+                if bar.is_hidden() {
+                    eprint!(".");
+                }
+            }
+
+            fn kind_from_dt(dtype: Dtype) -> Kind {
+                match dtype {
+                    Dtype::BOOL => Kind::Bool,
+                    Dtype::U8 => Kind::Uint8,
+                    Dtype::I8 => Kind::Int8,
+                    Dtype::I16 => Kind::Int16,
+                    Dtype::I32 => Kind::Int,
+                    Dtype::I64 => Kind::Int64,
+                    Dtype::BF16 => Kind::BFloat16,
+                    Dtype::F16 => Kind::Half,
+                    Dtype::F32 => Kind::Float,
+                    Dtype::F64 => Kind::Double,
+                    dtype => panic!("unsupported dtype {dtype:?}"),
+                }
+            }
+        }
+
+        if vars.len() > 0 {
+            bail!("{} variables not found in the model: {vars:?}", vars.len());
+        }
+
+        if bar.is_hidden() {
+            eprintln!(" done");
+        }
+        bar.finish();
 
         log::info!("model loaded");
 
