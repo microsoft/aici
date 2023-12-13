@@ -68,8 +68,16 @@ impl RllmConfig {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ModelType {
+    Llama,
+    Phi,
+}
+
 #[derive(Debug, Clone)]
 pub struct ModelConfig {
+    pub model_type: ModelType,
+
     pub num_attention_heads: usize,
     pub hidden_size: usize, // head_dim * num_attention_heads
     pub num_hidden_layers: usize,

@@ -2,7 +2,8 @@
 
 use crate::{
     attn::{linear_no_bias, varlen_attn, RmsNorm, RotaryEmbedding},
-    config::ModelConfig,
+    config::{ModelConfig, ModelType},
+    engine::RllmModel,
     seq::BatchInfo,
     DType, Device, IndexOp, Tensor,
 };
@@ -32,6 +33,7 @@ fn default_rope() -> f32 {
 impl LlamaConfig {
     pub fn into_config(self, dtype: DType, device: Device) -> ModelConfig {
         ModelConfig {
+            model_type: ModelType::Llama,
             hidden_size: self.hidden_size,
             intermediate_size: self.intermediate_size,
             vocab_size: self.vocab_size,
@@ -187,8 +189,8 @@ pub struct Llama {
     lm_head: nn::Linear,
 }
 
-impl Llama {
-    pub fn forward(&self, batch_info: &mut BatchInfo) -> Result<Tensor> {
+impl RllmModel for Llama {
+    fn forward(&self, batch_info: &mut BatchInfo) -> Result<Tensor> {
         let mut x = self.wte.forward(&batch_info.tokens).unsqueeze(0);
         for (block_idx, block) in self.blocks.iter().enumerate() {
             x = block.forward(&x, batch_info, block_idx)?;
@@ -207,7 +209,9 @@ impl Llama {
         let logits = self.lm_head.forward(&x).squeeze_dim(0);
         Ok(logits.to_kind(DType::Float))
     }
+}
 
+impl Llama {
     pub fn load(vs: Path, cfg: &Rc<ModelConfig>) -> Result<Self> {
         let rotary = RotaryEmbedding::new(cfg);
 

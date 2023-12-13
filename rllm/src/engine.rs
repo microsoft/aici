@@ -1,4 +1,4 @@
-use crate::{DType, Device, IndexOp, Tensor};
+use crate::{config::ModelType, DType, Device, IndexOp, Tensor};
 use aici_abi::toktree::TokTrie;
 use aicirt::api::{
     AiciMidOp, AiciMidProcessReq, AiciPostOp, AiciPostProcessReq, AiciPreOp, AiciPreProcessReq,
@@ -92,16 +92,8 @@ impl Display for Repo {
     }
 }
 
-pub enum Model {
-    Llama(Llama),
-}
-
-impl Model {
-    pub fn forward(&self, info: &mut BatchInfo) -> Result<Tensor> {
-        match self {
-            Model::Llama(llama) => Ok(llama.forward(info)?),
-        }
-    }
+pub trait RllmModel {
+    fn forward(&self, batch_info: &mut BatchInfo) -> Result<Tensor>;
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -121,7 +113,7 @@ pub struct RllmEngine {
     pub tokenizer: Arc<Tokenizer>,
     pub tok_trie: Arc<TokTrie>,
     pub model_id: String,
-    pub model: Model,
+    pub model: Box<dyn RllmModel>,
     seq_id: SeqId,
     step_no: usize,
     pub profile_step_no: usize,
@@ -204,9 +196,13 @@ impl RllmEngine {
 
         let mut vs = VarStore::new(device.clone());
 
-        let model = {
-            let llama = Llama::load(vs.root(), &Rc::new(model_config))?;
-            Model::Llama(llama)
+        let rc_cfg = Rc::new(model_config.clone());
+        let model: Box<dyn RllmModel> = match model_config.model_type {
+            ModelType::Llama => Box::new(Llama::load(vs.root(), &rc_cfg).unwrap()),
+            ModelType::Phi => Box::new(crate::phi::MixFormerSequentialForCausalLM::new(
+                &rc_cfg,
+                vs.root(),
+            )),
         };
 
         vs.set_kind(rllm_config.dtype);

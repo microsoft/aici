@@ -1,6 +1,7 @@
 use crate::{
     attn::{linear, varlen_attn, RmsNorm, RotaryEmbedding},
-    config::ModelConfig,
+    config::{ModelConfig, ModelType},
+    engine::RllmModel,
     seq::BatchInfo,
     DType, Device, Tensor,
 };
@@ -31,6 +32,7 @@ pub struct PhiConfig {
 impl PhiConfig {
     pub fn into_config(self, dtype: DType, device: Device) -> ModelConfig {
         ModelConfig {
+            model_type: ModelType::Phi,
             hidden_size: self.n_embd,
             intermediate_size: self.n_inner.unwrap_or(4 * self.n_embd),
             vocab_size: self.vocab_size,
@@ -172,7 +174,7 @@ pub struct MixFormerSequentialForCausalLM {
 }
 
 impl MixFormerSequentialForCausalLM {
-    pub fn new(cfg: &Rc<ModelConfig>, vb: Path) -> Result<Self> {
+    pub fn new(cfg: &Rc<ModelConfig>, vb: Path) -> Self {
         let vb = vb / "layers";
         let embedding = nn::embedding(
             &vb / "wte",
@@ -186,21 +188,24 @@ impl MixFormerSequentialForCausalLM {
             blocks.push(block)
         }
         let head = CausalLMHead::new(cfg, &vb / (cfg.num_hidden_layers + 1));
-        Ok(Self {
+        Self {
             embedding,
             blocks,
             head,
-        })
+        }
     }
+}
 
-    pub fn forward(&mut self, xs: &Tensor, batch_info: &mut BatchInfo) -> Tensor {
-        let (_b_size, seq_len) = xs.size2().unwrap();
-        let mut xs = xs.apply(&self.embedding);
+impl RllmModel for MixFormerSequentialForCausalLM {
+    fn forward(&self, batch_info: &mut BatchInfo) -> Result<Tensor> {
+        let seq_len = batch_info.tokens.numel() as i64;
+        let mut xs = self.embedding.forward(&batch_info.tokens);
         for block in self.blocks.iter() {
             xs = block.forward(&xs, batch_info);
         }
-        xs.narrow(1, seq_len - 1, 1)
+        Ok(xs
+            .narrow(1, seq_len - 1, 1)
             .apply(&self.head)
-            .squeeze_dim(1)
+            .squeeze_dim(1))
     }
 }
