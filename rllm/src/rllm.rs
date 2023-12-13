@@ -71,8 +71,7 @@ fn main() -> Result<()> {
         local_weights: args.local_weights,
         alt: args.alt,
         tokenizer: args.tokenizer,
-        device: Device::Cuda(0),
-        dtype: rllm::DType::BFloat16,
+        ..Default::default()
     })?;
 
     let prompt = match &args.prompt {

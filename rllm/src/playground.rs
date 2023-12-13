@@ -88,7 +88,7 @@ fn flash_attn(
         *kv_seqlen.iter().max().unwrap(),
         softmax_scale,
         causal,
-    )?;
+    );
 
     println!("R: {r}");
     println!("R2: {r2}");

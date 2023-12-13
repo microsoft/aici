@@ -21,7 +21,6 @@ use rllm::{
 };
 
 use openai::responses::APIError;
-use tch::Device;
 use tokio::sync::mpsc::{channel, error::TryRecvError, Receiver, Sender};
 
 mod completion;
@@ -204,7 +203,7 @@ fn inference_loop(
                                 let text = engine.seq_output_text(&outp.seq_outputs[0]).unwrap();
                                 log::info!("warmup done: {text:?}");
                             }
-                        }else {
+                        } else {
                             log::warn!("output for unknown request {id}");
                             engine.abort_request(&id);
                         }
@@ -233,9 +232,7 @@ async fn main() -> () {
         revision: args.revision.clone(),
         local_weights: args.local_weights.clone(),
         tokenizer: args.tokenizer.clone(),
-        alt: 0,
-        dtype: rllm::DType::BFloat16,
-        device: Device::Cuda(0),
+        ..LoaderArgs::default()
     };
 
     let (tokenizer, tok_trie) =

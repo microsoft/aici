@@ -1,6 +1,5 @@
 use crate::{config::ModelConfig, kernels, seq::BatchInfo};
 use crate::{util::to_vec1, DType, IndexOp, Tensor};
-use anyhow::Result;
 use std::rc::Rc;
 use tch::nn::{self, Module, Path};
 
@@ -14,7 +13,7 @@ pub fn naive_attn(
     max_seqlen_k: usize,
     softmax_scale: f32,
     causal: bool,
-) -> Result<Tensor> {
+) -> Tensor {
     let seqlens_q = to_vec1::<i32>(seqlens_q);
     let seqlens_k = to_vec1::<i32>(seqlens_k);
     assert!(seqlens_q.len() == seqlens_k.len());
@@ -72,7 +71,7 @@ pub fn naive_attn(
     }
 
     let attn = Tensor::cat(&attns, 0);
-    Ok(attn)
+    attn
 }
 
 #[derive(Debug)]
@@ -212,17 +211,32 @@ pub fn varlen_attn(
             println!("Q {q:?} K {k:?} V {v:?}");
         }
         let causal = true;
-        let y = kernels::flash_attn_varlen(
-            &q,
-            &k,
-            &v,
-            &batch_info.seqlens_q,
-            &batch_info.seqlens_k,
-            batch_info.max_seqlen_q,
-            batch_info.max_seqlen_k,
-            softmax_scale,
-            causal,
-        );
+
+        let y = if true {
+            kernels::flash_attn_varlen(
+                &q,
+                &k,
+                &v,
+                &batch_info.seqlens_q,
+                &batch_info.seqlens_k,
+                batch_info.max_seqlen_q,
+                batch_info.max_seqlen_k,
+                softmax_scale,
+                causal,
+            )
+        } else {
+            naive_attn(
+                &q,
+                &k,
+                &v,
+                &batch_info.seqlens_q,
+                &batch_info.seqlens_k,
+                batch_info.max_seqlen_q,
+                batch_info.max_seqlen_k,
+                softmax_scale,
+                causal,
+            )
+        };
 
         y
     };

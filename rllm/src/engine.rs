@@ -186,8 +186,8 @@ impl RllmEngine {
     pub fn load(args: LoaderArgs) -> Result<RllmEngine> {
         let _no_grad = tch::no_grad_guard();
 
-        let device = Device::Cuda(0);
-        let dtype = DType::BFloat16;
+        let device = args.device;
+        let dtype = args.dtype;
 
         let repo = Repo::from(&args)?;
 
