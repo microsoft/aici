@@ -1,6 +1,7 @@
 use crate::{config::ModelConfig, kernels, seq::BatchInfo};
 use crate::{util::to_vec1, DType, IndexOp, Tensor};
 use anyhow::Result;
+use tch::nn::{self, Module, Path};
 
 pub fn naive_attn(
     q: &Tensor,
@@ -73,6 +74,7 @@ pub fn naive_attn(
     Ok(attn)
 }
 
+#[derive(Debug)]
 pub struct RotaryEmbedding {
     config: ModelConfig,
     cos_sin: Tensor,
@@ -112,8 +114,8 @@ impl RotaryEmbedding {
     pub fn apply(
         &self,
         positions: &Tensor, // [num_tokens]
-        q: Tensor,          // [num_tokens, num_heads * head_size]
-        k: Tensor,          // [num_tokens, num_kv_heads * head_size]
+        q: &Tensor,         // [num_tokens, num_heads * head_size]
+        k: &Tensor,         // [num_tokens, num_kv_heads * head_size]
     ) -> (Tensor, Tensor) {
         let mut q = q.reshape(&[
             -1,
@@ -243,4 +245,52 @@ fn repeat_kv(config: &ModelConfig, x: Tensor) -> Tensor {
         //     .reshape((b_sz, n_kv_head * n_rep, seq_len, head_dim));
         todo!("dims are wrong")
     }
+}
+
+#[derive(Debug)]
+pub struct RmsNorm {
+    scale: Tensor,
+    size: i64,
+    eps: f64,
+}
+
+impl RmsNorm {
+    pub fn from_cfg(vs: nn::Path, config: &ModelConfig) -> Self {
+        Self::new(vs, config.hidden_size, Some(config.rms_norm_eps))
+    }
+
+    pub fn new(vs: nn::Path, size: usize, eps: Option<f64>) -> Self {
+        let scale = vs.zeros("weight", &[size as i64]);
+        Self {
+            scale,
+            size: size as i64,
+            eps: eps.unwrap_or(1e-5),
+        }
+    }
+}
+
+impl Module for RmsNorm {
+    fn forward(&self, xs: &Tensor) -> Tensor {
+        let norm_xs = (xs * xs).mean_dim(-1, true, xs.kind());
+        let xs_normed = xs * (norm_xs + self.eps).rsqrt();
+        let scale = self.scale.reshape([1, 1, self.size]);
+        scale * xs_normed
+    }
+}
+
+pub fn linear_no_bias(in_dim: usize, out_dim: usize, vb: Path) -> nn::Linear {
+    let c = nn::LinearConfig {
+        bias: false,
+        ..Default::default()
+    };
+    nn::linear(vb, in_dim as i64, out_dim as i64, c)
+}
+
+pub fn linear(in_dim: usize, out_dim: usize, vs: Path) -> nn::Linear {
+    nn::linear(
+        vs,
+        in_dim as i64,
+        out_dim as i64,
+        nn::LinearConfig::default(),
+    )
 }

@@ -1,6 +1,6 @@
 mod kernels;
 pub mod llama;
-// pub mod phi;
+pub mod phi;
 pub mod attn;
 mod logits;
 mod playground;

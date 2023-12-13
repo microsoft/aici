@@ -1,14 +1,14 @@
 // based on https://github.com/huggingface/candle/blob/main/candle-transformers/src/models/llama.rs
 
 use crate::{
-    attn::{varlen_attn, RotaryEmbedding},
+    attn::{varlen_attn, RmsNorm, RotaryEmbedding, linear_no_bias},
     DType, Device, IndexOp, Tensor,
 };
 use anyhow::Result;
 use serde::Deserialize;
 use tch::nn::{self, Module, Path};
 
-use crate::{config::ModelConfig, get_trace, seq::BatchInfo};
+use crate::{config::ModelConfig, seq::BatchInfo};
 
 #[derive(Deserialize)]
 pub struct LlamaConfig {
@@ -47,33 +47,6 @@ impl LlamaConfig {
     }
 }
 
-#[derive(Debug)]
-struct RmsNorm {
-    scale: Tensor,
-    size: i64,
-    eps: f64,
-}
-
-impl RmsNorm {
-    fn new(vs: nn::Path, size: usize, eps: Option<f64>) -> Self {
-        let scale = vs.zeros("weight", &[size as i64]);
-        Self {
-            scale,
-            size: size as i64,
-            eps: eps.unwrap_or(1e-5),
-        }
-    }
-}
-
-impl Module for RmsNorm {
-    fn forward(&self, xs: &Tensor) -> Tensor {
-        let norm_xs = (xs * xs).mean_dim(-1, true, xs.kind());
-        let xs_normed = xs * (norm_xs + self.eps).rsqrt();
-        let scale = self.scale.reshape([1, 1, self.size]);
-        scale * xs_normed
-    }
-}
-
 struct CausalSelfAttention {
     q_proj: nn::Linear,
     k_proj: nn::Linear,
@@ -90,19 +63,13 @@ impl CausalSelfAttention {
 
         batch_info.log_tensor("x", &x);
 
-        let trace = get_trace() && block_idx <= 1;
-
-        if trace {
-            println!("block #{block_idx}");
-        }
-
         // println!("x: {x:?} qP: {:?}", self.q_proj);
 
         let q = self.q_proj.forward(x);
         let k = self.k_proj.forward(x);
         let v = self.v_proj.forward(x);
 
-        let (q, k) = self.rotary.apply(&batch_info.positions, q, k);
+        let (q, k) = self.rotary.apply(&batch_info.positions, &q, &k);
 
         let v = v.reshape(&[
             seq_len,
@@ -201,16 +168,8 @@ impl Block {
     fn load(vb: Path, rotary: &RotaryEmbedding, cfg: &ModelConfig) -> Result<Self> {
         let attn = CausalSelfAttention::load(&vb / "self_attn", rotary, cfg)?;
         let mlp = Mlp::load(&vb / "mlp", cfg)?;
-        let rms_1 = RmsNorm::new(
-            &vb / "input_layernorm",
-            cfg.hidden_size,
-            Some(cfg.rms_norm_eps),
-        );
-        let rms_2 = RmsNorm::new(
-            &vb / "post_attention_layernorm",
-            cfg.hidden_size,
-            Some(cfg.rms_norm_eps),
-        );
+        let rms_1 = RmsNorm::from_cfg(&vb / "input_layernorm", cfg);
+        let rms_2 = RmsNorm::from_cfg(&vb / "post_attention_layernorm", cfg);
         Ok(Self {
             rms_1,
             attn,
@@ -225,14 +184,6 @@ pub struct Llama {
     blocks: Vec<Block>,
     ln_f: RmsNorm,
     lm_head: nn::Linear,
-}
-
-pub fn linear_no_bias(in_dim: usize, out_dim: usize, vb: Path) -> nn::Linear {
-    let c = nn::LinearConfig {
-        bias: false,
-        ..Default::default()
-    };
-    nn::linear(vb, in_dim as i64, out_dim as i64, c)
 }
 
 impl Llama {
@@ -268,11 +219,7 @@ impl Llama {
             Default::default(),
         );
 
-        let ln_f = RmsNorm::new(
-            &vs / "model" / "norm",
-            cfg.hidden_size,
-            Some(cfg.rms_norm_eps),
-        );
+        let ln_f = RmsNorm::from_cfg(&vs / "model" / "norm", cfg);
 
         let blocks: Vec<_> = (0..cfg.num_hidden_layers)
             .map(|i| {
