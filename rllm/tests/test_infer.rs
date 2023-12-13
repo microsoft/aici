@@ -2,7 +2,6 @@ use std::collections::HashMap;
 
 use aicirt::setup_log_for_test;
 use rllm::{config::SamplingParams, LoaderArgs, RllmEngine};
-use tch::Device;
 
 struct Ctx {
     engine: RllmEngine,

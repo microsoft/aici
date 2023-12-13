@@ -71,10 +71,11 @@ impl RllmConfig {
 #[derive(Debug, Clone)]
 pub struct ModelConfig {
     pub num_attention_heads: usize,
-    pub hidden_size: usize,
+    pub hidden_size: usize, // head_dim * num_attention_heads
     pub num_hidden_layers: usize,
     pub num_key_value_heads: usize,
     pub max_sequence_length: usize,
+    pub head_dim: usize,
 
     pub intermediate_size: usize,
     pub vocab_size: usize,

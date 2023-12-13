@@ -1,13 +1,14 @@
 // based on https://github.com/huggingface/candle/blob/main/candle-transformers/src/models/llama.rs
 
-use crate::{util::to_vec1, DType, Device, IndexOp, Tensor};
+use crate::{
+    attn::{varlen_attn, RotaryEmbedding},
+    DType, Device, IndexOp, Tensor,
+};
 use anyhow::Result;
-// use candle_core::Result;
-// use candle_nn::{linear_no_bias, Embedding, Linear, Module, RmsNorm, VarBuilder};
 use serde::Deserialize;
 use tch::nn::{self, Module, Path};
 
-use crate::{config::ModelConfig, get_trace, kernels, seq::BatchInfo};
+use crate::{config::ModelConfig, get_trace, seq::BatchInfo};
 
 #[derive(Deserialize)]
 pub struct LlamaConfig {
@@ -39,41 +40,10 @@ impl LlamaConfig {
             rms_norm_eps: self.rms_norm_eps,
             rope_theta: self.rope_theta,
             max_sequence_length: self.max_position_embeddings,
+            head_dim: self.hidden_size / self.num_attention_heads,
             dtype,
             device,
         }
-    }
-}
-
-struct RopeCache {
-    cos_sin: Tensor,
-}
-
-impl Clone for RopeCache {
-    fn clone(&self) -> Self {
-        Self {
-            cos_sin: self.cos_sin.shallow_clone(),
-        }
-    }
-}
-
-impl RopeCache {
-    pub fn new(dtype: DType, config: &ModelConfig, device: Device) -> Result<Self> {
-        // precompute freqs_cis
-        let rotary_dim = config.hidden_size / config.num_attention_heads;
-        let theta: Vec<_> = (0..rotary_dim)
-            .step_by(2)
-            .map(|i| 1f32 / config.rope_theta.powf(i as f32 / rotary_dim as f32))
-            .collect();
-        let theta = Tensor::from_slice(theta.as_slice()).to(device);
-        let len = config.max_sequence_length as i64;
-        let idx_theta = Tensor::arange(len, (DType::Float, device))
-            .reshape(&[len, 1])
-            .matmul(&theta.reshape(&[1, theta.numel() as i64]));
-        let cos = idx_theta.cos().to_kind(dtype);
-        let sin = idx_theta.sin().to_kind(dtype);
-        let cos_sin = Tensor::cat(&[&cos, &sin], -1).contiguous();
-        Ok(Self { cos_sin })
     }
 }
 
@@ -109,10 +79,8 @@ struct CausalSelfAttention {
     k_proj: nn::Linear,
     v_proj: nn::Linear,
     o_proj: nn::Linear,
-    num_attention_heads: usize,
-    num_key_value_heads: usize,
-    head_dim: usize,
-    cache: RopeCache,
+    config: ModelConfig,
+    rotary: RotaryEmbedding,
 }
 
 impl CausalSelfAttention {
@@ -134,125 +102,25 @@ impl CausalSelfAttention {
         let k = self.k_proj.forward(x);
         let v = self.v_proj.forward(x);
 
-        let mut q = q.reshape(&[seq_len, (self.num_attention_heads * self.head_dim) as i64]);
-        let mut k = k.reshape(&[seq_len, (self.num_key_value_heads * self.head_dim) as i64]);
+        let (q, k) = self.rotary.apply(&batch_info.positions, q, k);
 
-        // println!("q: {q:?}");
-        // println!("k: {k:?}");
-        // println!("c: {:?}", &self.cache.cos_sin);
-
-        kernels::rotary_embedding(
-            &batch_info.positions,
-            &mut q,
-            &mut k,
-            self.head_dim,
-            &self.cache.cos_sin,
-        );
-
-        let q = q.reshape(&[
-            seq_len,
-            self.num_attention_heads as i64,
-            self.head_dim as i64,
-        ]);
-        let k = k.reshape(&[
-            seq_len,
-            self.num_key_value_heads as i64,
-            self.head_dim as i64,
-        ]);
         let v = v.reshape(&[
             seq_len,
-            self.num_key_value_heads as i64,
-            self.head_dim as i64,
+            self.config.num_key_value_heads as i64,
+            self.config.head_dim as i64,
         ]);
 
-        let (key_cache, value_cache) = &mut batch_info.kv_cache[block_idx];
-
-        // first, stuff the query-sized key/value into the cache
-        kernels::reshape_and_cache(&k, &v, key_cache, value_cache, &batch_info.slot_mapping);
-
-        // then, extend key/value and fill them from cache
-        let mut k = Tensor::empty(
-            &[
-                batch_info.gather_mapping.size()[0],
-                self.num_key_value_heads as i64,
-                self.head_dim as i64,
-            ],
-            (k.kind(), k.device()),
-        );
-
-        let mut v = k.empty_like();
-        kernels::gather_cached_kv(
-            &mut k,
-            &mut v,
-            key_cache,
-            value_cache,
-            &batch_info.gather_mapping,
-        );
-
-        let k = self.repeat_kv(k);
-        let v = self.repeat_kv(v);
-
-        if trace {
-            println!("q2: {q:?}\n{q}");
-            println!("k2: {k:?}\n{k}");
-            println!("v2: {v:?}\n{v}");
-        }
-
-        let y = {
-            batch_info.log_tensor("q", &q);
-            batch_info.log_tensor("k", &k);
-            batch_info.log_tensor("v", &v);
-
-            // flash-attn expects (seq_len, nheads, head_dim)
-            let softmax_scale = 1f32 / (self.head_dim as f32).sqrt();
-            if trace {
-                println!("Q {q:?} K {k:?} V {v:?}");
-            }
-            let causal = true;
-            let y = kernels::flash_attn_varlen(
-                &q,
-                &k,
-                &v,
-                &batch_info.seqlens_q,
-                &batch_info.seqlens_k,
-                batch_info.max_seqlen_q,
-                batch_info.max_seqlen_k,
-                softmax_scale,
-                causal,
-            );
-
-            y
-        };
-
-        batch_info.log_tensor("y", &v);
-
-        if trace {
-            println!("y: {y:?}\n{y}");
-        }
+        let y = varlen_attn(&self.config, q, k, v, batch_info, block_idx);
 
         let y = y.reshape(&[b_sz, seq_len, hidden_size]);
         let y = self.o_proj.forward(&y);
 
-        batch_info.log_tensor("yp", &v);
+        batch_info.log_tensor("yp", &y);
 
         y
     }
 
-    fn repeat_kv(&self, x: Tensor) -> Tensor {
-        let n_rep = self.num_attention_heads / self.num_key_value_heads;
-        if n_rep == 1 {
-            x
-        } else {
-            // let (b_sz, n_kv_head, seq_len, head_dim) = x.size4().unwrap();
-            // let _x = x
-            //     .unsqueeze(2)
-            //     .expand((b_sz, n_kv_head, n_rep, seq_len, head_dim))
-            //     .reshape((b_sz, n_kv_head * n_rep, seq_len, head_dim));
-            todo!("dims are wrong")
-        }
-    }
-
-    fn load(vb: Path, cache: &RopeCache, cfg: &ModelConfig) -> Result<Self> {
+    fn load(vb: Path, rotary: &RotaryEmbedding, cfg: &ModelConfig) -> Result<Self> {
         let size_in = cfg.hidden_size;
         let size_q = (cfg.hidden_size / cfg.num_attention_heads) * cfg.num_attention_heads;
         let size_kv = (cfg.hidden_size / cfg.num_attention_heads) * cfg.num_key_value_heads;
@@ -265,10 +133,8 @@ impl CausalSelfAttention {
             k_proj,
             v_proj,
             o_proj,
-            num_attention_heads: cfg.num_attention_heads,
-            num_key_value_heads: cfg.num_key_value_heads,
-            head_dim: cfg.hidden_size / cfg.num_attention_heads,
-            cache: cache.clone(),
+            config: cfg.clone(),
+            rotary: rotary.clone(),
         })
     }
 }
@@ -332,8 +198,8 @@ impl Block {
         Ok(x)
     }
 
-    fn load(vb: Path, cache: &RopeCache, cfg: &ModelConfig) -> Result<Self> {
-        let attn = CausalSelfAttention::load(&vb / "self_attn", cache, cfg)?;
+    fn load(vb: Path, rotary: &RotaryEmbedding, cfg: &ModelConfig) -> Result<Self> {
+        let attn = CausalSelfAttention::load(&vb / "self_attn", rotary, cfg)?;
         let mlp = Mlp::load(&vb / "mlp", cfg)?;
         let rms_1 = RmsNorm::new(
             &vb / "input_layernorm",
@@ -391,7 +257,7 @@ impl Llama {
     }
 
     pub fn load(vs: Path, cfg: &ModelConfig) -> Result<Self> {
-        let cache = RopeCache::new(cfg.dtype, cfg, cfg.device)?;
+        let rotary = RotaryEmbedding::new(cfg);
 
         let lm_head = linear_no_bias(cfg.hidden_size, cfg.vocab_size, &vs / "lm_head");
 
@@ -411,7 +277,7 @@ impl Llama {
         let blocks: Vec<_> = (0..cfg.num_hidden_layers)
             .map(|i| {
                 // log::info!("loading block {}/{}", i, cfg.num_hidden_layers);
-                Block::load(&vs / "model" / "layers" / i, &cache, cfg).unwrap()
+                Block::load(&vs / "model" / "layers" / i, &rotary, cfg).unwrap()
             })
             .collect();
 
