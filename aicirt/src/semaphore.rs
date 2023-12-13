@@ -14,9 +14,14 @@ impl Semaphore {
         Err(io::Error::last_os_error().into())
     }
 
-    pub fn new(name: &str, initial_value: u32) -> Result<Self> {
+    pub fn new(name: &str, initial_value: u32, unlink: bool) -> Result<Self> {
         info!("sem_open: {}", name);
         let c_name = CString::new(name).unwrap();
+        if unlink {
+            unsafe {
+                libc::sem_unlink(c_name.as_ptr());
+            };
+        }
         let sem = unsafe { libc::sem_open(c_name.as_ptr(), libc::O_CREAT, 0o666, initial_value) };
 
         if sem.is_null() {

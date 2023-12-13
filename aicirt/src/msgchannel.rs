@@ -1,8 +1,8 @@
 use std::time::Duration;
 
-use anyhow::Result;
 use crate::semaphore::Semaphore;
 use crate::shm::Shm;
+use anyhow::Result;
 
 pub struct MessageChannel {
     shm: Shm,
@@ -17,10 +17,18 @@ impl MessageChannel {
         format!("{0}-shm", name)
     }
 
+    pub fn new_cmd(name: &str, size: usize) -> Result<Self> {
+        Self::new_ex(name, size, true)
+    }
+
     pub fn new(name: &str, size: usize) -> Result<Self> {
-        let shm = Shm::new(&Self::shm_name(name), size)?;
-        let write_sem = Semaphore::new(&format!("{0}-wr", name), 1)?;
-        let read_sem = Semaphore::new(&format!("{0}-rd", name), 0)?;
+        Self::new_ex(name, size, true)
+    }
+
+    fn new_ex(name: &str, size: usize, unlink: bool) -> Result<Self> {
+        let shm = Shm::new(&Self::shm_name(name), size, unlink)?;
+        let write_sem = Semaphore::new(&format!("{0}-wr", name), 1, unlink)?;
+        let read_sem = Semaphore::new(&format!("{0}-rd", name), 0, unlink)?;
 
         Ok(Self {
             shm,

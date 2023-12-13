@@ -13,12 +13,15 @@ pub struct Shm {
 unsafe impl Send for Shm {}
 
 impl Shm {
-    pub fn new(name: &str, size: usize) -> Result<Self> {
+    pub fn new(name: &str, size: usize, unlink: bool) -> Result<Self> {
         ensure!(size > 1024);
 
         info!("shm_open: {} size={}k", name, size / 1024);
 
         let shm_name = CString::new(name).unwrap();
+        if unlink {
+            unsafe { libc::shm_unlink(shm_name.as_ptr()) };
+        }
         let fd = unsafe { libc::shm_open(shm_name.as_ptr(), libc::O_RDWR | libc::O_CREAT, 0o666) };
         if fd < 0 {
             return Err(io::Error::last_os_error().into());

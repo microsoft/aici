@@ -983,6 +983,7 @@ fn main() -> () {
     let bin_shm = Shm::new(
         &MessageChannel::shm_name(&cli.prefixed_name("bin", "")),
         limits.logit_memory_bytes,
+        false,
     )
     .unwrap();
 
@@ -1021,6 +1022,7 @@ fn main() -> () {
     let debug_shm = Shm::new(
         &MessageChannel::shm_name(&cli.prefixed_name("bin", "")),
         limits.logit_memory_bytes,
+        false,
     )
     .unwrap();
     let exec = Stepper::new(&reg, limits, debug_shm, token_bytes).unwrap();

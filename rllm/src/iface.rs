@@ -45,8 +45,8 @@ impl CmdChannel {
     ) -> Result<Self> {
         Ok(Self {
             cmd_pending: false,
-            cmd_ch: MessageChannel::new(&format!("{}cmd{}", pref, suff), json_size * M)?,
-            resp_ch: MessageChannel::new(&format!("{}resp{}", pref, suff), json_size * M)?,
+            cmd_ch: MessageChannel::new_cmd(&format!("{}cmd{}", pref, suff), json_size * M)?,
+            resp_ch: MessageChannel::new_cmd(&format!("{}resp{}", pref, suff), json_size * M)?,
             busy_wait_duration,
         })
     }
@@ -126,7 +126,7 @@ impl AiciRtIface {
         let shm_name = MessageChannel::shm_name(&(args.shm_prefix.clone() + "bin"));
         let cmd = CmdChannel::new(args.json_size, &args.shm_prefix, "", busy_wait_time)?;
         let side_cmd = AsyncCmdChannel::new(args.json_size, &args.shm_prefix, "-side")?;
-        let bin_shm = Shm::new(&shm_name, args.bin_size * M)?;
+        let bin_shm = Shm::new(&shm_name, args.bin_size * M, true)?;
 
         let child = Command::new(&args.aicirt)
             .arg("--tokenizer")
