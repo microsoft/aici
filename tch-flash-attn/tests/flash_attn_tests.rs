@@ -9,7 +9,7 @@ fn to_vec3<T: Element>(t: &Tensor) -> Vec<Vec<Vec<T>>> {
                 .map(|j| {
                     let mut dst = vec![T::ZERO; d2 as usize];
                     t.i((i, j, ..))
-                        .to_dtype(T::KIND, false, false)
+                        .to_kind(T::KIND)
                         .copy_data::<T>(&mut dst, d2 as usize);
                     dst
                 })
@@ -50,7 +50,7 @@ fn flash_attn_varlen() -> Result<()> {
         tch_flash_attn::flash_attn_varlen(&q, &k, &v, &seqlens_q, &seqlens_k, 32, 32, 0.5, false)
             .transpose(0, 1)
     };
-    let ys = ys.to_dtype(Kind::Float, false, true);
+    let ys = ys.to_kind(Kind::Float);
 
     assert_eq!(ys.size(), &[3, 2, 8]);
     assert_eq!(

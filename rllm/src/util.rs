@@ -35,7 +35,7 @@ pub fn check_all_close(t1: &Tensor, t2: &Tensor, max_diff_: f64) {
 pub fn to_vec1<T: Element>(t: &Tensor) -> Vec<T> {
     let sz = t.size1().unwrap();
     let mut dst = vec![T::ZERO; sz as usize];
-    t.to_dtype(T::KIND, false, false)
+    t.to_kind(T::KIND)
         .copy_data::<T>(&mut dst, sz as usize);
     dst
 }

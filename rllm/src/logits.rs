@@ -95,7 +95,7 @@ impl LogitsProcessor {
     }
 
     pub fn sample(&mut self, logits: &Tensor) -> Result<u32> {
-        let logits = logits.to_dtype(DType::Float, true, true);
+        let logits = logits.to_kind(DType::Float);
         let next_token = match self.temperature {
             None => self.sample_argmax(&logits)?,
             Some(temperature) => {

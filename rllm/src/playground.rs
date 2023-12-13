@@ -40,7 +40,7 @@ impl XorShiftRng {
         Tensor::from_slice(data.as_slice())
             .to(device)
             .reshape(shape)
-            .to_dtype(DType::BFloat16, false, false)
+            .to_kind(DType::BFloat16)
     }
 }
 
