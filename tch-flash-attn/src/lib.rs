@@ -324,12 +324,12 @@ pub fn copy_blocks(
 }
 
 pub fn rotary_embedding(
-    positions: &Tensor,
-    query: &mut Tensor,
-    key: &mut Tensor,
+    positions: &Tensor, // [batch_size, seq_len] or [num_tokens]
+    query: &mut Tensor, // [batch_size, seq_len, num_heads * head_size] or [num_tokens, num_heads * head_size]
+    key: &mut Tensor, // [batch_size, seq_len, num_kv_heads * head_size] or [num_tokens, num_kv_heads * head_size]
     head_size: usize,
-    cos_sin_cache: &Tensor,
-    // is_neox: bool,
+    cos_sin_cache: &Tensor, // [max_position, rot_dim]
+                            // is_neox: bool,
 ) {
     let is_neox = true;
     unsafe {
