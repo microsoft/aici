@@ -6,7 +6,6 @@ use clap::Parser;
 
 use rand::Rng;
 use rllm::{config::SamplingParams, playground_1, AddRequest, LoaderArgs, RllmEngine};
-use tch::Device;
 
 const DEFAULT_PROMPT: &str = "over millions of years,";
 

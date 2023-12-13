@@ -212,7 +212,7 @@ pub fn varlen_attn(
         }
         let causal = true;
 
-        let y = if true {
+        let y = if config.dtype == DType::BFloat16 {
             kernels::flash_attn_varlen(
                 &q,
                 &k,

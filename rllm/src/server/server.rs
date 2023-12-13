@@ -17,7 +17,7 @@ use rllm::{
     config::{ModelConfig, SamplingParams},
     iface::{AiciRtIface, AsyncCmdChannel},
     seq::RequestOutput,
-    AddRequest, LoaderArgs, RllmEngine,
+    AddRequest, DType, LoaderArgs, RllmEngine,
 };
 
 use openai::responses::APIError;
@@ -86,6 +86,10 @@ pub struct Args {
     /// Enable nvprof profiling for given engine step
     #[arg(long, default_value_t = 0)]
     profile_step: usize,
+
+    /// Specify which type to use in the model (bf16, f16, f32)
+    #[arg(long, default_value = "bf16")]
+    dtype: String,
 }
 
 #[actix_web::post("/v1/aici_modules")]
@@ -220,6 +224,13 @@ async fn main() -> () {
 
     let mut args = Args::parse();
 
+    let dtype = match args.dtype.as_str() {
+        "bf16" => DType::BFloat16,
+        "f16" => DType::Half,
+        "f32" => DType::Float,
+        _ => panic!("invalid dtype; try one of bf16, f16, f32"),
+    };
+
     if args.model.contains('@') {
         let m = args.model.clone();
         let mut parts = m.split('@');
@@ -232,6 +243,7 @@ async fn main() -> () {
         revision: args.revision.clone(),
         local_weights: args.local_weights.clone(),
         tokenizer: args.tokenizer.clone(),
+        dtype,
         ..LoaderArgs::default()
     };
 
