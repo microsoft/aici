@@ -232,6 +232,20 @@ where
     }
 
     fn recv_with_timeout(&self, timeout: Duration) -> Result<Resp> {
+        match self.recv_with_timeout_inner(timeout) {
+            Ok(r) => Ok(r),
+            Err(e) => {
+                if e.to_string().starts_with("timeout ") {
+                    log::warn!("{e:?}");
+                    self.recv_with_timeout(Duration::from_millis(200))
+                } else {
+                    Err(e)
+                }
+            }
+        }
+    }
+
+    fn recv_with_timeout_inner(&self, timeout: Duration) -> Result<Resp> {
         match self.cmd_resp.try_recv_timeout(timeout) {
             Ok(r) => {
                 log::trace!("recv t/o {r:?}");
