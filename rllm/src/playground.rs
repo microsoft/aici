@@ -78,7 +78,7 @@ fn flash_attn(
         causal,
     );
 
-    let r2 = crate::llama::naive_attn(
+    let r2 = crate::attn::naive_attn(
         &q,
         &k,
         &v,

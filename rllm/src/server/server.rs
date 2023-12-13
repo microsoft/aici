@@ -5,7 +5,10 @@ use std::{
 
 use actix_web::{middleware::Logger, web, App, HttpServer};
 use aici_abi::toktree::TokTrie;
-use aicirt::{api::{MkModuleReq, MkModuleResp}, setup_log};
+use aicirt::{
+    api::{MkModuleReq, MkModuleResp},
+    setup_log,
+};
 use anyhow::Result;
 use base64::Engine;
 use clap::Parser;
@@ -18,6 +21,7 @@ use rllm::{
 };
 
 use openai::responses::APIError;
+use tch::Device;
 use tokio::sync::mpsc::{channel, error::TryRecvError, Receiver, Sender};
 
 mod completion;
@@ -45,9 +49,9 @@ pub struct Args {
 
     /// Huggingface model name
     #[arg(long)]
-    model_id: Option<String>,
+    model: String,
 
-    /// Huggingface model revision
+    /// Huggingface model revision; --model foo/bar@revision is also possible
     #[arg(long)]
     revision: Option<String>,
 
@@ -208,14 +212,23 @@ fn inference_loop(
 async fn main() -> () {
     setup_log();
 
-    let args = Args::parse();
+    let mut args = Args::parse();
+
+    if args.model.contains('@') {
+        let m = args.model.clone();
+        let mut parts = m.split('@');
+        args.model = parts.next().unwrap().to_string();
+        args.revision = Some(parts.next().unwrap().to_string());
+    }
 
     let loader_args = LoaderArgs {
-        model_id: args.model_id.clone(),
+        model_id: args.model.clone(),
         revision: args.revision.clone(),
         local_weights: args.local_weights.clone(),
         tokenizer: args.tokenizer.clone(),
         alt: 0,
+        dtype: rllm::DType::BFloat16,
+        device: Device::Cuda(0),
     };
 
     let (tokenizer, tok_trie) =

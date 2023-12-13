@@ -28,7 +28,7 @@ fn default_rope() -> f32 {
 }
 
 impl LlamaConfig {
-    pub fn into_config(self) -> ModelConfig {
+    pub fn into_config(self, dtype: DType, device: Device) -> ModelConfig {
         ModelConfig {
             hidden_size: self.hidden_size,
             intermediate_size: self.intermediate_size,
@@ -36,36 +36,20 @@ impl LlamaConfig {
             num_hidden_layers: self.num_hidden_layers,
             num_attention_heads: self.num_attention_heads,
             num_key_value_heads: self.num_key_value_heads.unwrap_or(self.num_attention_heads),
-            rms_norm_eps: Some(self.rms_norm_eps),
-            rope_theta: Some(self.rope_theta),
+            rms_norm_eps: self.rms_norm_eps,
+            rope_theta: self.rope_theta,
             max_sequence_length: self.max_position_embeddings,
-            dtype_str: "bf16".to_string(),
+            dtype,
+            device,
         }
     }
 }
 
-impl ModelConfig {
-    pub fn config_7b_v2() -> Self {
-        Self {
-            num_attention_heads: 32,
-            hidden_size: 4096,
-            num_hidden_layers: 32,
-            num_key_value_heads: 32,
-            max_sequence_length: 4096, // ???
-            dtype_str: "bf16".to_string(),
-            intermediate_size: 11008,
-            vocab_size: 32000,
-            rms_norm_eps: Some(1e-5),
-            rope_theta: Some(10_000.0),
-        }
-    }
-}
-
-struct Cache {
+struct RopeCache {
     cos_sin: Tensor,
 }
 
-impl Clone for Cache {
+impl Clone for RopeCache {
     fn clone(&self) -> Self {
         Self {
             cos_sin: self.cos_sin.shallow_clone(),
@@ -73,18 +57,13 @@ impl Clone for Cache {
     }
 }
 
-impl Cache {
+impl RopeCache {
     pub fn new(dtype: DType, config: &ModelConfig, device: Device) -> Result<Self> {
         // precompute freqs_cis
         let rotary_dim = config.hidden_size / config.num_attention_heads;
         let theta: Vec<_> = (0..rotary_dim)
             .step_by(2)
-            .map(|i| {
-                1f32 / config
-                    .rope_theta
-                    .unwrap()
-                    .powf(i as f32 / rotary_dim as f32)
-            })
+            .map(|i| 1f32 / config.rope_theta.powf(i as f32 / rotary_dim as f32))
             .collect();
         let theta = Tensor::from_slice(theta.as_slice()).to(device);
         let len = config.max_sequence_length as i64;
@@ -133,78 +112,7 @@ struct CausalSelfAttention {
     num_attention_heads: usize,
     num_key_value_heads: usize,
     head_dim: usize,
-    cache: Cache,
-}
-
-pub fn naive_attn(
-    q: &Tensor,
-    k: &Tensor,
-    v: &Tensor,
-    seqlens_q: &Tensor,
-    seqlens_k: &Tensor,
-    max_seqlen_q: usize,
-    max_seqlen_k: usize,
-    softmax_scale: f32,
-    causal: bool,
-) -> Result<Tensor> {
-    let seqlens_q = to_vec1::<i32>(seqlens_q);
-    let seqlens_k = to_vec1::<i32>(seqlens_k);
-    assert!(seqlens_q.len() == seqlens_k.len());
-    let batch_size = seqlens_k.len() - 1;
-
-    let softmax_scale = softmax_scale as f64;
-
-    // flash-attn expects (seq_len, nheads, head_dim)
-
-    let mut attns = Vec::with_capacity(batch_size);
-
-    for i in 0..batch_size {
-        let ptr_q = seqlens_q[i] as i64;
-        let ptr_k = seqlens_k[i] as i64;
-        let len_q = seqlens_q[i + 1] as i64 - ptr_q;
-        let len_k = seqlens_k[i + 1] as i64 - ptr_k;
-
-        assert!(len_q <= max_seqlen_q as i64);
-        assert!(len_k <= max_seqlen_k as i64);
-
-        let q = q.i((ptr_q..ptr_q + len_q, .., ..)).transpose(0, 1);
-        let k = k.i((ptr_k..ptr_k + len_k, .., ..)).transpose(0, 1);
-        let v = v.i((ptr_k..ptr_k + len_k, .., ..)).transpose(0, 1);
-
-        let mut attn = q.contiguous().matmul(&k.transpose(-2, -1).contiguous());
-        attn = attn * softmax_scale;
-        if causal {
-            let mask: Vec<_> = (0..len_q)
-                .flat_map(|i| {
-                    (0..len_k).map(move |j| {
-                        if i + (len_k - len_q) >= j {
-                            0f32
-                        } else {
-                            f32::NEG_INFINITY
-                        }
-                    })
-                })
-                .collect();
-            let mask = Tensor::from_slice(&mask)
-                .to(q.device())
-                .reshape(&[len_q, len_k])
-                .to_kind(attn.kind());
-
-            // println!("mask: {mask}");
-            // TODO broadcast?
-            attn = attn + mask;
-        }
-
-        attn = attn.softmax(-1, attn.kind());
-        // Convert to contiguous as matmul doesn't support strided vs for now.
-        attn = attn.matmul(&v.contiguous());
-        attn = attn.transpose(0, 1);
-
-        attns.push(attn);
-    }
-
-    let attn = Tensor::cat(&attns, 0);
-    Ok(attn)
+    cache: RopeCache,
 }
 
 impl CausalSelfAttention {
@@ -344,7 +252,7 @@ impl CausalSelfAttention {
         }
     }
 
-    fn load(vb: Path, cache: &Cache, cfg: &ModelConfig) -> Result<Self> {
+    fn load(vb: Path, cache: &RopeCache, cfg: &ModelConfig) -> Result<Self> {
         let size_in = cfg.hidden_size;
         let size_q = (cfg.hidden_size / cfg.num_attention_heads) * cfg.num_attention_heads;
         let size_kv = (cfg.hidden_size / cfg.num_attention_heads) * cfg.num_key_value_heads;
@@ -424,14 +332,18 @@ impl Block {
         Ok(x)
     }
 
-    fn load(vb: Path, cache: &Cache, cfg: &ModelConfig) -> Result<Self> {
+    fn load(vb: Path, cache: &RopeCache, cfg: &ModelConfig) -> Result<Self> {
         let attn = CausalSelfAttention::load(&vb / "self_attn", cache, cfg)?;
         let mlp = Mlp::load(&vb / "mlp", cfg)?;
-        let rms_1 = RmsNorm::new(&vb / "input_layernorm", cfg.hidden_size, cfg.rms_norm_eps);
+        let rms_1 = RmsNorm::new(
+            &vb / "input_layernorm",
+            cfg.hidden_size,
+            Some(cfg.rms_norm_eps),
+        );
         let rms_2 = RmsNorm::new(
             &vb / "post_attention_layernorm",
             cfg.hidden_size,
-            cfg.rms_norm_eps,
+            Some(cfg.rms_norm_eps),
         );
         Ok(Self {
             rms_1,
@@ -479,7 +391,7 @@ impl Llama {
     }
 
     pub fn load(vs: Path, cfg: &ModelConfig) -> Result<Self> {
-        let cache = Cache::new(cfg.get_dtype(), cfg, vs.device())?;
+        let cache = RopeCache::new(cfg.dtype, cfg, cfg.device)?;
 
         let lm_head = linear_no_bias(cfg.hidden_size, cfg.vocab_size, &vs / "lm_head");
 
@@ -490,7 +402,11 @@ impl Llama {
             Default::default(),
         );
 
-        let ln_f = RmsNorm::new(&vs / "model" / "norm", cfg.hidden_size, cfg.rms_norm_eps);
+        let ln_f = RmsNorm::new(
+            &vs / "model" / "norm",
+            cfg.hidden_size,
+            Some(cfg.rms_norm_eps),
+        );
 
         let blocks: Vec<_> = (0..cfg.num_hidden_layers)
             .map(|i| {

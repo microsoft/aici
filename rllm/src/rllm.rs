@@ -6,6 +6,7 @@ use clap::Parser;
 
 use rand::Rng;
 use rllm::{config::SamplingParams, playground_1, AddRequest, LoaderArgs, RllmEngine};
+use tch::Device;
 
 const DEFAULT_PROMPT: &str = "over millions of years,";
 
@@ -33,7 +34,7 @@ struct Args {
     prompt_file: Option<String>,
 
     #[arg(long)]
-    model_id: Option<String>,
+    model_id: String,
 
     #[arg(long)]
     revision: Option<String>,
@@ -70,6 +71,8 @@ fn main() -> Result<()> {
         local_weights: args.local_weights,
         alt: args.alt,
         tokenizer: args.tokenizer,
+        device: Device::Cuda(0),
+        dtype: rllm::DType::BFloat16,
     })?;
 
     let prompt = match &args.prompt {

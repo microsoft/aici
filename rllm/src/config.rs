@@ -1,7 +1,7 @@
 // based on https://github.com/vllm-project/vllm/blob/b9fe4616f98b77b4b9458bce203aa6544cb31ef2/vllm/config.py
 
-use anyhow::{bail, Result};
 use crate::{DType, Device};
+use anyhow::{bail, Result};
 use log::warn;
 use serde::{Deserialize, Serialize};
 
@@ -24,7 +24,6 @@ impl RllmConfig {
         parallel: ParallelConfig,
         cache: CacheConfig,
         scheduler: SchedulerConfig,
-        device: Device,
     ) -> Result<Self> {
         if model.num_hidden_layers % parallel.pipeline_parallel_size != 0 {
             bail!(
@@ -40,7 +39,8 @@ impl RllmConfig {
                 parallel.tensor_parallel_size
             );
         }
-        let dtype = model.get_dtype();
+        let dtype = model.dtype;
+        let device = model.device;
         Ok(Self {
             model,
             parallel,
@@ -68,31 +68,22 @@ impl RllmConfig {
     }
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Debug, Clone)]
 pub struct ModelConfig {
     pub num_attention_heads: usize,
     pub hidden_size: usize,
     pub num_hidden_layers: usize,
     pub num_key_value_heads: usize,
     pub max_sequence_length: usize,
-    pub dtype_str: String,
 
     pub intermediate_size: usize,
     pub vocab_size: usize,
 
-    pub rms_norm_eps: Option<f64>,
-    pub rope_theta: Option<f32>,
-}
+    pub rms_norm_eps: f64, // defl. 1e-5
+    pub rope_theta: f32,   // defl. 10000
 
-impl ModelConfig {
-    pub fn get_dtype(&self) -> DType {
-        match self.dtype_str.as_str() {
-            "f32" => DType::Float,
-            "f16" => DType::Half,
-            "bf16" => DType::BFloat16,
-            _ => panic!(),
-        }
-    }
+    pub device: Device,
+    pub dtype: DType,
 }
 
 #[derive(Debug, Serialize, Deserialize)]

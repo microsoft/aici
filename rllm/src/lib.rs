@@ -1,5 +1,7 @@
 mod kernels;
 pub mod llama;
+// pub mod phi;
+pub mod attn;
 mod logits;
 mod playground;
 pub mod seq;
@@ -24,13 +26,29 @@ pub use playground::playground_1;
 pub use tch::{Device, Tensor, IndexOp, Shape};
 pub use tch::Kind as DType;
 
-#[derive(Default)]
 pub struct LoaderArgs {
     pub tokenizer: String, // one of aici_tokenizer; eg "llama"
-    pub model_id: Option<String>,
+    pub model_id: String,
     pub revision: Option<String>,
     pub local_weights: Option<String>,
     pub alt: usize,
+
+    pub dtype: DType,
+    pub device: Device,
+}
+
+impl Default for LoaderArgs {
+    fn default() -> Self {
+        Self {
+            tokenizer: "llama".to_string(),
+            model_id: "NousResearch/Llama-2-7b-hf".to_string(),
+            revision: None,
+            local_weights: None,
+            alt: 0,
+            dtype: DType::BFloat16,
+            device: Device::Cuda(0),
+        }
+    }
 }
 
 static mut TRACE: AtomicBool = AtomicBool::new(false);

@@ -2,6 +2,7 @@ use std::collections::HashMap;
 
 use aicirt::setup_log_for_test;
 use rllm::{config::SamplingParams, LoaderArgs, RllmEngine};
+use tch::Device;
 
 struct Ctx {
     engine: RllmEngine,
@@ -30,7 +31,7 @@ fn expect(ctx: &mut Ctx, prompt: &str, expected: &str) {
 }
 
 /*
-This is more examples of strongly pre-determined (top logit is at least 5% higher than the second for all tokens) 
+This is more examples of strongly pre-determined (top logit is at least 5% higher than the second for all tokens)
 results for Llama-2-7b-hf:
 
 FOUND "April 2022 The Moon is a relatively large, terrestrial," "planetary-mass object in the Solar System"

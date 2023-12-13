@@ -5,8 +5,8 @@ REL=
 
 (cd ../aicirt && cargo build --release)
 
-MODEL=codellama/CodeLlama-13b-Instruct-hf
-TOK=codellama
+MODEL=microsoft/phi-1_5@refs/pr/18
+TOK=phi
 
 if echo "$*" | grep -q -- --profile-step ; then
     rm -f profile.ncu-rep report1.*

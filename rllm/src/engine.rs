@@ -58,10 +58,7 @@ impl Repo {
             Some(path) => Ok(Repo::Local(path.to_owned())),
             None => {
                 let api = Api::new()?;
-                let model_id = args
-                    .model_id
-                    .clone()
-                    .unwrap_or_else(|| "NousResearch/Llama-2-7b-hf".to_string());
+                let model_id = args.model_id.clone();
                 let revision = args.revision.clone().unwrap_or("main".to_string());
                 let api = api.repo(hf_hub::Repo::with_revision(
                     model_id,
@@ -155,7 +152,7 @@ impl RllmEngine {
         let repo = Repo::from(args)?;
         log::info!("loading the model from {}", repo);
         let json_config: LlamaConfig = serde_json::from_slice(&repo.read("config.json")?)?;
-        Ok(json_config.into_config())
+        Ok(json_config.into_config(args.dtype, args.device))
     }
 
     pub fn load(args: LoaderArgs) -> Result<RllmEngine> {
