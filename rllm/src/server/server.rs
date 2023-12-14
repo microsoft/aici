@@ -239,6 +239,10 @@ async fn main() -> () {
         args.revision = Some(parts.next().unwrap().to_string());
     }
 
+    if args.model.starts_with(".") {
+        args.local_weights = Some(args.model.clone());
+    }
+
     let loader_args = LoaderArgs {
         model_id: args.model.clone(),
         revision: args.revision.clone(),
