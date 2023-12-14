@@ -7,9 +7,10 @@ from transformers import (
 )
 from transformers.generation.streamers import BaseStreamer
 from safetensors.torch import save_file
+import platform
 
 # modeln = "microsoft/phi-1_5"
-modeln = "./tmp/lphy"
+modeln = "./tmp/phi"
 prompt = '''```python
 def print_prime(n):
    """
@@ -47,7 +48,10 @@ class AsyncLogitProcessor(LogitsProcessor, BaseStreamer):
 
 
 def main():
-    torch.set_default_device("cuda")
+    if platform.system() == "Darwin":
+        torch.set_default_device("cpu")
+    else:
+        torch.set_default_device("cuda")
     model = AutoModelForCausalLM.from_pretrained(modeln, trust_remote_code=True)
     tokenizer = AutoTokenizer.from_pretrained(modeln, trust_remote_code=True)
     inputs = tokenizer(prompt, return_tensors="pt", return_attention_mask=False)
@@ -57,7 +61,7 @@ def main():
     proc.append(wproc)
     outputs = model.generate(
         **inputs,
-        max_new_tokens=30,
+        max_new_tokens=2,
         logits_processor=proc,
         streamer=wproc,
         do_sample=True,
@@ -65,7 +69,7 @@ def main():
     text = tokenizer.batch_decode(outputs)[0]
     print(text)
     output["output"] = torch.tensor(out_tokens, dtype=torch.long)
-    save_file(output, "tmp/phi.safetensors")
+    save_file(output, "tmp/reference.safetensors")
 
 
 main()

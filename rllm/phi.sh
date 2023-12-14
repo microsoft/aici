@@ -1,12 +1,13 @@
 #!/bin/sh
 
-PORT=8081
+PORT=8080
 REL=--release
 REL=
 
 (cd ../aicirt && cargo build --release)
 
 MODEL=microsoft/phi-1_5@refs/pr/18
+MODEL=./tmp/phi
 TOK=phi
 
 if echo "$*" | grep -q -- --profile-step ; then
