@@ -329,9 +329,8 @@ pub fn rotary_embedding(
     key: &mut Tensor, // [batch_size, seq_len, num_kv_heads * head_size] or [num_tokens, num_kv_heads * head_size]
     head_size: usize,
     cos_sin_cache: &Tensor, // [max_position, rot_dim]
-                            // is_neox: bool,
+    is_neox: bool,
 ) {
-    let is_neox = true;
     unsafe {
         check_res(
             "rotary_embedding_C",
