@@ -1,4 +1,5 @@
 mod kernels;
+pub mod refkernels;
 pub mod llama;
 pub mod phi;
 pub mod attn;
@@ -19,7 +20,6 @@ use std::sync::atomic::AtomicBool;
 
 pub use engine::RllmEngine;
 pub use engine::AddRequest;
-pub use kernels::*;
 pub use logits::LogitsProcessor;
 pub use playground::playground_1;
 

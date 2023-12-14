@@ -1,4 +1,4 @@
-use crate::{to_offsets, util::check_all_close};
+use crate::{kernels::to_offsets, util::check_all_close};
 use crate::{DType, Device, IndexOp, Tensor};
 use anyhow::Result;
 
@@ -66,7 +66,7 @@ fn flash_attn(
     let cuda = Device::Cuda(0);
     let device = cuda;
     let causal = true;
-    let r = crate::kernels::flash_attn_varlen(
+    let r = crate::kernels::varlen_attn(
         &q,
         &k,
         &v,
@@ -78,7 +78,7 @@ fn flash_attn(
         causal,
     );
 
-    let r2 = crate::kernels::reference_varlen_attn(
+    let r2 = crate::refkernels::varlen_attn(
         &q,
         &k,
         &v,

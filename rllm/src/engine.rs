@@ -30,7 +30,7 @@ use crate::{
     iface::AiciRtIface,
     scheduler::SchedulerOutputs,
     seq::{AiciSampling, FinishReason, RequestOutput, SchedulingPhase, SequenceGroup, Token},
-    to_offsets,
+    kernels::to_offsets,
 };
 use crate::{
     llama::{Llama, LlamaConfig},

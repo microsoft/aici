@@ -1,5 +1,5 @@
 use crate::util::check_all_close;
-use crate::{config::ModelConfig, kernels, seq::BatchInfo};
+use crate::{config::ModelConfig, kernels, refkernels, seq::BatchInfo};
 use crate::{DType, IndexOp, Tensor};
 use std::rc::Rc;
 use tch::nn::{self, Module, Path};
@@ -77,7 +77,7 @@ impl RotaryEmbedding {
                 &self.cos_sin,
                 true,
             );
-            kernels::reference_rotary_embedding(
+            refkernels::rotary_embedding(
                 &positions,
                 &mut qq,
                 &mut kk,
@@ -131,7 +131,7 @@ pub fn varlen_attn(
         let mut kk = key_cache.copy();
         let mut vv = value_cache.copy();
         kernels::reshape_and_cache(&k, &v, key_cache, value_cache, &batch_info.slot_mapping);
-        kernels::reference_reshape_and_cache(&k, &v, &mut kk, &mut vv, &batch_info.slot_mapping);
+        refkernels::reshape_and_cache(&k, &v, &mut kk, &mut vv, &batch_info.slot_mapping);
         check_all_close(&key_cache, &kk, 1e-5);
         check_all_close(&value_cache, &vv, 1e-5);
     } else {
@@ -161,7 +161,7 @@ pub fn varlen_attn(
         let mut kk = k.empty_like();
         let mut vv = v.empty_like();
 
-        kernels::reference_gather_cached_kv(
+        refkernels::gather_cached_kv(
             &mut kk,
             &mut vv,
             &key_cache,
@@ -194,7 +194,7 @@ pub fn varlen_attn(
         let causal = true;
 
         let y = if config.dtype == DType::BFloat16 {
-            kernels::flash_attn_varlen(
+            kernels::varlen_attn(
                 &q,
                 &k,
                 &v,
@@ -206,7 +206,7 @@ pub fn varlen_attn(
                 causal,
             )
         } else {
-            kernels::reference_varlen_attn(
+            refkernels::varlen_attn(
                 &q,
                 &k,
                 &v,
