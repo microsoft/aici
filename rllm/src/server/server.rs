@@ -88,7 +88,7 @@ pub struct Args {
     profile_step: usize,
 
     /// Specify which type to use in the model (bf16, f16, f32)
-    #[arg(long, default_value = "bf16")]
+    #[arg(long, default_value = "")]
     dtype: String,
 }
 
@@ -228,6 +228,7 @@ async fn main() -> () {
         "bf16" => DType::BFloat16,
         "f16" => DType::Half,
         "f32" => DType::Float,
+        "" => LoaderArgs::default().dtype,
         _ => panic!("invalid dtype; try one of bf16, f16, f32"),
     };
 

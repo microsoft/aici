@@ -1,30 +1,30 @@
-mod kernels;
-pub mod refkernels;
-pub mod llama;
-pub mod phi;
 pub mod attn;
+mod kernels;
+pub mod llama;
 mod logits;
+pub mod phi;
 mod playground;
+pub mod refkernels;
 pub mod seq;
 
 // vllm modules
 mod blocks;
 mod cache_engine;
 pub mod config;
-pub mod util;
 mod engine;
-mod scheduler;
 pub mod iface;
+mod scheduler;
+pub mod util;
 
 use std::sync::atomic::AtomicBool;
 
-pub use engine::RllmEngine;
 pub use engine::AddRequest;
+pub use engine::RllmEngine;
 pub use logits::LogitsProcessor;
 pub use playground::playground_1;
 
-pub use tch::{Device, Tensor, IndexOp, Shape};
 pub use tch::Kind as DType;
+pub use tch::{Device, IndexOp, Shape, Tensor};
 
 pub struct LoaderArgs {
     pub tokenizer: String, // one of aici_tokenizer; eg "llama"
@@ -39,14 +39,23 @@ pub struct LoaderArgs {
 
 impl Default for LoaderArgs {
     fn default() -> Self {
+        let (device, dtype) = if tch::Cuda::is_available() {
+            (Device::Cuda(0), DType::BFloat16)
+        } else {
+            #[cfg(target_os = "macos")]
+            let r = (Device::Mps, DType::Half);
+            #[cfg(not(target_os = "macos"))]
+            let r = (Device::Cpu, DType::Float);
+            r
+        };
         Self {
             tokenizer: "llama".to_string(),
             model_id: "NousResearch/Llama-2-7b-hf".to_string(),
             revision: None,
             local_weights: None,
             alt: 0,
-            dtype: DType::BFloat16,
-            device: Device::Cuda(0),
+            dtype,
+            device,
         }
     }
 }

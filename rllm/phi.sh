@@ -1,5 +1,6 @@
 #!/bin/sh
 
+PORT=8081
 REL=--release
 REL=
 
@@ -15,14 +16,14 @@ RUST_LOG=info \
     nsys profile -c cudaProfilerApi \
     --stats true \
     ./target/release/rllm-server \
-    --verbose --port 8080 --aicirt ../aicirt/target/release/aicirt \
+    --verbose --port $PORT --aicirt ../aicirt/target/release/aicirt \
     --model $MODEL --tokenizer $TOK \
     "$@"
 else
 RUST_BACKTRACE=1 \
 RUST_LOG=info,rllm=debug,aicirt=info \
     cargo run $REL --bin rllm-server -- \
-    --verbose --port 8080 --aicirt ../aicirt/target/release/aicirt \
+    --verbose --port $PORT --aicirt ../aicirt/target/release/aicirt \
     --model $MODEL --tokenizer $TOK \
     "$@"
 fi

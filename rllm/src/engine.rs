@@ -28,9 +28,9 @@ use crate::{
         CacheConfig, ModelConfig, ParallelConfig, RllmConfig, SamplingParams, SchedulerConfig,
     },
     iface::AiciRtIface,
+    kernels::to_offsets,
     scheduler::SchedulerOutputs,
     seq::{AiciSampling, FinishReason, RequestOutput, SchedulingPhase, SequenceGroup, Token},
-    kernels::to_offsets,
 };
 use crate::{
     llama::{Llama, LlamaConfig},
@@ -205,7 +205,11 @@ impl RllmEngine {
 
         // TODO infer these
         let elt_size = CacheEngine::get_cache_block_size(&rllm_config);
-        let cache_mem = 4 << 30; // 4GiB
+        let cache_mem = if device.is_cuda() {
+            4096 << 20 // 4GiB
+        } else {
+            512 << 20 // 512MiB
+        };
         rllm_config.cache.num_cpu_blocks = Some(cache_mem / elt_size);
         rllm_config.cache.num_gpu_blocks = Some(cache_mem / elt_size);
 
@@ -662,6 +666,7 @@ impl RllmEngine {
         // log::trace!("{}", info.gather_mapping);
         // log::trace!("{}", info.slot_mapping);
 
+        #[cfg(feature = "cuda")]
         if self.nv_profile {
             cudarc::driver::safe::profiler_start()?;
         }
@@ -677,6 +682,7 @@ impl RllmEngine {
             t0.elapsed() / info.tokens.numel() as u32
         );
 
+        #[cfg(feature = "cuda")]
         if self.nv_profile {
             cudarc::driver::safe::profiler_stop()?;
         }
@@ -904,6 +910,7 @@ impl RllmEngine {
 
         self.step_no += 1;
 
+        #[cfg(feature = "cuda")]
         if self.step_no == self.profile_step_no {
             cudarc::driver::safe::profiler_start()?;
         }
@@ -921,6 +928,7 @@ impl RllmEngine {
         // we run step_finished() regardless if model failed
         self.scheduler.step_finished(sched_out);
 
+        #[cfg(feature = "cuda")]
         if self.step_no == self.profile_step_no {
             cudarc::driver::safe::profiler_stop()?;
         }

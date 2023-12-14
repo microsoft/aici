@@ -44,7 +44,7 @@ impl Semaphore {
         loop {
             let ret = unsafe { libc::sem_trywait(self.sem) };
             if ret < 0 {
-                let last_error = unsafe { *libc::__errno_location() };
+                let last_error = unsafe { *libc::__error() };
                 if last_error == libc::EAGAIN {
                     if Instant::now() > deadline {
                         return self.wait();
