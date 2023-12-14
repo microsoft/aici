@@ -42,9 +42,10 @@ impl Default for LoaderArgs {
         let (device, dtype) = if tch::Cuda::is_available() {
             (Device::Cuda(0), DType::BFloat16)
         } else {
-            #[cfg(target_os = "macos")]
-            let r = (Device::Mps, DType::Half);
-            #[cfg(not(target_os = "macos"))]
+            // At least on AMD 5500m MPS is 3x slower than CPU
+            // #[cfg(target_os = "macos")]
+            // let r = (Device::Mps, DType::Half);
+            // #[cfg(not(target_os = "macos"))]
             let r = (Device::Cpu, DType::Float);
             r
         };
