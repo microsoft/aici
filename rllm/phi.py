@@ -61,7 +61,7 @@ def main():
     proc.append(wproc)
     outputs = model.generate(
         **inputs,
-        max_new_tokens=2,
+        max_new_tokens=10,
         logits_processor=proc,
         streamer=wproc,
         do_sample=True,
