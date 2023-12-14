@@ -66,7 +66,7 @@ fn flash_attn(
     let cuda = Device::Cuda(0);
     let device = cuda;
     let causal = true;
-    let r = tch_flash_attn::flash_attn_varlen(
+    let r = crate::kernels::flash_attn_varlen(
         &q,
         &k,
         &v,

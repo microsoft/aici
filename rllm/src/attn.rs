@@ -4,7 +4,7 @@ use crate::{DType, IndexOp, Tensor};
 use std::rc::Rc;
 use tch::nn::{self, Module, Path};
 
-const CHECK: bool = true;
+const CHECK: bool = false;
 
 #[derive(Debug)]
 pub struct RotaryEmbedding {

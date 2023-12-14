@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use tch::{Device, IndexOp, Tensor};
 
 #[cfg(feature = "cuda")]
@@ -24,7 +26,13 @@ pub use crate::kernels::reference_gather_cached_kv as gather_cached_kv;
 #[cfg(not(feature = "cuda"))]
 pub use crate::kernels::reference_reshape_and_cache as reshape_and_cache;
 #[cfg(not(feature = "cuda"))]
+pub use crate::kernels::reference_rotary_embedding as rotary_embedding;
+#[cfg(not(feature = "cuda"))]
 pub use crate::kernels::reference_varlen_attn as flash_attn_varlen;
+#[cfg(not(feature = "cuda"))]
+pub use crate::kernels::reference_copy_blocks as copy_blocks;
+#[cfg(not(feature = "cuda"))]
+pub use crate::kernels::reference_swap_blocks as swap_blocks;
 
 pub fn reference_reshape_and_cache(
     key: &Tensor,             // [num_tokens, num_heads, head_size]
@@ -194,7 +202,6 @@ pub fn reference_rotary_embedding(
     let query_rot = &query_rot * &cos + rotate_fn(&query_rot) * &sin;
     let key_rot = &key_rot * &cos + rotate_fn(&key_rot) * &sin;
 
-
     // println!("query_rot: {query_rot:?}");
     // println!("key_rot: {key_rot:?}");
     // println!("query0: {query0:?}");
@@ -202,4 +209,21 @@ pub fn reference_rotary_embedding(
 
     query0.copy_(&query_rot.reshape(query0.size()));
     key0.copy_(&key_rot.reshape(key0.size()));
+}
+
+pub fn reference_copy_blocks(
+    _key_caches: &mut Vec<Tensor>,
+    _value_caches: &mut Vec<Tensor>,
+    _block_mapping: &HashMap<usize, Vec<usize>>,
+) {
+    todo!()
+}
+
+pub fn reference_swap_blocks(
+    _src: &Tensor,
+    _dst: &Tensor,
+    _block_mapping: &HashMap<usize, usize>,
+    // _stream: &CudaStream,
+) {
+    todo!()
 }
