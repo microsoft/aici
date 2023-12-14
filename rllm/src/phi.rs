@@ -140,7 +140,7 @@ impl MHA {
             (
                 self.rotary_emb
                     .apply(&batch_info.positions, &qkv[0], &qkv[1]),
-                v,
+                v.squeeze_dim(1),
             )
         };
 

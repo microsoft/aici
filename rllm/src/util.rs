@@ -21,6 +21,7 @@ pub fn max_diff(t1: &Tensor, t2: &Tensor) -> Result<f64> {
 }
 
 pub fn check_all_close(t1: &Tensor, t2: &Tensor, max_diff_: f64) {
+    assert!(t1.size() == t2.size());
     let df = max_diff(t1, t2).unwrap();
     if df > max_diff_ {
         print!("A: {t1:?}\n{t1}\n");
