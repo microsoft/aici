@@ -1,4 +1,8 @@
-use crate::{config::ModelType, DType, Device, IndexOp, Tensor};
+use crate::{
+    config::ModelType,
+    util::{to_vec1, to_vec2},
+    DType, Device, IndexOp, Tensor,
+};
 use aici_abi::toktree::TokTrie;
 use aicirt::api::{
     AiciMidOp, AiciMidProcessReq, AiciPostOp, AiciPostProcessReq, AiciPreOp, AiciPreProcessReq,
@@ -41,6 +45,76 @@ use crate::{
     seq::{BatchInfo, SeqId, Sequence},
 };
 use crate::{seq::SeqOutput, LogitsProcessor};
+
+pub struct ExpectedToken {
+    pub sampled: Token,
+    pub prob_mass: f32,
+    pub logits: Vec<(Token, f32)>,
+}
+
+pub struct ExpectedGeneration {
+    pub prompt: Vec<Token>,
+    pub output: Vec<ExpectedToken>,
+}
+
+fn read_tensor(s: &safetensors::SafeTensors, name: &str) -> Result<Tensor> {
+    let view = s.tensor(name)?;
+    let size: Vec<i64> = view.shape().iter().map(|&x| x as i64).collect();
+    let kind: DType = kind_from_dt(view.dtype());
+    // Using from_blob here instead of from_data_size avoids some unnecessary copy.
+    let tensor = unsafe { Tensor::from_blob(view.data().as_ptr(), &size, &[], kind, Device::Cpu) };
+    Ok(tensor)
+}
+
+fn kind_from_dt(dtype: Dtype) -> Kind {
+    match dtype {
+        Dtype::BOOL => Kind::Bool,
+        Dtype::U8 => Kind::Uint8,
+        Dtype::I8 => Kind::Int8,
+        Dtype::I16 => Kind::Int16,
+        Dtype::I32 => Kind::Int,
+        Dtype::I64 => Kind::Int64,
+        Dtype::BF16 => Kind::BFloat16,
+        Dtype::F16 => Kind::Half,
+        Dtype::F32 => Kind::Float,
+        Dtype::F64 => Kind::Double,
+        dtype => panic!("unsupported dtype {dtype:?}"),
+    }
+}
+
+impl ExpectedGeneration {
+    pub fn load(f: &PathBuf) -> Result<Self> {
+        let fp = std::fs::File::open(f)?;
+        let content = unsafe { memmap2::MmapOptions::new().map(&fp)? };
+        let s = safetensors::SafeTensors::deserialize(&content)?;
+
+        let prompt = to_vec1::<i32>(&read_tensor(&s, "prompt")?.to_kind(Kind::Int));
+        let output = to_vec1::<i32>(&read_tensor(&s, "output")?.to_kind(Kind::Int));
+        let prob_mass = to_vec1::<f32>(&read_tensor(&s, "prob_mass")?.to_kind(Kind::Float));
+        let tokens = to_vec2::<i32>(&read_tensor(&s, "tokens")?.to_kind(Kind::Int));
+        let logits = to_vec2::<f32>(&read_tensor(&s, "logits")?.to_kind(Kind::Float));
+
+        let num_tokens = output.len();
+        assert!(tokens.len() == num_tokens);
+        assert!(logits.len() == num_tokens);
+        assert!(prob_mass.len() == num_tokens);
+
+        Ok(ExpectedGeneration {
+            prompt: prompt.into_iter().map(|x| x as Token).collect(),
+            output: (0..num_tokens)
+                .map(|i| ExpectedToken {
+                    sampled: output[i] as Token,
+                    prob_mass: prob_mass[i],
+                    logits: tokens[i]
+                        .iter()
+                        .zip(logits[i].iter())
+                        .map(|(t, p)| (*t as Token, *p))
+                        .collect(),
+                })
+                .collect(),
+        })
+    }
+}
 
 pub struct AddRequest {
     pub request_id: String,
@@ -277,13 +351,8 @@ impl RllmEngine {
                     continue;
                 }
 
-                let view = safetensors.tensor(vname)?;
-                let size: Vec<i64> = view.shape().iter().map(|&x| x as i64).collect();
-                let kind: DType = kind_from_dt(view.dtype());
                 // Using from_blob here instead of from_data_size avoids some unnecessary copy.
-                let src_tensor = unsafe {
-                    Tensor::from_blob(view.data().as_ptr(), &size, &[], kind, Device::Cpu)
-                };
+                let src_tensor = read_tensor(&safetensors, vname)?;
                 let mut var = vars.remove(vname).unwrap();
                 assert!(var.size() == src_tensor.size());
                 // println!("copying to {var:?} from {src_tensor:?}");
@@ -292,22 +361,6 @@ impl RllmEngine {
                 bar.inc(1);
                 if bar.is_hidden() {
                     eprint!(".");
-                }
-            }
-
-            fn kind_from_dt(dtype: Dtype) -> Kind {
-                match dtype {
-                    Dtype::BOOL => Kind::Bool,
-                    Dtype::U8 => Kind::Uint8,
-                    Dtype::I8 => Kind::Int8,
-                    Dtype::I16 => Kind::Int16,
-                    Dtype::I32 => Kind::Int,
-                    Dtype::I64 => Kind::Int64,
-                    Dtype::BF16 => Kind::BFloat16,
-                    Dtype::F16 => Kind::Half,
-                    Dtype::F32 => Kind::Float,
-                    Dtype::F64 => Kind::Double,
-                    dtype => panic!("unsupported dtype {dtype:?}"),
                 }
             }
         }
@@ -401,6 +454,13 @@ impl RllmEngine {
         self.scheduler.add_seq_group(sg);
 
         Ok(())
+    }
+
+    pub fn add_expected_generation(
+        &mut self,
+        exp_gen: ExpectedGeneration,
+    ) {
+        
     }
 
     pub fn add_request(
@@ -675,7 +735,7 @@ impl RllmEngine {
         let logits = self.model.forward(&mut info);
         let r = self.generate_outputs(&logits, sched_out);
         log::info!(
-            "model forward: step #{} {:?}; {} toks; {:?}/tok",
+            "model forward: step #{} {:?}; {} tok(s); {:?}/tok",
             self.step_no,
             t0.elapsed(),
             info.tokens.numel(),
@@ -966,7 +1026,7 @@ impl RllmEngine {
 
         let dur = Instant::now().duration_since(t0);
         log::debug!(
-            "generted {} tokens in {:?}; {:.2} t/s",
+            "generated {} tokens in {:?}; {:.2} t/s",
             outputs.len(),
             dur,
             outputs.len() as f64 / (dur.as_millis() as f64 / 1000.0)

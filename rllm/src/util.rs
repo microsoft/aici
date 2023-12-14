@@ -1,6 +1,6 @@
 use crate::Tensor;
 use anyhow::Result;
-use tch::kind::Element;
+use tch::{kind::Element, IndexOp as _};
 
 pub fn limit_str(s: &str, max_len: usize) -> String {
     limit_bytes(s.as_bytes(), max_len)
@@ -36,7 +36,36 @@ pub fn check_all_close(t1: &Tensor, t2: &Tensor, max_diff_: f64) {
 pub fn to_vec1<T: Element>(t: &Tensor) -> Vec<T> {
     let sz = t.size1().unwrap();
     let mut dst = vec![T::ZERO; sz as usize];
-    t.to_kind(T::KIND)
-        .copy_data::<T>(&mut dst, sz as usize);
+    t.to_kind(T::KIND).copy_data::<T>(&mut dst, sz as usize);
     dst
+}
+
+pub fn to_vec2<T: Element>(t: &Tensor) -> Vec<Vec<T>> {
+    let (d0, d2) = t.size2().unwrap();
+    (0..d0)
+        .map(|i| {
+            let mut dst = vec![T::ZERO; d2 as usize];
+            t.i((i, ..))
+                .to_kind(T::KIND)
+                .copy_data::<T>(&mut dst, d2 as usize);
+            dst
+        })
+        .collect::<Vec<_>>()
+}
+
+pub fn to_vec3<T: Element>(t: &Tensor) -> Vec<Vec<Vec<T>>> {
+    let (d0, d1, d2) = t.size3().unwrap();
+    (0..d0)
+        .map(|i| {
+            (0..d1)
+                .map(|j| {
+                    let mut dst = vec![T::ZERO; d2 as usize];
+                    t.i((i, j, ..))
+                        .to_kind(T::KIND)
+                        .copy_data::<T>(&mut dst, d2 as usize);
+                    dst
+                })
+                .collect::<Vec<_>>()
+        })
+        .collect::<Vec<_>>()
 }
