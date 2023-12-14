@@ -56,7 +56,7 @@ enum Repo {
 impl Repo {
     fn from(args: &LoaderArgs) -> Result<Repo> {
         match &args.local_weights {
-            Some(path) => Ok(Repo::Local(path.to_owned())),
+            Some(path) => Ok(Repo::Local(path.to_owned() + "/")),
             None => {
                 let api = Api::new()?;
                 let model_id = args.model_id.clone();
