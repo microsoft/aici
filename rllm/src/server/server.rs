@@ -46,16 +46,16 @@ pub struct Args {
     #[arg(long, default_value_t = false)]
     verbose: bool,
 
-    /// Huggingface model name
+    /// HuggingFace model name
     #[arg(long)]
     model: String,
 
-    /// Huggingface model revision; --model foo/bar@revision is also possible
+    /// HuggingFace model revision; --model foo/bar@revision is also possible
     #[arg(long)]
     revision: Option<String>,
 
     /// The folder name that contains safetensor weights and json files
-    /// (same structure as huggingface online)
+    /// (same structure as HuggingFace online)
     #[arg(long)]
     local_weights: Option<String>,
 

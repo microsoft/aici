@@ -46,7 +46,7 @@ struct Args {
     alt: usize,
 
     /// The folder name that contains safetensor weights and json files
-    /// (same structure as huggingface online)
+    /// (same structure as HuggingFace online)
     #[arg(long)]
     local_weights: Option<String>,
 
