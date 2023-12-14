@@ -32,6 +32,7 @@ fn default_rope() -> f32 {
 
 impl RllmModelConfig for LlamaConfig {
     fn into_config(self, dtype: DType, device: Device) -> ModelConfig {
+        let head_dim = self.hidden_size / self.num_attention_heads;
         ModelConfig {
             model_type: ModelType::Llama,
             hidden_size: self.hidden_size,
@@ -44,7 +45,8 @@ impl RllmModelConfig for LlamaConfig {
             layer_norm_eps: self.rms_norm_eps,
             rope_theta: self.rope_theta,
             max_sequence_length: self.max_position_embeddings,
-            head_dim: self.hidden_size / self.num_attention_heads,
+            head_dim,
+            rotary_dim: head_dim,
             dtype,
             device,
         }

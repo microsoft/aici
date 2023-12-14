@@ -139,8 +139,6 @@ pub fn rotary_embedding(
     let rot_dim = cos_sin_cache.size()[1];
     let num_tokens = query0.size()[0];
 
-    assert!(rot_dim >= head_size); // otherwise we need to limit to first rot_dim positions
-
     let query = query0.view([num_tokens, -1, head_size]);
     let key = key0.view([num_tokens, -1, head_size]);
 
@@ -167,8 +165,20 @@ pub fn rotary_embedding(
         todo!()
     };
 
-    let query_rot = &query_rot * &cos + rotate_fn(&query_rot) * &sin;
-    let key_rot = &key_rot * &cos + rotate_fn(&key_rot) * &sin;
+    let mut query_rot = &query_rot * &cos + rotate_fn(&query_rot) * &sin;
+    let mut key_rot = &key_rot * &cos + rotate_fn(&key_rot) * &sin;
+
+    query_rot = query_rot.squeeze_dim(0);
+    key_rot = key_rot.squeeze_dim(0);
+
+    if head_size > rot_dim {
+        // println!("query_rot: {query_rot:?}");
+        // println!("key_rot: {key_rot:?}");
+        // println!("query: {query:?}");
+        // println!("key: {key:?}");
+        query_rot = Tensor::cat(&[query_rot, query.i((.., .., rot_dim..))], -1);
+        key_rot = Tensor::cat(&[key_rot, key.i((.., .., rot_dim..))], -1);
+    }
 
     // println!("query_rot: {query_rot:?}");
     // println!("key_rot: {key_rot:?}");

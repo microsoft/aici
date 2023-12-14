@@ -45,6 +45,7 @@ impl RllmModelConfig for PhiConfig {
             rope_theta: 10000.0,
             max_sequence_length: self.n_positions,
             head_dim: self.n_embd / self.n_head,
+            rotary_dim: self.rotary_dim,
             dtype,
             device,
         }

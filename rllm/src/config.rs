@@ -84,6 +84,7 @@ pub struct ModelConfig {
     pub num_key_value_heads: usize,
     pub max_sequence_length: usize,
     pub head_dim: usize,
+    pub rotary_dim: usize,
 
     pub intermediate_size: usize,
     pub vocab_size: usize,

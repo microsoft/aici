@@ -24,7 +24,7 @@ impl Clone for RotaryEmbedding {
 impl RotaryEmbedding {
     pub fn new(config: &Rc<ModelConfig>) -> Self {
         // precompute freqs_cis
-        let rotary_dim = config.hidden_size / config.num_attention_heads;
+        let rotary_dim = config.rotary_dim;
         let theta: Vec<_> = (0..rotary_dim)
             .step_by(2)
             .map(|i| 1f32 / config.rope_theta.powf(i as f32 / rotary_dim as f32))
