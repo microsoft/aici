@@ -96,7 +96,7 @@ pub struct Args {
     #[arg(long)]
     test: Vec<String>,
 
-    /// Specify warm-up request (expected/*/*.safetensors)
+    /// Specify warm-up request (expected/*/*.safetensors or "off")
     #[arg(long, short)]
     warmup: Option<String>,
 
@@ -274,6 +274,7 @@ fn spawn_inference_loop(
         engine.set_aicirt(iface);
         let wid = "warmup".to_string();
         match warmup {
+            Some(w) if w == "off" => {}
             Some(w) => {
                 let exp = ExpectedGeneration::load(&PathBuf::from(&w), test_allowed_error)
                     .expect("can't load warmup");
