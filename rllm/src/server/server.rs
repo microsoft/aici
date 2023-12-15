@@ -92,9 +92,13 @@ pub struct Args {
     #[arg(long, default_value = "")]
     dtype: String,
 
-    /// Specify test-cases
+    /// Specify test-cases (expected/*/*.safetensors)
     #[arg(long)]
     test: Vec<String>,
+
+    /// Specify warm-up request (expected/*/*.safetensors)
+    #[arg(long)]
+    warmup: Option<String>,
 
     /// Maximum absolute error allowed for any logit in tests. Max avg error is half this.
     #[arg(long, default_value_t = 0.03)]
@@ -238,7 +242,7 @@ fn run_tests(args: &Args, loader_args: LoaderArgs) {
             exp.output.len(),
             exp.output[0].logits.len()
         );
-        engine.add_expected_generation(exp).unwrap();
+        engine.add_expected_generation(exp, None).unwrap();
     }
 
     engine.run_to_completion();
@@ -248,6 +252,55 @@ fn run_tests(args: &Args, loader_args: LoaderArgs) {
         println!("there were {} errors", engine.num_errors);
         std::process::exit(102);
     }
+}
+
+fn spawn_inference_loop(
+    args: &Args,
+    loader_args: LoaderArgs,
+    iface: AiciRtIface,
+) -> Arc<Mutex<InferenceWorker>> {
+    let (handle, recv) = InferenceWorker::new();
+    let handle_res = Arc::new(Mutex::new(handle));
+    let handle = handle_res.clone();
+
+    // prep for move
+    let test_allowed_error = args.test_allowed_error;
+    let profile_step = args.profile_step;
+    let warmup = args.warmup.clone();
+
+    std::thread::spawn(move || {
+        let mut engine = RllmEngine::load(loader_args).expect("failed to load model");
+        engine.profile_step_no = profile_step;
+        engine.set_aicirt(iface);
+        let wid = "warmup".to_string();
+        match warmup {
+            Some(w) => {
+                let exp = ExpectedGeneration::load(&PathBuf::from(&w), test_allowed_error)
+                    .expect("can't load warmup");
+                log::info!(
+                    "warmup {w}: {} tokens; {} logits",
+                    exp.output.len(),
+                    exp.output[0].logits.len()
+                );
+                engine.add_expected_generation(exp, Some(wid)).unwrap();
+            }
+            None => {
+                engine
+                    .add_request(
+                        wid,
+                        "The ultimate answer to life,",
+                        SamplingParams {
+                            max_tokens: 10,
+                            ..SamplingParams::default()
+                        },
+                    )
+                    .unwrap();
+            }
+        }
+        inference_loop(handle, engine, recv)
+    });
+
+    handle_res
 }
 
 #[actix_web::main]
@@ -284,15 +337,18 @@ async fn main() -> () {
         ..LoaderArgs::default()
     };
 
-    let (tokenizer, tok_trie) =
-        RllmEngine::load_tokenizer(&loader_args).expect("failed to load tokenizer");
-    let model_config =
-        RllmEngine::load_model_config(&loader_args).expect("failed to load model config");
-
     if args.test.len() > 0 {
         run_tests(&args, loader_args);
         return;
     }
+
+    let (tokenizer, tok_trie) =
+        RllmEngine::load_tokenizer(&loader_args).expect("failed to load tokenizer");
+
+    // make sure we try to load the model before spawning inference thread
+    // otherwise, if the model doesn't exist, the inference thread will panic and things get messy
+    let model_config =
+        RllmEngine::load_model_config(&loader_args).expect("failed to load model config");
 
     let rt_args = rllm::iface::Args {
         aicirt: args.aicirt.clone(),
@@ -303,37 +359,17 @@ async fn main() -> () {
         busy_wait_time: args.busy_wait_time,
     };
     let iface = AiciRtIface::start_aicirt(&rt_args, &tok_trie).expect("failed to start aicirt");
+    let side_cmd_ch = iface.side_cmd.clone();
+    let handle = spawn_inference_loop(&args, loader_args, iface);
 
-    let (handle, recv) = InferenceWorker::new();
-    let handle = Arc::new(Mutex::new(handle));
     let app_data = OpenAIServerData {
         worker: handle.clone(),
         model_config,
         tokenizer: Arc::new(tokenizer),
         tok_trie: Arc::new(tok_trie),
-        side_cmd_ch: iface.side_cmd.clone(),
+        side_cmd_ch,
     };
     let app_data = web::Data::new(app_data);
-    let handle2 = handle.clone();
-
-    let profile_step = args.profile_step;
-    std::thread::spawn(move || {
-        let mut engine = RllmEngine::load(loader_args).expect("failed to load model");
-        engine.profile_step_no = profile_step;
-        engine.set_aicirt(iface);
-        engine
-            .add_request(
-                "warmup".to_string(),
-                "The ultimate answer to life,",
-                SamplingParams {
-                    max_tokens: 10,
-                    ..SamplingParams::default()
-                },
-            )
-            .unwrap();
-        inference_loop(handle2, engine, recv)
-    });
-
     let host = "127.0.0.1";
 
     println!("Listening at http://{}:{}", host, args.port);

@@ -27,12 +27,12 @@ use tch::{nn::VarStore, Kind};
 use tokenizers::Tokenizer;
 
 use crate::{
-    paged::cache_engine::CacheEngine,
     config::{
         CacheConfig, ModelConfig, ParallelConfig, RllmConfig, SamplingParams, SchedulerConfig,
     },
     iface::AiciRtIface,
     llm::kernels::to_offsets,
+    paged::cache_engine::CacheEngine,
     paged::scheduler::SchedulerOutputs,
     seq::{AiciSampling, FinishReason, RequestOutput, SchedulingPhase, SequenceGroup, Token},
 };
@@ -340,10 +340,9 @@ impl RllmEngine {
         let rc_cfg = Rc::new(model_config.clone());
         let model: Box<dyn RllmModel> = match model_config.model_type {
             ModelType::Llama => Box::new(llama::Llama::load(vs.root(), &rc_cfg).unwrap()),
-            ModelType::Phi => Box::new(phi::MixFormerSequentialForCausalLM::new(
-                &rc_cfg,
-                vs.root(),
-            )),
+            ModelType::Phi => {
+                Box::new(phi::MixFormerSequentialForCausalLM::new(&rc_cfg, vs.root()))
+            }
         };
 
         vs.set_kind(rllm_config.dtype);
@@ -480,8 +479,12 @@ impl RllmEngine {
         Ok(())
     }
 
-    pub fn add_expected_generation(&mut self, exp_gen: ExpectedGeneration) -> Result<()> {
-        let request_id = self.gen_req_id();
+    pub fn add_expected_generation(
+        &mut self,
+        exp_gen: ExpectedGeneration,
+        req_id: Option<String>,
+    ) -> Result<()> {
+        let request_id = req_id.unwrap_or_else(|| self.gen_req_id());
         self.queue_request(AddRequest {
             request_id,
             prompt: exp_gen.prompt.clone(),
