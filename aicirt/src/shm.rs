@@ -3,7 +3,6 @@ use std::io;
 use std::ptr;
 
 use anyhow::{anyhow, ensure, Result};
-use log::info;
 
 pub struct Shm {
     addr: *mut u8,
@@ -16,7 +15,7 @@ impl Shm {
     pub fn new(name: &str, size: usize, unlink: bool) -> Result<Self> {
         ensure!(size > 1024);
 
-        info!("shm_open: {} size={}k", name, size / 1024);
+        log::trace!("shm_open: {} size={}k", name, size / 1024);
 
         let shm_name = CString::new(name).unwrap();
         if unlink {

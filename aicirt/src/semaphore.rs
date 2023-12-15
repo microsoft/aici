@@ -3,7 +3,6 @@ use std::io;
 use std::time::{Duration, Instant};
 
 use anyhow::Result;
-use log::info;
 
 pub struct Semaphore {
     sem: *mut libc::sem_t,
@@ -15,7 +14,7 @@ impl Semaphore {
     }
 
     pub fn new(name: &str, initial_value: u32, unlink: bool) -> Result<Self> {
-        info!("sem_open: {}", name);
+        log::trace!("sem_open: {}", name);
         let c_name = CString::new(name).unwrap();
         if unlink {
             unsafe {

@@ -636,7 +636,7 @@ impl RllmEngine {
             }
             let avg_err = sum_err / out.logits.len() as f32;
             let avg_allowed_err = exp.allowed_error * 0.5;
-            log::info!("exp #{idx} in {req_id}: avg_err:{avg_err:.4} max_err:{max_err:.4}");
+            log::debug!("exp #{idx} in {req_id}: avg_err:{avg_err:.4} max_err:{max_err:.4}");
             if max_err > exp.allowed_error {
                 log::error!("max error too large: {max_err} > {}", exp.allowed_error);
                 self.num_errors += 1;

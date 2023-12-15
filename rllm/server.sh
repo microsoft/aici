@@ -5,26 +5,23 @@ REL=
 
 case "$1" in
   phi )
-    MODEL=microsoft/phi-1_5@refs/pr/18
-    MODEL=./tmp/phi
-    TOK=phi
+    # microsoft/phi-1_5@refs/pr/18
+    ARGS="-m ./tmp/phi -t phi -w expected/phi-1_5/cats.safetensors"
     ;;
   7 | 7b )
-    MODEL="NousResearch/Llama-2-7b-hf"
-    TOK=llama
+    ARGS="-m NousResearch/Llama-2-7b-hf -t llama"
     ;;
   code )
-    MODEL=codellama/CodeLlama-13b-Instruct-hf
-    TOK=codellama
+    ARGS="-m codellama/CodeLlama-13b-Instruct-hf -t codellama"
     ;;
   * )
     echo "try one of models: phi, 7b, code" 
+    exit 1
     ;;
 esac
 shift
 
-ARGS="--verbose --port 8080 --aicirt ../aicirt/target/release/aicirt"
-ARGS="$ARGS --model $MODEL --tokenizer $TOK"
+ARGS="--verbose --port 8080 --aicirt ../aicirt/target/release/aicirt $ARGS"
 
 (cd ../aicirt && cargo build --release)
 

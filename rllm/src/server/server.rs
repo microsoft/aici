@@ -48,7 +48,7 @@ pub struct Args {
     verbose: bool,
 
     /// HuggingFace model name; can be also path starting with "./"
-    #[arg(long)]
+    #[arg(short, long)]
     model: String,
 
     /// HuggingFace model revision; --model foo/bar@revision is also possible
@@ -97,7 +97,7 @@ pub struct Args {
     test: Vec<String>,
 
     /// Specify warm-up request (expected/*/*.safetensors)
-    #[arg(long)]
+    #[arg(long, short)]
     warmup: Option<String>,
 
     /// Maximum absolute error allowed for any logit in tests. Max avg error is half this.
