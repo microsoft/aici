@@ -146,14 +146,20 @@ def save_test_case(fn="tmp/compr.safetensors"):
     }
     save_file(out, fn)
 
-
-def trunc(n: int, fn: str, wr: str):
+def show(fn: str, n = 0):
     tokenizer = load_tokenizer()
     inp = load_safe(fn)
     print("Prompt:", repr(tokenizer.decode(inp["prompt"])))
     print("Output:", repr(tokenizer.decode(inp["output"])))
-    n = min(inp["output"].numel(), n)
-    print("Trunc Output:", repr(tokenizer.decode(inp["output"][0:n])))
+    if n > 0:
+        n = min(inp["output"].numel(), n)
+        print("Trunc Output:", repr(tokenizer.decode(inp["output"][0:n])))
+    print("Logits:", inp["logits"].shape)
+    print("Prob_mass:", inp["prob_mass"])
+    return inp, n
+
+def trunc(n: int, fn: str, wr: str):
+    inp, n = show(fn, n)
     if wr:
         print("Writing", fn)
         out = {
@@ -174,16 +180,23 @@ parser = argparse.ArgumentParser(
 
 subparsers = parser.add_subparsers(dest="subcommand", required=True)
 
-parser_truncate = subparsers.add_parser("generate", help="Generate responses")
+parser_gen = subparsers.add_parser("generate", help="Generate responses")
+
+parser_show = subparsers.add_parser("show", help="Inspect a file")
+parser_show.add_argument("file", type=str, help="Path to the file")
 
 parser_truncate = subparsers.add_parser("truncate", help="Truncate a file")
 parser_truncate.add_argument("length", type=int, help="Length to truncate to")
-parser_truncate.add_argument("file", type=str, help="Path to the file")
 parser_truncate.add_argument("-w", "--write", action="store_true", help="Actually write the file")
 
 args = parser.parse_args()
 
-if args.subcommand == "generate":
+subc = args.subcommand
+if subc == "generate":
     gen_output()
-elif args.subcommand == "truncate":
+elif subc == "truncate":
     trunc(args.length, args.file, args.write)
+elif subc == "show":
+    show(args.file)
+else:
+    raise ValueError()
