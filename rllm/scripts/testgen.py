@@ -155,7 +155,8 @@ def show(fn: str, n = 0):
         n = min(inp["output"].numel(), n)
         print("Trunc Output:", repr(tokenizer.decode(inp["output"][0:n])))
     print("Logits:", inp["logits"].shape)
-    print("Prob_mass:", inp["prob_mass"])
+    print("prob_mass:")
+    print(inp["prob_mass"])
     return inp, n
 
 def trunc(n: int, fn: str, wr: str):
