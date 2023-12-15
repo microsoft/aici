@@ -3,7 +3,6 @@ mod kernels;
 pub mod llama;
 mod logits;
 pub mod phi;
-mod playground;
 pub mod refkernels;
 pub mod seq;
 
@@ -20,7 +19,6 @@ use std::sync::atomic::AtomicBool;
 
 pub use engine::*;
 pub use logits::LogitsProcessor;
-pub use playground::playground_1;
 
 pub use tch::Kind as DType;
 pub use tch::{Device, IndexOp, Shape, Tensor};
