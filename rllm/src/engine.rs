@@ -32,12 +32,12 @@ use crate::{
         CacheConfig, ModelConfig, ParallelConfig, RllmConfig, SamplingParams, SchedulerConfig,
     },
     iface::AiciRtIface,
-    kernels::to_offsets,
+    llm::kernels::to_offsets,
     scheduler::SchedulerOutputs,
     seq::{AiciSampling, FinishReason, RequestOutput, SchedulingPhase, SequenceGroup, Token},
 };
 use crate::{
-    llama::{Llama, LlamaConfig},
+    llm::{llama, phi},
     LoaderArgs,
 };
 use crate::{
@@ -262,8 +262,8 @@ impl RllmEngine {
         let bytes = repo.read("config.json")?;
         let mut err = String::new();
 
-        let cfg = load_one_config::<LlamaConfig>(&mut err, args, "llama", &bytes)
-            .or_else(|| load_one_config::<crate::phi::PhiConfig>(&mut err, args, "phi", &bytes));
+        let cfg = load_one_config::<llama::LlamaConfig>(&mut err, args, "llama", &bytes)
+            .or_else(|| load_one_config::<phi::PhiConfig>(&mut err, args, "phi", &bytes));
 
         match cfg {
             Some(mut v) => {
@@ -339,8 +339,8 @@ impl RllmEngine {
 
         let rc_cfg = Rc::new(model_config.clone());
         let model: Box<dyn RllmModel> = match model_config.model_type {
-            ModelType::Llama => Box::new(Llama::load(vs.root(), &rc_cfg).unwrap()),
-            ModelType::Phi => Box::new(crate::phi::MixFormerSequentialForCausalLM::new(
+            ModelType::Llama => Box::new(llama::Llama::load(vs.root(), &rc_cfg).unwrap()),
+            ModelType::Phi => Box::new(phi::MixFormerSequentialForCausalLM::new(
                 &rc_cfg,
                 vs.root(),
             )),

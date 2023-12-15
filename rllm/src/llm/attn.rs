@@ -1,5 +1,6 @@
+use crate::llm::{kernels, refkernels};
 use crate::util::check_all_close;
-use crate::{config::ModelConfig, kernels, refkernels, seq::BatchInfo};
+use crate::{config::ModelConfig, seq::BatchInfo};
 use crate::{DType, IndexOp, Tensor};
 use std::rc::Rc;
 use tch::nn::{self, Module, Path};

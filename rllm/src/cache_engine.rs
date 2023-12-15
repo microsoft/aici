@@ -6,7 +6,7 @@ use std::sync::Arc;
 use crate::{Device, Tensor};
 
 use crate::config::RllmConfig;
-use crate::kernels;
+use crate::llm::kernels;
 
 type KVCache = (Tensor, Tensor);
 

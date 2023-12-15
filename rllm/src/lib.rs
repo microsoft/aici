@@ -1,10 +1,6 @@
-pub mod attn;
-mod kernels;
-pub mod llama;
 mod logits;
-pub mod phi;
-pub mod refkernels;
 pub mod seq;
+pub mod llm;
 
 // vllm modules
 mod blocks;
