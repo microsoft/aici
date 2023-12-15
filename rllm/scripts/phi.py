@@ -12,7 +12,7 @@ from safetensors import safe_open
 import sys
 import argparse
 
-N_LOGITS = 256
+N_LOGITS = 128
 N_TOKENS = 30
 
 # modeln = "microsoft/phi-1_5"
@@ -152,6 +152,7 @@ def trunc(n: int, fn: str, wr: str):
     inp = load_safe(fn)
     print("Prompt:", repr(tokenizer.decode(inp["prompt"])))
     print("Output:", repr(tokenizer.decode(inp["output"])))
+    n = min(inp["output"].numel(), n)
     print("Trunc Output:", repr(tokenizer.decode(inp["output"][0:n])))
     if wr:
         print("Writing", fn)
@@ -159,8 +160,8 @@ def trunc(n: int, fn: str, wr: str):
             "prompt": inp["prompt"],
             "output": inp["output"][0:n],
             "prob_mass": inp["prob_mass"][0:n],
-            "tokens": inp["tokens"][0:n],
-            "logits": inp["logits"][0:n],
+            "tokens": inp["tokens"][0:n, 0:N_LOGITS].contiguous(),
+            "logits": inp["logits"][0:n, 0:N_LOGITS].contiguous(),
         }
         save_file(out, fn)
 
