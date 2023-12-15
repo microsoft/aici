@@ -162,16 +162,12 @@ impl BlockSpaceManager {
         }
     }
 
-    fn num_logical_blocks(&self, seq: &Sequence) -> usize {
-        (seq.tokens.len() + self.block_size - 1) / self.block_size
-    }
-
     fn can_alloc_gpu(&self, num_required_blocks: usize) -> bool {
         self.get_num_free_gpu_blocks() >= num_required_blocks
     }
 
     pub fn can_allocate(&self, seq_group: &SequenceGroup) -> bool {
-        let num_required_blocks = self.num_logical_blocks(seq_group.only_seq());
+        let num_required_blocks = seq_group.only_seq().num_logical_blocks();
         self.can_alloc_gpu(num_required_blocks + self.watermark_blocks)
     }
 
@@ -187,7 +183,7 @@ impl BlockSpaceManager {
         let seq = seq_group.only_seq();
         assert!(seq.num_kv_computed == 0);
         assert!(seq.gpu_blocks.is_empty());
-        seq_group.seqs[0].gpu_blocks = (0..self.num_logical_blocks(seq))
+        seq_group.seqs[0].gpu_blocks = (0..seq.num_logical_blocks())
             .map(|_| self.alloc_gpu())
             .collect();
     }
@@ -198,24 +194,14 @@ impl BlockSpaceManager {
         self.can_alloc_gpu(num_seqs)
     }
 
-    pub fn trim_physical_blocks(&self, seq: &mut Sequence) {
-        seq.num_kv_computed = std::cmp::min(seq.num_kv_computed, seq.tokens.len());
-        let num_logical = self.num_logical_blocks(seq);
-        if seq.gpu_blocks.len() > num_logical {
-            seq.gpu_blocks.truncate(num_logical);
-        }
-        if seq.cpu_blocks.len() > num_logical {
-            seq.cpu_blocks.truncate(num_logical);
-        }
-    }
-
     pub fn append_slots(&mut self, seq: &mut Sequence, outputs: &mut SchedulerOutputs) {
         let block_table = &mut seq.gpu_blocks;
         assert!(block_table.len() > 0); // TODO?
         assert!(block_table.len() * self.block_size >= seq.num_kv_computed);
 
         let mut ptr = seq.num_kv_computed;
-        while ptr < seq.tokens.len() {
+        while ptr < seq.get_len() {
+            let block_table = &mut seq.gpu_blocks;
             let block_idx = ptr / self.block_size;
             if block_idx < block_table.len() {
                 let curr_block = &mut block_table[block_idx];
@@ -233,7 +219,7 @@ impl BlockSpaceManager {
             ptr = (block_idx + 1) * self.block_size;
         }
 
-        assert!(block_table.len() == self.num_logical_blocks(seq));
+        assert!(seq.gpu_blocks.len() == seq.num_logical_blocks());
     }
 
     fn num_phys_blocks(&self, seq_group: &SequenceGroup) -> usize {

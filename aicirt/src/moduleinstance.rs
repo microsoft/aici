@@ -1,6 +1,9 @@
 use crate::api::ModuleInstId;
 use aici_abi::toktree::TokTrie;
-use aici_abi::{InitPromptArg, MidProcessResult, PostProcessResult, PreProcessResult, TokenId, InitPromptResult};
+use aici_abi::{
+    InitPromptArg, InitPromptResult, MidProcessResult, PostProcessArg, PostProcessResult,
+    PreProcessResult, TokenId,
+};
 use aici_tokenizers::Tokenizer;
 use aicirt::api::{AiciMidProcessResultInner, AiciPostProcessResultInner, SequenceResult};
 use anyhow::{anyhow, bail, ensure, Result};
@@ -250,10 +253,39 @@ impl ModuleInstance {
     }
 
     fn do_pre_process(&mut self, rtarg: RtPreProcessArg) -> Result<PreProcessResult> {
+        let mut ff_tokens = Vec::new();
+        loop {
+            let mut res = self.do_pre_process_inner(&rtarg)?;
+
+            if rtarg.allow_ff_tokens && res.ff_tokens.len() > 0 {
+                ensure!(res.attention_masks.len() == 1);
+                ensure!(res.suspend == false);
+                ff_tokens.extend_from_slice(&res.ff_tokens);
+                let r_post = self.do_post_process(RtPostProcessArg {
+                    op: PostProcessArg {
+                        tokens: res.ff_tokens.clone(),
+                        backtrack: 0,
+                    },
+                })?;
+                if r_post.stop {
+                    res.attention_masks.clear();
+                    return Ok(res); // we're stopping - no point returning ff_tokens
+                } else {
+                    continue;
+                }
+            }
+
+            res.ff_tokens = ff_tokens;
+            return Ok(res);
+        }
+    }
+
+    fn do_pre_process_inner(&mut self, rtarg: &RtPreProcessArg) -> Result<PreProcessResult> {
         let attn_elts = rtarg.max_context_size;
-        self.store.data_mut().set_pre_process_data(rtarg.op);
+        self.store.data_mut().set_pre_process_data(&rtarg.op);
         self.call_func::<WasmAici, ()>("aici_pre_process", self.handle)?;
         let res: PreProcessResult = self.proc_result()?;
+        // TODO is this needed?
         ensure!(
             res.attention_masks.len() >= 1,
             "at least one attention_mask required ([[]] will work)"
@@ -269,6 +301,7 @@ impl ModuleInstance {
                 attn_elts
             );
         }
+
         Ok(res)
     }
 
@@ -383,6 +416,7 @@ impl ModuleInstance {
                 json: self.json_result("pre", t0, Ok(None)),
                 suspend: res.suspend,
                 attn_masks: res.attention_masks,
+                ff_tokens: res.ff_tokens,
             },
         }
     }

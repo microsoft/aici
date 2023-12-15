@@ -117,6 +117,7 @@ pub struct RtMidProcessArg {
 pub struct RtPreProcessArg {
     pub op: PreProcessArg,
     pub max_context_size: usize, // elements
+    pub allow_ff_tokens: bool,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -162,6 +163,7 @@ pub struct RtPreProcessResult {
     pub json: SequenceResult,
     pub suspend: bool,
     pub attn_masks: Vec<Vec<f32>>,
+    pub ff_tokens: Vec<TokenId>,
 }
 
 impl RtPreProcessResult {
@@ -170,6 +172,7 @@ impl RtPreProcessResult {
             json,
             suspend: false,
             attn_masks: Vec::new(),
+            ff_tokens: Vec::new(),
         }
     }
 }
@@ -187,6 +190,7 @@ enum SeqResp {
         json: String,
         suspend: bool,
         attn_masks: Vec<Vec<f32>>,
+        ff_tokens: Vec<TokenId>,
     },
     MidProcess {
         json: String,
@@ -364,6 +368,7 @@ impl SeqCtx {
                     json: serde_json::to_string(&res.json)?,
                     suspend: res.suspend,
                     attn_masks: res.attn_masks,
+                    ff_tokens: res.ff_tokens,
                 })
             }
             SeqCmd::MidProcess { data } => {
@@ -514,10 +519,12 @@ impl SeqWorkerHandle {
                 json,
                 suspend,
                 attn_masks,
+                ff_tokens,
             }) => Ok(RtPreProcessResult {
                 json: serde_json::from_str(&json)?,
                 suspend,
                 attn_masks,
+                ff_tokens,
             }),
             Ok(r) => Err(anyhow!("unexpected response (pre_process) {r:?}")),
             Err(e) => Err(e.into()),

@@ -1,11 +1,11 @@
 use std::{fmt::Debug, sync::Mutex};
 
-use crate::{Tensor, engine::ExpectedGeneration};
+use crate::{engine::ExpectedGeneration, Tensor};
 use aici_abi::TokenId;
 use aicirt::api::SequenceResult;
 use serde::{Deserialize, Serialize};
 
-use crate::{paged::blocks::BlockRef, config::SamplingParams, LogitsProcessor};
+use crate::{config::SamplingParams, paged::blocks::BlockRef, LogitsProcessor};
 
 pub type Token = u32;
 pub type SeqId = usize;
@@ -67,7 +67,7 @@ impl Default for AiciSampling {
 pub struct Sequence {
     pub seq_id: SeqId,
     pub index: usize, // within the sequence group
-    pub tokens: Vec<Token>,
+    tokens: Vec<Token>,
     pub prompt_len: usize,
     pub(crate) output_ptr: usize,
     pub(crate) num_kv_computed: usize,
@@ -123,8 +123,34 @@ impl Sequence {
         self.tokens.len()
     }
 
+    pub fn num_logical_blocks(&self) -> usize {
+        (self.get_len() + self.block_size - 1) / self.block_size
+    }
+
+    fn trim_physical_blocks(&mut self) {
+        self.num_kv_computed = std::cmp::min(self.num_kv_computed, self.get_len());
+        let num_logical = self.num_logical_blocks();
+        if self.gpu_blocks.len() > num_logical {
+            self.gpu_blocks.truncate(num_logical);
+        }
+        if self.cpu_blocks.len() > num_logical {
+            self.cpu_blocks.truncate(num_logical);
+        }
+    }
+
+    pub fn splice_tokens(&mut self, backtrack: usize, tokens: &[Token]) {
+        self.tokens.truncate(self.get_len() - backtrack);
+        self.output_ptr = std::cmp::min(self.output_ptr, self.get_len());
+        self.trim_physical_blocks();
+        self.append_tokens(tokens);
+    }
+
     pub fn get_gen_len(&self) -> usize {
         self.tokens.len() - self.prompt_len
+    }
+
+    pub fn get_token(&self, idx: usize) -> TokenId {
+        self.tokens[idx]
     }
 
     pub fn get_gpu_slot(&self, position: usize) -> usize {
@@ -154,8 +180,8 @@ impl Sequence {
         }
     }
 
-    pub fn append_token_id(&mut self, token_id: Token) {
-        self.tokens.push(token_id)
+    pub fn append_tokens(&mut self, tokens: &[Token]) {
+        self.tokens.extend_from_slice(tokens)
     }
 
     pub fn finish_reason(&self) -> Option<FinishReason> {

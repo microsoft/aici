@@ -128,7 +128,7 @@ impl ModuleData {
             .for_each(|x| *x = LOGIT_BIAS_DISALLOW);
     }
 
-    pub fn set_pre_process_data(&mut self, data: PreProcessArg) {
+    pub fn set_pre_process_data(&mut self, data: &PreProcessArg) {
         let bytes = serde_json::to_vec(&data).unwrap();
         self.set_process_arg(bytes);
     }

@@ -204,7 +204,7 @@ impl AiciRtIface {
 
     pub fn pre_process(&mut self, req: AiciPreProcessReq) -> Result<AiciPreProcessResp> {
         assert!(self.pending_mid_size == usize::MAX);
-        self.cmd.exec("pre_process", req)
+        self.cmd.exec("pre_process_all", req)
     }
 
     pub fn start_mid_process(&mut self, req: AiciMidProcessReq) -> Result<()> {

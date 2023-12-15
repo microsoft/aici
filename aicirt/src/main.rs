@@ -405,7 +405,11 @@ impl Stepper {
         Ok(())
     }
 
-    fn aici_pre_process(&mut self, req: AiciPreProcessReq) -> Result<AiciPreProcessResp> {
+    fn aici_pre_process(
+        &mut self,
+        is_all: bool,
+        req: AiciPreProcessReq,
+    ) -> Result<AiciPreProcessResp> {
         for id in req.freed {
             info!("free module {}", id);
             self.instances.remove(&id);
@@ -416,17 +420,23 @@ impl Stepper {
             self.mk_instance(&op)?;
         }
 
+        let op_ids: Vec<ModuleInstId> = if is_all {
+            self.instances.keys().map(|x| *x).collect()
+        } else {
+            req.ops.iter().map(|op| op.id).collect()
+        };
+
         let mut used_ids = Vec::new();
         let mut outputs = HashMap::new();
         let block_elts = req.max_context_len;
         let mut idx = 0;
 
-        for op in req.ops.into_iter() {
-            let instid = op.id;
+        for instid in op_ids {
             if let Ok(h) = self.get_worker(instid) {
                 let op = RtPreProcessArg {
                     op: PreProcessArg {},
                     max_context_size: req.max_context_len,
+                    allow_ff_tokens: is_all,
                 };
                 match h.start_pre_process(op) {
                     Ok(_) => used_ids.push((idx, instid)),
@@ -460,6 +470,7 @@ impl Stepper {
                         data.json.clone_with(Some(AiciPreProcessResultInner {
                             suspend: data.suspend,
                             num_forks: data.attn_masks.len(),
+                            ff_tokens: data.ff_tokens,
                         })),
                     );
                     let len = data.attn_masks.len();
@@ -679,7 +690,13 @@ impl Exec for Stepper {
             Some("pre_process") => {
                 let json = serde_json::from_value(json)?;
                 with_timer!(self.pre_timer, {
-                    Ok(serde_json::to_value(&self.aici_pre_process(json)?)?)
+                    Ok(serde_json::to_value(&self.aici_pre_process(false, json)?)?)
+                })
+            }
+            Some("pre_process_all") => {
+                let json = serde_json::from_value(json)?;
+                with_timer!(self.pre_timer, {
+                    Ok(serde_json::to_value(&self.aici_pre_process(true, json)?)?)
                 })
             }
             Some("mid_process") => Ok(serde_json::to_value(

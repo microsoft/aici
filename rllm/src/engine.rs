@@ -8,7 +8,7 @@ use aicirt::api::{
     AiciMidOp, AiciMidProcessReq, AiciPostOp, AiciPostProcessReq, AiciPreOp, AiciPreProcessReq,
     ModuleInstId, SequenceResult,
 };
-use anyhow::{anyhow, bail, Error as E, Result};
+use anyhow::{bail, Error as E, Result};
 use hf_hub::{
     api::sync::{Api, ApiRepo},
     RepoType,
@@ -516,24 +516,6 @@ impl RllmEngine {
         })
     }
 
-    fn splice_seq(&self, seq: &mut Sequence, backtrack: usize, tokens: &[Token]) {
-        seq.tokens.truncate(seq.tokens.len() - backtrack);
-        seq.output_ptr = std::cmp::min(seq.output_ptr, seq.tokens.len());
-        self.scheduler.block_manager.trim_physical_blocks(seq);
-        seq.tokens.extend_from_slice(tokens);
-    }
-
-    #[allow(dead_code)]
-    fn splice_seq_id(&mut self, seq_id: SeqId, backtrack: usize, tokens: &[Token]) {
-        self.scheduler.for_each_sg(|sg| {
-            sg.seqs.iter_mut().for_each(|seq| {
-                if seq.seq_id == seq_id {
-                    self.splice_seq(seq, backtrack, tokens)
-                }
-            })
-        })
-    }
-
     fn aici_bias(&mut self, sched_out: &mut SchedulerOutputs) -> Result<Tensor> {
         if self.aicirt.is_none() {
             return Ok(Tensor::zeros(&[0], (DType::Float, self.device)));
@@ -554,8 +536,8 @@ impl RllmEngine {
                 match self.save_aici_log(seq, &mid_res.seqs) {
                     Some(r) if r.ff_tokens.len() > 0 || r.backtrack > 0 => {
                         // save the computed prefix
-                        // we may drop some of it but self.splice_seq() takes care of that
-                        seq.num_kv_computed = seq.tokens.len();
+                        // we may drop some of it but seq.splice_tokens() takes care of that
+                        seq.num_kv_computed = seq.get_len();
 
                         seq.aici_sampling = AiciSampling::Splice {
                             // backtrack count includes the token that was supposed to be appended
@@ -603,7 +585,7 @@ impl RllmEngine {
                 ff_tokens,
             } => {
                 log::trace!("sample *{sid}: backtrack:{backtrack} ff_tokens:{ff_tokens:?}",);
-                self.splice_seq(seq, backtrack as usize, &ff_tokens);
+                seq.splice_tokens(backtrack as usize, &ff_tokens);
                 Some(AiciPostOp {
                     id: seq.seq_id,
                     tokens: ff_tokens,
@@ -616,7 +598,7 @@ impl RllmEngine {
 
     fn check_expected(&mut self, logits: &Tensor, req_id: &str, seq: &Sequence) -> Token {
         let exp = seq.expected.as_ref().unwrap();
-        let idx = seq.tokens.len() - exp.prompt.len();
+        let idx = seq.get_len() - exp.prompt.len();
         if idx >= exp.output.len() {
             self.eos_token_id
         } else {
@@ -718,7 +700,7 @@ impl RllmEngine {
                     continue;
                 }
 
-                seq.num_kv_computed = seq.tokens.len();
+                seq.num_kv_computed = seq.get_len();
 
                 let mut info = "";
                 let next_token = if seq.expected.is_some() {
@@ -731,10 +713,10 @@ impl RllmEngine {
                     // replace with space, so the model doesn't get confused
                     // note that aici will still get the real EOS token
                     let space = self.tok_trie.greedy_tokenize(b" ")[0];
-                    seq.tokens.push(space);
+                    seq.append_tokens(&[space]);
                     info = " -> space";
                 } else {
-                    seq.tokens.push(next_token);
+                    seq.append_tokens(&[next_token]);
                 }
 
                 if seq.has_aici {
@@ -863,16 +845,16 @@ impl RllmEngine {
                     continue;
                 }
 
-                let seq_len = seq.tokens.len();
+                let seq_len = seq.get_len();
                 let k_len = seq_len;
                 log::trace!("seq: {seq:?}");
-                let q_len = seq.tokens.len() - seq.num_kv_computed;
+                let q_len = seq.get_len() - seq.num_kv_computed;
                 assert!(q_len > 0); // TODO if it's 0, we can probably bump it up to 1 (re-compute)
                 let off = k_len - q_len;
                 for idx in off..off + q_len {
                     assert!(idx < max_seq);
                     positions.push(idx as i64);
-                    tokens.push(seq.tokens[idx] as i32);
+                    tokens.push(seq.get_token(idx) as i32);
                     slot_mapping.push(seq.get_gpu_slot(idx) as i32);
                 }
                 for idx in 0..k_len {
@@ -967,45 +949,38 @@ impl RllmEngine {
         Ok(())
     }
 
-    fn aici_pre(&mut self, sched_out: &mut SchedulerOutputs) -> Result<()> {
+    fn aici_pre(&mut self) -> Result<()> {
         if self.aicirt.is_none() {
             return Ok(());
         }
 
         let mut max_context_len = 0;
         let mut ops = Vec::new();
-        let mut seq_ptr = HashMap::new();
 
-        for (sg_idx, sg) in sched_out.next_seq_groups.iter_mut().enumerate() {
+        self.scheduler.for_each_sg(|sg| {
             if sg.sampling_params.aici_module.is_none() {
-                continue;
+                return;
             }
             if sg.seqs.len() == 1 && !sg.seqs[0].has_aici {
                 let seq = &mut sg.seqs[0];
-                max_context_len = std::cmp::max(max_context_len, seq.tokens.len());
+                max_context_len = std::cmp::max(max_context_len, seq.get_len());
                 seq.has_aici = true;
-                seq_ptr.insert(seq.seq_id, (sg_idx, 0));
                 ops.push(AiciPreOp {
                     id: seq.seq_id,
                     req_id: Some(sg.request_id.clone()),
                 });
             } else {
-                for (seq_idx, seq) in sg.seqs.iter_mut().enumerate() {
+                for seq in sg.seqs.iter() {
                     if seq.sched_phase != SchedulingPhase::Running {
                         continue;
                     }
                     assert!(seq.has_aici);
-                    ops.push(AiciPreOp {
-                        id: seq.seq_id,
-                        req_id: None,
-                    });
-                    seq_ptr.insert(seq.seq_id, (sg_idx, seq_idx));
-                    max_context_len = std::cmp::max(max_context_len, seq.tokens.len());
+                    max_context_len = std::cmp::max(max_context_len, seq.get_len());
                 }
             }
-        }
+        });
 
-        let ids = ops.iter().map(|op| op.id).collect::<Vec<_>>();
+        //  let ids = ops.iter().map(|op| op.id).collect::<Vec<_>>();
         let pre_res = self
             .aicirt
             .as_mut()
@@ -1016,47 +991,81 @@ impl RllmEngine {
                 ops,
             })?;
 
+        let mut curr_seq_id = self.seq_id;
+        self.scheduler.for_each_sg(|sg| {
+            if sg.sampling_params.aici_module.is_none() {
+                return;
+            }
+
+            for seq in sg.seqs.iter_mut() {
+                let seq_id = seq.seq_id;
+                let res = pre_res.seqs.get(&seq_id);
+                if res.is_none() {
+                    continue;
+                }
+                let res = res.unwrap();
+
+                assert!(seq.has_aici);
+                self.save_aici_log(seq, &pre_res.seqs);
+
+                match &res.result {
+                    Some(r) => {
+                        if r.suspend {
+                            seq.sched_phase = SchedulingPhase::Suspended;
+                            continue;
+                        }
+                        if r.num_forks == 0 {
+                            self.scheduler.finish_seq(seq, FinishReason::AiciStop);
+                            continue;
+                        }
+                        if r.ff_tokens.len() > 0 {
+                            seq.append_tokens(&r.ff_tokens);
+                        }
+
+                        while seq.pending_fork_ids.len() < r.num_forks - 1 {
+                            seq.pending_fork_ids.push(curr_seq_id);
+                            curr_seq_id += 1;
+                        }
+                    }
+                    None => {}
+                }
+            }
+        });
+        self.seq_id = curr_seq_id;
+
+        Ok(())
+    }
+
+    fn aici_mid(&mut self, sched_out: &mut SchedulerOutputs) -> Result<()> {
+        if self.aicirt.is_none() {
+            return Ok(());
+        }
+
         let mut mid_ops = Vec::new();
 
-        for seq_id in ids {
-            let res = pre_res
-                .seqs
-                .get(&seq_id)
-                .ok_or(anyhow!("missing seq {}", seq_id))?;
-            let (sg_idx, seq_idx) = seq_ptr[&seq_id];
-            let sg = &mut sched_out.next_seq_groups[sg_idx];
-            let seq = &mut sg.seqs[seq_idx];
-
-            assert!(seq.has_aici);
-            self.save_aici_log(seq, &pre_res.seqs);
-
-            let suspend = res.result.as_ref().map(|r| r.suspend).unwrap_or(false);
-            if suspend {
-                seq.sched_phase = SchedulingPhase::Suspended;
+        for sg in sched_out.next_seq_groups.iter_mut() {
+            if sg.sampling_params.aici_module.is_none() {
                 continue;
             }
 
-            let num_forks = res.result.as_ref().map(|r| r.num_forks).unwrap_or(0);
-            if num_forks == 0 {
-                self.scheduler.finish_seq(seq, FinishReason::AiciStop);
-                continue;
-            }
+            for seq in sg.seqs.iter_mut() {
+                if seq.sched_phase != SchedulingPhase::Running {
+                    continue;
+                }
 
-            mid_ops.push(AiciMidOp {
-                id: seq_id,
-                clone_id: None,
-            });
+                assert!(seq.has_aici);
 
-            while seq.pending_fork_ids.len() < num_forks - 1 {
-                seq.pending_fork_ids.push(self.seq_id);
-                self.seq_id += 1;
-            }
-
-            for copy_id in &seq.pending_fork_ids {
                 mid_ops.push(AiciMidOp {
-                    id: *copy_id,
-                    clone_id: Some(seq.seq_id),
+                    id: seq.seq_id,
+                    clone_id: None,
                 });
+
+                for copy_id in &seq.pending_fork_ids {
+                    mid_ops.push(AiciMidOp {
+                        id: *copy_id,
+                        clone_id: Some(seq.seq_id),
+                    });
+                }
             }
         }
 
@@ -1084,9 +1093,11 @@ impl RllmEngine {
             cudarc::driver::safe::profiler_start()?;
         }
 
+        self.aici_pre()?;
+
         let mut sched_out = self.scheduler.schedule();
 
-        self.aici_pre(&mut sched_out)?;
+        self.aici_mid(&mut sched_out)?;
 
         log::trace!(
             "scheduled: {} groups, dropped: {}",

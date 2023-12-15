@@ -24,6 +24,7 @@ pub struct AiciPreProcessResp {
 pub struct AiciPreProcessResultInner {
     pub suspend: bool,
     pub num_forks: usize,
+    pub ff_tokens: Vec<TokenId>,
 }
 
 #[derive(Serialize, Deserialize)]
