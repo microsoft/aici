@@ -31,10 +31,8 @@ You can inspect test cases like so:
 $ python scripts/testgen.py show expected/phi-1_5/lighthouse.safetensors 
 Prompt: 'Write a detailed analogy between mathematics and a lighthouse.\n\nAnswer:'
 Output: ' In mathematics, logic is like a beacon of the lighthouse. It guides us'
-Logits: torch.Size([15, 128])
-Prob_mass:
-tensor([0.9925, 0.9869, 0.9999, 0.9795, 0.9951, 0.9957, 0.9993, 0.9981, 0.9978,
-        0.9957, 0.9889, 0.9977, 0.9970, 0.9930, 0.9988])
+logits: torch.Size([15, 128]) min: tensor(12.7188) avg: tensor(17.6671) max: tensor(36.0938)
+prob_mass: torch.Size([15]) min: tensor(0.9795) avg: tensor(0.9944) max: tensor(0.9999)
 $ 
 ```
 

@@ -146,7 +146,21 @@ def save_test_case(fn="tmp/compr.safetensors"):
     }
     save_file(out, fn)
 
-def show(fn: str, n = 0):
+
+def tinfo(lbl: str, ll: torch.Tensor):
+    print(
+        lbl + ":",
+        ll.shape,
+        "min:",
+        ll.min(),
+        "avg:",
+        ll.mean(),
+        "max:",
+        ll.max(),
+    )
+
+
+def show(fn: str, n=0):
     tokenizer = load_tokenizer()
     inp = load_safe(fn)
     print("Prompt:", repr(tokenizer.decode(inp["prompt"])))
@@ -154,10 +168,10 @@ def show(fn: str, n = 0):
     if n > 0:
         n = min(inp["output"].numel(), n)
         print("Trunc Output:", repr(tokenizer.decode(inp["output"][0:n])))
-    print("Logits:", inp["logits"].shape)
-    print("prob_mass:")
-    print(inp["prob_mass"])
+    tinfo("logits", inp["logits"].to(torch.float))
+    tinfo("prob_mass", inp["prob_mass"])
     return inp, n
+
 
 def trunc(n: int, fn: str, wr: str):
     inp, n = show(fn, n)
@@ -171,7 +185,6 @@ def trunc(n: int, fn: str, wr: str):
             "logits": inp["logits"][0:n, 0:N_LOGITS].contiguous(),
         }
         save_file(out, fn)
-
 
 
 parser = argparse.ArgumentParser(
@@ -188,7 +201,9 @@ parser_show.add_argument("file", type=str, help="Path to the file")
 
 parser_truncate = subparsers.add_parser("truncate", help="Truncate a file")
 parser_truncate.add_argument("length", type=int, help="Length to truncate to")
-parser_truncate.add_argument("-w", "--write", action="store_true", help="Actually write the file")
+parser_truncate.add_argument(
+    "-w", "--write", action="store_true", help="Actually write the file"
+)
 
 args = parser.parse_args()
 
