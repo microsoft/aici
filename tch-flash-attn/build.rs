@@ -133,7 +133,7 @@ impl SystemInfo {
     }
 }
 
-const KERNEL_FILES: [&str; 16] = [
+const KERNEL_FILES: [&str; 24] = [
     "flash_api.cpp",
     "flash_fwd_split_hdim128_bf16_sm80.cu",
     "flash_fwd_split_hdim160_bf16_sm80.cu",
@@ -143,6 +143,14 @@ const KERNEL_FILES: [&str; 16] = [
     "flash_fwd_split_hdim32_bf16_sm80.cu",
     "flash_fwd_split_hdim64_bf16_sm80.cu",
     "flash_fwd_split_hdim96_bf16_sm80.cu",
+    "flash_fwd_split_hdim128_fp16_sm80.cu",
+    "flash_fwd_split_hdim160_fp16_sm80.cu",
+    "flash_fwd_split_hdim192_fp16_sm80.cu",
+    "flash_fwd_split_hdim224_fp16_sm80.cu",
+    "flash_fwd_split_hdim256_fp16_sm80.cu",
+    "flash_fwd_split_hdim32_fp16_sm80.cu",
+    "flash_fwd_split_hdim64_fp16_sm80.cu",
+    "flash_fwd_split_hdim96_fp16_sm80.cu",
     "vllm/activation_kernels.cu",
     "vllm/cache_kernels.cu",
     "vllm/cuda_utils_kernels.cu",
