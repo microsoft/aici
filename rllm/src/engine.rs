@@ -613,16 +613,23 @@ impl RllmEngine {
             self.eos_token_id
         } else {
             let out = &exp.output[idx];
-            let logits = to_vec1::<f32>(&logits.to_kind(Kind::Float));
+            let mut logits = to_vec1::<f32>(&logits.to_kind(Kind::Float));
             let mut max_err = 0.0;
             let mut sum_err = 0.0;
-            for (t, l1) in out.logits.iter() {
-                let l0 = logits[*t as usize];
-                let d = (l0 - l1).abs();
+            let mut min_logit = f32::INFINITY;
+            for (t, l_exp) in out.logits.iter() {
+                let l_act = logits[*t as usize];
+                let d = (l_act - l_exp).abs();
                 sum_err += d;
                 if d > max_err {
                     max_err = d;
                 }
+                if *l_exp < min_logit {
+                    min_logit = *l_exp;
+                }
+
+                // zero it out for the "unmentioned" test below
+                logits[*t as usize] = 0.0;
             }
             let avg_err = sum_err / out.logits.len() as f32;
             let avg_allowed_err = exp.allowed_error * 0.5;
@@ -632,6 +639,13 @@ impl RllmEngine {
                 self.num_errors += 1;
             } else if avg_err > avg_allowed_err {
                 log::error!("avg error too large: {avg_err} > {avg_allowed_err}");
+                self.num_errors += 1;
+            }
+
+            let limit = min_logit + exp.allowed_error;
+            let l_act = logits.into_iter().max_by(f32::total_cmp).unwrap();
+            if l_act > limit {
+                log::error!("unmentioned entry too large: {l_act} > {limit}");
                 self.num_errors += 1;
             }
 
