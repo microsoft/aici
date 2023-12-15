@@ -10,7 +10,7 @@ use crate::{DType, IndexOp, Tensor};
 use std::rc::Rc;
 use tch::nn::{self, Module, Path};
 
-const CHECK: bool = false;
+const CHECK: bool = true;
 
 #[derive(Debug)]
 pub struct RotaryEmbedding {
@@ -212,7 +212,7 @@ pub fn varlen_attn(
                 causal,
             );
 
-            if false && CHECK {
+            if CHECK {
                 let y2 = refkernels::varlen_attn(
                     &q,
                     &k,
@@ -224,7 +224,9 @@ pub fn varlen_attn(
                     softmax_scale,
                     causal,
                 );
+                if false {
                 check_all_close_rel(&y, &y2, 0.01);
+                }
             }
 
             y

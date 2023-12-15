@@ -1,4 +1,4 @@
-use crate::util::to_vec1;
+use crate::util::{check_all_close_rel, to_vec1};
 use std::collections::HashMap;
 use tch::{IndexOp, Tensor};
 
@@ -93,10 +93,27 @@ pub fn varlen_attn(
         let k = k.i((ptr_k..ptr_k + len_k, .., ..)).transpose(0, 1);
         let v = v.i((ptr_k..ptr_k + len_k, .., ..)).transpose(0, 1);
 
+        assert!(q.size() == [num_heads, len_q, head_dim]);
+        assert!(k.size() == [num_heads, len_k, head_dim]);
+        assert!(v.size() == [num_heads, len_k, head_dim]);
+
+        let attn_cpu = Tensor::scaled_dot_product_attention(
+            &q.to_dtype_layout((tch::Kind::Float, tch::Device::Cpu), false, true),
+            &k.to_dtype_layout((tch::Kind::Float, tch::Device::Cpu), false, true),
+            &v.to_dtype_layout((tch::Kind::Float, tch::Device::Cpu), false, true),
+            None::<&Tensor>,
+            0.0,
+            if len_q == 1 { false } else { causal },
+            softmax_scale,
+        )
+        .to_dtype_layout((q.kind(), q.device()), false, true)
+        .reshape(&[num_heads, len_q, head_dim])
+        .transpose(0, 1);
+
         let attn0 = Tensor::scaled_dot_product_attention(
-            &q.reshape(&[num_heads, len_q, head_dim]),
-            &k.reshape(&[num_heads, len_k, head_dim]),
-            &v.reshape(&[num_heads, len_k, head_dim]),
+            &q,
+            &k,
+            &v,
             None::<&Tensor>,
             0.0,
             if len_q == 1 { false } else { causal },
@@ -106,6 +123,8 @@ pub fn varlen_attn(
         .transpose(0, 1);
 
         println!("attn0: {attn0:?}");
+
+        check_all_close_rel(&attn_cpu, &attn0, 0.01);
 
         assert!(!attn0.max().double_value(&[]).is_nan());
 
