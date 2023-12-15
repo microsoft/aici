@@ -55,7 +55,7 @@ pub struct ExpectedToken {
 pub struct ExpectedGeneration {
     pub prompt: Vec<Token>,
     pub output: Vec<ExpectedToken>,
-    pub max_error: f32,
+    pub allowed_error: f32,
 }
 
 fn read_tensor(s: &safetensors::SafeTensors, name: &str) -> Result<Tensor> {
@@ -84,7 +84,7 @@ fn kind_from_dt(dtype: Dtype) -> Kind {
 }
 
 impl ExpectedGeneration {
-    pub fn load(f: &PathBuf, max_error: f32) -> Result<Self> {
+    pub fn load(f: &PathBuf, allowed_error: f32) -> Result<Self> {
         let fp = std::fs::File::open(f)?;
         let content = unsafe { memmap2::MmapOptions::new().map(&fp)? };
         let s = safetensors::SafeTensors::deserialize(&content)?;
@@ -101,7 +101,7 @@ impl ExpectedGeneration {
         assert!(prob_mass.len() == num_tokens);
 
         Ok(ExpectedGeneration {
-            max_error,
+            allowed_error,
             prompt: prompt.into_iter().map(|x| x as Token).collect(),
             output: (0..num_tokens)
                 .map(|i| ExpectedToken {
@@ -236,6 +236,7 @@ pub struct RllmEngine {
     pub device: Device,
     pub eos_token_id: u32,
     pub nv_profile: bool,
+    pub num_errors: usize,
 
     aicirt: Option<AiciRtIface>,
 
@@ -410,6 +411,7 @@ impl RllmEngine {
             step_no: 0,
             profile_step_no: 0,
             req_id_cnt: 0,
+            num_errors: 0,
             device,
             eos_token_id,
             alt: args.alt,
@@ -604,6 +606,39 @@ impl RllmEngine {
         }
     }
 
+    fn check_expected(&mut self, logits: &Tensor, req_id: &str, seq: &Sequence) -> Token {
+        let exp = seq.expected.as_ref().unwrap();
+        let idx = seq.tokens.len() - exp.prompt.len();
+        if idx >= exp.output.len() {
+            self.eos_token_id
+        } else {
+            let out = &exp.output[idx];
+            let logits = to_vec1::<f32>(&logits.to_kind(Kind::Float));
+            let mut max_err = 0.0;
+            let mut sum_err = 0.0;
+            for (t, l1) in out.logits.iter() {
+                let l0 = logits[*t as usize];
+                let d = (l0 - l1).abs();
+                sum_err += d;
+                if d > max_err {
+                    max_err = d;
+                }
+            }
+            let avg_err = sum_err / out.logits.len() as f32;
+            let avg_allowed_err = exp.allowed_error * 0.5;
+            log::info!("exp #{idx} in {req_id}: avg_err:{avg_err:.4} max_err:{max_err:.4}");
+            if max_err > exp.allowed_error {
+                log::error!("max error too large: {max_err} > {}", exp.allowed_error);
+                self.num_errors += 1;
+            } else if avg_err > avg_allowed_err {
+                log::error!("avg error too large: {avg_err} > {avg_allowed_err}");
+                self.num_errors += 1;
+            }
+
+            out.sampled
+        }
+    }
+
     fn generate_outputs(
         &mut self,
         logits: &Tensor,
@@ -664,37 +699,10 @@ impl RllmEngine {
                 seq.num_kv_computed = seq.tokens.len();
 
                 let mut info = "";
-                let next_token = match &seq.expected {
-                    Some(exp) => {
-                        let idx = seq.tokens.len() - exp.prompt.len();
-                        if idx >= exp.output.len() {
-                            info = " -> exp finish";
-                            self.eos_token_id
-                        } else {
-                            let out = &exp.output[idx];
-                            info = " -> exp";
-                            let logits = to_vec1::<f32>(&logits.to_kind(Kind::Float));
-                            let mut max_err = 0.0;
-                            let mut sum_err = 0.0;
-                            for (t, l1) in out.logits.iter() {
-                                let l0 = logits[*t as usize];
-                                let d = (l0 - l1).abs();
-                                sum_err += d;
-                                if d > max_err {
-                                    max_err = d;
-                                }
-                            }
-                            let avg_err = sum_err / out.logits.len() as f32;
-                            log::info!(
-                                "exp #{idx} in {id}: avg_err:{avg_err:.4} max_err:{max_err:.4}",
-                                id = sg.request_id
-                            );
-                            assert!(max_err < exp.max_error);
-                            assert!(avg_err < exp.max_error * 0.5);
-                            out.sampled
-                        }
-                    }
-                    None => sg.logits_processor.sample(&logits)?,
+                let next_token = if seq.expected.is_some() {
+                    self.check_expected(&logits, &sg.request_id, seq)
+                } else {
+                    sg.logits_processor.sample(&logits)?
                 };
 
                 if seq.has_aici && next_token == self.eos_token_id {

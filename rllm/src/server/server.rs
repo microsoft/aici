@@ -96,9 +96,9 @@ pub struct Args {
     #[arg(long)]
     test: Vec<String>,
 
-    /// Maximum absolute logit error allowed in tests. Max avg error is half this.
+    /// Maximum absolute error allowed for any logit in tests. Max avg error is half this.
     #[arg(long, default_value_t = 0.03)]
-    test_max_error: f32,
+    test_allowed_error: f32,
 }
 
 #[actix_web::post("/v1/aici_modules")]
@@ -232,12 +232,18 @@ fn run_tests(args: &Args, loader_args: LoaderArgs) {
 
     for t in &args.test {
         log::info!("adding test: {t}");
-        let exp = ExpectedGeneration::load(&PathBuf::from(t), args.test_max_error)
+        let exp = ExpectedGeneration::load(&PathBuf::from(t), args.test_allowed_error)
             .expect("can't load test");
         engine.add_expected_generation(exp).unwrap();
     }
 
     engine.run_to_completion();
+
+    if engine.num_errors > 0 {
+        log::error!("there were {} errors", engine.num_errors);
+        println!("there were {} errors", engine.num_errors);
+        std::process::exit(102);
+    }
 }
 
 #[actix_web::main]
