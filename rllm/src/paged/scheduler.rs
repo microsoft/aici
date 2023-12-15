@@ -5,7 +5,7 @@ use std::vec::Vec;
 
 use log::warn;
 
-use crate::blocks::BlockSpaceManager;
+use crate::paged::blocks::BlockSpaceManager;
 use crate::config::RllmConfig;
 use crate::seq::{FinishReason, SchedulingPhase, SeqId, Sequence, SequenceGroup};
 use crate::util::limit_str;

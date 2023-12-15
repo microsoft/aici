@@ -5,7 +5,7 @@ use aici_abi::TokenId;
 use aicirt::api::SequenceResult;
 use serde::{Deserialize, Serialize};
 
-use crate::{blocks::BlockRef, config::SamplingParams, LogitsProcessor};
+use crate::{paged::blocks::BlockRef, config::SamplingParams, LogitsProcessor};
 
 pub type Token = u32;
 pub type SeqId = usize;

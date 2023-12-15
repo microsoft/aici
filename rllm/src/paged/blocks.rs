@@ -2,9 +2,9 @@ use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use std::vec::Vec;
 
-use crate::cache_engine::CacheEngine;
 use crate::config::RllmConfig;
-use crate::scheduler::SchedulerOutputs;
+use crate::paged::cache_engine::CacheEngine;
+use crate::paged::scheduler::SchedulerOutputs;
 use crate::seq::{SchedulingPhase, Sequence, SequenceGroup};
 
 #[derive(Debug, Clone, Copy)]

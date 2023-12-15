@@ -27,13 +27,13 @@ use tch::{nn::VarStore, Kind};
 use tokenizers::Tokenizer;
 
 use crate::{
-    cache_engine::CacheEngine,
+    paged::cache_engine::CacheEngine,
     config::{
         CacheConfig, ModelConfig, ParallelConfig, RllmConfig, SamplingParams, SchedulerConfig,
     },
     iface::AiciRtIface,
     llm::kernels::to_offsets,
-    scheduler::SchedulerOutputs,
+    paged::scheduler::SchedulerOutputs,
     seq::{AiciSampling, FinishReason, RequestOutput, SchedulingPhase, SequenceGroup, Token},
 };
 use crate::{
@@ -41,7 +41,7 @@ use crate::{
     LoaderArgs,
 };
 use crate::{
-    scheduler::Scheduler,
+    paged::scheduler::Scheduler,
     seq::{BatchInfo, SeqId, Sequence},
 };
 use crate::{seq::SeqOutput, LogitsProcessor};

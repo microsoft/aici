@@ -1,20 +1,17 @@
-mod logits;
 pub mod seq;
 pub mod llm;
+pub mod paged;
 
 // vllm modules
-mod blocks;
-mod cache_engine;
 pub mod config;
 mod engine;
 pub mod iface;
-mod scheduler;
 pub mod util;
 
 use std::sync::atomic::AtomicBool;
 
 pub use engine::*;
-pub use logits::LogitsProcessor;
+pub use llm::logits::LogitsProcessor;
 
 pub use tch::Kind as DType;
 pub use tch::{Device, IndexOp, Shape, Tensor};
