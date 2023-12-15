@@ -152,6 +152,9 @@ class NextToken:
         assert self.curr_tokens is not None
         return self.curr_tokens
 
+    def simple_ff_tokens(self) -> list[Token] | None:
+        return None
+
 
 class FixedTokens(NextToken):
     def __init__(self, text: str | bytes, following: Optional["Label"] = None):
@@ -162,6 +165,11 @@ class FixedTokens(NextToken):
         super().__init__()
         self.fixed_tokens: list[Token] = tokenize(text)
         self.following = following
+
+    def simple_ff_tokens(self) -> list[Token] | None:
+        if self.following is None:
+            return self.fixed_tokens
+        return None
 
     def mid_process(self) -> MidProcessResult:
         backtrack = 0
@@ -272,8 +280,8 @@ class AiciCallbacks:
     Use aici.start() to wrap a coroutine.
     """
 
-    def init_prompt(self, prompt: list[Token]):
-        pass
+    def init_prompt(self, prompt: list[Token]) -> list[Token]:
+        return []
 
     def pre_process(self) -> PreProcessResult:
         return PreProcessResult()
@@ -347,12 +355,24 @@ class AiciAsync(AiciCallbacks):
 
         if self._skip_prompt:
             self._skip_prompt = False
-            return
-
-        assert isinstance(self._cb, GetPrompt)
-        self._cb.prompt = prompt
-        self.step()
+        else:
+            assert isinstance(self._cb, GetPrompt)
+            self._cb.prompt = prompt
+            self.step()
         assert isinstance(self._cb, NextToken)
+
+        ff_tokens = self._cb.simple_ff_tokens()
+        if ff_tokens is not None:
+            # simulate a whole round
+            r = self.pre_process()
+            assert not r.suspended and len(r.attention_masks) == 1
+            r = self.mid_process([_aici.self_seq_id()])
+            assert r.backtrack == 0 and r.ff_tokens == ff_tokens
+            r = self.post_process(0, ff_tokens)
+            assert not r.stop_seq
+            return ff_tokens
+        else:
+            return []
 
     def pre_process(self) -> PreProcessResult:
         assert isinstance(self._cb, NextToken)
