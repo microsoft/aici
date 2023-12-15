@@ -1,5 +1,5 @@
 use crate::{
-    llm::attn::{extract_positions, layer_norm, linear, varlen_attn, RotaryEmbedding},
+    llm::{extract_positions, layer_norm, linear, varlen_attn, RotaryEmbedding},
     config::{ModelConfig, ModelType},
     engine::{RllmModel, RllmModelConfig},
     seq::BatchInfo,

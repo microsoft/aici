@@ -1,7 +1,7 @@
 // based on https://github.com/huggingface/candle/blob/main/candle-transformers/src/models/llama.rs
 
 use crate::{
-    llm::attn::{extract_positions, linear_no_bias, varlen_attn, RmsNorm, RotaryEmbedding},
+    llm::{extract_positions, linear_no_bias, varlen_attn, RmsNorm, RotaryEmbedding},
     config::{ModelConfig, ModelType},
     engine::{RllmModel, RllmModelConfig},
     seq::BatchInfo,
