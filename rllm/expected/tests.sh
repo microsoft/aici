@@ -8,9 +8,25 @@ COMMON_ARGS="--verbose --aicirt ../aicirt/target/release/aicirt"
 
 (cd ../aicirt && cargo build --release)
 
-HERE=`dirname $0`
+if [ "X$1" = "X" ] ; then
+    HERE=`dirname $0`
+    FILES=`echo $HERE/*/args.txt`
+else
+    FILES=
+    for f in "$@" ; do
+        if [ -f "$f" ] ; then
+            FILES="$FILES $f"
+        elif [ -f "$f/args.txt" ] ; then
+            FILES="$FILES $f/args.txt"
+        else
+            echo "File $f not found"
+            exit 1
+        fi
+    done
+fi
 
-for A in $HERE/*/args.txt ; do
+
+for A in $FILES ; do
     ARGS="$COMMON_ARGS `cat $A`"
     for S in $(dirname $A)/*.safetensors ; do
         ARGS="$ARGS --test $S"
@@ -18,7 +34,7 @@ for A in $HERE/*/args.txt ; do
     RUST_BACKTRACE=1 \
     RUST_LOG=info,rllm=debug,aicirt=info \
         cargo run $REL --bin rllm-server -- \
-        $ARGS "$@"
+        $ARGS
 done
 
 echo "All OK!"

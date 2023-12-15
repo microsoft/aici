@@ -5,14 +5,13 @@ REL=
 
 case "$1" in
   phi )
-    # microsoft/phi-1_5@refs/pr/18
-    ARGS="-m ./tmp/phi -t phi -w expected/phi-1_5/cats.safetensors"
+    ARGS="-m microsoft/phi-1_5@refs/pr/18 -t phi -w expected/phi-1_5/cats.safetensors"
     ;;
   7 | 7b )
     ARGS="-m NousResearch/Llama-2-7b-hf -t llama"
     ;;
   code )
-    ARGS="-m codellama/CodeLlama-13b-Instruct-hf -t codellama"
+    ARGS="-m codellama/CodeLlama-13b-Instruct-hf -t codellama -w expected/codellama/cats.safetensors"
     ;;
   * )
     echo "try one of models: phi, 7b, code" 

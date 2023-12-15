@@ -15,8 +15,13 @@ import argparse
 N_LOGITS = 128
 N_TOKENS = 30
 
-# modeln = "microsoft/phi-1_5"
-modeln = "./tmp/phi"
+models = {
+    "phi-1_5": "microsoft/phi-1_5",
+    "codellama": "codellama/CodeLlama-13b-Instruct-hf",
+}
+
+modelid = "codellama"
+modeln = models[modelid]
 
 prompts = {
     #
@@ -99,7 +104,7 @@ def gen_output():
         print(text)
         output["output"] = torch.tensor(out_tokens, dtype=torch.long)
         save_file(output, "tmp/reference.safetensors")
-        save_test_case("expected/phi-1_5/%s.safetensors" % k)
+        save_test_case(f"expected/{modelid}/{k}.safetensors")
 
 
 def load_safe(fn):
@@ -168,6 +173,9 @@ def show(fn: str, n=0):
     if n > 0:
         n = min(inp["output"].numel(), n)
         print("Trunc Output:", repr(tokenizer.decode(inp["output"][0:n])))
+    elif n < 0:
+        for k in range(inp["output"].numel()):
+            print("Trunc to %d:" % k, repr(tokenizer.decode(inp["output"][0:k])))
     tinfo("logits", inp["logits"].to(torch.float))
     tinfo("prob_mass", inp["prob_mass"])
     return inp, n
@@ -175,6 +183,7 @@ def show(fn: str, n=0):
 
 def trunc(n: int, fn: str, wr: str):
     inp, n = show(fn, n)
+    if n <= 0: return
     if wr:
         print("Writing", fn)
         out = {
@@ -188,9 +197,16 @@ def trunc(n: int, fn: str, wr: str):
 
 
 parser = argparse.ArgumentParser(
-    prog="phi.py", description="Generate and manipulate LLM testcases"
+    prog="testgen.py", description="Generate and manipulate LLM testcases"
 )
 
+parser.add_argument(
+    "-m",
+    "--model",
+    type=str,
+    default="codellama",
+    help="Model to use: " + ", ".join(models.keys()),
+)
 
 subparsers = parser.add_subparsers(dest="subcommand", required=True)
 
@@ -200,6 +216,7 @@ parser_show = subparsers.add_parser("show", help="Inspect a file")
 parser_show.add_argument("file", type=str, help="Path to the file")
 
 parser_truncate = subparsers.add_parser("truncate", help="Truncate a file")
+parser_truncate.add_argument("file", type=str, help="Path to the file")
 parser_truncate.add_argument("length", type=int, help="Length to truncate to")
 parser_truncate.add_argument(
     "-w", "--write", action="store_true", help="Actually write the file"
