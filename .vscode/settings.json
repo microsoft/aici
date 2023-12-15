@@ -47,7 +47,8 @@
         "format": "cpp",
         "numbers": "cpp",
         "__locale": "cpp",
-        "ios": "cpp"
+        "ios": "cpp",
+        "random": "cpp"
     },
     "python.analysis.extraPaths": [
         "./vllm",

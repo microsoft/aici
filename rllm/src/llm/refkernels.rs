@@ -74,6 +74,8 @@ pub fn varlen_attn(
 
     let softmax_scale = softmax_scale as f64;
 
+    let (_batch_size_q, num_heads, head_dim) = q.size3().unwrap();
+
     // flash-attn expects (seq_len, nheads, head_dim)
 
     let mut attns = Vec::with_capacity(batch_size);
@@ -91,36 +93,23 @@ pub fn varlen_attn(
         let k = k.i((ptr_k..ptr_k + len_k, .., ..)).transpose(0, 1);
         let v = v.i((ptr_k..ptr_k + len_k, .., ..)).transpose(0, 1);
 
-        let mut attn = q.contiguous().matmul(&k.transpose(-2, -1).contiguous());
-        attn = attn * softmax_scale;
-        if causal {
-            let mask: Vec<_> = (0..len_q)
-                .flat_map(|i| {
-                    (0..len_k).map(move |j| {
-                        if i + (len_k - len_q) >= j {
-                            0f32
-                        } else {
-                            f32::NEG_INFINITY
-                        }
-                    })
-                })
-                .collect();
-            let mask = Tensor::from_slice(&mask)
-                .to(q.device())
-                .reshape(&[len_q, len_k])
-                .to_kind(attn.kind());
+        let attn0 = Tensor::scaled_dot_product_attention(
+            &q.reshape(&[num_heads, len_q, head_dim]),
+            &k.reshape(&[num_heads, len_k, head_dim]),
+            &v.reshape(&[num_heads, len_k, head_dim]),
+            None::<&Tensor>,
+            0.0,
+            if len_q == 1 { false } else { causal },
+            softmax_scale,
+        )
+        .reshape(&[num_heads, len_q, head_dim])
+        .transpose(0, 1);
 
-            // println!("mask: {mask}");
-            // TODO broadcast?
-            attn = attn + mask;
-        }
+        println!("attn0: {attn0:?}");
 
-        attn = attn.softmax(-1, attn.kind());
-        // Convert to contiguous as matmul doesn't support strided vs for now.
-        attn = attn.matmul(&v.contiguous());
-        attn = attn.transpose(0, 1);
+        assert!(!attn0.max().double_value(&[]).is_nan());
 
-        attns.push(attn);
+        attns.push(attn0);
     }
 
     let attn = Tensor::cat(&attns, 0);

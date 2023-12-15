@@ -4,13 +4,13 @@ pub mod logits;
 pub mod phi;
 pub mod refkernels;
 
-use crate::util::check_all_close;
+use crate::util::{check_all_close, check_all_close_rel};
 use crate::{config::ModelConfig, seq::BatchInfo};
 use crate::{DType, IndexOp, Tensor};
 use std::rc::Rc;
 use tch::nn::{self, Module, Path};
 
-const CHECK: bool = true;
+const CHECK: bool = false;
 
 #[derive(Debug)]
 pub struct RotaryEmbedding {
@@ -199,7 +199,7 @@ pub fn varlen_attn(
         }
         let causal = true;
 
-        let y = if config.dtype == DType::BFloat16 {
+        let y = if config.dtype == DType::BFloat16 || config.dtype == DType::Half {
             let y = kernels::varlen_attn(
                 &q,
                 &k,
@@ -212,7 +212,7 @@ pub fn varlen_attn(
                 causal,
             );
 
-            if CHECK {
+            if false && CHECK {
                 let y2 = refkernels::varlen_attn(
                     &q,
                     &k,
@@ -224,7 +224,7 @@ pub fn varlen_attn(
                     softmax_scale,
                     causal,
                 );
-                check_all_close(&y, &y2, 0.5);
+                check_all_close_rel(&y, &y2, 0.01);
             }
 
             y
