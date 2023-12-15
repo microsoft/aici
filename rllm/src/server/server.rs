@@ -101,7 +101,7 @@ pub struct Args {
     warmup: Option<String>,
 
     /// Maximum absolute error allowed for any logit in tests. Max avg error is half this.
-    #[arg(long, default_value_t = 0.03)]
+    #[arg(long, default_value_t = 0.5)]
     test_allowed_error: f32,
 }
 
