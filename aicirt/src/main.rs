@@ -297,14 +297,14 @@ impl ModuleRegistry {
         ensure!(is_hex_string(&req.module_id), "invalid module_id");
         let module_path = self.ensure_module_in_fs(&req.module_id)?;
         info!("instance {} -> {}", req.module_id, req.req_id);
-        let handle = self
+        let (handle, res) = self
             .forker
             .lock()
             .unwrap()
             .instantiate(req.clone(), module_path)?;
         let mut req_instances = self.req_instances.lock().unwrap();
         req_instances.insert(req.req_id, handle);
-        Ok(json!({}))
+        Ok(serde_json::to_value(res)?)
     }
 
     fn run_main(&self, req_id: &String) -> Result<()> {

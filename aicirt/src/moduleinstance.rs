@@ -1,6 +1,6 @@
 use crate::api::ModuleInstId;
 use aici_abi::toktree::TokTrie;
-use aici_abi::{InitPromptArg, MidProcessResult, PostProcessResult, PreProcessResult, TokenId};
+use aici_abi::{InitPromptArg, MidProcessResult, PostProcessResult, PreProcessResult, TokenId, InitPromptResult};
 use aici_tokenizers::Tokenizer;
 use aicirt::api::{AiciMidProcessResultInner, AiciPostProcessResultInner, SequenceResult};
 use anyhow::{anyhow, bail, ensure, Result};
@@ -417,7 +417,7 @@ impl ModuleInstance {
         self.store.data_mut().tokenize(s)
     }
 
-    pub fn setup(&mut self, prompt: Vec<TokenId>) -> Result<()> {
+    pub fn setup(&mut self, prompt: Vec<TokenId>) -> Result<InitPromptResult> {
         self.run_init()?;
 
         self.handle = self.call_func::<(), WasmAici>("aici_create", ())?;
@@ -427,6 +427,7 @@ impl ModuleInstance {
             .set_process_arg(serde_json::to_vec(&InitPromptArg { prompt })?);
         self.call_func::<WasmAici, ()>("aici_init_prompt", self.handle)?;
 
-        Ok(())
+        let res: InitPromptResult = self.proc_result()?;
+        Ok(res)
     }
 }

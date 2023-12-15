@@ -3,8 +3,8 @@ mod rx;
 use aici_abi::{
     svob::SimpleVob,
     toktree::{Recognizer, SpecialToken, TokTrie},
-    AiciVm, InitPromptArg, MidProcessArg, MidProcessResult, PostProcessArg, PostProcessResult,
-    PreProcessArg, PreProcessResult, TokenId, VariableStorage,
+    AiciVm, InitPromptArg, InitPromptResult, MidProcessArg, MidProcessResult, PostProcessArg,
+    PostProcessResult, PreProcessArg, PreProcessResult, TokenId, VariableStorage,
 };
 use anyhow::Result;
 
@@ -438,12 +438,14 @@ impl VmExt for VirtualMachine {
 }
 
 impl AiciVm for Runner {
-    fn init_prompt(&mut self, arg: InitPromptArg) {
+    fn init_prompt(&mut self, arg: InitPromptArg) -> InitPromptResult {
         let obj = get_cb_obj();
         self.interpreter.enter(|vm| {
             let lst = vm.new_int_list(&arg.prompt);
-            vm.catch_exn(vm.call_method(obj.deref(), "init_prompt", vec![lst.into()]));
-        });
+            let r = vm.catch_exn(vm.call_method(obj.deref(), "init_prompt", vec![lst.into()]));
+            let ff_tokens = vm.to_list(r, |v| vm.to_i32(v) as u32);
+            InitPromptResult { ff_tokens }
+        })
     }
 
     fn pre_process(&mut self, _arg: PreProcessArg) -> PreProcessResult {

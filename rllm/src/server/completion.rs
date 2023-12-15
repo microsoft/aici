@@ -83,7 +83,7 @@ async fn completions(
     let token_ids = check_length(&request, &data);
     bail_if_error!(token_ids);
 
-    let token_ids = token_ids.unwrap();
+    let mut token_ids = token_ids.unwrap();
 
     let request_id = format!("cmpl-{}", Uuid::new_v4());
 
@@ -134,6 +134,8 @@ async fn completions(
             })
             .await;
         bail_if_error!(inst);
+        let mut inst = inst.unwrap();
+        token_ids.append(&mut inst.ff_tokens);
     }
 
     let rx = data.worker.lock().unwrap().add_request(AddRequest {

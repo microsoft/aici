@@ -1,6 +1,7 @@
 use aici_abi::{
     bytes::{limit_bytes, limit_str},
     toktree::TokTrie,
+    InitPromptResult,
 };
 use aicirt::{
     api::{
@@ -257,7 +258,7 @@ impl AsyncCmdChannel {
         self.exec("mk_module", req).await
     }
 
-    pub async fn instantiate(&self, req: InstantiateReq) -> Result<Empty> {
+    pub async fn instantiate(&self, req: InstantiateReq) -> Result<InitPromptResult> {
         self.exec("instantiate", req).await
     }
 

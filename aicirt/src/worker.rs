@@ -5,7 +5,8 @@ use std::{collections::HashMap, path::PathBuf, time::Duration};
 
 use crate::api::ModuleInstId;
 use aici_abi::{
-    MidProcessArg, PostProcessArg, PreProcessArg, StorageCmd, StorageOp, StorageResp, TokenId,
+    InitPromptResult, MidProcessArg, PostProcessArg, PreProcessArg, StorageCmd, StorageOp,
+    StorageResp, TokenId,
 };
 use aicirt::api::{AiciMidProcessResultInner, AiciPostProcessResultInner, SequenceResult};
 use anyhow::{anyhow, Result};
@@ -179,6 +180,9 @@ enum SeqResp {
         handle: SeqHandle,
     },
     Ok {},
+    InitPrompt {
+        json: String,
+    },
     PreProcess {
         json: String,
         suspend: bool,
@@ -226,18 +230,13 @@ where
         unsafe { libc::kill(self.pid, libc::SIGKILL) }
     }
 
-    fn send_cmd_with_timeout(&self, cmd: Cmd, timeout: Duration) -> Result<Resp> {
-        self.just_send(cmd)?;
-        self.recv_with_timeout(timeout)
-    }
-
     fn recv_with_timeout(&self, timeout: Duration) -> Result<Resp> {
         match self.recv_with_timeout_inner(timeout) {
             Ok(r) => Ok(r),
             Err(e) => {
                 if e.to_string().starts_with("timeout ") {
                     log::warn!("{e:?}");
-                    self.recv_with_timeout(Duration::from_millis(200))
+                    self.recv_with_timeout_inner(Duration::from_millis(200))
                 } else {
                     Err(e)
                 }
@@ -265,12 +264,23 @@ where
 impl SeqHandle {
     fn send_cmd_expect_ok(&self, cmd: SeqCmd, timeout: Duration) -> Result<()> {
         self.just_send(cmd)?;
-        match self.recv_with_timeout(timeout) {
+        match self.seq_recv_with_timeout(timeout) {
             Ok(SeqResp::Ok {}) => Ok(()),
-            Ok(SeqResp::Error { msg }) => Err(anyhow!("{}", msg)),
             Ok(r) => Err(anyhow!("unexpected response (not OK) {r:?}")),
             Err(e) => Err(e.into()),
         }
+    }
+
+    fn seq_recv_with_timeout(&self, timeout: Duration) -> Result<SeqResp> {
+        match self.recv_with_timeout(timeout) {
+            Ok(SeqResp::Error { msg }) => Err(anyhow!("SeqError: {}", msg)),
+            r => r,
+        }
+    }
+
+    fn send_cmd_with_timeout(&self, cmd: SeqCmd, timeout: Duration) -> Result<SeqResp> {
+        self.just_send(cmd)?;
+        self.seq_recv_with_timeout(timeout)
     }
 }
 
@@ -338,8 +348,10 @@ impl SeqCtx {
                     inst.tokenize(&p)?
                 };
                 self.modinst = Some(inst);
-                self.mutinst().setup(prompt_toks)?;
-                ok()
+                let r = self.mutinst().setup(prompt_toks)?;
+                Ok(SeqResp::InitPrompt {
+                    json: serde_json::to_string(&r)?,
+                })
             }
             SeqCmd::SetId { inst_id } => {
                 self.inst_id = inst_id;
@@ -496,7 +508,7 @@ impl SeqWorkerHandle {
         timeout: Duration,
         timer: &TimerRef,
     ) -> Result<RtPreProcessResult> {
-        let r = timer.with(|| self.handle.recv_with_timeout(timeout));
+        let r = timer.with(|| self.handle.seq_recv_with_timeout(timeout));
         match r {
             Ok(SeqResp::PreProcess {
                 json,
@@ -516,7 +528,7 @@ impl SeqWorkerHandle {
         &self,
         timeout: Duration,
     ) -> Result<SequenceResult<AiciMidProcessResultInner>> {
-        match self.handle.recv_with_timeout(timeout) {
+        match self.handle.seq_recv_with_timeout(timeout) {
             Ok(SeqResp::MidProcess { json }) => Ok(serde_json::from_str(&json)?),
             Ok(r) => Err(anyhow!("unexpected response (process) {r:?}")),
             Err(e) => Err(e.into()),
@@ -527,7 +539,7 @@ impl SeqWorkerHandle {
         &self,
         timeout: Duration,
     ) -> Result<SequenceResult<AiciPostProcessResultInner>> {
-        match self.handle.recv_with_timeout(timeout) {
+        match self.handle.seq_recv_with_timeout(timeout) {
             Ok(SeqResp::PostProcess { json }) => Ok(serde_json::from_str(&json)?),
             Ok(r) => Err(anyhow!("unexpected response (post_process) {r:?}")),
             Err(e) => Err(e.into()),
@@ -765,7 +777,7 @@ impl WorkerForker {
         &self,
         req: InstantiateReq,
         module_path: PathBuf,
-    ) -> Result<SeqWorkerHandle> {
+    ) -> Result<(SeqWorkerHandle, InitPromptResult)> {
         let module_arg = match req.module_arg.as_str() {
             Some(a) => a.to_string(),
             None => serde_json::to_string(&req.module_arg)?,
@@ -799,7 +811,7 @@ impl WorkerForker {
             req_id: req.req_id.clone(),
             handle: resp.0,
         };
-        res.handle.send_cmd_expect_ok(
+        match res.handle.send_cmd_with_timeout(
             SeqCmd::Instantiate {
                 module_path,
                 module_id: req.module_id.clone(),
@@ -808,7 +820,12 @@ impl WorkerForker {
                 prompt_toks,
             },
             Duration::from_millis(self.limits.max_init_ms),
-        )?;
-        Ok(res)
+        )? {
+            SeqResp::InitPrompt { json } => {
+                let r: InitPromptResult = serde_json::from_str(&json)?;
+                Ok((res, r))
+            }
+            r => Err(anyhow!("unexpected response (init prompt) {r:?}")),
+        }
     }
 }

@@ -400,6 +400,11 @@ impl RllmEngine {
         let rllm_config = Arc::new(rllm_config);
         let scheduler = Scheduler::new(rllm_config.clone());
         let cache_engine = CacheEngine::new(rllm_config.clone());
+        // let empty_prompt = tokenizer
+        //     .encode("", true)
+        //     .expect("empty tokenization")
+        //     .get_ids()
+        //     .to_vec();
 
         Ok(RllmEngine {
             tokenizer: Arc::new(tokenizer),

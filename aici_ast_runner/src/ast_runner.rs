@@ -29,7 +29,7 @@ use aici_abi::{
     tokenize, tokenize_bytes,
     toktree::{Recognizer, SpecialToken, TokTrie},
     wprintln, AiciVm, InitPromptArg, MidProcessArg, MidProcessResult, PostProcessArg,
-    PostProcessResult, PreProcessArg, PreProcessResult, TokenId, VariableStorage,
+    PostProcessResult, PreProcessArg, PreProcessResult, TokenId, VariableStorage, InitPromptResult,
 };
 
 const LOG_ADVANCE: bool = false;
@@ -1165,7 +1165,7 @@ impl Runner {
 }
 
 impl AiciVm for Runner {
-    fn init_prompt(&mut self, arg: InitPromptArg) {
+    fn init_prompt(&mut self, arg: InitPromptArg) -> InitPromptResult {
         wprintln!("prompt: {:?}", arg.prompt);
         for t in arg.prompt {
             self.ctx.tokens.push(TokenInfo {
@@ -1174,6 +1174,7 @@ impl AiciVm for Runner {
                 labels: vec![LabelName("prompt".to_string())],
             })
         }
+        InitPromptResult::default()
     }
 
     fn post_process(&mut self, arg: PostProcessArg) -> PostProcessResult {

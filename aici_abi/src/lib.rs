@@ -20,6 +20,11 @@ pub struct InitPromptArg {
     pub prompt: Vec<TokenId>,
 }
 
+#[derive(Serialize, Deserialize, Debug, Default)]
+pub struct InitPromptResult {
+    pub ff_tokens: Vec<TokenId>,
+}
+
 #[repr(transparent)]
 #[derive(Serialize, Deserialize, Debug, PartialEq, Eq)]
 pub struct SeqId(pub u32);
@@ -124,7 +129,9 @@ impl PreProcessResult {
 pub trait AiciVm {
     /// Called with the initial prompt. ~1000ms time limit.
     /// By default ignore prompt.
-    fn init_prompt(&mut self, _arg: InitPromptArg) {}
+    fn init_prompt(&mut self, _arg: InitPromptArg) -> InitPromptResult {
+        InitPromptResult { ff_tokens: vec![] }
+    }
 
     /// Called before mid_process(), can return attention masks. ~1ms time limit.
     /// Should be stateless.
@@ -143,7 +150,9 @@ pub trait AiciVm {
     // Internals
     fn aici_init_prompt(&mut self) {
         let arg: InitPromptArg = serde_json::from_slice(&host::process_arg_bytes()).unwrap();
-        self.init_prompt(arg);
+        let res = self.init_prompt(arg);
+        let res_bytes = serde_json::to_vec(&res).unwrap();
+        host::return_process_result(&res_bytes);
     }
 
     fn aici_pre_process(&mut self) {
