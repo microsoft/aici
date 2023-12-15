@@ -4,8 +4,7 @@ set -x
 set -e
 
 # the PORT is in fact unused
-PORT=8080
-COMMON_ARGS="--verbose --port $PORT --aicirt ../aicirt/target/release/aicirt"
+COMMON_ARGS="--verbose --aicirt ../aicirt/target/release/aicirt"
 
 (cd ../aicirt && cargo build --release)
 

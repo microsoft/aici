@@ -40,14 +40,14 @@ pub struct OpenAIServerData {
 #[command(author, version, about, long_about = None)]
 pub struct Args {
     /// Port to serve on (localhost:port)
-    #[arg(long)]
+    #[arg(long, default_value_t = 8080)]
     port: u16,
 
     /// Set verbose mode (print all requests)
     #[arg(long, default_value_t = false)]
     verbose: bool,
 
-    /// HuggingFace model name
+    /// HuggingFace model name; can be also path starting with "./"
     #[arg(long)]
     model: String,
 
