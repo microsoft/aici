@@ -83,7 +83,7 @@ async fn completions(
     let token_ids = check_length(&request, &data);
     bail_if_error!(token_ids);
 
-    let mut token_ids = token_ids.unwrap();
+    let token_ids = token_ids.unwrap();
 
     let request_id = format!("cmpl-{}", Uuid::new_v4());
 

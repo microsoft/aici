@@ -455,9 +455,11 @@ impl AiciVm for Runner {
             let attention_masks = vm.to_list(vm.attr(&r, "attention_masks"), |v| {
                 vm.to_list(v, |v| vm.to_f64(v) as f32)
             });
+            let ff_tokens = vm.to_list(vm.attr(&r, "ff_tokens"), |v| vm.to_i32(v) as u32);
             PreProcessResult {
                 attention_masks,
                 suspend,
+                ff_tokens,
             }
         })
     }

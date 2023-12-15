@@ -40,6 +40,10 @@ pub struct PreProcessResult {
     pub attention_masks: Vec<Vec<f32>>,
 
     pub suspend: bool,
+
+    /// If non-empty, the tokens may be appended and post_process() be called immediately,
+    /// skipping mid_process(); pre_process() is then typically called again.
+    pub ff_tokens: Vec<TokenId>,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -108,6 +112,7 @@ impl PreProcessResult {
         PreProcessResult {
             attention_masks,
             suspend: false,
+            ff_tokens: vec![],
         }
     }
     pub fn continue_() -> Self {
@@ -117,10 +122,18 @@ impl PreProcessResult {
         PreProcessResult {
             attention_masks: vec![vec![]],
             suspend: true,
+            ff_tokens: vec![],
         }
     }
     pub fn stop() -> Self {
         PreProcessResult::new(vec![])
+    }
+    pub fn ff_tokens(toks: Vec<TokenId>) -> Self {
+        PreProcessResult {
+            attention_masks: vec![vec![]],
+            suspend: false,
+            ff_tokens: toks,
+        }
     }
 }
 
