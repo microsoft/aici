@@ -1,1 +1,1 @@
---model microsoft/phi-1_5@refs/pr/18 --tokenizer phi --test-allowed-error 0.5
+--model microsoft/phi-1_5@refs/pr/66 --tokenizer phi --test-allowed-error 0.5

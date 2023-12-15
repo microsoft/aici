@@ -363,18 +363,19 @@ impl RllmEngine {
             let safetensors = safetensors::SafeTensors::deserialize(&content)?;
 
             for vname in safetensors.names() {
-                if !vars.contains_key(vname) {
+                let target_name = vname.to_string();
+                if !vars.contains_key(&target_name) {
                     if vname.ends_with(".inv_freq") {
                         // OK
                     } else {
-                        log::warn!("variable {} not found in the model", vname);
+                        log::warn!("variable {} not found in the model", target_name);
                     }
                     continue;
                 }
 
                 // Using from_blob here instead of from_data_size avoids some unnecessary copy.
                 let src_tensor = read_tensor(&safetensors, vname)?;
-                let mut var = vars.remove(vname).unwrap();
+                let mut var = vars.remove(&target_name).unwrap();
                 assert!(var.size() == src_tensor.size());
                 // println!("copying to {var:?} from {src_tensor:?}");
                 var.f_copy_(&src_tensor)?;

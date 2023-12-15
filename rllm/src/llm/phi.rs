@@ -187,20 +187,20 @@ pub struct MixFormerSequentialForCausalLM {
 }
 
 impl MixFormerSequentialForCausalLM {
-    pub fn new(cfg: &Rc<ModelConfig>, vb: Path) -> Self {
-        let vb = vb / "layers";
+    pub fn new(cfg: &Rc<ModelConfig>, vb0: Path) -> Self {
+        let vb = &vb0 / "transformer";
         let embedding = nn::embedding(
-            &vb / 0 / "wte",
+            &vb / "embd" / "wte",
             cfg.vocab_size as i64,
             cfg.hidden_size as i64,
             Default::default(),
         );
         let mut blocks = Vec::new();
         for i in 0..cfg.num_hidden_layers {
-            let block = ParallelBlock::new(cfg, &vb / (i + 1), i);
+            let block = ParallelBlock::new(cfg, &vb / "h" / i, i);
             blocks.push(block)
         }
-        let head = CausalLMHead::new(cfg, &vb / (cfg.num_hidden_layers + 1));
+        let head = CausalLMHead::new(cfg, &vb0 / "lm_head");
         Self {
             embedding,
             blocks,

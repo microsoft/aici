@@ -17,10 +17,12 @@ N_TOKENS = 30
 
 models = {
     "phi-1_5": "microsoft/phi-1_5",
+    "phi-2": "microsoft/phi-2",
     "codellama": "codellama/CodeLlama-13b-Instruct-hf",
+    "llama": "NousResearch/Llama-2-7b-hf",
 }
 
-modelid = "codellama"
+modelid = "llama"
 modeln = models[modelid]
 
 prompts = {
@@ -223,6 +225,9 @@ parser_truncate.add_argument(
 )
 
 args = parser.parse_args()
+
+modelid = args.model
+modeln = models[modelid]
 
 subc = args.subcommand
 if subc == "generate":

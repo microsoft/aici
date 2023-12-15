@@ -5,7 +5,10 @@ REL=
 
 case "$1" in
   phi )
-    ARGS="-m microsoft/phi-1_5@refs/pr/18 -t phi -w expected/phi-1_5/cats.safetensors"
+    ARGS="-m microsoft/phi-1_5@refs/pr/66 -t phi -w expected/phi-1_5/cats.safetensors"
+    ;;
+  phi2 )
+    ARGS="-m microsoft/phi-2 -t phi -w expected/phi-2/cats.safetensors"
     ;;
   7 | 7b )
     ARGS="-m NousResearch/Llama-2-7b-hf -t llama"
