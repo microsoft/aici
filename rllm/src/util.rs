@@ -17,13 +17,12 @@ pub fn check_all_close_rel(t1: &Tensor, t2: &Tensor, _max_diff: f64) {
     assert!(t1.size() == t2.size());
 
     let atol: f64 = 0.10;
-    let rtol: f64 = 0.05;
+    let rtol: f64 = 0.02;
 
     let diff = (t1 - t2).abs() - (rtol * t2.abs() + atol);
 
     let max_over = diff.max().double_value(&[]);
     if max_over > 0.0 {
-        println!("close: {}", t1.allclose(&t2, rtol, atol, true));
         panic!("not close (rel) {max_over:.5}");
     }
 }

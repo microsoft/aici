@@ -224,9 +224,7 @@ pub fn varlen_attn(
                     softmax_scale,
                     causal,
                 );
-                if false {
                 check_all_close_rel(&y, &y2, 0.01);
-                }
             }
 
             y
