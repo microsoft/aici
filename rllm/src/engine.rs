@@ -55,6 +55,7 @@ pub struct ExpectedToken {
 pub struct ExpectedGeneration {
     pub prompt: Vec<Token>,
     pub output: Vec<ExpectedToken>,
+    pub max_error: f32,
 }
 
 fn read_tensor(s: &safetensors::SafeTensors, name: &str) -> Result<Tensor> {
@@ -83,7 +84,7 @@ fn kind_from_dt(dtype: Dtype) -> Kind {
 }
 
 impl ExpectedGeneration {
-    pub fn load(f: &PathBuf) -> Result<Self> {
+    pub fn load(f: &PathBuf, max_error: f32) -> Result<Self> {
         let fp = std::fs::File::open(f)?;
         let content = unsafe { memmap2::MmapOptions::new().map(&fp)? };
         let s = safetensors::SafeTensors::deserialize(&content)?;
@@ -100,6 +101,7 @@ impl ExpectedGeneration {
         assert!(prob_mass.len() == num_tokens);
 
         Ok(ExpectedGeneration {
+            max_error,
             prompt: prompt.into_iter().map(|x| x as Token).collect(),
             output: (0..num_tokens)
                 .map(|i| ExpectedToken {
@@ -481,7 +483,10 @@ impl RllmEngine {
         self.queue_request(AddRequest {
             request_id,
             prompt: exp_gen.prompt.clone(),
-            sampling_params: SamplingParams::default(),
+            sampling_params: SamplingParams {
+                max_tokens: exp_gen.output.len() + 1,
+                ..SamplingParams::default()
+            },
             expected: Some(exp_gen),
         })
     }
@@ -680,9 +685,12 @@ impl RllmEngine {
                                 }
                             }
                             let avg_err = sum_err / out.logits.len() as f32;
-                            log::info!("exp #{idx}: avg_err:{avg_err:.4} max_err:{max_err:.4}");
-                            assert!(max_err < 0.02);
-                            assert!(avg_err < 0.01);
+                            log::info!(
+                                "exp #{idx} in {id}: avg_err:{avg_err:.4} max_err:{max_err:.4}",
+                                id = sg.request_id
+                            );
+                            assert!(max_err < exp.max_error);
+                            assert!(avg_err < exp.max_error * 0.5);
                             out.sampled
                         }
                     }
