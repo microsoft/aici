@@ -18,8 +18,7 @@ pub mod util;
 
 use std::sync::atomic::AtomicBool;
 
-pub use engine::AddRequest;
-pub use engine::RllmEngine;
+pub use engine::*;
 pub use logits::LogitsProcessor;
 pub use playground::playground_1;
 

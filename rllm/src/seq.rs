@@ -1,6 +1,6 @@
 use std::{fmt::Debug, sync::Mutex};
 
-use crate::Tensor;
+use crate::{Tensor, engine::ExpectedGeneration};
 use aici_abi::TokenId;
 use aicirt::api::SequenceResult;
 use serde::{Deserialize, Serialize};
@@ -75,6 +75,7 @@ pub struct Sequence {
     pub(crate) aici_sampling: AiciSampling,
     pub aici_logs: Vec<SequenceResult>,
     pub pending_fork_ids: Vec<SeqId>,
+    pub(crate) expected: Option<ExpectedGeneration>,
 
     // state for Scheduler and BlockSpaceManager
     pub(crate) sched_phase: SchedulingPhase,
@@ -114,6 +115,7 @@ impl Sequence {
             aici_logs: Vec::new(),
             aici_sampling: AiciSampling::Regular,
             pending_fork_ids: Vec::new(),
+            expected: None,
         }
     }
 
@@ -148,6 +150,7 @@ impl Sequence {
             aici_logs: Vec::new(),
             pending_fork_ids: Vec::new(),
             aici_sampling: AiciSampling::Regular,
+            expected: None,
         }
     }
 

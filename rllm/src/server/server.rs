@@ -1,5 +1,6 @@
 use std::{
     collections::HashMap,
+    path::PathBuf,
     sync::{Arc, Mutex},
 };
 
@@ -17,7 +18,7 @@ use rllm::{
     config::{ModelConfig, SamplingParams},
     iface::{AiciRtIface, AsyncCmdChannel},
     seq::RequestOutput,
-    AddRequest, DType, LoaderArgs, RllmEngine,
+    AddRequest, DType, ExpectedGeneration, LoaderArgs, RllmEngine,
 };
 
 use openai::responses::APIError;
@@ -90,6 +91,10 @@ pub struct Args {
     /// Specify which type to use in the model (bf16, f16, f32)
     #[arg(long, default_value = "")]
     dtype: String,
+
+    /// Specify test-cases
+    #[arg(long)]
+    test: Vec<String>,
 }
 
 #[actix_web::post("/v1/aici_modules")]
@@ -218,6 +223,18 @@ fn inference_loop(
     }
 }
 
+fn run_tests(args: &Args, loader_args: LoaderArgs) {
+    let mut engine = RllmEngine::load(loader_args).expect("failed to load model");
+
+    for t in &args.test {
+        log::info!("adding test: {t}");
+        let exp = ExpectedGeneration::load(&PathBuf::from(t)).expect("can't load test");
+        engine.add_expected_generation(exp).unwrap();
+    }
+
+    engine.run_to_completion();
+}
+
 #[actix_web::main]
 async fn main() -> () {
     setup_log();
@@ -256,6 +273,11 @@ async fn main() -> () {
         RllmEngine::load_tokenizer(&loader_args).expect("failed to load tokenizer");
     let model_config =
         RllmEngine::load_model_config(&loader_args).expect("failed to load model config");
+
+    if args.test.len() > 0 {
+        run_tests(&args, loader_args);
+        return;
+    }
 
     let rt_args = rllm::iface::Args {
         aicirt: args.aicirt.clone(),

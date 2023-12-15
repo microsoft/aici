@@ -140,6 +140,7 @@ async fn completions(
         request_id: request_id.clone(),
         prompt: token_ids,
         sampling_params,
+        expected: None,
     });
 
     bail_if_error!(rx);

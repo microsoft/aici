@@ -2,7 +2,7 @@
 name = "rllm"
 version = "0.1.0"
 edition = "2021"
-default-run = "rllm"
+default-run = "rllm-server"
 
 [dependencies]
 anyhow = "1.0.75"
@@ -32,10 +32,6 @@ base64 = "0.21.5"
 indicatif = "0.17.7"
 memmap2 = "0.9.0"
 safetensors = "0.4.1"
-
-[[bin]]
-name = "rllm"
-path = "src/rllm.rs"
 
 [[bin]]
 name = "rllm-server"

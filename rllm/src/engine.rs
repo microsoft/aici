@@ -120,6 +120,7 @@ pub struct AddRequest {
     pub request_id: String,
     pub prompt: Vec<Token>,
     pub sampling_params: SamplingParams,
+    pub expected: Option<ExpectedGeneration>,
 }
 
 enum Repo {
@@ -145,10 +146,24 @@ impl Repo {
         }
     }
 
+    fn is_local(&self) -> bool {
+        match self {
+            Repo::Api(_) => false,
+            Repo::Local(_) => true,
+        }
+    }
+
     fn get(&self, filename: &str) -> Result<PathBuf> {
         match self {
             Repo::Api(api) => api.get(filename).map_err(E::msg),
-            Repo::Local(path) => Ok((path.to_owned() + filename).into()),
+            Repo::Local(path) => {
+                let p: PathBuf = (path.to_owned() + filename).into();
+                if p.exists() {
+                    Ok(p)
+                } else {
+                    bail!("file {p:?} doesn't exists")
+                }
+            }
         }
     }
 
@@ -302,7 +317,11 @@ impl RllmEngine {
             filenames.sort();
             filenames
         } else {
-            vec!["model.safetensors".to_string()]
+            if repo.is_local() && repo.get("model.safetensors-rust").is_ok() {
+                vec!["model.safetensors-rust".to_string()]
+            } else {
+                vec!["model.safetensors".to_string()]
+            }
         };
 
         let filenames = filenames
@@ -430,6 +449,7 @@ impl RllmEngine {
             &req.prompt,
             self.scheduler.config.cache.block_size,
         );
+        seq.expected = req.expected;
         seq.pending_fork_ids = (1..req.sampling_params.n)
             .map(|i| self.seq_id + i)
             .collect::<Vec<_>>();
@@ -456,11 +476,14 @@ impl RllmEngine {
         Ok(())
     }
 
-    pub fn add_expected_generation(
-        &mut self,
-        exp_gen: ExpectedGeneration,
-    ) {
-        
+    pub fn add_expected_generation(&mut self, exp_gen: ExpectedGeneration) -> Result<()> {
+        let request_id = self.gen_req_id();
+        self.queue_request(AddRequest {
+            request_id,
+            prompt: exp_gen.prompt.clone(),
+            sampling_params: SamplingParams::default(),
+            expected: Some(exp_gen),
+        })
     }
 
     pub fn add_request(
@@ -474,6 +497,7 @@ impl RllmEngine {
             request_id,
             prompt: tokens,
             sampling_params,
+            expected: None,
         })
     }
 
@@ -496,6 +520,10 @@ impl RllmEngine {
     }
 
     fn aici_bias(&mut self, sched_out: &mut SchedulerOutputs) -> Result<Tensor> {
+        if self.aicirt.is_none() {
+            return Ok(Tensor::zeros(&[0], (DType::Float, self.device)));
+        }
+
         let mid_res = self.aicirt.as_mut().unwrap().finish_mid_process()?;
         let mut idx = 0;
 
@@ -631,8 +659,37 @@ impl RllmEngine {
                 seq.num_kv_computed = seq.tokens.len();
 
                 let mut info = "";
-                let next_token = sg.logits_processor.sample(&logits)?;
-                if seq.has_aici && next_token == self.tok_trie.info().tok_eos {
+                let next_token = match &seq.expected {
+                    Some(exp) => {
+                        let idx = seq.tokens.len() - exp.prompt.len();
+                        if idx >= exp.output.len() {
+                            info = " -> exp finish";
+                            self.eos_token_id
+                        } else {
+                            let out = &exp.output[idx];
+                            info = " -> exp";
+                            let logits = to_vec1::<f32>(&logits.to_kind(Kind::Float));
+                            let mut max_err = 0.0;
+                            let mut sum_err = 0.0;
+                            for (t, l1) in out.logits.iter() {
+                                let l0 = logits[*t as usize];
+                                let d = (l0 - l1).abs();
+                                sum_err += d;
+                                if d > max_err {
+                                    max_err = d;
+                                }
+                            }
+                            let avg_err = sum_err / out.logits.len() as f32;
+                            log::info!("exp #{idx}: avg_err:{avg_err:.4} max_err:{max_err:.4}");
+                            assert!(max_err < 0.02);
+                            assert!(avg_err < 0.01);
+                            out.sampled
+                        }
+                    }
+                    None => sg.logits_processor.sample(&logits)?,
+                };
+
+                if seq.has_aici && next_token == self.eos_token_id {
                     // replace with space, so the model doesn't get confused
                     // note that aici will still get the real EOS token
                     let space = self.tok_trie.greedy_tokenize(b" ")[0];
@@ -844,6 +901,10 @@ impl RllmEngine {
         sched_out: &mut SchedulerOutputs,
         req: AiciPostProcessReq,
     ) -> Result<()> {
+        if self.aicirt.is_none() {
+            return Ok(());
+        }
+
         let post_res = self.aicirt.as_mut().unwrap().post_process(req)?;
 
         for sg in sched_out.next_seq_groups.iter_mut() {
@@ -869,6 +930,10 @@ impl RllmEngine {
     }
 
     fn aici_pre(&mut self, sched_out: &mut SchedulerOutputs) -> Result<()> {
+        if self.aicirt.is_none() {
+            return Ok(());
+        }
+
         let mut max_context_len = 0;
         let mut ops = Vec::new();
         let mut seq_ptr = HashMap::new();
@@ -963,6 +1028,12 @@ impl RllmEngine {
             .start_mid_process(AiciMidProcessReq { ops: mid_ops })?;
 
         Ok(())
+    }
+
+    pub fn run_to_completion(&mut self) {
+        while self.num_pending_requests() > 0 {
+            self.step().expect("step failed");
+        }
     }
 
     pub fn step(&mut self) -> Result<Vec<RequestOutput>> {
