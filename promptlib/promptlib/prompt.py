@@ -1,4 +1,5 @@
 from typing import List
+from .aici import AICI
 
 class PromptNode:
     """
@@ -28,7 +29,7 @@ class PromptNode:
     
     def set_parent(self, parent):
         self.parent = parent
-        
+
     def _get_attributes(self):
         dict = {}
         if self.id is not None:
@@ -138,16 +139,29 @@ class PromptNode:
         return id_match
 
 
-    def build_linear_plan(self):
-        steps = self._get_plan_steps_ascending()
-        steps = [s for s in steps if s is not None]
-        return {"steps": steps}
+    #def build_linear_plan(self):
+    #    steps = self._get_plan_steps_ascending()
+    #    steps = [s for s in steps if s is not None]
+    #    return {"steps": steps}
 
     # This builds a plan to execute all the children starting at self
     def build_tree_plan(self):
         steps = {"steps": self._get_plan_steps_descending()}
         return steps
 
+    def __add__(self, o):
+        assert isinstance(o, str), "Can only add strings to a prompt"
+        return append(self, o)
+
+
+class PromptProgram(PromptNode):
+    def __init__(self, endpoint:AICI):
+        super().__init__()
+        self.endpoint = endpoint
+
+    def run(self):
+        plan = self.build_tree_plan()
+        return self.endpoint.run(plan)
 
 class TextNode(PromptNode):
 

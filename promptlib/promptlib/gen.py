@@ -1,6 +1,5 @@
 from .prompt import PromptNode
 from .model import ModelNode, ChatModelNode
-from .endpoint import EndpointNode
 from .constrain import ConstraintNode
 
 from typing import List
@@ -22,13 +21,6 @@ class GenNode(PromptNode):
     
     def set_parent(self, parent): 
         super().set_parent(parent)
-        model = self.get_parent_of_type(ModelNode)
-        endpoint = self.get_parent_of_type(EndpointNode)
-
-        # TODO this will fail in cases where we are building subprompts and then only later prepending a model
-        assert (model is not None) or (endpoint is not None), "Gen must have an ancestor of type ModelNode or EndpointNode"
-        if model is not None:
-            self.is_chat = isinstance(model, ChatModelNode)
 
     def _generate_text(self, prefix):
         model = self.get_parent_of_type(ModelNode)
@@ -127,13 +119,17 @@ class ChoiceNode(GenNode):
         super().__init__(**args) # TODO add genargs to super that end up logit_biasing to the choices
 
     def _get_plan_step(self):
-        dict = {"options": self.choices}
+        parts = []
+        for c in self.choices:
+            parts.append({"String": {"str": c}})
+        ast_list = {"Concat": {"list": True, "parts": list(parts)}}
+        dict = {"options": ast_list}
         dict.update(self._get_attributes())
         return {"Choose": dict}
 
 
-def choose(prompt_code:PromptNode, choices:list) -> PromptNode:
-    node = ChoiceNode(choices)
+def choose(prompt_code:PromptNode, choices:list, **gen_args) -> PromptNode:
+    node = ChoiceNode(choices, **gen_args)
     prompt_code.add_child(node)
     return node
 

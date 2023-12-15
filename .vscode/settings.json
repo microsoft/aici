@@ -69,5 +69,10 @@
         "waitpid",
         "wprintln"
     ],
-    "mypy.configFile": "vllm/mypy.ini"
+    "mypy.configFile": "vllm/mypy.ini",
+    "jupyter.notebookFileRoot": "${workspaceFolder}",
+    "jupyter.widgetScriptSources": [
+        "jsdelivr.com",
+        "unpkg.com"
+    ]
 }
