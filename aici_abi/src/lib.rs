@@ -21,9 +21,7 @@ pub struct InitPromptArg {
 }
 
 #[derive(Serialize, Deserialize, Debug, Default)]
-pub struct InitPromptResult {
-    pub ff_tokens: Vec<TokenId>,
-}
+pub struct InitPromptResult {}
 
 #[repr(transparent)]
 #[derive(Serialize, Deserialize, Debug, PartialEq, Eq)]
@@ -130,7 +128,7 @@ pub trait AiciVm {
     /// Called with the initial prompt. ~1000ms time limit.
     /// By default ignore prompt.
     fn init_prompt(&mut self, _arg: InitPromptArg) -> InitPromptResult {
-        InitPromptResult { ff_tokens: vec![] }
+        InitPromptResult::default()
     }
 
     /// Called before mid_process(), can return attention masks. ~1ms time limit.

@@ -442,9 +442,8 @@ impl AiciVm for Runner {
         let obj = get_cb_obj();
         self.interpreter.enter(|vm| {
             let lst = vm.new_int_list(&arg.prompt);
-            let r = vm.catch_exn(vm.call_method(obj.deref(), "init_prompt", vec![lst.into()]));
-            let ff_tokens = vm.to_list(r, |v| vm.to_i32(v) as u32);
-            InitPromptResult { ff_tokens }
+            vm.catch_exn(vm.call_method(obj.deref(), "init_prompt", vec![lst.into()]));
+            InitPromptResult::default()
         })
     }
 

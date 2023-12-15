@@ -134,8 +134,6 @@ async fn completions(
             })
             .await;
         bail_if_error!(inst);
-        let mut inst = inst.unwrap();
-        token_ids.append(&mut inst.ff_tokens);
     }
 
     let rx = data.worker.lock().unwrap().add_request(AddRequest {

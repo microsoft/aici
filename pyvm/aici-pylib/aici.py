@@ -280,8 +280,8 @@ class AiciCallbacks:
     Use aici.start() to wrap a coroutine.
     """
 
-    def init_prompt(self, prompt: list[Token]) -> list[Token]:
-        return []
+    def init_prompt(self, prompt: list[Token]):
+        pass
 
     def pre_process(self) -> PreProcessResult:
         return PreProcessResult()
