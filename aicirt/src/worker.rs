@@ -656,14 +656,18 @@ fn forker_dispatcher(
         let cmd = busy_recv(&cmdch, &wasm_ctx.limits.busy_wait_duration).unwrap();
         let cmd_id = cmd.id;
 
+        // fork the seq worker first
         match fork_child(&wasm_ctx.limits).unwrap() {
             ForkResult::Parent { handle } => {
-                let query_handle = handle;
+                cmd_resp.send(ForkerResp(handle)).unwrap();
+            }
+            ForkResult::Child { cmd, cmd_resp } => {
+                // and the seq worker then forks the communication process
+                // this way we don't have to send query_handle to the seq worker
+                // (inheriting it from fork doesn't work on macOS)
                 match fork_child(&wasm_ctx.limits).unwrap() {
                     ForkResult::Parent { handle } => {
-                        cmd_resp.send(ForkerResp(handle)).unwrap();
-                    }
-                    ForkResult::Child { cmd, cmd_resp } => {
+                        let query_handle = handle;
                         let pre_timer = wasm_ctx.timers.new_timer("pre_outer");
                         let mut w_ctx = SeqCtx {
                             id: cmd_id,
@@ -678,17 +682,17 @@ fn forker_dispatcher(
                         };
                         w_ctx.dispatch_loop()
                     }
+                    ForkResult::Child { cmd, cmd_resp } => {
+                        let mut grp_ctx = GroupCtx {
+                            variables: HashMap::new(),
+                            workers: HashMap::new(),
+                            cb_set: IpcReceiverSet::new().unwrap(),
+                            limits: wasm_ctx.limits,
+                        };
+                        grp_ctx.add_worker(cmd, cmd_resp);
+                        grp_ctx.dispatch_loop()
+                    }
                 }
-            }
-            ForkResult::Child { cmd, cmd_resp } => {
-                let mut grp_ctx = GroupCtx {
-                    variables: HashMap::new(),
-                    workers: HashMap::new(),
-                    cb_set: IpcReceiverSet::new().unwrap(),
-                    limits: wasm_ctx.limits,
-                };
-                grp_ctx.add_worker(cmd, cmd_resp);
-                grp_ctx.dispatch_loop()
             }
         }
     }
