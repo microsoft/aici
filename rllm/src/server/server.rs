@@ -231,9 +231,13 @@ fn run_tests(args: &Args, loader_args: LoaderArgs) {
     let mut engine = RllmEngine::load(loader_args).expect("failed to load model");
 
     for t in &args.test {
-        log::info!("adding test: {t}");
         let exp = ExpectedGeneration::load(&PathBuf::from(t), args.test_allowed_error)
             .expect("can't load test");
+        log::info!(
+            "test {t}: {} tokens; {} logits",
+            exp.output.len(),
+            exp.output[0].logits.len()
+        );
         engine.add_expected_generation(exp).unwrap();
     }
 
