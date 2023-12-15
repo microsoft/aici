@@ -17,7 +17,7 @@ case "$1" in
     ARGS="-m codellama/CodeLlama-13b-Instruct-hf -t codellama -w expected/codellama/cats.safetensors"
     ;;
   * )
-    echo "try one of models: phi, 7b, code" 
+    echo "try one of models: phi, phi2, 7b, code" 
     exit 1
     ;;
 esac

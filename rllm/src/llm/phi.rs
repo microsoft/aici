@@ -27,11 +27,12 @@ pub struct PhiConfig {
     pub(crate) activation_function: String,
     pub(crate) layer_norm_epsilon: f64,
     pub(crate) tie_word_embeddings: bool,
+    pub(crate) torch_dtype: String,
     // pub(crate) pad_vocab_size_multiple: usize,
 }
 
 impl RllmModelConfig for PhiConfig {
-    fn into_config(self, dtype: DType, device: Device) -> ModelConfig {
+    fn into_config(self, dtype: Option<DType>, device: Device) -> ModelConfig {
         ModelConfig {
             model_type: ModelType::Phi,
             hidden_size: self.n_embd,
@@ -46,7 +47,7 @@ impl RllmModelConfig for PhiConfig {
             max_sequence_length: self.n_positions,
             head_dim: self.n_embd / self.n_head,
             rotary_dim: self.rotary_dim,
-            dtype,
+            dtype: ModelConfig::dtype_from_str(dtype, &self.torch_dtype),
             device,
         }
     }

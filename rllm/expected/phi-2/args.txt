@@ -1,1 +1,1 @@
---model microsoft/phi-2 --tokenizer phi --test-allowed-error 2
+--model microsoft/phi-2 --tokenizer phi --test-allowed-error 0.5

@@ -1,9 +1,9 @@
 // based on https://github.com/huggingface/candle/blob/main/candle-transformers/src/models/llama.rs
 
 use crate::{
-    llm::{extract_positions, linear_no_bias, varlen_attn, RmsNorm, RotaryEmbedding},
     config::{ModelConfig, ModelType},
     engine::{RllmModel, RllmModelConfig},
+    llm::{extract_positions, linear_no_bias, varlen_attn, RmsNorm, RotaryEmbedding},
     seq::BatchInfo,
     DType, Device, Tensor,
 };
@@ -24,6 +24,7 @@ pub struct LlamaConfig {
     pub max_position_embeddings: usize, // TODO - is this max seq len?
     #[serde(default = "default_rope")]
     pub rope_theta: f32,
+    pub torch_dtype: String,
 }
 
 fn default_rope() -> f32 {
@@ -31,7 +32,7 @@ fn default_rope() -> f32 {
 }
 
 impl RllmModelConfig for LlamaConfig {
-    fn into_config(self, dtype: DType, device: Device) -> ModelConfig {
+    fn into_config(self, dtype: Option<DType>, device: Device) -> ModelConfig {
         let head_dim = self.hidden_size / self.num_attention_heads;
         ModelConfig {
             model_type: ModelType::Llama,
@@ -47,7 +48,7 @@ impl RllmModelConfig for LlamaConfig {
             max_sequence_length: self.max_position_embeddings,
             head_dim,
             rotary_dim: head_dim,
-            dtype,
+            dtype: ModelConfig::dtype_from_str(dtype, &self.torch_dtype),
             device,
         }
     }

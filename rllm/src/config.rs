@@ -97,6 +97,20 @@ pub struct ModelConfig {
     pub dtype: DType,
 }
 
+impl ModelConfig {
+    pub fn dtype_from_str(explicit: Option<DType>, torch_dtype: &str) -> DType {
+        if let Some(dtype) = explicit {
+            return dtype;
+        }
+        match torch_dtype {
+            "float" => DType::Float,
+            "half" | "float16" => DType::Half,
+            "bfloat16" => DType::BFloat16,
+            _ => panic!("Unknown dtype {}", torch_dtype),
+        }
+    }
+}
+
 #[derive(Debug, Serialize, Deserialize)]
 pub struct ParallelConfig {
     pub pipeline_parallel_size: usize,

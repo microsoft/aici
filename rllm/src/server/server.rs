@@ -311,10 +311,10 @@ async fn main() -> () {
     let mut args = Args::parse();
 
     let dtype = match args.dtype.as_str() {
-        "bf16" => DType::BFloat16,
-        "f16" => DType::Half,
-        "f32" => DType::Float,
-        "" => LoaderArgs::default().dtype,
+        "bf16" => Some(DType::BFloat16),
+        "f16" => Some(DType::Half),
+        "f32" => Some(DType::Float),
+        "" => None,
         _ => panic!("invalid dtype; try one of bf16, f16, f32"),
     };
 

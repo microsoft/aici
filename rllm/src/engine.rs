@@ -188,7 +188,7 @@ pub trait RllmModel {
 }
 
 pub trait RllmModelConfig {
-    fn into_config(self, dtype: DType, device: Device) -> ModelConfig;
+    fn into_config(self, dtype: Option<DType>, device: Device) -> ModelConfig;
 }
 
 fn load_one_config<T>(
@@ -279,8 +279,6 @@ impl RllmEngine {
         let _no_grad = tch::no_grad_guard();
 
         let device = args.device;
-        let dtype = args.dtype;
-
         let repo = Repo::from(&args)?;
 
         let (tokenizer, tok_trie) = Self::load_tokenizer(&args)?;
@@ -291,7 +289,7 @@ impl RllmEngine {
             parallel: ParallelConfig::single(),
             cache: CacheConfig::default(),
             scheduler: SchedulerConfig::new(2560, 256, model_config.max_sequence_length),
-            dtype,
+            dtype: model_config.dtype,
             device: device.clone(),
         };
 

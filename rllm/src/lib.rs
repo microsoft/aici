@@ -23,20 +23,20 @@ pub struct LoaderArgs {
     pub local_weights: Option<String>,
     pub alt: usize,
 
-    pub dtype: DType,
+    pub dtype: Option<DType>,
     pub device: Device,
 }
 
 impl Default for LoaderArgs {
     fn default() -> Self {
         let (device, dtype) = if tch::Cuda::is_available() {
-            (Device::Cuda(0), DType::BFloat16)
+            (Device::Cuda(0), None)
         } else {
             // At least on AMD 5500m MPS is 3x slower than CPU
             // #[cfg(target_os = "macos")]
             // let r = (Device::Mps, DType::Half);
             // #[cfg(not(target_os = "macos"))]
-            let r = (Device::Cpu, DType::Float);
+            let r = (Device::Cpu, Some(DType::Float));
             r
         };
         Self {
