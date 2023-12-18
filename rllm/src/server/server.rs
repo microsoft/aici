@@ -138,7 +138,14 @@ async fn models() -> Result<web::Json<openai::responses::List<openai::responses:
 }
 
 #[actix_web::get("/ws-http-tunnel/info")]
-async fn tunnel_info() -> Result<web::Json<serde_json::Value>, APIError> {
+async fn tunnel_info(
+    req: actix_web::HttpRequest,
+) -> Result<web::Json<serde_json::Value>, APIError> {
+    let name = req
+        .headers()
+        .get("x-user-name")
+        .map_or("(no header)", |v| v.to_str().unwrap_or("(invalid header)"));
+    log::info!("user: {:?}", name);
     Ok(web::Json(serde_json::json!(
         { "msg": "More info at: https://github.com/microsoft/aici/blob/main/proxy.md" }
     )))
