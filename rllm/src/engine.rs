@@ -1,6 +1,6 @@
 use crate::{
     config::ModelType,
-    util::{to_vec1, to_vec2, get_setting},
+    util::{get_setting, to_vec1, to_vec2},
     DType, Device, IndexOp, Tensor,
 };
 use aici_abi::toktree::TokTrie;
@@ -46,16 +46,18 @@ use crate::{
 };
 use crate::{seq::SeqOutput, LogitsProcessor};
 
+#[derive(Clone)]
 pub struct ExpectedToken {
     pub sampled: Token,
     pub prob_mass: f32,
     pub logits: Vec<(Token, f32)>,
+    pub ff_section_len: usize, // typically 1 for non-ff
 }
 
+#[derive(Clone)]
 pub struct ExpectedGeneration {
     pub prompt: Vec<Token>,
     pub output: Vec<ExpectedToken>,
-    pub ff_sections: Vec<(usize, usize)>,
 }
 
 fn read_tensor(s: &safetensors::SafeTensors, name: &str) -> Result<Tensor> {
@@ -102,10 +104,10 @@ impl ExpectedGeneration {
 
         Ok(ExpectedGeneration {
             prompt: prompt.into_iter().map(|x| x as Token).collect(),
-            ff_sections: Vec::new(),
             output: (0..num_tokens)
                 .map(|i| ExpectedToken {
                     sampled: output[i] as Token,
+                    ff_section_len: 1,
                     prob_mass: prob_mass[i],
                     logits: tokens[i]
                         .iter()
@@ -598,7 +600,7 @@ impl RllmEngine {
     fn check_expected(&mut self, logits: &Tensor, req_id: &str, seq: &mut Sequence) -> Token {
         let exp = seq.expected.as_ref().unwrap();
         let idx = seq.get_len() - exp.prompt.len();
-        let mut next_token = if idx >= exp.output.len() {
+        let next_token = if idx >= exp.output.len() {
             self.eos_token_id
         } else {
             let out = &exp.output[idx];
@@ -640,22 +642,18 @@ impl RllmEngine {
                 self.num_errors += 1;
             }
 
-            out.sampled
+            if out.ff_section_len > 1 {
+                let mut toks = exp.output[idx..(idx + out.ff_section_len)]
+                    .iter()
+                    .map(|e| e.sampled)
+                    .collect::<Vec<_>>();
+                let r = toks.pop().unwrap();
+                seq.append_tokens(&toks);
+                r
+            } else {
+                out.sampled
+            }
         };
-
-        if let Some((_, end_idx)) = exp
-            .ff_sections
-            .iter()
-            .find(|(start_idx, _)| *start_idx == idx)
-            .clone()
-        {
-            let mut toks = exp.output[idx..*end_idx]
-                .iter()
-                .map(|e| e.sampled)
-                .collect::<Vec<_>>();
-            next_token = toks.pop().unwrap();
-            seq.append_tokens(&toks);
-        }
 
         next_token
     }

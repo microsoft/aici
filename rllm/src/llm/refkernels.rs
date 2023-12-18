@@ -1,6 +1,6 @@
 use crate::util::{check_all_close_rel, to_vec1};
 use std::collections::HashMap;
-use tch::{IndexOp, Tensor};
+use tch::{IndexOp, Kind, Tensor};
 
 pub fn reshape_and_cache(
     key: &Tensor,             // [num_tokens, num_heads, head_size]
@@ -97,13 +97,21 @@ pub fn varlen_attn(
         assert!(k.size() == [num_heads, len_k, head_dim]);
         assert!(v.size() == [num_heads, len_k, head_dim]);
 
+        let attn_bias = Tensor::zeros(&[len_q, len_k], (q.kind(), q.device()));
+        let mask = Tensor::ones(&[len_q, len_q], (Kind::Bool, q.device()))
+            .tril(0)
+            .logical_not();
+        let _ = attn_bias
+            .i((.., len_k-len_q..))
+            .masked_fill_(&mask, f64::NEG_INFINITY);
+
         let attn0 = Tensor::scaled_dot_product_attention(
             &q,
             &k,
             &v,
-            None::<&Tensor>,
+            Some(attn_bias),
             0.0,
-            if len_q == 1 { false } else { causal },
+            false,
             softmax_scale,
         )
         .reshape(&[num_heads, len_q, head_dim])
