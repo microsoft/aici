@@ -132,6 +132,7 @@ pub struct StreamingCompletionChoice {
     pub finish_reason: Option<String>,
     pub text: String,
     
+    pub error: String,
     pub logs: String,
     pub storage: Vec<StorageCmd>,
 

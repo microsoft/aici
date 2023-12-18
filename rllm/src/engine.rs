@@ -203,7 +203,9 @@ where
     T: RllmModelConfig + serde::de::DeserializeOwned,
 {
     let common = CommonModelConfig {
-        meta: ModelMeta { id: args.model_id.clone() },
+        meta: ModelMeta {
+            id: args.model_id.clone(),
+        },
         dtype: args.dtype,
         device: args.device.clone(),
     };
@@ -927,6 +929,9 @@ impl RllmEngine {
     ) -> Option<&'a T> {
         if let Some(r) = seqs.get(&seq.seq_id) {
             seq.aici_logs.push(r.clone_with(None));
+            if r.error.len() > 0 {
+                self.scheduler.finish_seq(seq, FinishReason::Failed);
+            }
             match &r.result {
                 Some(r) => Some(r),
                 None => None,
@@ -1031,7 +1036,9 @@ impl RllmEngine {
                 match &res.result {
                     Some(r) => {
                         if r.suspend {
-                            seq.sched_phase = SchedulingPhase::Suspended;
+                            if seq.sched_phase == SchedulingPhase::Running {
+                                seq.sched_phase = SchedulingPhase::Suspended;
+                            }
                             continue;
                         }
                         if r.num_forks == 0 {

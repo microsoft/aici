@@ -130,7 +130,15 @@ def completion(
                     w = s.get("WriteVar", None)
                     if w:
                         storage[w["name"]] = w["value"]
-                if idx == 0:
+                err = ch.get("error", "")
+                if err:
+                    print(f"*** Error in [{idx}]: {err}")
+                if log_level > 2:
+                    l = ch["logs"].rstrip("\n")
+                    if l:
+                        for ll in l.split("\n"):
+                            print(f"[{idx}]: {ll}")
+                elif idx == 0:
                     if log_level > 1:
                         l = ch["logs"].rstrip("\n")
                         if l:

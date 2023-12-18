@@ -7,7 +7,6 @@ use aici_abi::{
 use aici_tokenizers::Tokenizer;
 use aicirt::api::{AiciMidProcessResultInner, AiciPostProcessResultInner, SequenceResult};
 use anyhow::{anyhow, bail, ensure, Result};
-use log::warn;
 use serde::Deserialize;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -387,7 +386,7 @@ impl ModuleInstance {
         let storage = std::mem::take(&mut self.store.data_mut().storage_log);
         match res {
             Ok(r) => SequenceResult {
-                is_success: true,
+                error: String::new(),
                 logs,
                 storage,
                 micros,
@@ -395,11 +394,12 @@ impl ModuleInstance {
             },
 
             Err(e) => {
-                let suffix = format!("\nError: {:?}", e);
-                warn!("exec error ({lbl}):{}", suffix);
+                let error = format!("Error ({lbl}): {e:?}");
+                let logs = logs + "\n" + &error;
+                log::warn!("exec: {error}");
                 SequenceResult {
-                    is_success: false,
-                    logs: logs + &suffix,
+                    error,
+                    logs,
                     storage,
                     micros,
                     result: None,

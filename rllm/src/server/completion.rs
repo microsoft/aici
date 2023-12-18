@@ -200,6 +200,12 @@ impl futures::Stream for Client {
                                 .map(|e| e.logs.clone())
                                 .collect::<Vec<_>>()
                                 .join(""),
+                            error: choice
+                                .aici_logs
+                                .iter()
+                                .map(|e| e.error.clone())
+                                .collect::<Vec<_>>()
+                                .join(""),
                             storage: choice
                                 .aici_logs
                                 .iter()

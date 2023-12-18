@@ -601,9 +601,9 @@ class AiciRunner:
         micros = (
             pre.get("micros", 0.0) + mid.get("micros", 0.0) + post.get("micros", 0.0)
         )
-        is_success = pre.get("is_success", False) and mid.get("is_success", False) and post.get("is_success", False)
+        error = pre.get("error", "") + mid.get("error", "") + post.get("error", "")
         return {
-            "is_success": is_success,
+            "error": error,
             "storage": storage,
             "logs": logs,
             "micros": micros,

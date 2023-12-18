@@ -82,7 +82,7 @@ pub struct AiciPostOp {
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct SequenceResult<T = ()> {
-    pub is_success: bool,
+    pub error: String,
     pub result: Option<T>,
     // StorageCmd::ReadVar are not recorded
     pub storage: Vec<StorageCmd>,
@@ -93,7 +93,7 @@ pub struct SequenceResult<T = ()> {
 impl<T> SequenceResult<T> {
     pub fn clone_with<S>(&self, result: Option<S>) -> SequenceResult<S> {
         SequenceResult {
-            is_success: self.is_success,
+            error: self.error.clone(),
             result,
             storage: self.storage.clone(),
             logs: self.logs.clone(),
