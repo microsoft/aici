@@ -146,4 +146,5 @@ pub struct StreamingCompletionResponse {
     pub model: String,
     pub created: u64,
     pub choices: Vec<StreamingCompletionChoice>,
+    pub usage: ChatCompletionUsageResponse,
 }

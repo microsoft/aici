@@ -485,6 +485,8 @@ impl RllmEngine {
             arrival_time: Instant::now(),
             logits_processor,
             max_index: 0,
+            num_prompt_tokens: 0,
+            num_gen_tokens: 0,
         };
 
         self.scheduler.add_seq_group(sg);
@@ -787,6 +789,8 @@ impl RllmEngine {
                     out
                 })
                 .collect(),
+            num_gen_tokens: sg.num_gen_tokens,
+            num_prompt_tokens: sg.num_prompt_tokens,
             is_ambiguous: sg.logits_processor.num_ambiguous > 0,
             is_final,
         }
@@ -873,6 +877,8 @@ impl RllmEngine {
                 let q_len = seq.get_len() - seq.num_kv_computed;
                 assert!(q_len > 0); // TODO if it's 0, we can probably bump it up to 1 (re-compute)
                 let off = k_len - q_len;
+                sg.num_prompt_tokens += q_len;
+                sg.num_gen_tokens += 1;
                 for idx in off..off + q_len {
                     assert!(idx < max_seq);
                     positions.push(idx as i64);

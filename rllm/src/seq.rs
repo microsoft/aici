@@ -219,6 +219,8 @@ pub struct SequenceGroup {
     pub arrival_time: std::time::Instant,
     pub logits_processor: LogitsProcessor,
     pub max_index: usize,
+    pub num_prompt_tokens: usize,
+    pub num_gen_tokens: usize,
 }
 
 pub struct BatchInfo {
@@ -344,6 +346,8 @@ pub struct SeqOutput {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RequestOutput {
     pub request_id: String,
+    pub num_gen_tokens: usize,
+    pub num_prompt_tokens: usize,
     pub seq_outputs: Vec<SeqOutput>,
     pub is_final: bool,
     pub is_ambiguous: bool,

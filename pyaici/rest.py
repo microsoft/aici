@@ -108,6 +108,7 @@ def completion(
         "logs": logs,
         "raw_storage": storage,
         "error": None,
+        "usage": {}
     }
 
     for line in resp.iter_lines():
@@ -119,6 +120,8 @@ def completion(
         if decoded_line.startswith("data: {"):
             d = ujson.decode(decoded_line[6:])
             full_resp.append(d)
+            if "usage" in d:
+                res["usage"] = d["usage"]
             for ch in d["choices"]:
                 if "Previous WASM Error" in ch["logs"]:
                     res["error"] = "WASM error"

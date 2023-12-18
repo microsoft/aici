@@ -2,7 +2,8 @@ use crate::{get_unix_time, InferenceResult};
 
 use crate::openai::requests::CompletionRequest;
 use crate::openai::responses::{
-    APIError, CompletionResponse, StreamingCompletionChoice, StreamingCompletionResponse,
+    APIError, ChatCompletionUsageResponse, CompletionResponse, StreamingCompletionChoice,
+    StreamingCompletionResponse,
 };
 use crate::OpenAIServerData;
 
@@ -182,11 +183,18 @@ impl futures::Stream for Client {
     ) -> std::task::Poll<Option<Self::Item>> {
         self.rx.poll_recv(cx).map(|x| match x {
             Some(Ok(so)) => {
+                let completion_tokens = so.num_gen_tokens;
+                let prompt_tokens = so.num_prompt_tokens; // .saturating_sub(so.num_gen_tokens);
                 let r = StreamingCompletionResponse {
                     object: "text_completion",
                     id: so.request_id,
                     model: self.model.clone(),
                     created: get_unix_time(),
+                    usage: ChatCompletionUsageResponse {
+                        completion_tokens,
+                        prompt_tokens,
+                        total_tokens: completion_tokens + prompt_tokens,
+                    },
                     choices: so
                         .seq_outputs
                         .iter()
