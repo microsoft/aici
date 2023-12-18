@@ -342,7 +342,7 @@ impl SeqCtx {
                 let prompt_toks = if let Some(t) = prompt_toks {
                     t
                 } else {
-                    // TODO llama hack
+                    // TODO llama hack (doesn't apply in rllm)
                     let ps = &prompt_str.as_ref().unwrap();
                     let p = if ps.len() == 0 {
                         "<s>".to_string()
@@ -658,8 +658,24 @@ fn forker_dispatcher(
     wasm_ctx: WasmContext,
     shm: Shm,
 ) -> ! {
-    // TODO we should waitpid() children here, so they don't become zombies
     loop {
+        // wait for any children that might have exited to prevent zombies
+        loop {
+            let mut status = 0;
+            let pid = unsafe { libc::waitpid(-1, &mut status, libc::WNOHANG) };
+            if pid > 0 {
+                if libc::WIFEXITED(status) {
+                    let exit_code = libc::WEXITSTATUS(status);
+                    log::debug!("Child {} exited with code {}", pid, exit_code);
+                } else {
+                    log::debug!("Child {} exited or sth", pid);
+                }
+            } else {
+                // no (more) children; stop
+                break;
+            }
+        }
+
         let cmd = busy_recv(&cmdch, &wasm_ctx.limits.busy_wait_duration).unwrap();
         let cmd_id = cmd.id;
 
