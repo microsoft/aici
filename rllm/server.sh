@@ -1,7 +1,13 @@
 #!/bin/sh
 
-REL=--release
 REL=
+LOOP=
+
+if [ "$1" = loop ] ; then
+    REL=--release
+    LOOP=1
+    shift
+fi
 
 case "$1" in
   phi )
@@ -36,8 +42,18 @@ RUST_LOG=info \
     ./target/release/rllm-server \
     $ARGS "$@"
 else
+
+while : ; do
 RUST_BACKTRACE=1 \
 RUST_LOG=info,rllm=debug,aicirt=info \
     cargo run $REL --bin rllm-server -- \
     $ARGS "$@"
+if [ "$LOOP" = "" ] ; then
+    break
+else
+    echo "restarting..."
+    sleep 2
+fi
+done
+
 fi

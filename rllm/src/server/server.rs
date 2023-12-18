@@ -151,10 +151,14 @@ async fn tunnel_info(
     log::info!("user: {:?}", name);
     let url = "https://github.com/microsoft/aici/blob/main/proxy.md";
     let model = &data.model_config.meta.id;
-    let msg = format!("Model: {model}\n\nMore info at: {url}");
-    Ok(web::Json(serde_json::json!(
-        { "msg": msg }
-    )))
+    let msg = format!(r#"
+Model: {model}
+
+More info at: {url}"#);
+    Ok(web::Json(serde_json::json!({
+        "msg": msg,
+        "connection_string": "AICI_API_BASE=\"{website}/v1/#key={key}\""
+    })))
 }
 
 pub enum InferenceReq {
