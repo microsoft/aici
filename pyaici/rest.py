@@ -1,10 +1,38 @@
 import requests
 import ujson
+import os
+import urllib.parse
+
 from typing import Optional
 
-base_url = "http://127.0.0.1:8080/v1/"
+base_url = os.environ.get("AICI_API_BASE", "http://127.0.0.1:8080/v1/")
 log_level = 1
 ast_module = ""
+
+
+def _parse_base_url(base_url: str):
+    p = urllib.parse.urlparse(base_url)
+    key = ""
+    if p.fragment:
+        f = urllib.parse.parse_qs(p.fragment)
+        key = f.get("key", [""])[0]
+    r = urllib.parse.urlunparse(p._replace(fragment="", query=""))
+    if not r.endswith("/"):
+        r += "/"
+    return r, key
+
+
+def _headers() -> dict:
+    _, key = _parse_base_url(base_url)
+    if key:
+        return {"api-key": key}
+    else:
+        return {}
+
+
+def _mk_url(path: str) -> str:
+    pref, _ = _parse_base_url(base_url)
+    return pref + path
 
 
 def response_error(kind: str, resp: requests.Response):
@@ -28,7 +56,7 @@ def upload_module(file_path: str) -> str:
     if log_level > 0:
         print("upload module... ", end="")
     with open(file_path, "rb") as f:
-        resp = requests.post(base_url + "aici_modules", data=f)
+        resp = requests.post(_mk_url("aici_modules"), headers=_headers(), data=f)
         if resp.status_code == 200:
             dd = resp.json()
             mod_id = dd["module_id"]
@@ -61,7 +89,12 @@ def completion(
         "aici_arg": aici_arg,
         "ignore_eos": ignore_eos,
     }
-    resp = requests.post(base_url + "completions", json=json, stream=True)
+    resp = requests.post(
+        _mk_url("completions"),
+        headers=_headers(),
+        json=json,
+        stream=True,
+    )
     if resp.status_code != 200:
         raise response_error("completions", resp)
     texts = [""] * n

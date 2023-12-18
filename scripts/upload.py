@@ -164,7 +164,7 @@ def main():
     }
 
     if len(sys.argv) > 1 and sys.argv[1].endswith(".txt"):
-        pyaici.rest.log_level = 2
+        pyaici.rest.log_level = 1
         prompt = open(sys.argv[1]).read()
         ask_completion(
             prompt=prompt,
@@ -176,7 +176,7 @@ def main():
         return
 
     if len(sys.argv) > 1 and " " in sys.argv[1]:
-        pyaici.rest.log_level = 2
+        pyaici.rest.log_level = 1
         ask_completion(
             prompt=sys.argv[1],
             aici_module=None,
