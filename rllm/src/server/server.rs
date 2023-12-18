@@ -137,6 +137,13 @@ async fn models() -> Result<web::Json<openai::responses::List<openai::responses:
     ])))
 }
 
+#[actix_web::get("/ws-http-tunnel/info")]
+async fn tunnel_info() -> Result<web::Json<serde_json::Value>, APIError> {
+    Ok(web::Json(serde_json::json!(
+        { "msg": "More info at: https://github.com/microsoft/aici/blob/main/proxy.md" }
+    )))
+}
+
 pub enum InferenceReq {
     AddRequest(AddRequest),
 }
@@ -392,6 +399,7 @@ async fn main() -> () {
         App::new()
             .wrap(Logger::default())
             .service(models)
+            .service(tunnel_info)
             .service(completion::completions)
             .configure(|cfg| {
                 cfg.app_data(web::PayloadConfig::new(128 * 1024 * 1024))
