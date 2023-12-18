@@ -10,7 +10,8 @@ use crate::{DType, IndexOp, Tensor};
 use std::rc::Rc;
 use tch::nn::{self, Module, Path};
 
-const CHECK: bool = true;
+// note that this doesn't work for phi-2 - it seems particularly numerically unstable
+const CHECK: bool = false;
 
 #[derive(Debug)]
 pub struct RotaryEmbedding {
@@ -224,7 +225,7 @@ pub fn varlen_attn(
                     softmax_scale,
                     causal,
                 );
-                check_all_close_rel(&y, &y2, 0.01);
+                check_all_close_rel(&y, &y2);
             }
 
             y

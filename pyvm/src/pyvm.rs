@@ -24,7 +24,6 @@ struct ModuleState {
 
 unsafe impl Send for ModuleState {}
 
-// Define a global Mutex wrapped in a lazy_static
 lazy_static! {
     static ref GLOBAL_STATE: Mutex<ModuleState> = Mutex::new(ModuleState {
         cb_obj: None,

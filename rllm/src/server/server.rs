@@ -18,6 +18,7 @@ use rllm::{
     config::{ModelConfig, SamplingParams},
     iface::{AiciRtIface, AsyncCmdChannel},
     seq::RequestOutput,
+    util::apply_settings,
     AddRequest, DType, ExpectedGeneration, LoaderArgs, RllmEngine,
 };
 
@@ -100,9 +101,9 @@ pub struct Args {
     #[arg(long, short)]
     warmup: Option<String>,
 
-    /// Maximum absolute error allowed for any logit in tests. Max avg error is half this.
-    #[arg(long, default_value_t = 0.5)]
-    test_allowed_error: f32,
+    /// Set engine setting; try '--setting help' to list them
+    #[arg(long, short, name = "NAME=VALUE")]
+    setting: Vec<String>,
 }
 
 #[actix_web::post("/v1/aici_modules")]
@@ -235,8 +236,7 @@ fn run_tests(args: &Args, loader_args: LoaderArgs) {
     let mut engine = RllmEngine::load(loader_args).expect("failed to load model");
 
     for t in &args.test {
-        let exp = ExpectedGeneration::load(&PathBuf::from(t), args.test_allowed_error)
-            .expect("can't load test");
+        let exp = ExpectedGeneration::load(&PathBuf::from(t)).expect("can't load test");
         log::info!(
             "test {t}: {} tokens; {} logits",
             exp.output.len(),
@@ -264,7 +264,6 @@ fn spawn_inference_loop(
     let handle = handle_res.clone();
 
     // prep for move
-    let test_allowed_error = args.test_allowed_error;
     let profile_step = args.profile_step;
     let warmup = args.warmup.clone();
 
@@ -276,8 +275,7 @@ fn spawn_inference_loop(
         match warmup {
             Some(w) if w == "off" => {}
             Some(w) => {
-                let exp = ExpectedGeneration::load(&PathBuf::from(&w), test_allowed_error)
-                    .expect("can't load warmup");
+                let exp = ExpectedGeneration::load(&PathBuf::from(&w)).expect("can't load warmup");
                 log::info!(
                     "warmup {w}: {} tokens; {} logits",
                     exp.output.len(),
@@ -309,6 +307,14 @@ async fn main() -> () {
     setup_log();
 
     let mut args = Args::parse();
+
+    match apply_settings(&args.setting) {
+        Ok(_) => {}
+        Err(e) => {
+            eprintln!("{e}");
+            std::process::exit(101);
+        }
+    }
 
     let dtype = match args.dtype.as_str() {
         "bf16" => Some(DType::BFloat16),

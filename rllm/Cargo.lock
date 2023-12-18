@@ -2207,6 +2207,7 @@ dependencies = [
  "half",
  "hf-hub",
  "indicatif",
+ "lazy_static",
  "libc",
  "log",
  "memmap2",

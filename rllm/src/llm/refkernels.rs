@@ -109,7 +109,7 @@ pub fn varlen_attn(
         .reshape(&[num_heads, len_q, head_dim])
         .transpose(0, 1);
 
-        println!("attn0: {attn0:?}");
+        // println!("attn0: {attn0:?}");
 
         if false {
             let attn_cpu = Tensor::scaled_dot_product_attention(
@@ -125,7 +125,7 @@ pub fn varlen_attn(
             .reshape(&[num_heads, len_q, head_dim])
             .transpose(0, 1);
 
-            check_all_close_rel(&attn_cpu, &attn0, 0.01);
+            check_all_close_rel(&attn_cpu, &attn0);
         }
 
         assert!(!attn0.max().double_value(&[]).is_nan());

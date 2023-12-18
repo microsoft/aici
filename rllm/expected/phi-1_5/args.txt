@@ -1,1 +1,2 @@
---model microsoft/phi-1_5@refs/pr/66 --tokenizer phi --test-allowed-error 0.2
+--model microsoft/phi-1_5@refs/pr/66 --tokenizer phi
+-s test_maxtol=0.05 -s test_avgtol=0.01

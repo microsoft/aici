@@ -1,6 +1,6 @@
 use crate::{
     config::ModelType,
-    util::{to_vec1, to_vec2},
+    util::{to_vec1, to_vec2, get_setting},
     DType, Device, IndexOp, Tensor,
 };
 use aici_abi::toktree::TokTrie;
@@ -55,7 +55,7 @@ pub struct ExpectedToken {
 pub struct ExpectedGeneration {
     pub prompt: Vec<Token>,
     pub output: Vec<ExpectedToken>,
-    pub allowed_error: f32,
+    pub ff_sections: Vec<(usize, usize)>,
 }
 
 fn read_tensor(s: &safetensors::SafeTensors, name: &str) -> Result<Tensor> {
@@ -84,7 +84,7 @@ fn kind_from_dt(dtype: Dtype) -> Kind {
 }
 
 impl ExpectedGeneration {
-    pub fn load(f: &PathBuf, allowed_error: f32) -> Result<Self> {
+    pub fn load(f: &PathBuf) -> Result<Self> {
         let fp = std::fs::File::open(f)?;
         let content = unsafe { memmap2::MmapOptions::new().map(&fp)? };
         let s = safetensors::SafeTensors::deserialize(&content)?;
@@ -101,8 +101,8 @@ impl ExpectedGeneration {
         assert!(prob_mass.len() == num_tokens);
 
         Ok(ExpectedGeneration {
-            allowed_error,
             prompt: prompt.into_iter().map(|x| x as Token).collect(),
+            ff_sections: Vec::new(),
             output: (0..num_tokens)
                 .map(|i| ExpectedToken {
                     sampled: output[i] as Token,
@@ -595,10 +595,10 @@ impl RllmEngine {
         }
     }
 
-    fn check_expected(&mut self, logits: &Tensor, req_id: &str, seq: &Sequence) -> Token {
+    fn check_expected(&mut self, logits: &Tensor, req_id: &str, seq: &mut Sequence) -> Token {
         let exp = seq.expected.as_ref().unwrap();
         let idx = seq.get_len() - exp.prompt.len();
-        if idx >= exp.output.len() {
+        let mut next_token = if idx >= exp.output.len() {
             self.eos_token_id
         } else {
             let out = &exp.output[idx];
@@ -620,18 +620,20 @@ impl RllmEngine {
                 // zero it out for the "unmentioned" test below
                 logits[*t as usize] = 0.0;
             }
+
+            let max_allowed_err = get_setting("test_maxtol") as f32;
+            let avg_allowed_err = get_setting("test_avgtol") as f32;
             let avg_err = sum_err / out.logits.len() as f32;
-            let avg_allowed_err = exp.allowed_error * 0.5;
             log::debug!("exp #{idx} in {req_id}: avg_err:{avg_err:.4} max_err:{max_err:.4}");
-            if max_err > exp.allowed_error {
-                log::error!("max error too large: {max_err} > {}", exp.allowed_error);
+            if max_err > max_allowed_err {
+                log::error!("max error too large: {max_err} > {}", max_allowed_err);
                 self.num_errors += 1;
             } else if avg_err > avg_allowed_err {
                 log::error!("avg error too large: {avg_err} > {avg_allowed_err}");
                 self.num_errors += 1;
             }
 
-            let limit = min_logit + exp.allowed_error;
+            let limit = min_logit + max_allowed_err;
             let l_act = logits.into_iter().max_by(f32::total_cmp).unwrap();
             if l_act > limit {
                 log::error!("unmentioned entry too large: {l_act} > {limit}");
@@ -639,7 +641,23 @@ impl RllmEngine {
             }
 
             out.sampled
+        };
+
+        if let Some((_, end_idx)) = exp
+            .ff_sections
+            .iter()
+            .find(|(start_idx, _)| *start_idx == idx)
+            .clone()
+        {
+            let mut toks = exp.output[idx..*end_idx]
+                .iter()
+                .map(|e| e.sampled)
+                .collect::<Vec<_>>();
+            next_token = toks.pop().unwrap();
+            seq.append_tokens(&toks);
         }
+
+        next_token
     }
 
     fn generate_outputs(
