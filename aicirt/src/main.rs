@@ -90,6 +90,10 @@ struct Cli {
     #[arg(long, default_value = "200")]
     busy_wait_time: u64,
 
+    /// Maximum number of concurrent forks of a WASM module in a single request
+    #[arg(long, default_value = "16")]
+    wasm_max_forks: usize,
+
     /// Maximum size of WASM module memory in megabytes
     #[arg(long, default_value = "64")]
     wasm_max_memory: usize,
@@ -379,6 +383,14 @@ impl Stepper {
                 "duplicate id {id} (cloning {parent_id})"
             );
             let parent = self.get_worker(parent_id)?;
+            let num_forks = self
+                .instances
+                .values()
+                .filter(|r| r.req_id == parent.req_id)
+                .count();
+            if num_forks + 1 > self.limits.max_forks {
+                anyhow::bail!("too many forks (max={})", self.limits.max_forks)
+            }
             info!("fork {} -> ({})", parent_id, id);
             // TODO the forks should be done in parallel, best in tree-like fashion
             let h = parent.fork(id)?;
@@ -515,36 +527,44 @@ impl Stepper {
 
     fn aici_mid_process(&mut self, req: AiciMidProcessReq) -> Result<AiciMidProcessResp> {
         let block_elts = self.globals.tokrx_info.vocab_size as usize;
+        let mut outputs = HashMap::new();
 
         // first, execute forks
         let mut parents = HashMap::new();
         let mut child_lists = HashMap::new();
+
         for op in req.ops.iter() {
             let id = op.id;
-            let parent_id = self.maybe_fork(id, op.clone_id)?;
-            child_lists
-                .entry(parent_id)
-                .or_insert_with(Vec::new)
-                .push(id);
-            parents.insert(id, parent_id);
+            match self.maybe_fork(id, op.clone_id) {
+                Ok(parent_id) => {
+                    child_lists
+                        .entry(parent_id)
+                        .or_insert_with(Vec::new)
+                        .push(id);
+                    parents.insert(id, parent_id);
+                }
+                Err(e) => {
+                    self.worker_error(id, &mut outputs, e);
+                }
+            }
         }
 
-        let numops = req.ops.len();
+        let num_seqs = req.ops.len();
         let logit_size = block_elts * 4;
 
         ensure!(
-            self.limits.logit_memory_bytes > numops * logit_size,
+            self.limits.logit_memory_bytes > num_seqs * logit_size,
             "shm size too small"
         );
 
         let mut logit_offset = 0;
         let mut used_ids = Vec::new();
-        let mut outputs = HashMap::new();
 
         // initialize shm
-        let slice = self.shm.slice_at_byte_offset::<f32>(0, numops * block_elts);
+        let slice = self
+            .shm
+            .slice_at_byte_offset::<f32>(0, num_seqs * block_elts);
         slice.iter_mut().for_each(|v| *v = 0.0);
-        let num_seqs = req.ops.len();
 
         for op in req.ops.into_iter() {
             let instid = op.id;
@@ -566,7 +586,7 @@ impl Stepper {
                     Err(e) => self.worker_error(instid, &mut outputs, e),
                 };
             } else {
-                warn!("invalid id {}", instid);
+                info!("invalid id {}", instid);
             }
             logit_offset += logit_size;
         }
@@ -667,12 +687,13 @@ impl Stepper {
         map: &mut HashMap<usize, SequenceResult<T>>,
         e: anyhow::Error,
     ) {
-        warn!("worker error: {e:?}");
+        let err = format!("Worker: {e:?}");
+        warn!("error: {err}");
         map.insert(
             instid,
             SequenceResult {
-                is_success: false,
-                logs: format!("{e:?}"),
+                error: err.clone(),
+                logs: err.clone(),
                 storage: vec![],
                 micros: 0,
                 result: None,
@@ -979,6 +1000,7 @@ fn main() -> () {
         max_pre_step_ms: cli.wasm_max_pre_step_time,
         logit_memory_bytes: cli.bin_size * MEGABYTE,
         busy_wait_duration: Duration::from_millis(cli.busy_wait_time),
+        max_forks: cli.wasm_max_forks,
     };
 
     if cli.bench {

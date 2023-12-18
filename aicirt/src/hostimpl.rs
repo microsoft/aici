@@ -20,6 +20,7 @@ pub struct AiciLimits {
     pub max_init_ms: u64,
     pub logit_memory_bytes: usize,
     pub busy_wait_duration: Duration,
+    pub max_forks: usize,
 }
 
 type ModuleInstId = crate::api::ModuleInstId;
