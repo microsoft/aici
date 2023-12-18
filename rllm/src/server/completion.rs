@@ -152,7 +152,10 @@ async fn completions(
         HttpResponse::Ok()
             .append_header(("content-type", "text/event-stream"))
             //.no_chunking(asdf)
-            .streaming(Client(rx)),
+            .streaming(Client {
+                rx,
+                model: data.model_config.meta.id.clone(),
+            }),
     );
 
     // Either::Left(Ok(web::Json(CompletionResponse {
@@ -165,7 +168,10 @@ async fn completions(
     // })))
 }
 
-struct Client(Receiver<InferenceResult>);
+struct Client {
+    rx: Receiver<InferenceResult>,
+    model: String,
+}
 
 impl futures::Stream for Client {
     type Item = Result<Bytes, APIError>;
@@ -174,12 +180,12 @@ impl futures::Stream for Client {
         mut self: std::pin::Pin<&mut Self>,
         cx: &mut std::task::Context<'_>,
     ) -> std::task::Poll<Option<Self::Item>> {
-        self.0.poll_recv(cx).map(|x| match x {
+        self.rx.poll_recv(cx).map(|x| match x {
             Some(Ok(so)) => {
                 let r = StreamingCompletionResponse {
                     object: "text_completion",
                     id: so.request_id,
-                    model: "current".to_string(),
+                    model: self.model.clone(),
                     created: get_unix_time(),
                     choices: so
                         .seq_outputs

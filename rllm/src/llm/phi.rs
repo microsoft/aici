@@ -1,9 +1,9 @@
 use crate::{
-    llm::{extract_positions, layer_norm, linear, varlen_attn, RotaryEmbedding},
-    config::{ModelConfig, ModelType},
+    config::{CommonModelConfig, ModelConfig, ModelType},
     engine::{RllmModel, RllmModelConfig},
+    llm::{extract_positions, layer_norm, linear, varlen_attn, RotaryEmbedding},
     seq::BatchInfo,
-    DType, Device, Tensor,
+    Tensor,
 };
 use serde::Deserialize;
 use std::rc::Rc;
@@ -32,9 +32,10 @@ pub struct PhiConfig {
 }
 
 impl RllmModelConfig for PhiConfig {
-    fn into_config(self, dtype: Option<DType>, device: Device) -> ModelConfig {
+    fn into_config(self, common: CommonModelConfig) -> ModelConfig {
         ModelConfig {
             model_type: ModelType::Phi,
+            meta: common.meta,
             hidden_size: self.n_embd,
             intermediate_size: self.n_inner.unwrap_or(4 * self.n_embd),
             vocab_size: self.vocab_size,
@@ -47,8 +48,8 @@ impl RllmModelConfig for PhiConfig {
             max_sequence_length: self.n_positions,
             head_dim: self.n_embd / self.n_head,
             rotary_dim: self.rotary_dim,
-            dtype: ModelConfig::dtype_from_str(dtype, &self.torch_dtype),
-            device,
+            dtype: ModelConfig::dtype_from_str(common.dtype, &self.torch_dtype),
+            device: common.device,
         }
     }
 }

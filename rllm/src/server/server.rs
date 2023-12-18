@@ -125,14 +125,16 @@ async fn upload_aici_module(
 }
 
 #[actix_web::get("/v1/models")]
-async fn models() -> Result<web::Json<openai::responses::List<openai::responses::Model>>, APIError>
-{
+async fn models(
+    data: web::Data<OpenAIServerData>,
+) -> Result<web::Json<openai::responses::List<openai::responses::Model>>, APIError> {
+    let id = data.model_config.meta.id.clone();
     Ok(web::Json(openai::responses::List::new(vec![
         openai::responses::Model {
             object: "model",
-            id: "test".to_string(),
-            created: 1686935002,
-            owned_by: "you".to_string(),
+            id,
+            created: 946810800,
+            owned_by: "owner".to_string(),
         },
     ])))
 }
@@ -140,14 +142,18 @@ async fn models() -> Result<web::Json<openai::responses::List<openai::responses:
 #[actix_web::get("/ws-http-tunnel/info")]
 async fn tunnel_info(
     req: actix_web::HttpRequest,
+    data: web::Data<OpenAIServerData>,
 ) -> Result<web::Json<serde_json::Value>, APIError> {
     let name = req
         .headers()
         .get("x-user-name")
         .map_or("(no header)", |v| v.to_str().unwrap_or("(invalid header)"));
     log::info!("user: {:?}", name);
+    let url = "https://github.com/microsoft/aici/blob/main/proxy.md";
+    let model = &data.model_config.meta.id;
+    let msg = format!("Model: {model}\n\nMore info at: {url}");
     Ok(web::Json(serde_json::json!(
-        { "msg": "More info at: https://github.com/microsoft/aici/blob/main/proxy.md" }
+        { "msg": msg }
     )))
 }
 

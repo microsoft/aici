@@ -74,9 +74,21 @@ pub enum ModelType {
     Phi,
 }
 
+pub struct CommonModelConfig {
+    pub meta: ModelMeta,
+    pub device: Device,
+    pub dtype: Option<DType>,
+}
+
+#[derive(Debug, Clone)]
+pub struct ModelMeta {
+    pub id: String,
+}
+
 #[derive(Debug, Clone)]
 pub struct ModelConfig {
     pub model_type: ModelType,
+    pub meta: ModelMeta,
 
     pub num_attention_heads: usize,
     pub hidden_size: usize, // head_dim * num_attention_heads

@@ -1,5 +1,5 @@
 use crate::{
-    config::ModelType,
+    config::{CommonModelConfig, ModelMeta, ModelType},
     util::{get_setting, to_vec1, to_vec2},
     DType, Device, IndexOp, Tensor,
 };
@@ -190,7 +190,7 @@ pub trait RllmModel {
 }
 
 pub trait RllmModelConfig {
-    fn into_config(self, dtype: Option<DType>, device: Device) -> ModelConfig;
+    fn into_config(self, common: CommonModelConfig) -> ModelConfig;
 }
 
 fn load_one_config<T>(
@@ -202,9 +202,14 @@ fn load_one_config<T>(
 where
     T: RllmModelConfig + serde::de::DeserializeOwned,
 {
+    let common = CommonModelConfig {
+        meta: ModelMeta { id: args.model_id.clone() },
+        dtype: args.dtype,
+        device: args.device.clone(),
+    };
     let json = serde_json::from_slice::<T>(bytes);
     if let Ok(json) = json {
-        Some(json.into_config(args.dtype, args.device))
+        Some(json.into_config(common))
     } else {
         *err += &format!("{name}: {}\n", json.err().unwrap());
         None
