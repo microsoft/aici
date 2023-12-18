@@ -865,6 +865,8 @@ impl RllmEngine {
 
         let max_seq = self.scheduler.config.model.max_sequence_length;
 
+        assert!(sched_out.next_seq_groups.len() > 0);
+
         for sg in sched_out.next_seq_groups.iter_mut() {
             for seq in sg.seqs.iter_mut() {
                 if seq.sched_phase != SchedulingPhase::Running {
@@ -892,6 +894,8 @@ impl RllmEngine {
                 seqlens_k.push(k_len);
             }
         }
+
+        assert!(seqlens_q.len() > 0);
 
         let device = self.device;
         let (max_seqlen_q, seqlens_q) = to_offsets(&seqlens_q, device);
@@ -1061,6 +1065,29 @@ impl RllmEngine {
                         }
                     }
                     None => {}
+                }
+            }
+
+            let mut num_susp = 0;
+            let mut num_running = 0;
+
+            for seq in sg.seqs.iter() {
+                match seq.sched_phase {
+                    SchedulingPhase::Waiting
+                    | SchedulingPhase::Running
+                    | SchedulingPhase::Swapped => {
+                        num_running += 1;
+                    }
+                    SchedulingPhase::Suspended => {
+                        num_susp += 1;
+                    }
+                    SchedulingPhase::Finished(_) => {}
+                }
+            }
+
+            if num_running == 0 && num_susp > 0 {
+                for seq in sg.seqs.iter_mut() {
+                    self.scheduler.finish_seq(seq, FinishReason::Deadlock);
                 }
             }
         });

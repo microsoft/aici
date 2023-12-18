@@ -22,6 +22,8 @@ pub enum FinishReason {
     Aborted,
     /// The scheduler didn't like the sequence.
     Failed,
+    /// All sequences in the group are suspended.
+    Deadlock,
 }
 
 impl FinishReason {
@@ -32,6 +34,7 @@ impl FinishReason {
             FinishReason::Aborted => "abort",
             FinishReason::Failed => "fail",
             FinishReason::AiciStop => "aici",
+            FinishReason::Deadlock => "deadlock",
         };
         r.to_string()
     }

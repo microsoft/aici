@@ -3,10 +3,11 @@ use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use std::vec::Vec;
 
+use aicirt::api::SequenceResult;
 use log::warn;
 
-use crate::paged::blocks::BlockSpaceManager;
 use crate::config::RllmConfig;
+use crate::paged::blocks::BlockSpaceManager;
 use crate::seq::{FinishReason, SchedulingPhase, SeqId, Sequence, SequenceGroup};
 use crate::util::limit_str;
 
@@ -41,6 +42,13 @@ impl SchedulerOutputs {
         // swapping not impl yet
         assert!(self.blocks_to_swap_in.is_empty());
         assert!(self.blocks_to_swap_out.is_empty());
+
+        self.dropped_seq_groups.iter().for_each(|sg| {
+            assert!(sg.is_finished());
+        });
+        self.next_seq_groups.iter().for_each(|sg| {
+            assert!(!sg.is_finished());
+        });
     }
     pub fn is_empty(&self) -> bool {
         // We do not consider the ignored sequence groups.
@@ -400,6 +408,12 @@ impl Scheduler {
     pub fn finish_seq(&self, seq: &mut Sequence, reason: FinishReason) {
         if seq.is_finished() {
             return;
+        }
+        if reason != FinishReason::AiciStop && seq.has_aici {
+            seq.aici_logs.push(SequenceResult::from_error(format!(
+                "Abnormal finish: {:?}",
+                reason
+            )))
         }
         seq.sched_phase = SchedulingPhase::Finished(reason);
         self.freed_seq_ids.borrow_mut().push(seq.seq_id);

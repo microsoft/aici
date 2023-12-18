@@ -689,16 +689,7 @@ impl Stepper {
     ) {
         let err = format!("Worker: {e:?}");
         warn!("error: {err}");
-        map.insert(
-            instid,
-            SequenceResult {
-                error: err.clone(),
-                logs: err.clone(),
-                storage: vec![],
-                micros: 0,
-                result: None,
-            },
-        );
+        map.insert(instid, SequenceResult::from_error(err));
         self.instances.remove(&instid);
     }
 }

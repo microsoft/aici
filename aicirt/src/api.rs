@@ -91,6 +91,15 @@ pub struct SequenceResult<T = ()> {
 }
 
 impl<T> SequenceResult<T> {
+    pub fn from_error(error: String) -> SequenceResult<T> {
+        SequenceResult {
+            logs: error.clone(),
+            error,
+            result: None,
+            storage: vec![],
+            micros: 0,
+        }
+    }
     pub fn clone_with<S>(&self, result: Option<S>) -> SequenceResult<S> {
         SequenceResult {
             error: self.error.clone(),
