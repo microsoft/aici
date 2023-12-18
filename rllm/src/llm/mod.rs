@@ -4,7 +4,7 @@ pub mod logits;
 pub mod phi;
 pub mod refkernels;
 
-use crate::util::{check_all_close, check_all_close_rel};
+use crate::util::{check_all_close, check_all_close_attn};
 use crate::{config::ModelConfig, seq::BatchInfo};
 use crate::{DType, IndexOp, Tensor};
 use std::rc::Rc;
@@ -225,7 +225,7 @@ pub fn varlen_attn(
                     softmax_scale,
                     causal,
                 );
-                check_all_close_rel(&y, &y2);
+                check_all_close_attn(&y, &y2);
             }
 
             y

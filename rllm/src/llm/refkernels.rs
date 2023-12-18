@@ -1,4 +1,4 @@
-use crate::util::{check_all_close_rel, to_vec1};
+use crate::util::{check_all_close_attn, to_vec1};
 use std::collections::HashMap;
 use tch::{IndexOp, Kind, Tensor};
 
@@ -135,7 +135,7 @@ pub fn varlen_attn(
             .reshape(&[num_heads, len_q, head_dim])
             .transpose(0, 1);
 
-            check_all_close_rel(&attn_cpu, &attn0);
+            check_all_close_attn(&attn_cpu, &attn0);
         }
 
         assert!(!attn0.max().double_value(&[]).is_nan());

@@ -79,7 +79,7 @@ pub fn limit_bytes(s: &[u8], max_len: usize) -> String {
     }
 }
 
-pub fn check_all_close_rel(t1: &Tensor, t2: &Tensor) {
+pub fn check_all_close_attn(t1: &Tensor, t2: &Tensor) {
     assert!(t1.size() == t2.size());
 
     let rtol = get_setting("attn_rtol");
