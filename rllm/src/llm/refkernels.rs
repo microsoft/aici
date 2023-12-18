@@ -76,6 +76,8 @@ pub fn varlen_attn(
 
     let (_batch_size_q, num_heads, head_dim) = q.size3().unwrap();
 
+    assert!(causal == true);
+
     // flash-attn expects (seq_len, nheads, head_dim)
 
     let mut attns = Vec::with_capacity(batch_size);
@@ -109,7 +111,7 @@ pub fn varlen_attn(
             &q,
             &k,
             &v,
-            Some(attn_bias),
+            Some(&attn_bias),
             0.0,
             false,
             softmax_scale,
@@ -124,9 +126,9 @@ pub fn varlen_attn(
                 &q.to_dtype_layout((tch::Kind::Float, tch::Device::Cpu), false, true),
                 &k.to_dtype_layout((tch::Kind::Float, tch::Device::Cpu), false, true),
                 &v.to_dtype_layout((tch::Kind::Float, tch::Device::Cpu), false, true),
-                None::<&Tensor>,
+                Some(attn_bias.to_dtype_layout((tch::Kind::Float, tch::Device::Cpu), false, true)),
                 0.0,
-                if len_q == 1 { false } else { causal },
+                false,
                 softmax_scale,
             )
             .to_dtype_layout((q.kind(), q.device()), false, true)
