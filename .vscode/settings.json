@@ -4,7 +4,6 @@
     },
     "python.formatting.provider": "none",
     "rust-analyzer.linkedProjects": [
-        "candle-flash-attn/Cargo.toml",
         "tch-flash-attn/Cargo.toml",
         "rllm/Cargo.toml",
         "aicirt/Cargo.toml",
