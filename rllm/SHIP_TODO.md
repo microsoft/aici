@@ -1,9 +1,6 @@
 ## AICIrt
-* [x] limit number of forks
-* [x] compile WASM out of process with memory and time limit
-* [x] limit log size
-* [x] figure out log storage
 
 ## rLLM
-* [x] limit runtime of requests
-* [ ] periodic GC of reqs?
+* [ ] load-test
+* [ ] swap to CPU
+* [ ] auto-detect GPU cache size
