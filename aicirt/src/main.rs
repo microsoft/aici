@@ -199,7 +199,7 @@ impl ModuleRegistry {
             Err(e) => {
                 let wasm_bytes = fs::read(self.wasm_path(module_id))?;
                 log::info!("compiling {}; {}", module_id, e);
-                let compiled = self.wasm_ctx.engine.precompile_module(&wasm_bytes)?;
+                let compiled = self.forker.lock().unwrap().compile(wasm_bytes)?;
                 fs::write(self.elf_path(module_id), compiled)?;
                 // make sure we can deserialize it
                 let _ = self.wasm_ctx.deserialize_module(self.elf_path(module_id))?;
@@ -986,6 +986,7 @@ fn main() -> () {
         max_init_ms: cli.wasm_max_init_time,
         max_step_ms: cli.wasm_max_step_time,
         max_pre_step_ms: cli.wasm_max_pre_step_time,
+        max_compile_ms: 10_000,
         logit_memory_bytes: cli.bin_size * MEGABYTE,
         busy_wait_duration: Duration::from_millis(cli.busy_wait_time),
         max_forks: cli.wasm_max_forks,
@@ -1024,22 +1025,11 @@ fn main() -> () {
         std::process::exit(1);
     }
 
-    let num_cores: usize = std::thread::available_parallelism().unwrap().into();
-    let num_bg_threads = BG_THREADS_FRACTION * num_cores / 100;
-
-    log::info!(
-        "rayon with {} bg workers ({} cores)",
-        num_bg_threads,
-        num_cores
-    );
-
-    rayon::ThreadPoolBuilder::new()
-        .num_threads(num_bg_threads)
-        .start_handler(|_| set_priority(ThreadPriority::Min))
-        .build_global()
-        .unwrap();
-
     let reg = ModuleRegistry::new(wasm_ctx, bin_shm).unwrap();
+
+    // needs to be done after WorkerForker is spawned
+    setup_bg_worker_pool();
+
     let debug_shm = Shm::new(
         &MessageChannel::shm_name(&cli.prefixed_name("bin", "")),
         limits.logit_memory_bytes,
@@ -1056,4 +1046,19 @@ fn main() -> () {
     set_priority(ThreadPriority::Max);
     let exec_disp = CmdRespChannel::new("", &cli).unwrap();
     exec_disp.dispatch_loop(exec);
+}
+
+pub fn setup_bg_worker_pool() {
+    let num_cores: usize = std::thread::available_parallelism().unwrap().into();
+    let num_bg_threads = BG_THREADS_FRACTION * num_cores / 100;
+    log::debug!(
+        "rayon with {} bg workers ({} cores)",
+        num_bg_threads,
+        num_cores
+    );
+    rayon::ThreadPoolBuilder::new()
+        .num_threads(num_bg_threads)
+        .start_handler(|_| set_priority(ThreadPriority::Min))
+        .build_global()
+        .unwrap();
 }

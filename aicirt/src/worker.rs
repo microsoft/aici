@@ -15,13 +15,13 @@ use libc::pid_t;
 use serde::{Deserialize, Serialize};
 
 use crate::bench::{TimerRef, TimerSet};
-use crate::with_timer;
 use crate::{
     hostimpl::AiciLimits,
     moduleinstance::{ModuleInstance, WasmContext},
     shm::Shm,
     InstantiateReq,
 };
+use crate::{setup_bg_worker_pool, with_timer};
 
 const QUICK_OP_MS: u64 = 10;
 
@@ -103,6 +103,7 @@ pub type GroupHandle = ProcessHandle<GroupCmd, GroupResp>;
 #[derive(Serialize, Deserialize, Debug)]
 struct ForkerCmd {
     id: String,
+    for_compile: bool,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -155,6 +156,9 @@ enum SeqCmd {
         data: RtPostProcessArg,
     },
     RunMain {},
+    Compile {
+        wasm: Vec<u8>,
+    },
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -197,6 +201,9 @@ enum SeqResp {
     PostProcess {
         json: String,
     },
+    Compile {
+        binary: Vec<u8>,
+    },
     Error {
         msg: String,
     },
@@ -237,9 +244,10 @@ where
         match self.recv_with_timeout_inner(timeout) {
             Ok(r) => Ok(r),
             Err(e) => {
-                if e.to_string().starts_with("timeout ") {
+                let second_try = Duration::from_millis(200);
+                if timeout < second_try && e.to_string().starts_with("timeout ") {
                     log::warn!("{e:?}");
-                    self.recv_with_timeout_inner(Duration::from_millis(200))
+                    self.recv_with_timeout_inner(second_try)
                 } else {
                     Err(e)
                 }
@@ -294,6 +302,18 @@ fn ok() -> Result<SeqResp> {
 impl SeqCtx {
     fn dispatch_one(&mut self, cmd: SeqCmd) -> Result<SeqResp> {
         match cmd {
+            SeqCmd::Compile { wasm } => {
+                let inp_len = wasm.len();
+                let start_time = Instant::now();
+                let binary = self.wasm_ctx.engine.precompile_module(&wasm)?;
+                log::info!(
+                    "WASM compile done; {}k -> {}k; {:?}",
+                    inp_len / 1024,
+                    binary.len() / 1024,
+                    Instant::now() - start_time
+                );
+                Ok(SeqResp::Compile { binary })
+            }
             SeqCmd::Fork { inst_id } => {
                 match fork_child(&self.wasm_ctx.limits)? {
                     ForkResult::Parent { handle } => {
@@ -677,6 +697,7 @@ fn forker_dispatcher(
 
         let cmd = busy_recv(&cmdch, &wasm_ctx.limits.busy_wait_duration).unwrap();
         let cmd_id = cmd.id;
+        let for_compile = cmd.for_compile;
 
         // fork the seq worker first
         match fork_child(&wasm_ctx.limits).unwrap() {
@@ -684,24 +705,30 @@ fn forker_dispatcher(
                 cmd_resp.send(ForkerResp(handle)).unwrap();
             }
             ForkResult::Child { cmd, cmd_resp } => {
+                let pre_timer = wasm_ctx.timers.new_timer("pre_outer");
+                let mut w_ctx = SeqCtx {
+                    id: cmd_id,
+                    cmd,
+                    cmd_resp,
+                    wasm_ctx,
+                    shm: Rc::new(shm),
+                    query: None,
+                    inst_id: 424242,
+                    modinst: None,
+                    pre_timer,
+                };
+
+                if for_compile {
+                    setup_bg_worker_pool();
+                    w_ctx.dispatch_loop();
+                }
+
                 // and the seq worker then forks the communication process
                 // this way we don't have to send query_handle to the seq worker
                 // (inheriting it from fork doesn't work on macOS)
-                match fork_child(&wasm_ctx.limits).unwrap() {
+                match fork_child(&w_ctx.wasm_ctx.limits).unwrap() {
                     ForkResult::Parent { handle } => {
-                        let query_handle = handle;
-                        let pre_timer = wasm_ctx.timers.new_timer("pre_outer");
-                        let mut w_ctx = SeqCtx {
-                            id: cmd_id,
-                            cmd,
-                            cmd_resp,
-                            wasm_ctx,
-                            shm: Rc::new(shm),
-                            query: Some(query_handle),
-                            inst_id: 424242,
-                            modinst: None,
-                            pre_timer,
-                        };
+                        w_ctx.query = Some(handle);
                         w_ctx.dispatch_loop()
                     }
                     ForkResult::Child { cmd, cmd_resp } => {
@@ -709,7 +736,7 @@ fn forker_dispatcher(
                             variables: HashMap::new(),
                             workers: HashMap::new(),
                             cb_set: IpcReceiverSet::new().unwrap(),
-                            limits: wasm_ctx.limits,
+                            limits: w_ctx.wasm_ctx.limits,
                         };
                         grp_ctx.add_worker(cmd, cmd_resp);
                         grp_ctx.dispatch_loop()
@@ -832,6 +859,7 @@ impl WorkerForker {
 
         let resp = self.fork_worker.send_cmd(ForkerCmd {
             id: req.req_id.clone(),
+            for_compile: false,
         })?;
         let res = SeqWorkerHandle {
             req_id: req.req_id.clone(),
@@ -852,6 +880,27 @@ impl WorkerForker {
                 Ok((res, r))
             }
             r => Err(anyhow!("unexpected response (init prompt) {r:?}")),
+        }
+    }
+
+    pub fn compile(&self, wasm: Vec<u8>) -> Result<Vec<u8>> {
+        let id = "compile".to_string();
+        let resp = self.fork_worker.send_cmd(ForkerCmd {
+            id: id.clone(),
+            for_compile: true,
+        })?;
+
+        // res.drop() kills handle
+        let res = SeqWorkerHandle {
+            req_id: id.clone(),
+            handle: resp.0,
+        };
+        match res.handle.send_cmd_with_timeout(
+            SeqCmd::Compile { wasm },
+            Duration::from_millis(self.limits.max_compile_ms),
+        )? {
+            SeqResp::Compile { binary } => Ok(binary),
+            r => Err(anyhow!("unexpected response (compile) {r:?}")),
         }
     }
 }
