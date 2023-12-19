@@ -1,7 +1,7 @@
 use crate::{
     config::{CommonModelConfig, ModelMeta, ModelType},
     seq::TokenUsage,
-    util::{get_setting, to_vec1, to_vec2},
+    util::{get_setting, log_mem_stats, reset_mem_stats, to_vec1, to_vec2},
     DType, Device, IndexOp, Tensor,
 };
 use aici_abi::toktree::TokTrie;
@@ -350,8 +350,13 @@ impl RllmEngine {
             .collect::<Result<Vec<_>>>()?;
 
         log::info!("building the model");
+
         let eos_token_id = tok_trie.info().tok_eos;
         let space_token_id = tok_trie.greedy_tokenize(b" ")[0];
+
+        let _ = Tensor::zeros(&[1], (model_config.dtype, device));
+        reset_mem_stats(device);
+        log_mem_stats("initial", device);
 
         let mut vs = VarStore::new(device.clone());
 
@@ -415,6 +420,7 @@ impl RllmEngine {
         bar.finish();
 
         log::info!("model loaded");
+        log_mem_stats("model fully loaded", device);
 
         let rllm_config = Arc::new(rllm_config);
         let scheduler = Scheduler::new(rllm_config.clone());
