@@ -9,8 +9,12 @@ async def fork_bomb():
 
 
 async def deadlock():
-    await aici.FixedTokens("The value of")
-    await aici.gen_text(max_tokens=1)
     await aici.wait_vars("foo")
 
-aici.test(deadlock())
+
+async def burn_tokens():
+    id = await aici.fork(10)
+    await aici.FixedTokens(f"The value of {id} in the universe is and everything is ")
+    await aici.gen_text(max_tokens=200, store_var=f"foo{id}")
+
+aici.test(burn_tokens())

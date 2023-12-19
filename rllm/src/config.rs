@@ -13,18 +13,16 @@ pub struct RllmConfig {
     pub parallel: ParallelConfig,
     pub cache: CacheConfig,
     pub scheduler: SchedulerConfig,
+    pub aici: AiciConfig,
 
     pub dtype: DType,
     pub device: Device,
 }
 
 impl RllmConfig {
-    pub fn new(
-        model: ModelConfig,
-        parallel: ParallelConfig,
-        cache: CacheConfig,
-        scheduler: SchedulerConfig,
-    ) -> Result<Self> {
+    pub fn verify_args(&self) -> Result<()> {
+        let model = &self.model;
+        let parallel = &self.parallel;
         if model.num_hidden_layers % parallel.pipeline_parallel_size != 0 {
             bail!(
                 "Number of hidden layers ({}) must be divisible by the pipeline parallel size ({}).",
@@ -39,16 +37,10 @@ impl RllmConfig {
                 parallel.tensor_parallel_size
             );
         }
-        let dtype = model.dtype;
-        let device = model.device;
-        Ok(Self {
-            model,
-            parallel,
-            cache,
-            scheduler,
-            device,
-            dtype,
-        })
+        if self.aici.max_fuel < 100 {
+            bail!("max_fuel not configured");
+        }
+        Ok(())
     }
 
     pub fn get_hidden_size(&self) -> usize {
@@ -239,6 +231,9 @@ pub struct SamplingParams {
     /// What argument to pass to the module.
     pub aici_arg: String,
 
+    /// Maximum number of tokens to use as fuel for the AICI module.
+    pub aici_fuel: Option<usize>,
+
     /// Number of output sequences to return for the given prompt.
     pub n: usize,
 
@@ -287,6 +282,7 @@ impl SamplingParams {
         let r = Self {
             aici_module: None,
             aici_arg: String::new(),
+            aici_fuel: None,
             n: 1,
             best_of: 1,
             presence_penalty: 0.0,
@@ -434,5 +430,16 @@ impl SamplingParams {
             }
         }
         Ok(())
+    }
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct AiciConfig {
+    pub max_fuel: usize,
+}
+
+impl Default for AiciConfig {
+    fn default() -> Self {
+        Self { max_fuel: 0 }
     }
 }

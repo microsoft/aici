@@ -240,15 +240,16 @@ fn to_cuda_ptr(t: &Tensor) -> i64 {
     t.data_ptr() as i64
 }
 
-fn is_bf16(t: &Tensor) -> bool {
+fn is_bf16_or_f16(t: &Tensor) -> bool {
     match t.kind() {
         Kind::BFloat16 => true,
+        Kind::Half => true,
         _ => false,
     }
 }
 
-fn check_cont_bf16(t: &Tensor) {
-    assert!(is_bf16(t));
+fn check_cont_bf16_or_f16(t: &Tensor) {
+    assert!(is_bf16_or_f16(t));
     assert!(t.device().is_cuda());
     assert!(t.is_contiguous());
 }
@@ -295,7 +296,7 @@ pub fn copy_blocks(
         };
         assert!(e.device() == device);
         assert_eq!(e.numel(), tsize);
-        check_cont_bf16(e);
+        check_cont_bf16_or_f16(e);
     }
 
     let mut block_mapping_vec = Vec::new();

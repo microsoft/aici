@@ -16,6 +16,8 @@ pub enum FinishReason {
     FoundEos,
     /// Stopped by AICI.
     AiciStop,
+    /// Too many prompt/generation tokens in the current request (sequence group)
+    AiciOutOfFuel,
     /// SamplingParams.max_tokens reached.
     MaxTokensReached,
     /// Explicit abort request on the engine.
@@ -33,8 +35,9 @@ impl FinishReason {
             FinishReason::MaxTokensReached => "length",
             FinishReason::Aborted => "abort",
             FinishReason::Failed => "fail",
-            FinishReason::AiciStop => "aici",
+            FinishReason::AiciStop => "aici-stop",
             FinishReason::Deadlock => "deadlock",
+            FinishReason::AiciOutOfFuel => "aici-out-of-fuel",
         };
         r.to_string()
     }
@@ -222,8 +225,7 @@ pub struct SequenceGroup {
     pub arrival_time: std::time::Instant,
     pub logits_processor: LogitsProcessor,
     pub max_index: usize,
-    pub num_prompt_tokens: usize,
-    pub num_gen_tokens: usize,
+    pub usage: TokenUsage,
 }
 
 pub struct BatchInfo {
@@ -346,11 +348,26 @@ pub struct SeqOutput {
     pub aici_logs: Vec<SequenceResult>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct TokenUsage {
+    pub gen_tokens: usize,
+    pub prompt_tokens: usize,
+}
+
+impl TokenUsage {
+    pub fn total_tokens(&self) -> usize {
+        self.gen_tokens + self.prompt_tokens
+    }
+
+    pub fn fuel_tokens(&self) -> usize {
+        2 * self.gen_tokens + self.prompt_tokens
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RequestOutput {
     pub request_id: String,
-    pub num_gen_tokens: usize,
-    pub num_prompt_tokens: usize,
+    pub usage: TokenUsage,
     pub seq_outputs: Vec<SeqOutput>,
     pub is_final: bool,
     pub is_ambiguous: bool,

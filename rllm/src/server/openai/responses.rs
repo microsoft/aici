@@ -37,6 +37,7 @@ pub struct ChatCompletionUsageResponse {
     pub completion_tokens: usize,
     pub prompt_tokens: usize,
     pub total_tokens: usize,
+    pub fuel_tokens: usize,
 }
 
 // tool_calls, function_call not supported!

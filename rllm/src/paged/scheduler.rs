@@ -116,6 +116,10 @@ impl Scheduler {
         self.q_with(q, |q| q.pop())
     }
 
+    pub fn for_each_waiting_sg(&self, f: impl FnMut(&mut SequenceGroup)) {
+        self.q_for_each(Queue::Waiting, f)
+    }
+
     pub fn for_each_sg(&self, mut f: impl FnMut(&mut SequenceGroup)) {
         self.queues
             .lock()
@@ -202,6 +206,20 @@ impl Scheduler {
     }
 
     fn step_drop_finished(&mut self, outputs: &mut SchedulerOutputs) {
+        self.for_each_sg(|sg| {
+            if sg.sampling_params.aici_module.is_some() {
+                let fuel = sg.usage.fuel_tokens();
+                let max_fuel = std::cmp::min(
+                    sg.sampling_params.aici_fuel.unwrap_or(usize::MAX),
+                    self.config.aici.max_fuel,
+                );
+                if fuel > max_fuel {
+                    log::warn!("seq_group {} ran out of fuel", sg.request_id);
+                    self.set_phase(sg, SchedulingPhase::Finished(FinishReason::AiciOutOfFuel));
+                }
+            }
+        });
+
         self.q_for_each(Queue::Waiting, |seq_group| {
             assert!(seq_group.seqs.len() == 1);
             let num_prompt_tokens = seq_group.get_seqs(None)[0].get_len();
@@ -231,8 +249,7 @@ impl Scheduler {
 
         let mut num_curr_seqs = self.max_num_running_seq(Queue::OnGpu);
         while let Some(mut seq_group) = self.q_pop(Queue::Waiting) {
-            assert!(seq_group.seqs.len() == 1);
-            let num_prompt_tokens = seq_group.get_seqs(None)[0].get_len();
+            let num_prompt_tokens = seq_group.only_seq().get_len();
             let num_new_seqs = seq_group.get_max_num_running_seqs();
 
             log::trace!(

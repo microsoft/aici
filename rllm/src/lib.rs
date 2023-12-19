@@ -10,6 +10,7 @@ pub mod util;
 
 use std::sync::atomic::AtomicBool;
 
+use config::AiciConfig;
 pub use engine::*;
 pub use llm::logits::LogitsProcessor;
 
@@ -22,6 +23,7 @@ pub struct LoaderArgs {
     pub revision: Option<String>,
     pub local_weights: Option<String>,
     pub alt: usize,
+    pub aici: AiciConfig,
 
     pub dtype: Option<DType>,
     pub device: Device,
@@ -44,6 +46,7 @@ impl Default for LoaderArgs {
             model_id: "NousResearch/Llama-2-7b-hf".to_string(),
             revision: None,
             local_weights: None,
+            aici: AiciConfig::default(),
             alt: 0,
             dtype,
             device,

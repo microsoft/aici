@@ -183,17 +183,17 @@ impl futures::Stream for Client {
     ) -> std::task::Poll<Option<Self::Item>> {
         self.rx.poll_recv(cx).map(|x| match x {
             Some(Ok(so)) => {
-                let completion_tokens = so.num_gen_tokens;
-                let prompt_tokens = so.num_prompt_tokens; // .saturating_sub(so.num_gen_tokens);
+                let u = &so.usage;
                 let r = StreamingCompletionResponse {
                     object: "text_completion",
                     id: so.request_id,
                     model: self.model.clone(),
                     created: get_unix_time(),
                     usage: ChatCompletionUsageResponse {
-                        completion_tokens,
-                        prompt_tokens,
-                        total_tokens: completion_tokens + prompt_tokens,
+                        completion_tokens: u.gen_tokens,
+                        prompt_tokens: u.prompt_tokens,
+                        total_tokens: u.total_tokens(),
+                        fuel_tokens: u.fuel_tokens(),
                     },
                     choices: so
                         .seq_outputs

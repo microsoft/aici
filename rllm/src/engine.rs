@@ -1,5 +1,6 @@
 use crate::{
     config::{CommonModelConfig, ModelMeta, ModelType},
+    seq::TokenUsage,
     util::{get_setting, to_vec1, to_vec2},
     DType, Device, IndexOp, Tensor,
 };
@@ -243,7 +244,8 @@ pub struct RllmEngine {
     #[allow(dead_code)]
     pub alt: usize,
     pub device: Device,
-    pub eos_token_id: u32,
+    pub eos_token_id: Token,
+    pub space_token_id: Token,
     pub nv_profile: bool,
     pub num_errors: usize,
 
@@ -293,14 +295,22 @@ impl RllmEngine {
         let (tokenizer, tok_trie) = Self::load_tokenizer(&args)?;
         let model_config = Self::load_model_config(&args)?;
 
+        let mut aici = args.aici.clone();
+        if aici.max_fuel == 0 {
+            aici.max_fuel = model_config.max_sequence_length * 10;
+        }
+
         let mut rllm_config = RllmConfig {
             model: model_config.clone(),
             parallel: ParallelConfig::single(),
             cache: CacheConfig::default(),
             scheduler: SchedulerConfig::new(2560, 256, model_config.max_sequence_length),
+            aici,
             dtype: model_config.dtype,
             device: device.clone(),
         };
+
+        rllm_config.verify_args()?;
 
         // TODO infer these
         let elt_size = CacheEngine::get_cache_block_size(&rllm_config);
@@ -341,6 +351,7 @@ impl RllmEngine {
 
         log::info!("building the model");
         let eos_token_id = tok_trie.info().tok_eos;
+        let space_token_id = tok_trie.greedy_tokenize(b" ")[0];
 
         let mut vs = VarStore::new(device.clone());
 
@@ -426,6 +437,7 @@ impl RllmEngine {
             num_errors: 0,
             device,
             eos_token_id,
+            space_token_id,
             alt: args.alt,
             scheduler,
             cache_engine,
@@ -485,8 +497,7 @@ impl RllmEngine {
             arrival_time: Instant::now(),
             logits_processor,
             max_index: 0,
-            num_prompt_tokens: 0,
-            num_gen_tokens: 0,
+            usage: TokenUsage::default(),
         };
 
         self.scheduler.add_seq_group(sg);
@@ -736,8 +747,7 @@ impl RllmEngine {
                 if seq.has_aici && next_token == self.eos_token_id {
                     // replace with space, so the model doesn't get confused
                     // note that aici will still get the real EOS token
-                    let space = self.tok_trie.greedy_tokenize(b" ")[0];
-                    seq.append_tokens(&[space]);
+                    seq.append_tokens(&[self.space_token_id]);
                     info = " -> space";
                 } else {
                     seq.append_tokens(&[next_token]);
@@ -789,8 +799,7 @@ impl RllmEngine {
                     out
                 })
                 .collect(),
-            num_gen_tokens: sg.num_gen_tokens,
-            num_prompt_tokens: sg.num_prompt_tokens,
+            usage: sg.usage.clone(),
             is_ambiguous: sg.logits_processor.num_ambiguous > 0,
             is_final,
         }
@@ -876,11 +885,14 @@ impl RllmEngine {
                 let seq_len = seq.get_len();
                 let k_len = seq_len;
                 log::trace!("seq: {seq:?}");
-                let q_len = seq.get_len() - seq.num_kv_computed;
-                assert!(q_len > 0); // TODO if it's 0, we can probably bump it up to 1 (re-compute)
+                let mut q_len = seq.get_len() - seq.num_kv_computed;
+                if q_len == 0 {
+                    // just re-compute the last token
+                    q_len = 1;
+                }
                 let off = k_len - q_len;
-                sg.num_prompt_tokens += q_len;
-                sg.num_gen_tokens += 1;
+                sg.usage.gen_tokens += 1;
+                sg.usage.prompt_tokens += q_len;
                 for idx in off..off + q_len {
                     assert!(idx < max_seq);
                     positions.push(idx as i64);
@@ -1154,6 +1166,14 @@ impl RllmEngine {
         }
 
         self.aici_pre()?;
+
+        self.scheduler.for_each_waiting_sg(|sg| {
+            if sg.only_seq().get_len() == 0 {
+                // this happens when we fork right away, and there is no start token
+                // for the current model
+                sg.seqs[0].append_tokens(&[self.space_token_id]);
+            }
+        });
 
         let mut sched_out = self.scheduler.schedule();
 
