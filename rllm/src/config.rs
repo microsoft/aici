@@ -2,7 +2,6 @@
 
 use crate::{DType, Device};
 use anyhow::{bail, Result};
-use log::warn;
 use serde::{Deserialize, Serialize};
 
 static GB: usize = 1 << 30;
@@ -171,7 +170,7 @@ impl CacheConfig {
         if swap_space_bytes > (total_cpu_memory * 7 / 10) {
             bail!("Too large swap space. {}", msg);
         } else if swap_space_bytes > (total_cpu_memory * 4 / 10) {
-            warn!("Possibly too large swap space. {}", msg);
+            log::warn!("Possibly too large swap space. {}", msg);
         }
         Ok(Self {
             block_size,

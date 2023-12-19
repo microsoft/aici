@@ -15,7 +15,6 @@ use bench::{TimerRef, TimerSet};
 use clap::Parser;
 use hex;
 use hostimpl::GlobalInfo;
-use log::{debug, info, warn};
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 use std::collections::HashMap;
@@ -201,7 +200,7 @@ impl ModuleRegistry {
         match module {
             Err(e) => {
                 let wasm_bytes = fs::read(self.wasm_path(module_id))?;
-                info!("compiling {}; {}", module_id, e);
+                log::info!("compiling {}; {}", module_id, e);
                 let compiled = self.wasm_ctx.engine.precompile_module(&wasm_bytes)?;
                 fs::write(self.elf_path(module_id), compiled)?;
                 // make sure we can deserialize it
@@ -257,7 +256,7 @@ impl ModuleRegistry {
         let compiled_size = fs::metadata(self.elf_path(module_id))?.len() as usize;
         let time = timer.elapsed().as_millis() as u64;
 
-        info!(
+        log::info!(
             "module {}: {}kB -> {}kB; {}ms",
             module_id,
             wasm_bytes.len() / 1024,
@@ -300,7 +299,7 @@ impl ModuleRegistry {
     fn instantiate(&mut self, req: InstantiateReq) -> Result<Value> {
         ensure!(is_hex_string(&req.module_id), "invalid module_id");
         let module_path = self.ensure_module_in_fs(&req.module_id)?;
-        info!("instance {} -> {}", req.module_id, req.req_id);
+        log::debug!("instance {} -> {}", req.module_id, req.req_id);
         let (handle, res) = self
             .forker
             .lock()
@@ -391,7 +390,7 @@ impl Stepper {
             if num_forks + 1 > self.limits.max_forks {
                 anyhow::bail!("too many forks (max={})", self.limits.max_forks)
             }
-            info!("fork {} -> ({})", parent_id, id);
+            log::debug!("fork {} -> ({})", parent_id, id);
             // TODO the forks should be done in parallel, best in tree-like fashion
             let h = parent.fork(id)?;
             self.instances.insert(id, h);
@@ -410,7 +409,7 @@ impl Stepper {
             let id = op.id;
             ensure!(!self.instances.contains_key(&id), "duplicate id {id}");
             let h = e.unwrap();
-            info!("prompt {} ({})", id, req_id);
+            log::debug!("prompt {} ({})", id, req_id);
             h.set_id(id)?;
             self.instances.insert(id, h);
         }
@@ -423,7 +422,7 @@ impl Stepper {
         req: AiciPreProcessReq,
     ) -> Result<AiciPreProcessResp> {
         for id in req.freed {
-            info!("free module {}", id);
+            log::debug!("free module {}", id);
             self.instances.remove(&id);
         }
 
@@ -455,7 +454,7 @@ impl Stepper {
                     Err(e) => self.worker_error(instid, &mut outputs, e),
                 };
             } else {
-                warn!("invalid id {}", instid);
+                log::warn!("invalid id {}", instid);
             }
             idx += 1;
         }
@@ -586,7 +585,7 @@ impl Stepper {
                     Err(e) => self.worker_error(instid, &mut outputs, e),
                 };
             } else {
-                info!("invalid id {}", instid);
+                log::info!("invalid id {}", instid);
             }
             logit_offset += logit_size;
         }
@@ -616,7 +615,7 @@ impl Stepper {
                                 .collect::<Vec<_>>()
                                 .join(", ")
                         };
-                        debug!("logits: {} allow; tokens: {}", allow_set.len(), list);
+                        log::trace!("logits: {} allow; tokens: {}", allow_set.len(), list);
                     }
                 }
                 Err(e) => self.worker_error(id, &mut outputs, e),
@@ -655,7 +654,7 @@ impl Stepper {
                     Err(e) => self.worker_error(instid, &mut outputs, e),
                 };
             } else {
-                warn!("invalid id {}", instid);
+                log::warn!("invalid id {}", instid);
             }
         }
 
@@ -688,7 +687,7 @@ impl Stepper {
         e: anyhow::Error,
     ) {
         let err = format!("Worker: {e:?}");
-        warn!("error: {err}");
+        log::warn!("error: {err}");
         map.insert(instid, SequenceResult::from_error(err));
         self.instances.remove(&instid);
     }
@@ -748,7 +747,7 @@ trait Exec {
                 };
                 let mut resp = match val {
                     Ok(v) => {
-                        debug!(
+                        log::trace!(
                             "dispatch ok: {}",
                             limit_str(&serde_json::to_string(&v).unwrap(), 200)
                         );
@@ -759,8 +758,8 @@ trait Exec {
                     }
                     Err(err) => {
                         let err = format!("{:?}", err);
-                        warn!("dispatch error: {}", err);
-                        info!(
+                        log::warn!("dispatch error: {}", err);
+                        log::info!(
                             "for data: {}",
                             String::from_utf8_lossy(&msg[0..std::cmp::min(100, msg.len())])
                         );
@@ -1031,7 +1030,7 @@ fn main() -> () {
     let num_bg_threads = BG_THREADS_FRACTION * num_cores / 100;
     let num_step_threads = STEP_THREADS_FRACTION * num_cores / 100;
 
-    info!(
+    log::info!(
         "rayon with {} bg and {} step workers ({} cores)",
         num_bg_threads, num_step_threads, num_cores
     );

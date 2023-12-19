@@ -3,7 +3,6 @@ use aici_abi::{
     PostProcessArg, PreProcessArg, StorageCmd,
 };
 use anyhow::{anyhow, Result};
-use log::{info, warn};
 use std::{rc::Rc, sync::Arc, time::Duration};
 use tokenizers::Tokenizer;
 
@@ -153,7 +152,7 @@ impl ModuleData {
     }
 
     pub fn fatal(&mut self, msg: &str) {
-        warn!("{}: fatal error {}", self.id, msg);
+        log::warn!("{}: fatal error {}", self.id, msg);
         let msg = format!("FATAL ERROR: {}\n", msg);
         self.write_log(msg.as_bytes());
         self.had_error = true;
@@ -161,7 +160,7 @@ impl ModuleData {
     }
 
     pub fn warn(&mut self, msg: &str) {
-        warn!("{}: {}", self.id, msg);
+        log::warn!("{}: {}", self.id, msg);
         let msg = format!("warning: {}\n", msg);
         self.write_log(msg.as_bytes());
     }
@@ -189,7 +188,7 @@ impl ModuleData {
     }
 
     pub fn flush_logs(&mut self, name: &str) {
-        if !log::log_enabled!(log::Level::Info) {
+        if !log::log_enabled!(log::Level::Debug) {
             return;
         }
 
@@ -202,7 +201,7 @@ impl ModuleData {
         self.printed_log = self.log.len();
 
         for line in logs.lines() {
-            info!("{}:{}> {}", self.id, name, line);
+            log::debug!("{}:{}> {}", self.id, name, line);
         }
     }
 

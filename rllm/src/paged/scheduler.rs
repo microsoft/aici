@@ -4,7 +4,6 @@ use std::sync::{Arc, Mutex};
 use std::vec::Vec;
 
 use aicirt::api::SequenceResult;
-use log::warn;
 
 use crate::config::RllmConfig;
 use crate::paged::blocks::BlockSpaceManager;
@@ -224,7 +223,7 @@ impl Scheduler {
             assert!(seq_group.seqs.len() == 1);
             let num_prompt_tokens = seq_group.get_seqs(None)[0].get_len();
             if num_prompt_tokens > self.prompt_limit {
-                warn!(
+                log::warn!(
                     "Sequence group {} has a prompt that is too long ({} > {})",
                     seq_group.request_id, num_prompt_tokens, self.prompt_limit
                 );

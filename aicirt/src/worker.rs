@@ -12,7 +12,6 @@ use aicirt::api::{AiciMidProcessResultInner, AiciPostProcessResultInner, Sequenc
 use anyhow::{anyhow, Result};
 use ipc_channel::ipc::{self, IpcOneShotServer, IpcReceiver, IpcReceiverSet, IpcSender};
 use libc::pid_t;
-use log::debug;
 use serde::{Deserialize, Serialize};
 
 use crate::bench::{TimerRef, TimerSet};
@@ -209,7 +208,7 @@ where
     Resp: for<'d> Deserialize<'d> + Serialize + Debug,
 {
     pub fn just_send(&self, cmd: Cmd) -> Result<()> {
-        debug!("send {cmd:?}");
+        log::trace!("send {cmd:?}");
         self.cmd.send(cmd)?;
         Ok(())
     }
@@ -217,7 +216,7 @@ where
     pub fn recv(&self) -> Result<Resp> {
         match self.cmd_resp.recv() {
             Ok(r) => {
-                debug!("recv {r:?}");
+                log::trace!("recv {r:?}");
                 Ok(r)
             }
             Err(e) => Err(e.into()),
