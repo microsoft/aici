@@ -35,8 +35,6 @@ use crate::api::*;
 
 // Both of these are percentage of available cores
 const BG_THREADS_FRACTION: usize = 50;
-const STEP_THREADS_FRACTION: usize = 90;
-
 const MEGABYTE: usize = 1024 * 1024;
 
 #[derive(Parser, Clone)]
@@ -1028,23 +1026,17 @@ fn main() -> () {
 
     let num_cores: usize = std::thread::available_parallelism().unwrap().into();
     let num_bg_threads = BG_THREADS_FRACTION * num_cores / 100;
-    let num_step_threads = STEP_THREADS_FRACTION * num_cores / 100;
 
     log::info!(
-        "rayon with {} bg and {} step workers ({} cores)",
-        num_bg_threads, num_step_threads, num_cores
+        "rayon with {} bg workers ({} cores)",
+        num_bg_threads,
+        num_cores
     );
 
     rayon::ThreadPoolBuilder::new()
         .num_threads(num_bg_threads)
         .start_handler(|_| set_priority(ThreadPriority::Min))
         .build_global()
-        .unwrap();
-
-    let step_pool = rayon::ThreadPoolBuilder::new()
-        .num_threads(num_step_threads)
-        .start_handler(|_| set_priority(ThreadPriority::Max))
-        .build()
         .unwrap();
 
     let reg = ModuleRegistry::new(wasm_ctx, bin_shm).unwrap();
@@ -1062,8 +1054,6 @@ fn main() -> () {
     });
 
     set_priority(ThreadPriority::Max);
-    step_pool.install(|| {
-        let exec_disp = CmdRespChannel::new("", &cli).unwrap();
-        exec_disp.dispatch_loop(exec);
-    })
+    let exec_disp = CmdRespChannel::new("", &cli).unwrap();
+    exec_disp.dispatch_loop(exec);
 }
