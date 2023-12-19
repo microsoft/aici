@@ -164,10 +164,12 @@ struct ParallelBlock {
 }
 
 impl ParallelBlock {
-    fn new(cfg: &Rc<ModelConfig>, vb: Path, block_idx: usize) -> Self {
+    fn new(cfg: &Rc<ModelConfig>, mut vb: Path, block_idx: usize) -> Self {
         let ln = layer_norm(&vb / "ln", cfg);
         let mixer = MHA::new(cfg, block_idx, &vb / "mixer");
         let mlp = MLP::new(cfg, &vb / "mlp");
+        // this optimizes memory usage
+        vb.set_kind(cfg.dtype);
         Self { ln, mixer, mlp }
     }
 

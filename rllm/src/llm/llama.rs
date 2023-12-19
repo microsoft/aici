@@ -173,11 +173,13 @@ impl Block {
         x
     }
 
-    fn load(vb: Path, rotary: &RotaryEmbedding, cfg: &Rc<ModelConfig>) -> Result<Self> {
+    fn load(mut vb: Path, rotary: &RotaryEmbedding, cfg: &Rc<ModelConfig>) -> Result<Self> {
         let attn = CausalSelfAttention::load(&vb / "self_attn", rotary, cfg)?;
         let mlp = Mlp::load(&vb / "mlp", cfg)?;
         let rms_1 = RmsNorm::from_cfg(&vb / "input_layernorm", cfg);
         let rms_2 = RmsNorm::from_cfg(&vb / "post_attention_layernorm", cfg);
+        // this optimizes memory usage
+        vb.set_kind(cfg.dtype);
         Ok(Self {
             rms_1,
             attn,
