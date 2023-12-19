@@ -1,5 +1,5 @@
 use aici_abi::{
-    bytes::{clone_vec_as_bytes, vec_from_bytes, TokRxInfo},
+    bytes::{clone_vec_as_bytes, limit_str, vec_from_bytes, TokRxInfo},
     PostProcessArg, PreProcessArg, StorageCmd,
 };
 use anyhow::{anyhow, Result};
@@ -44,7 +44,7 @@ pub struct ModuleData {
     blobs: Vec<Rc<Vec<u8>>>,
 }
 
-const MAXLOG: usize = 32 * 1024;
+const MAXLOG: usize = 64 * 1024;
 
 pub const LOGIT_BIAS_ALLOW: f32 = 0.0;
 pub const LOGIT_BIAS_DISALLOW: f32 = -100.0;
@@ -201,7 +201,7 @@ impl ModuleData {
         self.printed_log = self.log.len();
 
         for line in logs.lines() {
-            log::debug!("{}:{}> {}", self.id, name, line);
+            log::debug!("{}:{}> {}", self.id, name, limit_str(line, 512));
         }
     }
 
