@@ -1,6 +1,6 @@
 ## AICIrt
 * [x] limit number of forks
-* [ ] compile WASM out of process with memory and time limit
+* [x] compile WASM out of process with memory and time limit
 * [x] limit log size
 * [x] figure out log storage
 

@@ -33,9 +33,18 @@ use crate::worker::{bench_ipc, RtMidProcessArg, WorkerForker};
 
 use crate::api::*;
 
-// Both of these are percentage of available cores
+// percentage of available cores
 const BG_THREADS_FRACTION: usize = 50;
+// how much memory any process can allocate; doesn't apply to mmap()
+// mostly applies to module compilation - 256M is just about enough for
+// compiling 12M WASM module (RustPython)
+const MAX_MALLOC: usize = 512 * MEGABYTE;
+
 const MEGABYTE: usize = 1024 * 1024;
+
+#[global_allocator]
+pub static ALLOCATOR: cap::Cap<std::alloc::System> =
+    cap::Cap::new(std::alloc::System, usize::max_value());
 
 #[derive(Parser, Clone)]
 struct Cli {
@@ -1024,6 +1033,8 @@ fn main() -> () {
         println!("missing --server");
         std::process::exit(1);
     }
+
+    ALLOCATOR.set_limit(MAX_MALLOC).expect("set memory limit");
 
     let reg = ModuleRegistry::new(wasm_ctx, bin_shm).unwrap();
 
