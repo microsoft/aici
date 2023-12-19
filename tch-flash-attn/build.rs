@@ -133,7 +133,7 @@ impl SystemInfo {
     }
 }
 
-const KERNEL_FILES: [&str; 24] = [
+const KERNEL_FILES: [&str; 25] = [
     "flash_api.cpp",
     "flash_fwd_split_hdim128_bf16_sm80.cu",
     "flash_fwd_split_hdim160_bf16_sm80.cu",
@@ -158,6 +158,7 @@ const KERNEL_FILES: [&str; 24] = [
     "vllm/pos_encoding_kernels.cu",
     "vllm/attention/attention_kernels.cu",
     "vllm/bindings.cpp",
+    "cuda.cpp",
 ];
 
 fn main() -> Result<()> {

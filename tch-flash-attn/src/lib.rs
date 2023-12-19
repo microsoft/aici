@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::{collections::HashMap, fmt::Display};
 
 use tch::{Kind, Tensor};
 use torch_sys::C_tensor;
@@ -345,4 +345,59 @@ pub fn rotary_embedding(
             ),
         );
     }
+}
+
+#[repr(C)]
+#[derive(Clone, Default)]
+pub struct Stats {
+    pub current: i64,
+    pub peak: i64,
+    pub allocated: i64,
+    pub freed: i64,
+}
+
+impl Display for Stats {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        const G: f64 = 1024.0 * 1024.0 * 1024.0;
+        write!(
+            f,
+            "current: {:.3}GiB, peak: {:.3}GiB, allocated: {:.3}GiB, freed: {:.3}GiB",
+            self.current as f64 / G,
+            self.peak as f64 / G,
+            self.allocated as f64 / G,
+            self.freed as f64 / G
+        )
+    }
+}
+
+extern "C" {
+    fn cuda_reset_peak_memory_stats_C(device: i32) -> *mut libc::c_char;
+    fn cuda_empty_cache_C() -> *mut libc::c_char;
+    fn cuda_get_stats_allocated_bytes_C(device: i32, outp: *mut Stats) -> *mut libc::c_char;
+}
+
+pub fn cuda_reset_peak_memory_stats(device: usize) {
+    unsafe {
+        check_res(
+            "cuda_reset_peak_memory_stats",
+            cuda_reset_peak_memory_stats_C(device as i32),
+        );
+    }
+}
+
+pub fn cuda_empty_cache() {
+    unsafe {
+        check_res("cuda_empty_cache", cuda_empty_cache_C());
+    }
+}
+
+pub fn cuda_get_stats_allocated_bytes(device: usize) -> Stats {
+    let mut stats = Stats::default();
+    unsafe {
+        check_res(
+            "cuda_get_stats_allocated_bytes",
+            cuda_get_stats_allocated_bytes_C(device as i32, &mut stats),
+        );
+    }
+    stats
 }

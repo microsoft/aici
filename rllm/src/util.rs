@@ -2,7 +2,11 @@ use std::collections::HashMap;
 
 use crate::Tensor;
 use anyhow::{bail, Result};
-use tch::{kind::Element, IndexOp as _};
+use tch::{kind::Element, Device, IndexOp as _};
+#[cfg(feature = "cuda")]
+use tch_flash_attn::{
+    cuda_empty_cache, cuda_get_stats_allocated_bytes, cuda_reset_peak_memory_stats,
+};
 
 const SETTINGS: [(&'static str, &'static str, f64); 4] = [
     ("attn_rtol", "relative tolerance for flash attn check", 0.1),
@@ -143,4 +147,26 @@ pub fn to_vec3<T: Element>(t: &Tensor) -> Vec<Vec<Vec<T>>> {
                 .collect::<Vec<_>>()
         })
         .collect::<Vec<_>>()
+}
+
+pub fn reset_mem_stats(device: Device) {
+    #[cfg(feature = "cuda")]
+    match device {
+        Device::Cuda(n) => {
+            cuda_empty_cache();
+            cuda_reset_peak_memory_stats(n);
+        }
+        _ => {}
+    }
+}
+
+pub fn log_mem_stats(lbl: &str, device: Device) {
+    #[cfg(feature = "cuda")]
+    match device {
+        Device::Cuda(n) => {
+            let stats = cuda_get_stats_allocated_bytes(n);
+            log::info!("cuda mem: {lbl} {stats}");
+        }
+        _ => {}
+    }
 }
