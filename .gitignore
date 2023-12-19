@@ -16,3 +16,4 @@ rllm/*.safetensor
 rllm/report*.sqlite
 *.ncu-rep
 *.nsys-rep
+rllm/logs

@@ -37,7 +37,7 @@ RUN apt-get install -y software-properties-common
 RUN apt-add-repository ppa:git-core/ppa
 RUN apt-get update && apt-get install -y git
 
-RUN apt-get install -y llvm-dev libclang-dev clang ccache
+RUN apt-get install -y llvm-dev libclang-dev clang ccache apache2-utils
 ENV CUDA_COMPUTE_CAP="80"
 # candle is slow without caching; pytorch image has this on by default
 ENV CUDA_CACHE_DISABLE=""

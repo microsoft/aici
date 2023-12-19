@@ -41,19 +41,30 @@ RUST_LOG=info \
     --stats true \
     ./target/release/rllm-server \
     $ARGS "$@"
+    echo $?
+fi
+
+cargo build $REL --bin rllm-server
+if [ "X$REL" = "X" ] ; then
+    BIN=./target/debug/rllm-server
 else
+    BIN=./target/release/rllm-server
+fi
+
+export RUST_BACKTRACE=1
+export RUST_LOG=info,rllm=debug,aicirt=info
+
+echo "running $BIN $ARGS $@"
+
+if [ "$LOOP" = "" ] ; then
+    $BIN $ARGS "$@"
+    exit $?
+fi
+
+
 
 while : ; do
-RUST_BACKTRACE=1 \
-RUST_LOG=info,rllm=debug,aicirt=info \
-    cargo run $REL --bin rllm-server -- \
-    $ARGS "$@"
-if [ "$LOOP" = "" ] ; then
-    break
-else
+    $BIN --daemon $ARGS "$@" 2>&1 | rotatelogs -e -D ./logs/%Y-%m-%d-%H_%M_%S.txt 3600 
     echo "restarting..."
     sleep 2
-fi
 done
-
-fi

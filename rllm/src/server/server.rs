@@ -6,10 +6,7 @@ use std::{
 
 use actix_web::{middleware::Logger, web, App, HttpServer};
 use aici_abi::toktree::TokTrie;
-use aicirt::{
-    api::{MkModuleReq, MkModuleResp},
-    setup_log,
-};
+use aicirt::api::{MkModuleReq, MkModuleResp};
 use anyhow::Result;
 use base64::Engine;
 use clap::Parser;
@@ -104,6 +101,10 @@ pub struct Args {
     /// Set engine setting; try '--setting help' to list them
     #[arg(long, short, name = "NAME=VALUE")]
     setting: Vec<String>,
+
+    /// Enable daemon mode (log timestamps)
+    #[arg(long, default_value_t = false)]
+    daemon: bool,
 }
 
 #[actix_web::post("/v1/aici_modules")]
@@ -151,10 +152,12 @@ async fn tunnel_info(
     log::info!("user: {:?}", name);
     let url = "https://github.com/microsoft/aici/blob/main/proxy.md";
     let model = &data.model_config.meta.id;
-    let msg = format!(r#"
+    let msg = format!(
+        r#"
 Model: {model}
 
-More info at: {url}"#);
+More info at: {url}"#
+    );
     Ok(web::Json(serde_json::json!({
         "msg": msg,
         "connection_string": "AICI_API_BASE=\"{website}/v1/#key={key}\""
@@ -336,9 +339,14 @@ fn spawn_inference_loop(
 
 #[actix_web::main]
 async fn main() -> () {
-    setup_log();
-
     let mut args = Args::parse();
+
+    aicirt::init_log(if args.daemon {
+        aicirt::LogMode::Deamon
+    } else {
+        aicirt::LogMode::Normal
+    })
+    .expect("Failed to initialize log");
 
     match apply_settings(&args.setting) {
         Ok(_) => {}
