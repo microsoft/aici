@@ -11,6 +11,7 @@ import platform
 from safetensors import safe_open
 import sys
 import argparse
+import os
 
 N_LOGITS = 128
 N_TOKENS = 30
@@ -21,6 +22,7 @@ models = {
     "codellama": "codellama/CodeLlama-13b-Instruct-hf",
     "codellama34": "codellama/CodeLlama-34b-Instruct-hf",
     "llama": "NousResearch/Llama-2-7b-hf",
+    "orca": "microsoft/Orca-2-13b",
 }
 
 modelid = "llama"
@@ -107,6 +109,7 @@ def gen_output():
         print(text)
         output["output"] = torch.tensor(out_tokens, dtype=torch.long)
         save_file(output, "tmp/reference.safetensors")
+        os.makedirs(f"expected/{modelid}", exist_ok=True)
         save_test_case(f"expected/{modelid}/{k}.safetensors")
 
 
