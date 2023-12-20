@@ -312,5 +312,4 @@ pub struct RequestOutput {
     pub usage: TokenUsage,
     pub seq_outputs: Vec<SeqOutput>,
     pub is_final: bool,
-    pub is_ambiguous: bool,
 }

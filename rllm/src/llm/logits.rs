@@ -15,7 +15,6 @@ pub struct LogitsProcessor {
     temperature: Option<f32>,
     top_p: f32,
     tokenizer: Arc<TokTrie>,
-    pub num_ambiguous: usize,
 }
 
 impl LogitsProcessor {
@@ -31,32 +30,19 @@ impl LogitsProcessor {
             temperature,
             top_p: sampling_params.top_p,
             tokenizer,
-            num_ambiguous: 0,
         }
     }
 
     fn sample_argmax(&mut self, logits: &Tensor) -> Result<u32> {
         let mut logits_v: Vec<_> = to_vec1::<f32>(logits).into_iter().enumerate().collect();
         logits_v.sort_by(|u, v| v.1.total_cmp(&u.1));
-        let d = (logits_v[0].1 - logits_v[1].1) / logits_v[0].1;
-        if d < 0.05 {
-            self.num_ambiguous += 1;
-            log::debug!(
-                "argmax: {}={} {}={}",
-                self.tokenizer.token_dbg(logits_v[0].0 as u32),
-                logits_v[0].1,
-                self.tokenizer.token_dbg(logits_v[1].0 as u32),
-                logits_v[1].1,
-            );
-        } else {
-            log::trace!(
-                "argmax: {}={} {}={}",
-                self.tokenizer.token_dbg(logits_v[0].0 as u32),
-                logits_v[0].1,
-                self.tokenizer.token_dbg(logits_v[1].0 as u32),
-                logits_v[1].1,
-            );
-        }
+        log::trace!(
+            "argmax: {}={} {}={}",
+            self.tokenizer.token_dbg(logits_v[0].0 as u32),
+            logits_v[0].1,
+            self.tokenizer.token_dbg(logits_v[1].0 as u32),
+            logits_v[1].1,
+        );
         Ok(logits_v[0].0 as u32)
         // let next_token = logits_v
         //     .iter()

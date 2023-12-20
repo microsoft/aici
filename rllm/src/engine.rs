@@ -842,7 +842,6 @@ impl RllmEngine {
                 })
                 .collect(),
             usage: sg.usage.clone(),
-            is_ambiguous: sg.logits_processor.num_ambiguous > 0,
             is_final,
         }
     }
