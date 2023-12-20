@@ -24,10 +24,11 @@ case "$1" in
     ARGS="-m codellama/CodeLlama-13b-Instruct-hf -t llama16 -w expected/codellama/cats.safetensors"
     ;;
   code34 )
+    # OOM in hf transformers - can't generate testcases...
     ARGS="-m codellama/CodeLlama-34b-Instruct-hf -t llama"
     ;;
   orca )
-    ARGS="-m microsoft/Orca-2-13b -t orca -w expected/orca/cats.safetensors"
+    ARGS="-m microsoft/Orca-2-13b@refs/pr/22 -t orca -w expected/orca/cats.safetensors"
     ;;
   * )
     echo "try one of models: phi, phi2, 7b, code, code34" 
