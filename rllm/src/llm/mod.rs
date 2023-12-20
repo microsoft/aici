@@ -260,17 +260,14 @@ pub fn varlen_attn(
     y
 }
 
+// x is [seq_len, num_heads, head_dim]
 fn repeat_kv(config: &ModelConfig, x: Tensor) -> Tensor {
     let n_rep = config.num_attention_heads / config.num_key_value_heads;
     if n_rep == 1 {
         x
     } else {
-        // let (b_sz, n_kv_head, seq_len, head_dim) = x.size4().unwrap();
-        // let _x = x
-        //     .unsqueeze(2)
-        //     .expand((b_sz, n_kv_head, n_rep, seq_len, head_dim))
-        //     .reshape((b_sz, n_kv_head * n_rep, seq_len, head_dim));
-        todo!("dims are wrong")
+        let dim = 1;
+        x.repeat_interleave_self_int(n_rep as i64, Some(dim), None)
     }
 }
 

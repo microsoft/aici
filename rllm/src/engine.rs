@@ -748,7 +748,10 @@ impl RllmEngine {
 
         if idx > 0 {
             let (num_seq, vocab_size) = logits.size2()?;
-            assert!(vocab_size == self.tok_trie.vocab_size() as i64);
+            let t_vocab = self.tok_trie.vocab_size() as i64;
+            if vocab_size != t_vocab {
+                panic!("vocab size mismatch: model {vocab_size} != tokenizer {t_vocab}");
+            }
             assert!(num_seq == idx);
         }
 

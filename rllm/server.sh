@@ -24,7 +24,7 @@ case "$1" in
     ARGS="-m codellama/CodeLlama-13b-Instruct-hf -t codellama -w expected/codellama/cats.safetensors"
     ;;
   code34 )
-    ARGS="-m codellama/CodeLlama-34b-Instruct-hf -t codellama"
+    ARGS="-m codellama/CodeLlama-34b-Instruct-hf -t llama"
     ;;
   * )
     echo "try one of models: phi, phi2, 7b, code" 

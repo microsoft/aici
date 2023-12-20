@@ -19,6 +19,7 @@ models = {
     "phi-1_5": "microsoft/phi-1_5",
     "phi-2": "microsoft/phi-2",
     "codellama": "codellama/CodeLlama-13b-Instruct-hf",
+    "codellama34": "codellama/CodeLlama-34b-Instruct-hf",
     "llama": "NousResearch/Llama-2-7b-hf",
 }
 
