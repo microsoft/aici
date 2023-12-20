@@ -4,9 +4,12 @@ pub mod logits;
 pub mod phi;
 pub mod refkernels;
 
-use crate::util::{check_all_close, check_all_close_attn};
-use crate::{config::ModelConfig, paged::BatchInfo};
-use crate::{DType, IndexOp, Tensor};
+use crate::{
+    config::ModelConfig,
+    paged::BatchInfo,
+    util::{check_all_close, check_all_close_attn},
+    DType, IndexOp, Tensor,
+};
 use std::rc::Rc;
 use tch::nn::{self, Module, Path};
 

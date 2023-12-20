@@ -1,11 +1,14 @@
-use std::collections::HashMap;
-use std::sync::{Arc, Mutex};
-use std::vec::Vec;
+use std::{
+    collections::HashMap,
+    sync::{Arc, Mutex},
+    vec::Vec,
+};
 
-use crate::config::RllmConfig;
-use crate::paged::cache_engine::CacheEngine;
-use crate::paged::scheduler::SchedulerOutputs;
-use crate::seq::{SchedulingPhase, Sequence, SequenceGroup};
+use crate::{
+    config::RllmConfig,
+    paged::{cache_engine::CacheEngine, scheduler::SchedulerOutputs},
+    seq::{SchedulingPhase, Sequence, SequenceGroup},
+};
 
 use super::cache_engine::CacheSize;
 

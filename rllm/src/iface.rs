@@ -16,11 +16,11 @@ use anyhow::Result;
 use futures::future::select_all;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
-use std::collections::HashMap;
-use std::sync::{Arc, Mutex};
-use std::thread;
 use std::{
+    collections::HashMap,
     process::{Child, Command},
+    sync::{Arc, Mutex},
+    thread,
     time::Duration,
 };
 use tokio::{signal::unix::SignalKind, sync::oneshot};

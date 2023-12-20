@@ -1,18 +1,19 @@
 use crate::{get_unix_time, InferenceResult};
 
-use crate::openai::requests::CompletionRequest;
-use crate::openai::responses::{
-    APIError, ChatCompletionUsageResponse, CompletionResponse, StreamingCompletionChoice,
-    StreamingCompletionResponse,
+use crate::{
+    openai::{
+        requests::CompletionRequest,
+        responses::{
+            APIError, ChatCompletionUsageResponse, CompletionResponse, StreamingCompletionChoice,
+            StreamingCompletionResponse,
+        },
+    },
+    OpenAIServerData,
 };
-use crate::OpenAIServerData;
 
-use actix_web::web::Bytes;
-use actix_web::{post, web, Either, HttpResponse};
+use actix_web::{post, web, web::Bytes, Either, HttpResponse};
 use aicirt::api::InstantiateReq;
-use rllm::config::SamplingParams;
-use rllm::seq::Token;
-use rllm::AddRequest;
+use rllm::{config::SamplingParams, seq::Token, AddRequest};
 use serde_json::{json, Value};
 use tokio::sync::mpsc::Receiver;
 use uuid::Uuid;

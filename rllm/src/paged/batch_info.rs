@@ -1,4 +1,7 @@
-use std::{sync::{Arc, Mutex}, fmt::Debug};
+use std::{
+    fmt::Debug,
+    sync::{Arc, Mutex},
+};
 use tch::Tensor;
 
 use super::{cache_engine::CacheEngine, scheduler::SchedulerOutputs};

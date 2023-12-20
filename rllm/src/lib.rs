@@ -1,6 +1,6 @@
-pub mod seq;
 pub mod llm;
 pub mod paged;
+pub mod seq;
 
 // vllm modules
 pub mod config;
@@ -14,8 +14,7 @@ use config::AiciConfig;
 pub use engine::*;
 pub use llm::logits::LogitsProcessor;
 
-pub use tch::Kind as DType;
-pub use tch::{Device, IndexOp, Shape, Tensor};
+pub use tch::{Device, IndexOp, Kind as DType, Shape, Tensor};
 
 pub struct LoaderArgs {
     pub tokenizer: String, // one of aici_tokenizer; eg "llama"

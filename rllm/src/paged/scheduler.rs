@@ -1,14 +1,18 @@
-use std::cell::RefCell;
-use std::collections::HashMap;
-use std::sync::{Arc, Mutex};
-use std::vec::Vec;
+use std::{
+    cell::RefCell,
+    collections::HashMap,
+    sync::{Arc, Mutex},
+    vec::Vec,
+};
 
 use aicirt::api::SequenceResult;
 
-use crate::config::RllmConfig;
-use crate::paged::blocks::BlockSpaceManager;
-use crate::seq::{FinishReason, SchedulingPhase, SeqId, Sequence, SequenceGroup};
-use crate::util::limit_str;
+use crate::{
+    config::RllmConfig,
+    paged::blocks::BlockSpaceManager,
+    seq::{FinishReason, SchedulingPhase, SeqId, Sequence, SequenceGroup},
+    util::limit_str,
+};
 
 use super::cache_engine::CacheSize;
 
@@ -151,12 +155,8 @@ impl Scheduler {
             config.scheduler.max_model_len,
             config.scheduler.max_num_batched_tokens,
         );
-        let block_manager = BlockSpaceManager::new(
-            config.cache.block_size,
-            cache_size,
-            0.01,
-            &config,
-        );
+        let block_manager =
+            BlockSpaceManager::new(config.cache.block_size, cache_size, 0.01, &config);
 
         Self {
             config,

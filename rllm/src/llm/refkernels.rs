@@ -104,7 +104,7 @@ pub fn varlen_attn(
             .tril(0)
             .logical_not();
         let _ = attn_bias
-            .i((.., len_k-len_q..))
+            .i((.., len_k - len_q..))
             .masked_fill_(&mask, f64::NEG_INFINITY);
 
         let attn0 = Tensor::scaled_dot_product_attention(

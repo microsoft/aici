@@ -1,12 +1,10 @@
 // based on https://github.com/vllm-project/vllm/blob/b9fe4616f98b77b4b9458bce203aa6544cb31ef2/vllm/worker/cache_engine.py
 
-use std::collections::HashMap;
-use std::sync::Arc;
+use std::{collections::HashMap, sync::Arc};
 
 use crate::{Device, Tensor};
 
-use crate::config::RllmConfig;
-use crate::llm::kernels;
+use crate::{config::RllmConfig, llm::kernels};
 
 type KVCache = (Tensor, Tensor);
 
