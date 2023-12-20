@@ -21,7 +21,7 @@ case "$1" in
     ARGS="-m NousResearch/Llama-2-7b-hf -t llama -w expected/llama/cats.safetensors"
     ;;
   code )
-    ARGS="-m codellama/CodeLlama-13b-Instruct-hf -t codellama -w expected/codellama/cats.safetensors"
+    ARGS="-m codellama/CodeLlama-13b-Instruct-hf -t llama16 -w expected/codellama/cats.safetensors"
     ;;
   code34 )
     ARGS="-m codellama/CodeLlama-34b-Instruct-hf -t llama"

@@ -251,8 +251,9 @@ pub struct RllmEngine {
 impl RllmEngine {
     pub fn load_tokenizer(args: &LoaderArgs) -> Result<(Tokenizer, TokTrie)> {
         let byte_tokenizer = aici_tokenizers::find_tokenizer(&args.tokenizer)?;
-        let tokenizer =
-            Tokenizer::from_bytes(byte_tokenizer.hf_bytes).map_err(anyhow::Error::msg)?;
+        let hf_bytes = byte_tokenizer.get_hf_bytes();
+        // std::fs::write("toks.json", &hf_bytes).unwrap();
+        let tokenizer = Tokenizer::from_bytes(&hf_bytes).expect("can't load hf tokenizer");
         let tokens = byte_tokenizer.token_bytes();
         let trie = TokTrie::from(&byte_tokenizer.tokrx_info(), &tokens);
         trie.check_against(&tokens);

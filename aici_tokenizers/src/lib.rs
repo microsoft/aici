@@ -1,6 +1,7 @@
 use aici_abi::bytes::TokRxInfo;
 use anyhow::{anyhow, Result};
 use serde::{Deserialize, Serialize};
+use serde_json::{json, Value};
 use std::collections::BTreeMap;
 
 #[derive(Serialize, Deserialize)]
@@ -16,10 +17,11 @@ pub struct TokenInfo {
 pub struct Tokenizer {
     pub name: String,
     pub description: String,
-    pub info: Option<TokenInfo>,
-    info_bytes: &'static [u8],
-    pub hf_bytes: &'static [u8],
-    pub add_tokens: u32,
+    info: Option<TokenInfo>,
+    base_tokenizer: Option<&'static str>,
+    info_bytes: Option<&'static [u8]>,
+    hf_bytes: Option<&'static [u8]>,
+    add_tokens: Value,
 }
 
 macro_rules! tok {
@@ -27,18 +29,20 @@ macro_rules! tok {
         Tokenizer {
             name: $name.into(),
             description: $desc.into(),
-            info_bytes: include_bytes!(concat!("tokenizers/", $name, ".json")),
-            hf_bytes: include_bytes!(concat!("hf-tokenizers/", $name, ".json")),
+            base_tokenizer: None,
+            info_bytes: Some(include_bytes!(concat!("tokenizers/", $name, ".json"))),
+            hf_bytes: Some(include_bytes!(concat!("hf-tokenizers/", $name, ".json"))),
             info: None,
-            add_tokens: 0,
+            add_tokens: json!({}),
         }
     };
-    ($username:literal, $name:literal, $desc:literal, $add:literal) => {
+    ($username:literal, $name:literal, $desc:literal, $add:expr) => {
         Tokenizer {
             name: $username.into(),
             description: $desc.into(),
-            info_bytes: include_bytes!(concat!("tokenizers/", $name, ".json")),
-            hf_bytes: include_bytes!(concat!("hf-tokenizers/", $name, ".json")),
+            base_tokenizer: Some($name),
+            info_bytes: None,
+            hf_bytes: None,
             info: None,
             add_tokens: $add,
         }
@@ -49,7 +53,29 @@ pub fn tokenizers() -> Vec<Tokenizer> {
     vec![
         tok!("gpt4", "cl100k_base, used by GPT-4 and GPT-3.5"),
         tok!("llama", "used by Llama, CodeLlama, etc."),
-        tok!("codellama", "llama", "used by Llama, CodeLlama, etc.", 16),
+        tok!(
+            "llama16",
+            "llama",
+            "same as llama, with 16 added tokens (used by 13B codellama)",
+            json!({
+                "▁<SU": 32000,
+                "▁<SUF": 32001,
+                "▁<PRE": 32002,
+                "▁<M": 32003,
+                "▁<MID": 32004,
+                "▁<E": 32005,
+                "▁<EOT": 32006,
+                "▁<PRE>": 32007,
+                "▁<SUF>": 32008,
+                "▁<MID>": 32009,
+                "▁<EOT>": 32010,
+                "▁<EOT><EOT>": 32011,
+                "▁<EOT><EOT><EOT>": 32012,
+                "▁<EOT><EOT><EOT><EOT>": 32013,
+                "▁<EOT><EOT><EOT><EOT><EOT>": 32014,
+                "▁<EOT><EOT><EOT><EOT><EOT><EOT>": 32015
+            })
+        ),
         tok!("falcon", "used by Falcon 7b, 40b, etc."),
         tok!("mpt", "MPT"),
         tok!("phi", "Phi 1.5"),
@@ -84,7 +110,15 @@ fn from_hex(hex_str: &str) -> Result<Vec<u8>> {
 impl Tokenizer {
     fn load(&mut self) {
         if self.info.is_none() {
-            let mut info = serde_json::from_slice::<TokenInfo>(self.info_bytes).unwrap();
+            let mut info = serde_json::from_slice::<TokenInfo>(self.get_info_bytes()).unwrap();
+            self.add_tokens
+                .as_object_mut()
+                .unwrap()
+                .iter()
+                .for_each(|(k, v)| {
+                    info.special
+                        .insert(k.to_string(), v.as_u64().unwrap() as u32);
+                });
             let max = vec![
                 info.binary.values().max(),
                 info.special.values().max(),
@@ -96,14 +130,46 @@ impl Tokenizer {
             .unwrap();
             assert!(*max < 1_000_000);
             info.vocab_size = Some(max + 1);
-            let vocab_size = info.vocab_size.unwrap();
-            for off in 0..self.add_tokens {
-                info.special
-                    .insert(format!("<extra_id_{}>", off), vocab_size + off);
-            }
-            info.vocab_size = Some(vocab_size + self.add_tokens);
             self.info = Some(info);
         }
+    }
+    fn get_info_bytes(&self) -> &'static [u8] {
+        match self.info_bytes {
+            Some(x) => x,
+            None => {
+                let base = find_tokenizer(self.base_tokenizer.unwrap()).unwrap();
+                base.get_info_bytes()
+            }
+        }
+    }
+    fn get_hf_bytes_raw(&self) -> &'static [u8] {
+        match self.hf_bytes {
+            Some(x) => x,
+            None => {
+                let base = find_tokenizer(self.base_tokenizer.unwrap()).unwrap();
+                base.get_hf_bytes_raw()
+            }
+        }
+    }
+    pub fn get_hf_bytes(&self) -> Vec<u8> {
+        let mut obj: Value = serde_json::from_slice(self.get_hf_bytes_raw()).unwrap();
+        self.add_tokens
+            .as_object()
+            .unwrap()
+            .iter()
+            .for_each(|(k, v)| {
+                obj["added_tokens"].as_array_mut().unwrap().push(json!({
+                    "id": v.as_u64().unwrap(),
+                    "content": k.to_string(),
+                    "single_word": false,
+                    "lstrip": false,
+                    "rstrip": false,
+                    "normalized": false,
+                    "special": true
+                }));
+                obj["model"]["vocab"][k] = v.clone();
+            });
+        serde_json::to_vec_pretty(&obj).unwrap()
     }
     pub fn tokrx_info(&self) -> TokRxInfo {
         let info = self.info.as_ref().unwrap();

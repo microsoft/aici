@@ -141,7 +141,7 @@ impl ModuleData {
     pub fn tokenize(&mut self, s: &str) -> Result<Vec<u32>> {
         if self.tokenizer.is_none() {
             let info = &self.globals;
-            let tok = Tokenizer::from_bytes(info.hf_tokenizer_bytes).unwrap();
+            let tok = Tokenizer::from_bytes(&info.hf_tokenizer_bytes.as_slice()).unwrap();
             self.tokenizer = Some(tok);
         };
         let tokens = self.tokenizer.as_ref().unwrap().encode(s, false);
@@ -236,7 +236,7 @@ impl ModuleData {
 pub struct GlobalInfo {
     pub tokrx_info: TokRxInfo,
     pub trie_bytes: Arc<Vec<u8>>,
-    pub hf_tokenizer_bytes: &'static [u8],
+    pub hf_tokenizer_bytes: Arc<Vec<u8>>,
 }
 
 fn check_fatal(caller: &mut wasmtime::Caller<'_, ModuleData>) {

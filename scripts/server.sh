@@ -8,7 +8,7 @@ TOK=llama
 
 #MODEL=codellama/CodeLlama-34b-Instruct-hf
 MODEL=codellama/CodeLlama-13b-Instruct-hf
-TOK=codellama
+TOK=llama16
 
 (cd aicirt && cargo build --release)
 

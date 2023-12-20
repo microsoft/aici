@@ -1,2 +1,2 @@
---model codellama/CodeLlama-13b-Instruct-hf --tokenizer codellama
+--model codellama/CodeLlama-13b-Instruct-hf --tokenizer llama16
 -s test_maxtol=0.20 -s test_avgtol=0.10
