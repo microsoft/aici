@@ -1,7 +1,8 @@
 use super::{cache_engine::CacheEngine, scheduler::SchedulerOutputs};
-use crate::{config::RllmConfig, llm::kernels::to_offsets, seq::SchedulingPhase};
+use crate::{config::RllmConfig, llm::kernels::to_offsets, seq::{SchedulingPhase, SeqId}};
 use aicirt::api::Token;
 use std::{
+    collections::HashMap,
     fmt::Debug,
     sync::{Arc, Mutex},
 };
@@ -16,6 +17,7 @@ pub struct BatchInfo {
     pub slot_mapping: Tensor,   // u32, [num_tokens]
     pub max_seqlen_q: usize,
     pub max_seqlen_k: usize,
+    pub seq_id_to_idx: HashMap<SeqId, usize>, // seq_id -> index into seqlens_*
     pub kv_cache: Vec<(Tensor, Tensor)>,
 
     pub infer_log: Mutex<Vec<(String, Tensor)>>,
@@ -69,6 +71,7 @@ pub struct BatchInfoBuilder {
     gather_mapping: Vec<i32>,
     slot_mapping: Vec<i32>,
     config: Arc<RllmConfig>,
+    seq_id_to_idx: HashMap<SeqId, usize>,
 }
 
 impl BatchInfoBuilder {
@@ -79,6 +82,7 @@ impl BatchInfoBuilder {
             seqlens: Vec::new(),
             gather_mapping: Vec::new(),
             slot_mapping: Vec::new(),
+            seq_id_to_idx: HashMap::new(),
             config,
         }
     }
@@ -124,6 +128,7 @@ impl BatchInfoBuilder {
                 sg.usage.prompt_tokens += q_len;
 
                 let off = k_len - q_len;
+                self.seq_id_to_idx.insert(seq.seq_id, self.seqlens.len());
                 self.add_entry(
                     (off..off + q_len).map(|idx| (idx, seq.get_token(idx))),
                     (0..k_len).map(|idx| seq.get_gpu_slot(idx)),
@@ -201,6 +206,7 @@ impl BatchInfoBuilder {
             max_seqlen_q,
             max_seqlen_k,
             kv_cache,
+            seq_id_to_idx: self.seq_id_to_idx.clone(),
             infer_log: Mutex::new(Vec::new()),
             step_no,
         }

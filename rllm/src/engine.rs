@@ -717,49 +717,57 @@ impl RllmEngine {
         next_token
     }
 
+    fn dropped_outputs(&mut self, sched_out: &mut SchedulerOutputs) -> Vec<RequestOutput> {
+        sched_out
+            .dropped_seq_groups
+            .iter_mut()
+            .map(|sg| self.req_output(sg, true))
+            .collect()
+    }
+
+    fn empty_outputs(&mut self, sched_out: &mut SchedulerOutputs) -> Result<Vec<RequestOutput>> {
+        let _ = self.aici_bias(sched_out)?;
+        Ok(self.dropped_outputs(sched_out))
+    }
+
     fn generate_outputs(
         &mut self,
         logits: &Tensor,
         sched_out: &mut SchedulerOutputs,
+        info: &BatchInfo,
     ) -> Result<Vec<RequestOutput>> {
-        let mut idx = 0;
+        let mut seq_id_to_logit_idx = info.seq_id_to_idx.clone();
 
-        let mut seq_id_to_logit_idx = HashMap::new();
+        {
+            let (num_seq, vocab_size) = logits.size2()?;
+            let t_vocab = self.tok_trie.vocab_size() as i64;
+            if vocab_size != t_vocab {
+                panic!("vocab size mismatch: model {vocab_size} != tokenizer {t_vocab}");
+            }
+            assert!(num_seq == info.seq_id_to_idx.len() as i64);
+        }
+
         for sg in sched_out.next_seq_groups.iter_mut() {
             let mut to_add = Vec::new();
             for seq in sg.seqs.iter_mut() {
                 if seq.sched_phase != SchedulingPhase::Running {
                     continue;
                 }
-                seq_id_to_logit_idx.insert(seq.seq_id, idx);
+                // get it even if no pending - make sure we have them all
+                let trg_idx = seq_id_to_logit_idx[&seq.seq_id];
                 let pending = std::mem::take(&mut seq.pending_fork_ids);
                 for copy_id in pending {
-                    seq_id_to_logit_idx.insert(copy_id, idx);
+                    seq_id_to_logit_idx.insert(copy_id, trg_idx);
                     let copy = seq.fork_as(copy_id, sg.max_index + 1);
                     sg.max_index += 1;
                     log::debug!("forked: {:?} -> {:?}", seq, copy);
                     to_add.push(copy);
                 }
-                idx += 1;
             }
             sg.seqs.extend(to_add);
         }
 
         let aici_bias = self.aici_bias(sched_out)?;
-
-        if idx > 0 {
-            let (num_seq, vocab_size) = logits.size2()?;
-            let t_vocab = self.tok_trie.vocab_size() as i64;
-            if vocab_size != t_vocab {
-                panic!("vocab size mismatch: model {vocab_size} != tokenizer {t_vocab}");
-            }
-            assert!(num_seq == idx);
-        }
-
-        let mut outputs = Vec::new();
-        for sg in sched_out.dropped_seq_groups.iter_mut() {
-            outputs.push(self.req_output(sg, true));
-        }
 
         let mut post_ops = Vec::new();
 
@@ -822,9 +830,13 @@ impl RllmEngine {
 
         self.aici_post(sched_out, AiciPostProcessReq { ops: post_ops })?;
 
-        for sg in sched_out.next_seq_groups.iter_mut() {
-            outputs.push(self.req_output(sg, false));
-        }
+        let mut outputs = self.dropped_outputs(sched_out);
+        outputs.extend(
+            sched_out
+                .next_seq_groups
+                .iter_mut()
+                .map(|sg| self.req_output(sg, false)),
+        );
 
         Ok(outputs)
     }
@@ -849,9 +861,7 @@ impl RllmEngine {
     fn run_model(&mut self, sched_out: &mut SchedulerOutputs) -> Result<Vec<RequestOutput>> {
         if sched_out.is_empty() {
             log::debug!("no seqs to run");
-            let logits = Tensor::from_slice(&[0u8]).to(self.device);
-            // still run generate_outputs() to finish the dropped seqs
-            return self.generate_outputs(&logits, sched_out);
+            return self.empty_outputs(sched_out);
         }
 
         let mut issued_cache_op = false;
@@ -889,7 +899,7 @@ impl RllmEngine {
 
         let t0 = Instant::now();
         let logits = self.model.forward(&mut info);
-        let r = self.generate_outputs(&logits, sched_out);
+        let r = self.generate_outputs(&logits, sched_out, &info);
         log::info!(
             "model forward: step #{} {:?}; {} tok(s); {:?}/tok",
             self.step_no,
