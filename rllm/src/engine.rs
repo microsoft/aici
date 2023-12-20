@@ -1,6 +1,6 @@
 use crate::{
     config::{CommonModelConfig, ModelMeta, ModelType},
-    paged::{cache_engine::CacheSize, BatchInfo, BatchInfoBuilder},
+    paged::{BatchInfo, BatchInfoBuilder, CacheSize},
     seq::TokenUsage,
     util::{get_setting, log_mem_stats, reset_mem_stats, to_vec1, to_vec2},
     DType, Device, IndexOp, Tensor,
@@ -33,8 +33,8 @@ use crate::{
         CacheConfig, ModelConfig, ParallelConfig, RllmConfig, SamplingParams, SchedulerConfig,
     },
     iface::AiciRtIface,
-    paged::cache_engine::CacheEngine,
-    paged::scheduler::SchedulerOutputs,
+    paged::CacheEngine,
+    paged::SchedulerOutputs,
     seq::{AiciSampling, FinishReason, RequestOutput, SchedulingPhase, SequenceGroup, Token},
 };
 use crate::{
@@ -42,7 +42,7 @@ use crate::{
     LoaderArgs,
 };
 use crate::{
-    paged::scheduler::Scheduler,
+    paged::Scheduler,
     seq::{SeqId, Sequence},
 };
 use crate::{seq::SeqOutput, LogitsProcessor};
