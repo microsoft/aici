@@ -19,9 +19,13 @@ char *paged_attention_v1_C(tensor out, tensor query, tensor key_cache,
                            tensor block_tables, tensor context_lens,
                            int block_size, int max_context_len,
                            tensor alibi_slopes) {
+  c10::optional<torch::Tensor> alibi;
+  if (alibi_slopes != nullptr) {
+    alibi = *alibi_slopes;
+  }
   PROTECT(paged_attention_v1(*out, *query, *key_cache, *value_cache,
                              num_kv_heads, scale, *block_tables, *context_lens,
-                             block_size, max_context_len, *alibi_slopes));
+                             block_size, max_context_len, alibi));
 }
 
 char *paged_attention_v2_C(tensor out, tensor exp_sums, tensor max_logits,
@@ -30,10 +34,14 @@ char *paged_attention_v2_C(tensor out, tensor exp_sums, tensor max_logits,
                            tensor block_tables, tensor context_lens,
                            int block_size, int max_context_len,
                            tensor alibi_slopes) {
+  c10::optional<torch::Tensor> alibi;
+  if (alibi_slopes != nullptr) {
+    alibi = *alibi_slopes;
+  }
   PROTECT(paged_attention_v2(*out, *exp_sums, *max_logits, *tmp_out, *query,
                              *key_cache, *value_cache, num_kv_heads, scale,
                              *block_tables, *context_lens, block_size,
-                             max_context_len, *alibi_slopes));
+                             max_context_len, alibi));
 }
 
 char *rms_norm_C(tensor out, tensor input, tensor weight, float epsilon) {

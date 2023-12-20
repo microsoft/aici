@@ -101,13 +101,13 @@ pub fn flash_attn_varlen(
 extern "C" {
     fn paged_attention_v1_C(
         out: *mut C_tensor,
-        query: *mut C_tensor,
-        key_cache: *mut C_tensor,
-        value_cache: *mut C_tensor,
+        query: *const C_tensor,
+        key_cache: *const C_tensor,
+        value_cache: *const C_tensor,
         num_kv_heads: i32,
         scale: f32,
-        block_tables: *mut C_tensor,
-        context_lens: *mut C_tensor,
+        block_tables: *const C_tensor,
+        context_lens: *const C_tensor,
         block_size: i32,
         max_context_len: i32,
         alibi_slopes: *const C_tensor,
@@ -342,6 +342,43 @@ pub fn rotary_embedding(
                 head_size as i32,
                 cos_sin_cache.as_ptr(),
                 is_neox,
+            ),
+        );
+    }
+}
+
+pub fn paged_attention_v1(
+    out: &mut Tensor,     // [num_seqs, num_heads, head_size]
+    query: &Tensor,       // [num_seqs, num_heads, head_size]
+    key_cache: &Tensor,   // [num_blocks, num_heads, head_size/x, block_size, x]
+    value_cache: &Tensor, // [num_blocks, num_heads, head_size, block_size]
+    num_kv_heads: usize,
+    scale: f32,
+    block_tables: &Tensor, // [num_seqs, max_num_blocks_per_seq]
+    context_lens: &Tensor, // [num_seqs]
+    block_size: usize,
+    max_context_len: usize,
+    alibi_slopes: Option<&Tensor>,
+) {
+    let alibi_slopes = match alibi_slopes {
+        None => std::ptr::null(),
+        Some(t) => t.as_ptr(),
+    };
+    unsafe {
+        check_res(
+            "paged_attention_v1_C",
+            paged_attention_v1_C(
+                out.as_mut_ptr(),
+                query.as_ptr(),
+                key_cache.as_ptr(),
+                value_cache.as_ptr(),
+                num_kv_heads as i32,
+                scale,
+                block_tables.as_ptr(),
+                context_lens.as_ptr(),
+                block_size as i32,
+                max_context_len as i32,
+                alibi_slopes,
             ),
         );
     }
