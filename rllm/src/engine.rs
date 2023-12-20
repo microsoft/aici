@@ -10,7 +10,10 @@ use crate::{
         AiciSampling, FinishReason, RequestOutput, SchedulingPhase, SeqId, SeqOutput, Sequence,
         SequenceGroup, Token, TokenUsage,
     },
-    util::{get_setting, log_mem_stats, reset_mem_stats, to_vec1, to_vec2},
+    util::{
+        get_setting, gpu_memory_size, gpu_peak_allocated_bytes, log_mem_stats, reset_mem_stats,
+        to_vec1, to_vec2,
+    },
     DType, Device, IndexOp, LoaderArgs, LogitsProcessor, Tensor,
 };
 use aici_abi::toktree::TokTrie;
@@ -284,17 +287,23 @@ impl RllmEngine {
 
         let (tokenizer, tok_trie) = Self::load_tokenizer(&args)?;
         let model_config = Self::load_model_config(&args)?;
+        let model_len = model_config.max_sequence_length;
 
         let mut aici = args.aici.clone();
         if aici.max_fuel == 0 {
-            aici.max_fuel = model_config.max_sequence_length * 10;
+            aici.max_fuel = model_len * 10;
         }
 
         let rllm_config = RllmConfig {
             model: model_config.clone(),
             parallel: ParallelConfig::single(),
             cache: CacheConfig::default(),
-            scheduler: SchedulerConfig::new(2560, 256, model_config.max_sequence_length),
+            scheduler: SchedulerConfig {
+                max_num_batched_tokens: model_len,
+                max_num_kv_tokens: model_len * 10,
+                max_num_seqs: 50,
+                max_model_len: model_len,
+            },
             aici,
             dtype: model_config.dtype,
             device: device.clone(),
@@ -438,17 +447,41 @@ impl RllmEngine {
         let _logits = model.forward(&mut info);
         log_mem_stats("after model profile", device);
 
-        let elt_size = CacheEngine::get_cache_block_size(&config);
-        let cache_mem = if device.is_cuda() {
-            4096 << 20 // 4GiB
+        let gpu_mem = gpu_memory_size(device);
+        let gpu_cache_size = if gpu_mem > 0 {
+            let frac = config.cache.gpu_memory_utilization;
+            let peak = gpu_peak_allocated_bytes(device) as isize;
+            let left = (gpu_mem as f64 * frac) as isize - peak;
+            if left < 0 {
+                panic!("not enough GPU memory for the cache: {gpu_mem} * {frac} < {peak}");
+            }
+            left as usize
         } else {
             512 << 20 // 512MiB
         };
 
-        CacheSize {
-            cpu: cache_mem / elt_size,
-            gpu: cache_mem / elt_size,
-        }
+        let max_cpu = 2 << 30; // 2GiB
+        let cpu_cache_size = std::cmp::min(max_cpu, gpu_cache_size);
+
+        let elt_size = CacheEngine::get_cache_block_size(&config);
+
+        let r = CacheSize {
+            cpu: cpu_cache_size / elt_size,
+            gpu: gpu_cache_size / elt_size,
+        };
+
+        const G: f64 = 1024.0 * 1024.0 * 1024.0;
+        log::info!(
+            "caches: gpu:{:.3}GiB cpu:{:.3}GiB; blocks: {}/{}; tokens: {}/{}",
+            gpu_cache_size as f64 / G,
+            cpu_cache_size as f64 / G,
+            r.gpu,
+            r.cpu,
+            r.gpu * config.cache.block_size,
+            r.cpu * config.cache.block_size,
+        );
+
+        r
     }
 
     pub fn set_aicirt(&mut self, aicirt: AiciRtIface) {

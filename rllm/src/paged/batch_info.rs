@@ -1,5 +1,6 @@
 use super::{cache_engine::CacheEngine, scheduler::SchedulerOutputs};
 use crate::{config::RllmConfig, llm::kernels::to_offsets, seq::SchedulingPhase};
+use aicirt::api::Token;
 use std::{
     fmt::Debug,
     sync::{Arc, Mutex},
@@ -53,8 +54,8 @@ impl Debug for BatchInfo {
             .field("positions", &self.positions)
             .field("seqlens_q", &self.seqlens_q)
             .field("seqlens_k", &self.seqlens_k)
-            // .field("gather_mapping", &self.gather_mapping)
-            // .field("slot_mapping", &self.slot_mapping)
+            .field("gather_mapping", &self.gather_mapping.numel())
+            .field("slot_mapping", &self.slot_mapping.numel())
             .field("max_seqlen_q", &self.max_seqlen_q)
             .field("max_seqlen_k", &self.max_seqlen_k)
             .finish()
@@ -82,10 +83,28 @@ impl BatchInfoBuilder {
         }
     }
 
-    pub fn sched_out(&mut self, sched_out: &mut SchedulerOutputs) -> &mut Self {
-        let sch_cfg = &self.config.scheduler;
-        let max_seq = sch_cfg.max_model_len;
+    fn add_entry(
+        &mut self,
+        query_pos_token: impl Iterator<Item = (usize, Token)>,
+        kv_slots: impl Iterator<Item = usize>,
+    ) {
+        let query = query_pos_token.collect::<Vec<_>>();
+        let kv_slots = kv_slots.collect::<Vec<_>>();
+        let off = kv_slots.len() - query.len();
+        let max_seq = self.config.scheduler.max_model_len;
+        for (qidx, (tpos, token)) in query.iter().enumerate() {
+            assert!(*tpos < max_seq);
+            self.positions.push(*tpos as i64);
+            self.tokens.push(*token as i32);
+            self.slot_mapping.push(kv_slots[off + qidx] as i32);
+        }
+        for slot in kv_slots.iter() {
+            self.gather_mapping.push(*slot as i32);
+        }
+        self.seqlens.push((query.len(), kv_slots.len()));
+    }
 
+    pub fn sched_out(&mut self, sched_out: &mut SchedulerOutputs) -> &mut Self {
         assert!(sched_out.next_seq_groups.len() > 0);
         for sg in sched_out.next_seq_groups.iter_mut() {
             for seq in sg.seqs.iter_mut() {
@@ -101,19 +120,14 @@ impl BatchInfoBuilder {
                     // just re-compute the last token
                     q_len = 1;
                 }
-                let off = k_len - q_len;
                 sg.usage.gen_tokens += 1;
                 sg.usage.prompt_tokens += q_len;
-                for idx in off..off + q_len {
-                    assert!(idx < max_seq);
-                    self.positions.push(idx as i64);
-                    self.tokens.push(seq.get_token(idx) as i32);
-                    self.slot_mapping.push(seq.get_gpu_slot(idx) as i32);
-                }
-                for idx in 0..k_len {
-                    self.gather_mapping.push(seq.get_gpu_slot(idx) as i32);
-                }
-                self.seqlens.push((q_len, k_len));
+
+                let off = k_len - q_len;
+                self.add_entry(
+                    (off..off + q_len).map(|idx| (idx, seq.get_token(idx))),
+                    (0..k_len).map(|idx| seq.get_gpu_slot(idx)),
+                );
             }
         }
 
@@ -121,31 +135,36 @@ impl BatchInfoBuilder {
     }
 
     pub fn profile_run(&mut self) -> BatchInfo {
-        let sch_cfg = &self.config.scheduler;
+        let sch_cfg = &self.config.clone().scheduler;
         let seq_len = sch_cfg.max_model_len;
-        for idx in 0..sch_cfg.max_num_seqs {
-            self.positions.push((idx % 200) as i64);
-            self.tokens.push(1);
-            self.slot_mapping.push(0);
-            for _ in 0..seq_len {
-                self.gather_mapping.push(0);
-            }
-            self.seqlens.push((1, seq_len));
+        let max_num_seqs = sch_cfg.max_num_seqs;
+        let avg_len = sch_cfg.max_num_kv_tokens / max_num_seqs;
+
+        let fake_token = 12;
+        let fake_slot = 0; // has to be 0 - we only have 1 slot in our fake kv cache
+
+        for idx in 0..max_num_seqs {
+            self.add_entry(
+                (0..1).map(|_| (idx, fake_token)),
+                (0..avg_len).map(|_| fake_slot),
+            );
         }
-        let mut left = sch_cfg.max_num_batched_tokens - sch_cfg.max_num_seqs;
+
+        let mut left = sch_cfg.max_num_batched_tokens - max_num_seqs;
         while left > 0 {
             let seq_len = std::cmp::min(seq_len, left);
             left -= seq_len;
-            for idx in 0..seq_len {
-                self.positions.push(idx as i64);
-                self.tokens.push(2);
-                self.slot_mapping.push(0);
-                self.gather_mapping.push(0);
-            }
-            self.seqlens.push((seq_len, seq_len));
+            self.add_entry(
+                (0..seq_len).map(|idx| (idx, fake_token)),
+                (0..seq_len).map(|_| fake_slot),
+            );
         }
 
-        self.fake_finish()
+        let res = self.fake_finish();
+
+        log::info!("profile: {res:?}");
+
+        res
     }
 
     fn fake_finish(&self) -> BatchInfo {

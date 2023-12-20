@@ -2,6 +2,7 @@ use crate::Tensor;
 use anyhow::{bail, Result};
 use std::collections::HashMap;
 use tch::{kind::Element, Device, IndexOp as _};
+use tch_flash_attn::cuda_get_device_properties;
 #[cfg(feature = "cuda")]
 use tch_flash_attn::{
     cuda_empty_cache, cuda_get_stats_allocated_bytes, cuda_reset_peak_memory_stats,
@@ -149,8 +150,8 @@ pub fn to_vec3<T: Element>(t: &Tensor) -> Vec<Vec<Vec<T>>> {
 }
 
 pub fn reset_mem_stats(device: Device) {
-    #[cfg(feature = "cuda")]
     match device {
+        #[cfg(feature = "cuda")]
         Device::Cuda(n) => {
             cuda_empty_cache();
             cuda_reset_peak_memory_stats(n);
@@ -160,12 +161,34 @@ pub fn reset_mem_stats(device: Device) {
 }
 
 pub fn log_mem_stats(lbl: &str, device: Device) {
-    #[cfg(feature = "cuda")]
     match device {
+        #[cfg(feature = "cuda")]
         Device::Cuda(n) => {
             let stats = cuda_get_stats_allocated_bytes(n);
             log::info!("cuda mem: {lbl} {stats}");
         }
         _ => {}
+    }
+}
+
+pub fn gpu_peak_allocated_bytes(device: Device) -> usize {
+    match device {
+        #[cfg(feature = "cuda")]
+        Device::Cuda(n) => {
+            let stats = cuda_get_stats_allocated_bytes(n);
+            stats.peak as usize
+        }
+        _ => 0,
+    }
+}
+
+pub fn gpu_memory_size(device: Device) -> usize {
+    match device {
+        #[cfg(feature = "cuda")]
+        Device::Cuda(n) => {
+            let stats = cuda_get_device_properties(n);
+            stats.total_memory as usize
+        }
+        _ => 0,
     }
 }

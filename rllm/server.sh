@@ -1,5 +1,6 @@
 #!/bin/sh
 
+set -e
 REL=
 LOOP=
 
@@ -21,6 +22,9 @@ case "$1" in
     ;;
   code )
     ARGS="-m codellama/CodeLlama-13b-Instruct-hf -t codellama -w expected/codellama/cats.safetensors"
+    ;;
+  code34 )
+    ARGS="-m codellama/CodeLlama-34b-Instruct-hf -t codellama"
     ;;
   * )
     echo "try one of models: phi, phi2, 7b, code" 
@@ -61,8 +65,7 @@ if [ "$LOOP" = "" ] ; then
     exit $?
 fi
 
-
-
+set +e
 while : ; do
     $BIN --daemon $ARGS "$@" 2>&1 | rotatelogs -e -D ./logs/%Y-%m-%d-%H_%M_%S.txt 3600 
     echo "restarting..."

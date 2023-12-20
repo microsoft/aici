@@ -184,22 +184,14 @@ fn get_cpu_memory() -> usize {
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct SchedulerConfig {
-    /// Maximum number of tokens to be processed in a single iteration.
+    /// Maximum number of tokens to be processed in a single iteration (passed through FFN).
     pub max_num_batched_tokens: usize,
+    /// Maximum number of KV entries to be processed in a single iteration.
+    pub max_num_kv_tokens: usize,
     /// Maximum number of sequences to be processed in a single iteration.
     pub max_num_seqs: usize,
     /// Maximum length of a sequence (including prompt and generated text).
     pub max_model_len: usize,
-}
-
-impl SchedulerConfig {
-    pub fn new(max_num_batched_tokens: usize, max_num_seqs: usize, max_model_len: usize) -> Self {
-        Self {
-            max_num_batched_tokens,
-            max_num_seqs,
-            max_model_len,
-        }
-    }
 }
 
 pub const SAMPLING_EPS: f32 = 1e-5;
