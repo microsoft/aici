@@ -20,13 +20,13 @@ async def test_fork():
         french, german = await aici.wait_vars("french", "german")
         await aici.FixedTokens(f"{french} is the same as {german}.")
         await aici.gen_tokens(max_tokens=5)
+        aici.check_vars({"french": ' "bonjour"', "german": ' "Hallo"'})
     elif id == 1:
         await aici.FixedTokens(" German is")
         await aici.gen_tokens(regex=r' "[^"]+"', store_var="german", max_tokens=5)
     elif id == 2:
         await aici.FixedTokens(" French is")
         await aici.gen_tokens(regex=r' "[^"]+"', store_var="french", max_tokens=5)
-    aici.check_vars({"french": ' "bonjour"', "german": ' "Hallo"'})
 
 
 async def test_backtrack_lang():

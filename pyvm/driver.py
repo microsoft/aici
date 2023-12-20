@@ -43,7 +43,7 @@ class Tester:
                 ignore_eos=True,
                 max_tokens=2000,
             )
-            logs: str = r["logs"][0]
+            logs = "\n".join(r["logs"])
             if (
                 "\nTEST OK\n" in logs
                 and not "\nPanicked at" in logs
