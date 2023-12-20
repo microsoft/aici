@@ -46,10 +46,12 @@ if echo "$*" | grep -q -- --profile-step ; then
     cargo build --release
 RUST_LOG=info \
     nsys profile -c cudaProfilerApi \
-    --stats true \
     ./target/release/rllm-server \
     $ARGS "$@"
-    echo $?
+    nsys stats ./report1.nsys-rep > tmp/perf.txt
+    echo "Opening tmp/perf.txt in VSCode; use Alt-Z to toggle word wrap"
+    code tmp/perf.txt
+    exit
 fi
 
 cargo build $REL --bin rllm-server

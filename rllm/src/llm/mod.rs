@@ -123,30 +123,37 @@ impl RotaryEmbedding {
     }
 }
 
-pub fn varlen_attn(
-    config: &ModelConfig,
-    q: Tensor,
-    k: Tensor,
-    v: Tensor,
+fn save_attn(
+    _config: &ModelConfig,
+    k: &Tensor,
+    v: &Tensor,
     batch_info: &mut BatchInfo,
     block_idx: usize,
-) -> Tensor {
-    let trace = false;
-
+) {
     let (key_cache, value_cache) = &mut batch_info.kv_cache[block_idx];
 
-    // first, stuff the query-sized key/value into the cache
+    assert!(v.size() == k.size());
 
+    // first, stuff the query-sized key/value into the cache
     if CHECK {
         let mut kk = key_cache.copy();
         let mut vv = value_cache.copy();
-        kernels::reshape_and_cache(&k, &v, key_cache, value_cache, &batch_info.slot_mapping);
-        refkernels::reshape_and_cache(&k, &v, &mut kk, &mut vv, &batch_info.slot_mapping);
+        kernels::reshape_and_cache(k, v, key_cache, value_cache, &batch_info.slot_mapping);
+        refkernels::reshape_and_cache(k, v, &mut kk, &mut vv, &batch_info.slot_mapping);
         check_all_close(&key_cache, &kk, 1e-5);
         check_all_close(&value_cache, &vv, 1e-5);
     } else {
-        kernels::reshape_and_cache(&k, &v, key_cache, value_cache, &batch_info.slot_mapping);
+        kernels::reshape_and_cache(k, v, key_cache, value_cache, &batch_info.slot_mapping);
     }
+}
+
+fn compute_varlen_attn(
+    config: &ModelConfig,
+    q: &Tensor,
+    batch_info: &mut BatchInfo,
+    block_idx: usize,
+) -> Tensor {
+    let (key_cache, value_cache) = &mut batch_info.kv_cache[block_idx];
 
     // then, extend key/value and fill them from cache
     let mut k = Tensor::empty(
@@ -155,7 +162,7 @@ pub fn varlen_attn(
             config.num_key_value_heads as i64,
             config.head_dim as i64,
         ],
-        (k.kind(), k.device()),
+        (q.kind(), q.device()),
     );
 
     let mut v = k.empty_like();
@@ -185,12 +192,6 @@ pub fn varlen_attn(
     let k = repeat_kv(config, k);
     let v = repeat_kv(config, v);
 
-    if trace {
-        println!("q2: {q:?}\n{q}");
-        println!("k2: {k:?}\n{k}");
-        println!("v2: {v:?}\n{v}");
-    }
-
     let y = {
         batch_info.log_tensor("q", &q);
         batch_info.log_tensor("k", &k);
@@ -198,9 +199,7 @@ pub fn varlen_attn(
 
         // flash-attn expects (seq_len, nheads, head_dim)
         let softmax_scale = 1f32 / (config.head_dim as f32).sqrt();
-        if trace {
-            println!("Q {q:?} K {k:?} V {v:?}");
-        }
+
         let causal = true;
 
         let y = if config.dtype == DType::BFloat16 || config.dtype == DType::Half {
@@ -251,13 +250,24 @@ pub fn varlen_attn(
 
     batch_info.log_tensor("y", &v);
 
-    if trace {
-        println!("y: {y:?}\n{y}");
-    }
-
     let y = y.reshape(&[-1, config.hidden_size as i64]);
 
     y
+}
+
+pub fn varlen_attn(
+    config: &ModelConfig,
+    q: Tensor, // [num_tokens, num_heads, head_size]
+    k: Tensor, // [num_tokens, num_heads, head_size]
+    v: Tensor, // [num_tokens, num_heads, head_size]
+    batch_info: &mut BatchInfo,
+    block_idx: usize,
+) -> Tensor {
+    assert!(q.size() == k.size());
+    assert!(v.size() == k.size());
+
+    save_attn(config, &k, &v, batch_info, block_idx);
+    compute_varlen_attn(config, &q, batch_info, block_idx)
 }
 
 // x is [seq_len, num_heads, head_dim]
