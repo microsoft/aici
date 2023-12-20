@@ -1,4 +1,5 @@
 #include <c10/cuda/CUDACachingAllocator.h>
+#include <ATen/cuda/CUDAContext.h>
 
 #define PROTECT(call)                                                          \
   try {                                                                        \
@@ -13,6 +14,14 @@ struct Stats {
   int64_t peak;
   int64_t allocated;
   int64_t freed;
+};
+
+struct CudaProps {
+  int32_t major;
+  int32_t minor;
+  int32_t multi_processor_count;
+  int32_t max_threads_per_multi_processor;
+  int64_t total_memory;
 };
 
 extern "C" {
@@ -35,4 +44,15 @@ char *cuda_get_stats_allocated_bytes_C(int device, Stats *outp) {
   });
 }
 
+char *cuda_get_device_properties_C(int64_t device, CudaProps *outp) {
+  PROTECT({
+    auto p = at::cuda::getDeviceProperties(device);
+    outp->major = p->major;
+    outp->minor = p->minor;
+    outp->multi_processor_count = p->multiProcessorCount;
+    outp->max_threads_per_multi_processor = p->maxThreadsPerMultiProcessor;
+    outp->total_memory = p->totalGlobalMem;
+  });
 }
+
+} // extern "C"

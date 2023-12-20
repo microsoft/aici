@@ -356,6 +356,16 @@ pub struct Stats {
     pub freed: i64,
 }
 
+#[repr(C)]
+#[derive(Clone, Default)]
+pub struct CudaProps {
+    pub major: i32,
+    pub minor: i32,
+    pub multi_processor_count: i32,
+    pub max_threads_per_multi_processor: i32,
+    pub total_memory: i64,
+}
+
 impl Display for Stats {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         const G: f64 = 1024.0 * 1024.0 * 1024.0;
@@ -374,6 +384,7 @@ extern "C" {
     fn cuda_reset_peak_memory_stats_C(device: i32) -> *mut libc::c_char;
     fn cuda_empty_cache_C() -> *mut libc::c_char;
     fn cuda_get_stats_allocated_bytes_C(device: i32, outp: *mut Stats) -> *mut libc::c_char;
+    fn cuda_get_device_properties_C(device: i64, outp: *mut CudaProps) -> *mut libc::c_char;
 }
 
 pub fn cuda_reset_peak_memory_stats(device: usize) {
@@ -400,4 +411,15 @@ pub fn cuda_get_stats_allocated_bytes(device: usize) -> Stats {
         );
     }
     stats
+}
+
+pub fn cuda_get_device_properties(device: usize) -> CudaProps {
+    let mut props = CudaProps::default();
+    unsafe {
+        check_res(
+            "cuda_get_device_properties",
+            cuda_get_device_properties_C(device as i64, &mut props),
+        );
+    }
+    props
 }
