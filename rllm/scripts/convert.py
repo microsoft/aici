@@ -34,6 +34,7 @@ Feel free to ignore this PR.
 
 ConversionResult = Tuple[List["CommitOperationAdd"], List[Tuple[str, "Exception"]]]
 
+to_type = None
 
 def _remove_duplicate_names(
     state_dict: Dict[str, torch.Tensor],
@@ -185,6 +186,7 @@ def convert_file(
     sf_filename: str,
     discard_names: List[str],
 ):
+    print("loading", pt_filename)
     loaded = torch.load(pt_filename, map_location="cpu")
     if "state_dict" in loaded:
         loaded = loaded["state_dict"]
@@ -199,10 +201,17 @@ def convert_file(
     # Force tensors to be contiguous
     loaded = {k: v.contiguous() for k, v in loaded.items()}
 
+
+    if to_type is not None:
+        loaded = {k: v.to(to_type) for k, v in loaded.items()}
+
     dirname = os.path.dirname(sf_filename)
     os.makedirs(dirname, exist_ok=True)
+    print("saving", sf_filename)
     save_file(loaded, sf_filename, metadata=metadata)
-    check_file_size(sf_filename, pt_filename)
+    print("saved", sf_filename)
+    if to_type is None:
+        check_file_size(sf_filename, pt_filename)
     reloaded = load_file(sf_filename)
     for k in loaded:
         pt_tensor = loaded[k]
@@ -279,8 +288,11 @@ def convert(
     filenames = set(s.rfilename for s in info.siblings)
 
     with TemporaryDirectory() as d:
+        global to_type
+        to_type = torch.bfloat16
         folder = os.path.join(d, repo_folder_name(repo_id=model_id, repo_type="models"))
-        os.makedirs(folder)
+        folder = "./tmp/conv"
+        os.makedirs(folder,exist_ok=True)
         new_pr = None
         try:
             operations = None
@@ -324,7 +336,8 @@ def convert(
             else:
                 print("No files to convert")
         finally:
-            shutil.rmtree(folder)
+            # shutil.rmtree(folder)
+            pass
         return new_pr, errors
 
 
