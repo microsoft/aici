@@ -1,0 +1,2 @@
+--model NousResearch/Llama-2-7b-hf --tokenizer llama
+-s test_maxtol=0.30 -s test_avgtol=0.10

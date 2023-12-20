@@ -18,7 +18,7 @@ case "$1" in
     ARGS="-m microsoft/phi-2 -t phi -w expected/phi-2/cats.safetensors"
     ;;
   7 | 7b )
-    ARGS="-m NousResearch/Llama-2-7b-hf -t llama"
+    ARGS="-m NousResearch/Llama-2-7b-hf -t llama -w expected/llama/cats.safetensors"
     ;;
   code )
     ARGS="-m codellama/CodeLlama-13b-Instruct-hf -t codellama -w expected/codellama/cats.safetensors"
@@ -27,7 +27,7 @@ case "$1" in
     ARGS="-m codellama/CodeLlama-34b-Instruct-hf -t llama"
     ;;
   * )
-    echo "try one of models: phi, phi2, 7b, code" 
+    echo "try one of models: phi, phi2, 7b, code, code34" 
     exit 1
     ;;
 esac
