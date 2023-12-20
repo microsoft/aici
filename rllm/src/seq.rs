@@ -1,9 +1,8 @@
-use std::{fmt::Debug, sync::Mutex};
-
-use crate::{engine::ExpectedGeneration, Tensor};
+use crate::engine::ExpectedGeneration;
 use aici_abi::TokenId;
 use aicirt::api::SequenceResult;
 use serde::{Deserialize, Serialize};
+use std::fmt::Debug;
 
 use crate::{config::SamplingParams, paged::blocks::BlockRef, LogitsProcessor};
 
@@ -226,61 +225,6 @@ pub struct SequenceGroup {
     pub logits_processor: LogitsProcessor,
     pub max_index: usize,
     pub usage: TokenUsage,
-}
-
-pub struct BatchInfo {
-    pub tokens: Tensor,         // u32, [num_tokens]
-    pub positions: Tensor,      // i64, [num_tokens]
-    pub seqlens_q: Tensor,      // u32, [batch_size + 1]; points to tokens/positions
-    pub seqlens_k: Tensor,      // u32, [batch_size + 1]; can go outside tokens/positions
-    pub gather_mapping: Tensor, // u32, [sum(context_len + prompt_len)]
-    pub slot_mapping: Tensor,   // u32, [num_tokens]
-    pub max_seqlen_q: usize,
-    pub max_seqlen_k: usize,
-    pub kv_cache: Vec<(Tensor, Tensor)>,
-
-    pub infer_log: Mutex<Vec<(String, Tensor)>>,
-    pub step_no: usize,
-}
-
-impl BatchInfo {
-    pub fn log_tensor(&self, key: &str, value: &Tensor) {
-        if false {
-            self.infer_log
-                .lock()
-                .unwrap()
-                .push((key.to_string(), value.copy()));
-        }
-    }
-
-    pub fn save_log(&self, filename: &str) {
-        let mut lck = self.infer_log.lock().unwrap();
-        if lck.len() == 0 {
-            return;
-        }
-        let tensors = lck
-            .iter()
-            .enumerate()
-            .map(|(i, (k, v))| (format!("{:0>4}_{}", i, k), v.copy()))
-            .collect::<Vec<_>>();
-        lck.clear();
-        Tensor::write_safetensors(&tensors, filename).unwrap();
-    }
-}
-
-impl Debug for BatchInfo {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("BatchInfo")
-            .field("tokens", &self.tokens)
-            .field("positions", &self.positions)
-            .field("seqlens_q", &self.seqlens_q)
-            .field("seqlens_k", &self.seqlens_k)
-            // .field("gather_mapping", &self.gather_mapping)
-            // .field("slot_mapping", &self.slot_mapping)
-            .field("max_seqlen_q", &self.max_seqlen_q)
-            .field("max_seqlen_k", &self.max_seqlen_k)
-            .finish()
-    }
 }
 
 impl SequenceGroup {

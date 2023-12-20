@@ -4,7 +4,7 @@ use crate::{
     config::{CommonModelConfig, ModelConfig, ModelType},
     engine::{RllmModel, RllmModelConfig},
     llm::{extract_positions, linear_no_bias, varlen_attn, RmsNorm, RotaryEmbedding},
-    seq::BatchInfo,
+    paged::BatchInfo,
     Tensor,
 };
 use anyhow::Result;

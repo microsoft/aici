@@ -5,7 +5,7 @@ pub mod phi;
 pub mod refkernels;
 
 use crate::util::{check_all_close, check_all_close_attn};
-use crate::{config::ModelConfig, seq::BatchInfo};
+use crate::{config::ModelConfig, paged::BatchInfo};
 use crate::{DType, IndexOp, Tensor};
 use std::rc::Rc;
 use tch::nn::{self, Module, Path};

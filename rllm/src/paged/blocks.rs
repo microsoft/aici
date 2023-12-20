@@ -7,6 +7,8 @@ use crate::paged::cache_engine::CacheEngine;
 use crate::paged::scheduler::SchedulerOutputs;
 use crate::seq::{SchedulingPhase, Sequence, SequenceGroup};
 
+use super::cache_engine::CacheSize;
+
 #[derive(Debug, Clone, Copy)]
 pub enum BlockLocation {
     GPU,
@@ -134,13 +136,12 @@ impl BlockSpaceManager {
 
     pub fn new(
         block_size: usize,
-        num_gpu_blocks: usize,
-        num_cpu_blocks: usize,
+        cache_size: &CacheSize,
         watermark: f32,
         config: &RllmConfig,
     ) -> Self {
         assert!(watermark >= 0.0);
-        let watermark_blocks = (watermark * num_gpu_blocks as f32) as usize;
+        let watermark_blocks = (watermark * cache_size.gpu as f32) as usize;
 
         log::info!("BlockSpaceManager: block_size: {} tokens", block_size);
 
@@ -150,13 +151,13 @@ impl BlockSpaceManager {
             gpu_allocator: Self::new_allocator(
                 BlockLocation::GPU,
                 block_size,
-                num_gpu_blocks,
+                cache_size.gpu,
                 config,
             ),
             cpu_allocator: Self::new_allocator(
                 BlockLocation::CPU,
                 block_size,
-                num_cpu_blocks,
+                cache_size.cpu,
                 config,
             ),
         }

@@ -31,11 +31,16 @@ pub struct CacheEngine {
     // cuda_device: candle_core::CudaDevice,
 }
 
+pub struct CacheSize {
+    pub gpu: usize,
+    pub cpu: usize,
+}
+
 impl CacheEngine {
-    pub fn new(config: Arc<RllmConfig>) -> Self {
+    pub fn new(config: Arc<RllmConfig>, num_blocks: &CacheSize) -> Self {
         let num_layers = config.get_num_layers_parallel();
 
-        let (gpu_cache, cpu_cache) = Self::allocate_caches(&config);
+        let (gpu_cache, cpu_cache) = Self::allocate_caches(&config, num_blocks);
 
         // let cuda_device = match &config.device {
         //     Device::Cuda(c) => c.clone(),
@@ -73,51 +78,55 @@ impl CacheEngine {
         self.swap(&self.gpu_cache, &self.cpu_cache, src_to_dst);
     }
 
-    fn allocate_caches(config: &RllmConfig) -> (Vec<KVCache>, Vec<KVCache>) {
+    fn alloc_key_block(config: &RllmConfig, num_bl: i64, device: Device) -> Tensor {
         let head_size = config.get_head_size() as i64;
-        let num_layers = config.get_num_layers_parallel() as i64;
         let num_heads = config.get_num_heads_parallel() as i64;
-        let dtype = config.dtype;
         let block_size = config.cache.block_size as i64;
-        let x = 16 / (dtype.elt_size_in_bytes() as i64);
+        let x = 16 / (config.dtype.elt_size_in_bytes() as i64);
+        Tensor::empty(
+            &[num_bl, num_heads, head_size / x, block_size, x],
+            (config.dtype, device),
+        )
+    }
 
-        let key_block = |num_bl, device| {
-            Tensor::empty(
-                &[num_bl, num_heads, head_size / x, block_size, x],
-                (dtype, device),
-            )
-        };
+    fn alloc_value_block(config: &RllmConfig, num_bl: i64, device: Device) -> Tensor {
+        let head_size = config.get_head_size() as i64;
+        let num_heads = config.get_num_heads_parallel() as i64;
+        let block_size = config.cache.block_size as i64;
+        Tensor::empty(
+            &[num_bl, num_heads, head_size, block_size],
+            (config.dtype, device),
+        )
+    }
 
-        let value_block = |num_bl, device| {
-            Tensor::empty(&[num_bl, num_heads, head_size, block_size], (dtype, device))
-        };
+    pub fn alloc_gpu_cache_layer(config: &RllmConfig, num_bl: i64) -> (Tensor, Tensor) {
+        let device = config.device;
+        (
+            Self::alloc_key_block(config, num_bl, device),
+            Self::alloc_value_block(config, num_bl, device),
+        )
+    }
 
-        let gpu_cache = {
-            let num_gpu_blocks = config.cache.num_gpu_blocks.unwrap() as i64;
-            (0..num_layers)
-                .map(|_| {
-                    let device = config.device;
-                    (
-                        key_block(num_gpu_blocks, device),
-                        value_block(num_gpu_blocks, device),
-                    )
-                })
-                .collect()
-        };
+    fn allocate_caches(
+        config: &RllmConfig,
+        num_blocks: &CacheSize,
+    ) -> (Vec<KVCache>, Vec<KVCache>) {
+        let num_layers = config.get_num_layers_parallel() as i64;
 
-        let cpu_cache = {
-            let num_cpu_blocks = config.cache.num_cpu_blocks.unwrap() as i64;
-            (0..num_layers)
-                .map(|_| {
-                    // TODO: vllm sets pin_memory=True here
-                    let device = Device::Cpu;
-                    (
-                        key_block(num_cpu_blocks, device),
-                        value_block(num_cpu_blocks, device),
-                    )
-                })
-                .collect()
-        };
+        let gpu_cache = (0..num_layers)
+            .map(|_| Self::alloc_gpu_cache_layer(config, num_blocks.gpu as i64))
+            .collect();
+
+        let cpu_cache = (0..num_layers)
+            .map(|_| {
+                // TODO: vllm sets pin_memory=True here
+                let device = Device::Cpu;
+                (
+                    Self::alloc_key_block(config, num_blocks.cpu as i64, device),
+                    Self::alloc_value_block(config, num_blocks.cpu as i64, device),
+                )
+            })
+            .collect();
 
         (gpu_cache, cpu_cache)
     }

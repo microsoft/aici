@@ -9,12 +9,12 @@ pub use tch_flash_attn::*;
 pub use tch_flash_attn::flash_attn_varlen as varlen_attn;
 
 /// Convert a vector of lengths into a tensor of offsets, as expected by flash attn.
-pub fn to_offsets(seqlens: &[usize], device: Device) -> (usize, Tensor) {
-    let mut offsets = Vec::with_capacity(seqlens.len() + 1);
+pub fn to_offsets(seqlens: impl Iterator<Item = usize>, device: Device) -> (usize, Tensor) {
+    let mut offsets = Vec::new();
     let mut offset = 0;
     let mut max = 0;
     for len in seqlens {
-        max = std::cmp::max(*len, max);
+        max = std::cmp::max(len, max);
         offsets.push(offset as i32);
         offset += len;
     }

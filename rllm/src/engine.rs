@@ -1,5 +1,6 @@
 use crate::{
     config::{CommonModelConfig, ModelMeta, ModelType},
+    paged::{cache_engine::CacheSize, BatchInfo, BatchInfoBuilder},
     seq::TokenUsage,
     util::{get_setting, log_mem_stats, reset_mem_stats, to_vec1, to_vec2},
     DType, Device, IndexOp, Tensor,
@@ -21,7 +22,7 @@ use std::{
     fmt::Display,
     path::PathBuf,
     rc::Rc,
-    sync::{Arc, Mutex},
+    sync::Arc,
     time::Instant,
 };
 use tch::{nn::VarStore, Kind};
@@ -32,7 +33,6 @@ use crate::{
         CacheConfig, ModelConfig, ParallelConfig, RllmConfig, SamplingParams, SchedulerConfig,
     },
     iface::AiciRtIface,
-    llm::kernels::to_offsets,
     paged::cache_engine::CacheEngine,
     paged::scheduler::SchedulerOutputs,
     seq::{AiciSampling, FinishReason, RequestOutput, SchedulingPhase, SequenceGroup, Token},
@@ -43,7 +43,7 @@ use crate::{
 };
 use crate::{
     paged::scheduler::Scheduler,
-    seq::{BatchInfo, SeqId, Sequence},
+    seq::{SeqId, Sequence},
 };
 use crate::{seq::SeqOutput, LogitsProcessor};
 
@@ -233,6 +233,7 @@ impl Stats {
 }
 
 pub struct RllmEngine {
+    pub config: Arc<RllmConfig>,
     pub tokenizer: Arc<Tokenizer>,
     pub tok_trie: Arc<TokTrie>,
     pub model_id: String,
@@ -300,7 +301,7 @@ impl RllmEngine {
             aici.max_fuel = model_config.max_sequence_length * 10;
         }
 
-        let mut rllm_config = RllmConfig {
+        let rllm_config = RllmConfig {
             model: model_config.clone(),
             parallel: ParallelConfig::single(),
             cache: CacheConfig::default(),
@@ -311,16 +312,6 @@ impl RllmEngine {
         };
 
         rllm_config.verify_args()?;
-
-        // TODO infer these
-        let elt_size = CacheEngine::get_cache_block_size(&rllm_config);
-        let cache_mem = if device.is_cuda() {
-            4096 << 20 // 4GiB
-        } else {
-            512 << 20 // 512MiB
-        };
-        rllm_config.cache.num_cpu_blocks = Some(cache_mem / elt_size);
-        rllm_config.cache.num_gpu_blocks = Some(cache_mem / elt_size);
 
         let idx = repo.read("model.safetensors.index.json");
 
@@ -423,15 +414,13 @@ impl RllmEngine {
         log_mem_stats("model fully loaded", device);
 
         let rllm_config = Arc::new(rllm_config);
-        let scheduler = Scheduler::new(rllm_config.clone());
-        let cache_engine = CacheEngine::new(rllm_config.clone());
-        // let empty_prompt = tokenizer
-        //     .encode("", true)
-        //     .expect("empty tokenization")
-        //     .get_ids()
-        //     .to_vec();
+        let cache_size = Self::profile_model(rllm_config.clone(), &model);
+
+        let scheduler = Scheduler::new(rllm_config.clone(), &cache_size);
+        let cache_engine = CacheEngine::new(rllm_config.clone(), &cache_size);
 
         Ok(RllmEngine {
+            config: rllm_config,
             tokenizer: Arc::new(tokenizer),
             tok_trie: Arc::new(tok_trie),
             model_id: format!("{}", repo),
@@ -450,6 +439,27 @@ impl RllmEngine {
             nv_profile: false,
             aicirt: None,
         })
+    }
+
+    fn profile_model(config: Arc<RllmConfig>, model: &Box<dyn RllmModel>) -> CacheSize {
+        let mut info = BatchInfoBuilder::new(config.clone()).profile_run();
+        let device = config.device.clone();
+        reset_mem_stats(device);
+        log_mem_stats("before model profile", device);
+        let _logits = model.forward(&mut info);
+        log_mem_stats("after model profile", device);
+
+        let elt_size = CacheEngine::get_cache_block_size(&config);
+        let cache_mem = if device.is_cuda() {
+            4096 << 20 // 4GiB
+        } else {
+            512 << 20 // 512MiB
+        };
+
+        CacheSize {
+            cpu: cache_mem / elt_size,
+            gpu: cache_mem / elt_size,
+        }
     }
 
     pub fn set_aicirt(&mut self, aicirt: AiciRtIface) {
@@ -820,24 +830,27 @@ impl RllmEngine {
         }
 
         let mut issued_cache_op = false;
+        let cache_engine = &self.cache_engine;
         if sched_out.blocks_to_swap_in.len() > 0 {
-            self.cache_engine.swap_in(&sched_out.blocks_to_swap_in);
+            cache_engine.swap_in(&sched_out.blocks_to_swap_in);
             issued_cache_op = true;
         }
         if sched_out.blocks_to_swap_out.len() > 0 {
-            self.cache_engine.swap_out(&sched_out.blocks_to_swap_out);
+            cache_engine.swap_out(&sched_out.blocks_to_swap_out);
             issued_cache_op = true;
         }
         if sched_out.blocks_to_copy.len() > 0 {
-            self.cache_engine.copy(&sched_out.blocks_to_copy);
+            cache_engine.copy(&sched_out.blocks_to_copy);
             issued_cache_op = true;
         }
 
         if issued_cache_op {
-            self.cache_engine.wait_for_copy();
+            cache_engine.wait_for_copy();
         }
 
-        let mut info = self.build_batch_info(sched_out)?;
+        let mut info = BatchInfoBuilder::new(self.config.clone())
+            .sched_out(sched_out)
+            .finish(self.step_no, self.cache_engine.get_gpu_cache());
 
         log::trace!("batch_info #{}: {:?}", info.step_no, info);
         // log::trace!("{}", info.positions);
@@ -868,78 +881,6 @@ impl RllmEngine {
         info.save_log(&format!("step-{}.safetensor", self.step_no));
         log::trace!("logits: {:?}", logits);
         r
-    }
-
-    fn build_batch_info(&self, sched_out: &mut SchedulerOutputs) -> Result<BatchInfo> {
-        let mut positions: Vec<i64> = Vec::new();
-        let mut tokens: Vec<i32> = Vec::new();
-        let mut seqlens_q = Vec::new();
-        let mut seqlens_k = Vec::new();
-        let mut gather_mapping: Vec<i32> = Vec::new();
-        let mut slot_mapping: Vec<i32> = Vec::new();
-
-        let max_seq = self.scheduler.config.model.max_sequence_length;
-
-        assert!(sched_out.next_seq_groups.len() > 0);
-
-        for sg in sched_out.next_seq_groups.iter_mut() {
-            for seq in sg.seqs.iter_mut() {
-                if seq.sched_phase != SchedulingPhase::Running {
-                    continue;
-                }
-
-                let seq_len = seq.get_len();
-                let k_len = seq_len;
-                log::trace!("seq: {seq:?}");
-                let mut q_len = seq.get_len() - seq.num_kv_computed;
-                if q_len == 0 {
-                    // just re-compute the last token
-                    q_len = 1;
-                }
-                let off = k_len - q_len;
-                sg.usage.gen_tokens += 1;
-                sg.usage.prompt_tokens += q_len;
-                for idx in off..off + q_len {
-                    assert!(idx < max_seq);
-                    positions.push(idx as i64);
-                    tokens.push(seq.get_token(idx) as i32);
-                    slot_mapping.push(seq.get_gpu_slot(idx) as i32);
-                }
-                for idx in 0..k_len {
-                    gather_mapping.push(seq.get_gpu_slot(idx) as i32);
-                }
-                seqlens_q.push(q_len);
-                seqlens_k.push(k_len);
-            }
-        }
-
-        assert!(seqlens_q.len() > 0);
-
-        let device = self.device;
-        let (max_seqlen_q, seqlens_q) = to_offsets(&seqlens_q, device);
-        let (max_seqlen_k, seqlens_k) = to_offsets(&seqlens_k, device);
-
-        // TODO positions, tokens should be padded to 8? see worker.py, search for multiple_of=8
-        let positions = Tensor::from_slice(positions.as_slice()).to(device);
-        let tokens = Tensor::from_slice(tokens.as_slice()).to(device);
-        let slot_mapping = Tensor::from_slice(slot_mapping.as_slice()).to(device);
-        let gather_mapping = Tensor::from_slice(gather_mapping.as_slice()).to(device);
-
-        let kv_cache = self.cache_engine.get_gpu_cache();
-
-        Ok(BatchInfo {
-            tokens,
-            positions,
-            seqlens_q,
-            seqlens_k,
-            slot_mapping,
-            gather_mapping,
-            max_seqlen_q,
-            max_seqlen_k,
-            kv_cache,
-            infer_log: Mutex::new(Vec::new()),
-            step_no: self.step_no,
-        })
     }
 
     pub fn seq_output_text(&self, seq_output: &SeqOutput) -> Result<String> {

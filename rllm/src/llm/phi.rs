@@ -2,7 +2,7 @@ use crate::{
     config::{CommonModelConfig, ModelConfig, ModelType},
     engine::{RllmModel, RllmModelConfig},
     llm::{extract_positions, layer_norm, linear, varlen_attn, RotaryEmbedding},
-    seq::BatchInfo,
+    paged::BatchInfo,
     Tensor,
 };
 use serde::Deserialize;

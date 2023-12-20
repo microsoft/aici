@@ -10,6 +10,8 @@ use crate::paged::blocks::BlockSpaceManager;
 use crate::seq::{FinishReason, SchedulingPhase, SeqId, Sequence, SequenceGroup};
 use crate::util::limit_str;
 
+use super::cache_engine::CacheSize;
+
 /// Preemption modes.
 #[derive(Debug, Clone, Copy)]
 pub enum PreemptionMode {
@@ -36,6 +38,17 @@ pub struct SchedulerOutputs {
 }
 
 impl SchedulerOutputs {
+    pub fn new() -> Self {
+        SchedulerOutputs {
+            prompt_run: false,
+            num_batched_tokens: 0,
+            blocks_to_swap_in: HashMap::new(),
+            blocks_to_swap_out: HashMap::new(),
+            blocks_to_copy: HashMap::new(),
+            dropped_seq_groups: Vec::new(),
+            next_seq_groups: Vec::new(),
+        }
+    }
     fn validate(&self) {
         assert!(self.blocks_to_swap_in.is_empty() || self.blocks_to_swap_out.is_empty());
         // swapping not impl yet
@@ -133,15 +146,14 @@ impl Scheduler {
 }
 
 impl Scheduler {
-    pub fn new(config: Arc<RllmConfig>) -> Self {
+    pub fn new(config: Arc<RllmConfig>, cache_size: &CacheSize) -> Self {
         let prompt_limit = std::cmp::min(
             config.scheduler.max_model_len,
             config.scheduler.max_num_batched_tokens,
         );
         let block_manager = BlockSpaceManager::new(
             config.cache.block_size,
-            config.cache.num_gpu_blocks.unwrap(),
-            config.cache.num_cpu_blocks.unwrap(),
+            cache_size,
             0.01,
             &config,
         );
@@ -225,7 +237,9 @@ impl Scheduler {
             if num_prompt_tokens > self.prompt_limit {
                 log::warn!(
                     "Sequence group {} has a prompt that is too long ({} > {})",
-                    seq_group.request_id, num_prompt_tokens, self.prompt_limit
+                    seq_group.request_id,
+                    num_prompt_tokens,
+                    self.prompt_limit
                 );
                 self.set_phase(seq_group, SchedulingPhase::Finished(FinishReason::Failed));
             }
@@ -380,16 +394,7 @@ impl Scheduler {
     }
 
     pub fn schedule(&mut self) -> SchedulerOutputs {
-        let mut outputs = SchedulerOutputs {
-            prompt_run: false,
-            num_batched_tokens: 0,
-            blocks_to_swap_in: HashMap::new(),
-            blocks_to_swap_out: HashMap::new(),
-            blocks_to_copy: HashMap::new(),
-            dropped_seq_groups: Vec::new(),
-            next_seq_groups: Vec::new(),
-        };
-
+        let mut outputs = SchedulerOutputs::new();
         self.step_drop_finished(&mut outputs);
 
         if self.q_len(Queue::Swapped) == 0 {

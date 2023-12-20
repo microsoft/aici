@@ -140,10 +140,6 @@ pub struct CacheConfig {
 
     #[serde(skip)]
     pub swap_space_bytes: usize,
-    #[serde(skip)]
-    pub num_gpu_blocks: Option<usize>,
-    #[serde(skip)]
-    pub num_cpu_blocks: Option<usize>,
 }
 
 impl Default for CacheConfig {
@@ -177,8 +173,6 @@ impl CacheConfig {
             gpu_memory_utilization,
             swap_space,
             swap_space_bytes,
-            num_gpu_blocks: None,
-            num_cpu_blocks: None,
         })
     }
 }
