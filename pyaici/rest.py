@@ -2,6 +2,7 @@ import requests
 import ujson
 import os
 import urllib.parse
+import sys
 
 from typing import Optional
 
@@ -149,6 +150,7 @@ def completion(
                         # print(f"*** TOK: '{ch['text']}'")
                     elif log_level > 0:
                         print(ch["text"], end="")
+                        sys.stdout.flush()
                 logs[idx] += ch["logs"]
                 texts[idx] += ch["text"]
         elif decoded_line == "data: [DONE]":
