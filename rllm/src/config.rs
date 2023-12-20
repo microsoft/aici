@@ -138,6 +138,9 @@ pub struct CacheConfig {
     ///  Size of the CPU swap space per GPU (in GiB).
     pub swap_space: usize,
 
+    /// 0 - don't use paged_attention_v1/2(), otherwise version
+    pub paged_attn_kernel_v: usize,
+
     #[serde(skip)]
     pub swap_space_bytes: usize,
 }
@@ -168,11 +171,16 @@ impl CacheConfig {
         } else if swap_space_bytes > (total_cpu_memory * 4 / 10) {
             log::warn!("Possibly too large swap space. {}", msg);
         }
+        #[cfg(feature = "cuda")]
+        let paged_attn_kernel_v = 0;
+        #[cfg(not(feature = "cuda"))]
+        let paged_attn_kernel_v = 0;
         Ok(Self {
             block_size,
             gpu_memory_utilization,
             swap_space,
             swap_space_bytes,
+            paged_attn_kernel_v,
         })
     }
 }

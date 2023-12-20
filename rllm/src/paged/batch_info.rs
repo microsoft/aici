@@ -26,6 +26,8 @@ pub struct BatchInfo {
 
     pub infer_log: Mutex<Vec<(String, Tensor)>>,
     pub step_no: usize,
+    pub num_multitoken: usize,
+    pub first_single_token: usize,
 }
 
 impl BatchInfo {
@@ -156,7 +158,7 @@ impl BatchInfoBuilder {
         res
     }
 
-    fn fake_finish(&self) -> BatchInfo {
+    fn fake_finish(&mut self) -> BatchInfo {
         let (k, v) = CacheEngine::alloc_gpu_cache_layer(&self.config, 1);
         let num_layers = self.config.get_num_layers_parallel();
         let kv_cache = (0..num_layers)
@@ -165,7 +167,7 @@ impl BatchInfoBuilder {
         self.finish(0, kv_cache)
     }
 
-    pub fn finish(&self, step_no: usize, kv_cache: Vec<(Tensor, Tensor)>) -> BatchInfo {
+    pub fn finish(&mut self, step_no: usize, kv_cache: Vec<(Tensor, Tensor)>) -> BatchInfo {
         let mut positions: Vec<i64> = Vec::new();
         let mut tokens: Vec<i32> = Vec::new();
         let mut seqlens_q: Vec<usize> = Vec::new();
@@ -174,9 +176,25 @@ impl BatchInfoBuilder {
         let mut slot_mapping: Vec<i32> = Vec::new();
         let mut seq_id_to_idx: HashMap<SeqId, usize> = HashMap::new();
 
+        let num_multitoken = if self.config.cache.paged_attn_kernel_v > 0 {
+            // sort single-token entries to the back
+            let (single, multi) = std::mem::take(&mut self.entries)
+                .into_iter()
+                .partition::<Vec<_>, _>(|e| e.query_pos_token.len() == 1);
+            let multi_len = multi.len();
+            self.entries = multi;
+            self.entries.extend(single);
+            multi_len
+        } else {
+            self.entries.len()
+        };
+
+        let mut first_single_token = 0;
+
         let max_seq = self.config.scheduler.max_model_len;
         for e in &self.entries {
-            seq_id_to_idx.insert(e.seq_id, seqlens_q.len());
+            let idx = seqlens_q.len();
+            seq_id_to_idx.insert(e.seq_id, idx);
             let query = &e.query_pos_token;
             let off = e.kv_slots.len() - query.len();
             for (qidx, (tpos, token)) in query.iter().enumerate() {
@@ -185,8 +203,11 @@ impl BatchInfoBuilder {
                 tokens.push(*token as i32);
                 slot_mapping.push(e.kv_slots[off + qidx] as i32);
             }
-            for slot in e.kv_slots.iter() {
-                gather_mapping.push(*slot as i32);
+            if idx < num_multitoken {
+                for slot in e.kv_slots.iter() {
+                    gather_mapping.push(*slot as i32);
+                }
+                first_single_token = tokens.len();
             }
             seqlens_q.push(query.len());
             seqlens_k.push(e.kv_slots.len());
@@ -211,6 +232,8 @@ impl BatchInfoBuilder {
             seqlens_k,
             slot_mapping,
             gather_mapping,
+            num_multitoken,
+            first_single_token,
             max_seqlen_q,
             max_seqlen_k,
             kv_cache,
