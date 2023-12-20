@@ -26,6 +26,9 @@ case "$1" in
   code34 )
     ARGS="-m codellama/CodeLlama-34b-Instruct-hf -t llama"
     ;;
+  orca )
+    ARGS="-m microsoft/Orca-2-13b -t orca -w expected/orca/cats.safetensors"
+    ;;
   * )
     echo "try one of models: phi, phi2, 7b, code, code34" 
     exit 1

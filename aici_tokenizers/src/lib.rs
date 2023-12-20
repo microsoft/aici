@@ -76,6 +76,16 @@ pub fn tokenizers() -> Vec<Tokenizer> {
                 "▁<EOT><EOT><EOT><EOT><EOT><EOT>": 32015
             })
         ),
+        tok!(
+            "orca",
+            "llama",
+            "for microsoft/Orca models; similar to llama, with 3 tokens added for chat",
+            json!({
+                "<|im_end|>": 32002,
+                "<|im_start|>": 32001,
+                "[PAD]": 32000
+            })
+        ),
         tok!("falcon", "used by Falcon 7b, 40b, etc."),
         tok!("mpt", "MPT"),
         tok!("phi", "Phi 1.5"),
