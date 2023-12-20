@@ -1,5 +1,9 @@
 use super::{cache_engine::CacheEngine, scheduler::SchedulerOutputs};
-use crate::{config::RllmConfig, llm::kernels::to_offsets, seq::{SchedulingPhase, SeqId}};
+use crate::{
+    config::RllmConfig,
+    llm::kernels::to_offsets,
+    seq::{SchedulingPhase, SeqId},
+};
 use aicirt::api::Token;
 use std::{
     collections::HashMap,
@@ -65,47 +69,22 @@ impl Debug for BatchInfo {
 }
 
 pub struct BatchInfoBuilder {
-    positions: Vec<i64>,
-    tokens: Vec<i32>,
-    seqlens: Vec<(usize, usize)>,
-    gather_mapping: Vec<i32>,
-    slot_mapping: Vec<i32>,
+    entries: Vec<BatchEntry>,
     config: Arc<RllmConfig>,
-    seq_id_to_idx: HashMap<SeqId, usize>,
+}
+
+struct BatchEntry {
+    seq_id: SeqId,
+    query_pos_token: Vec<(usize, Token)>,
+    kv_slots: Vec<usize>,
 }
 
 impl BatchInfoBuilder {
     pub fn new(config: Arc<RllmConfig>) -> Self {
         Self {
-            positions: Vec::new(),
-            tokens: Vec::new(),
-            seqlens: Vec::new(),
-            gather_mapping: Vec::new(),
-            slot_mapping: Vec::new(),
-            seq_id_to_idx: HashMap::new(),
+            entries: Vec::new(),
             config,
         }
-    }
-
-    fn add_entry(
-        &mut self,
-        query_pos_token: impl Iterator<Item = (usize, Token)>,
-        kv_slots: impl Iterator<Item = usize>,
-    ) {
-        let query = query_pos_token.collect::<Vec<_>>();
-        let kv_slots = kv_slots.collect::<Vec<_>>();
-        let off = kv_slots.len() - query.len();
-        let max_seq = self.config.scheduler.max_model_len;
-        for (qidx, (tpos, token)) in query.iter().enumerate() {
-            assert!(*tpos < max_seq);
-            self.positions.push(*tpos as i64);
-            self.tokens.push(*token as i32);
-            self.slot_mapping.push(kv_slots[off + qidx] as i32);
-        }
-        for slot in kv_slots.iter() {
-            self.gather_mapping.push(*slot as i32);
-        }
-        self.seqlens.push((query.len(), kv_slots.len()));
     }
 
     pub fn sched_out(&mut self, sched_out: &mut SchedulerOutputs) -> &mut Self {
@@ -128,11 +107,13 @@ impl BatchInfoBuilder {
                 sg.usage.prompt_tokens += q_len;
 
                 let off = k_len - q_len;
-                self.seq_id_to_idx.insert(seq.seq_id, self.seqlens.len());
-                self.add_entry(
-                    (off..off + q_len).map(|idx| (idx, seq.get_token(idx))),
-                    (0..k_len).map(|idx| seq.get_gpu_slot(idx)),
-                );
+                self.entries.push(BatchEntry {
+                    seq_id: seq.seq_id,
+                    query_pos_token: (off..off + q_len)
+                        .map(|idx| (idx, seq.get_token(idx)))
+                        .collect(),
+                    kv_slots: (0..k_len).map(|idx| seq.get_gpu_slot(idx)).collect(),
+                });
             }
         }
 
@@ -147,22 +128,25 @@ impl BatchInfoBuilder {
 
         let fake_token = 12;
         let fake_slot = 0; // has to be 0 - we only have 1 slot in our fake kv cache
+        let seq_id = 424242;
 
         for idx in 0..max_num_seqs {
-            self.add_entry(
-                (0..1).map(|_| (idx, fake_token)),
-                (0..avg_len).map(|_| fake_slot),
-            );
+            self.entries.push(BatchEntry {
+                seq_id,
+                query_pos_token: (0..1).map(|_| (idx, fake_token)).collect(),
+                kv_slots: (0..avg_len).map(|_| fake_slot).collect(),
+            });
         }
 
         let mut left = sch_cfg.max_num_batched_tokens - max_num_seqs;
         while left > 0 {
             let seq_len = std::cmp::min(seq_len, left);
             left -= seq_len;
-            self.add_entry(
-                (0..seq_len).map(|idx| (idx, fake_token)),
-                (0..seq_len).map(|_| fake_slot),
-            );
+            self.entries.push(BatchEntry {
+                seq_id,
+                query_pos_token: (0..seq_len).map(|idx| (idx, fake_token)).collect(),
+                kv_slots: (0..seq_len).map(|_| fake_slot).collect(),
+            });
         }
 
         let res = self.fake_finish();
@@ -182,19 +166,43 @@ impl BatchInfoBuilder {
     }
 
     pub fn finish(&self, step_no: usize, kv_cache: Vec<(Tensor, Tensor)>) -> BatchInfo {
-        let seqlens = &self.seqlens;
-        assert!(seqlens.len() > 0);
-        assert!(seqlens.iter().all(|(q, k)| *q <= *k));
+        let mut positions: Vec<i64> = Vec::new();
+        let mut tokens: Vec<i32> = Vec::new();
+        let mut seqlens_q: Vec<usize> = Vec::new();
+        let mut seqlens_k: Vec<usize> = Vec::new();
+        let mut gather_mapping: Vec<i32> = Vec::new();
+        let mut slot_mapping: Vec<i32> = Vec::new();
+        let mut seq_id_to_idx: HashMap<SeqId, usize> = HashMap::new();
+
+        let max_seq = self.config.scheduler.max_model_len;
+        for e in &self.entries {
+            seq_id_to_idx.insert(e.seq_id, seqlens_q.len());
+            let query = &e.query_pos_token;
+            let off = e.kv_slots.len() - query.len();
+            for (qidx, (tpos, token)) in query.iter().enumerate() {
+                assert!(*tpos < max_seq);
+                positions.push(*tpos as i64);
+                tokens.push(*token as i32);
+                slot_mapping.push(e.kv_slots[off + qidx] as i32);
+            }
+            for slot in e.kv_slots.iter() {
+                gather_mapping.push(*slot as i32);
+            }
+            seqlens_q.push(query.len());
+            seqlens_k.push(e.kv_slots.len());
+        }
+
+        assert!(seqlens_q.len() > 0);
 
         let device = self.config.device;
-        let (max_seqlen_q, seqlens_q) = to_offsets(seqlens.iter().map(|(q, _)| *q), device);
-        let (max_seqlen_k, seqlens_k) = to_offsets(seqlens.iter().map(|(_, k)| *k), device);
+        let (max_seqlen_q, seqlens_q) = to_offsets(seqlens_q.into_iter(), device);
+        let (max_seqlen_k, seqlens_k) = to_offsets(seqlens_k.into_iter(), device);
 
         // TODO positions, tokens should be padded to 8? see worker.py, search for multiple_of=8
-        let positions = Tensor::from_slice(self.positions.as_slice()).to(device);
-        let tokens = Tensor::from_slice(self.tokens.as_slice()).to(device);
-        let slot_mapping = Tensor::from_slice(self.slot_mapping.as_slice()).to(device);
-        let gather_mapping = Tensor::from_slice(self.gather_mapping.as_slice()).to(device);
+        let positions = Tensor::from_slice(positions.as_slice()).to(device);
+        let tokens = Tensor::from_slice(tokens.as_slice()).to(device);
+        let slot_mapping = Tensor::from_slice(slot_mapping.as_slice()).to(device);
+        let gather_mapping = Tensor::from_slice(gather_mapping.as_slice()).to(device);
 
         BatchInfo {
             tokens,
@@ -206,7 +214,7 @@ impl BatchInfoBuilder {
             max_seqlen_q,
             max_seqlen_k,
             kv_cache,
-            seq_id_to_idx: self.seq_id_to_idx.clone(),
+            seq_id_to_idx,
             infer_log: Mutex::new(Vec::new()),
             step_no,
         }
