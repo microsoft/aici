@@ -1,6 +1,5 @@
-use crate::{get_unix_time, InferenceResult};
-
 use crate::{
+    get_unix_time,
     openai::{
         requests::CompletionRequest,
         responses::{
@@ -8,9 +7,8 @@ use crate::{
             StreamingCompletionResponse,
         },
     },
-    OpenAIServerData,
+    InferenceResult, OpenAIServerData,
 };
-
 use actix_web::{post, web, web::Bytes, Either, HttpResponse};
 use aicirt::api::InstantiateReq;
 use rllm::{config::SamplingParams, seq::Token, AddRequest};

@@ -7,7 +7,6 @@ use aici_abi::{
     PostProcessResult, PreProcessArg, PreProcessResult, TokenId, VariableStorage,
 };
 use anyhow::Result;
-
 use lazy_static::lazy_static;
 use num_traits::ToPrimitive;
 use rustpython_vm::{
@@ -44,8 +43,7 @@ fn get_cb_obj() -> PyObjectRef {
 
 #[rustpython_derive::pymodule]
 mod _aici {
-    use std::{fmt::Debug, sync::Mutex};
-
+    use crate::{rx::RecRx, PyConstraint, VmExt, GLOBAL_STATE};
     use aici_abi::{
         recognizer::{AnythingGoes, StackRecognizer},
         svob::SimpleVob,
@@ -62,8 +60,7 @@ mod _aici {
         types::{AsSequence, Constructor},
         PyObjectRef, PyPayload, PyRef, PyResult, VirtualMachine,
     };
-
-    use crate::{rx::RecRx, PyConstraint, VmExt, GLOBAL_STATE};
+    use std::{fmt::Debug, sync::Mutex};
 
     #[pyfunction]
     fn register(obj: PyObjectRef, _vm: &VirtualMachine) -> PyResult<()> {

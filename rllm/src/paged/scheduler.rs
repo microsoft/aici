@@ -1,20 +1,17 @@
-use std::{
-    cell::RefCell,
-    collections::HashMap,
-    sync::{Arc, Mutex},
-    vec::Vec,
-};
-
-use aicirt::api::SequenceResult;
-
+use super::cache_engine::CacheSize;
 use crate::{
     config::RllmConfig,
     paged::blocks::BlockSpaceManager,
     seq::{FinishReason, SchedulingPhase, SeqId, Sequence, SequenceGroup},
     util::limit_str,
 };
-
-use super::cache_engine::CacheSize;
+use aicirt::api::SequenceResult;
+use std::{
+    cell::RefCell,
+    collections::HashMap,
+    sync::{Arc, Mutex},
+    vec::Vec,
+};
 
 /// Preemption modes.
 #[derive(Debug, Clone, Copy)]

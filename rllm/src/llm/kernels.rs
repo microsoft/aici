@@ -1,8 +1,6 @@
-use tch::{Device, Tensor};
-
 #[cfg(not(feature = "cuda"))]
 pub use crate::llm::refkernels::*;
-
+use tch::{Device, Tensor};
 #[cfg(feature = "cuda")]
 pub use tch_flash_attn::flash_attn_varlen as varlen_attn;
 #[cfg(feature = "cuda")]

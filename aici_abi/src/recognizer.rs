@@ -1,9 +1,8 @@
-use std::fmt::Debug;
-
 use crate::{
     toktree::{Recognizer, SpecialToken, TokTrie},
     AiciVm, MidProcessArg, MidProcessResult, PostProcessArg, PostProcessResult,
 };
+use std::fmt::Debug;
 
 pub struct AiciRecognizer<R: Recognizer> {
     pub trie: TokTrie,

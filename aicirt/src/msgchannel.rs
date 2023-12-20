@@ -1,8 +1,6 @@
-use std::time::Duration;
-
-use crate::semaphore::Semaphore;
-use crate::shm::Shm;
+use crate::{semaphore::Semaphore, shm::Shm};
 use anyhow::Result;
+use std::time::Duration;
 
 pub struct MessageChannel {
     shm: Shm,

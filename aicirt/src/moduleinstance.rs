@@ -1,26 +1,22 @@
-use crate::api::ModuleInstId;
-use aici_abi::toktree::TokTrie;
+use crate::{
+    api::ModuleInstId,
+    bench::TimerSet,
+    hostimpl::{
+        setup_linker, AiciLimits, GlobalInfo, ModuleData, LOGIT_BIAS_ALLOW, LOGIT_BIAS_DISALLOW,
+    },
+    shm::Shm,
+    worker::{GroupHandle, RtMidProcessArg, RtPostProcessArg, RtPreProcessArg, RtPreProcessResult},
+};
 use aici_abi::{
-    InitPromptArg, InitPromptResult, MidProcessResult, PostProcessArg, PostProcessResult,
-    PreProcessResult, TokenId,
+    toktree::TokTrie, InitPromptArg, InitPromptResult, MidProcessResult, PostProcessArg,
+    PostProcessResult, PreProcessResult, TokenId,
 };
 use aici_tokenizers::Tokenizer;
 use aicirt::api::{AiciMidProcessResultInner, AiciPostProcessResultInner, SequenceResult};
 use anyhow::{anyhow, bail, ensure, Result};
 use serde::Deserialize;
-use std::path::PathBuf;
-use std::sync::Arc;
-use std::time::Instant;
+use std::{path::PathBuf, sync::Arc, time::Instant};
 use wasmtime;
-
-use crate::bench::TimerSet;
-use crate::hostimpl::{
-    setup_linker, AiciLimits, GlobalInfo, ModuleData, LOGIT_BIAS_ALLOW, LOGIT_BIAS_DISALLOW,
-};
-use crate::shm::Shm;
-use crate::worker::{
-    GroupHandle, RtMidProcessArg, RtPostProcessArg, RtPreProcessArg, RtPreProcessResult,
-};
 
 #[derive(Clone)]
 pub struct WasmContext {

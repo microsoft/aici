@@ -1,3 +1,4 @@
+use crate::lex::{Lexer, LexerState, StateID, VobIdx, VobSet};
 use aici_abi::{
     svob::SimpleVob,
     toktree::{Recognizer, SpecialToken, TokTrie},
@@ -12,8 +13,6 @@ use lrtable::{from_yacc, Action, Minimiser, StIdx, StateTable};
 use rustc_hash::FxHashMap;
 use std::{cell::RefCell, vec};
 use vob::{vob, Vob};
-
-use crate::lex::{Lexer, LexerState, StateID, VobIdx, VobSet};
 
 type StorageT = u32;
 type PStack<StorageT> = Vec<StIdx<StorageT>>; // Parse stack

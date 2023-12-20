@@ -1,6 +1,5 @@
-use std::fmt::Debug;
-
 use crate::TokenId;
+use std::fmt::Debug;
 
 #[derive(Clone)]
 pub struct SimpleVob {

@@ -3,35 +3,36 @@ mod hostimpl;
 mod moduleinstance;
 mod worker;
 
-use aici_abi::bytes::limit_str;
-use aici_abi::toktree::TokTrie;
-use aici_abi::{MidProcessArg, PostProcessArg, PreProcessArg, SeqId};
+use crate::{
+    api::*,
+    hostimpl::*,
+    moduleinstance::*,
+    msgchannel::MessageChannel,
+    shm::Shm,
+    worker::{bench_ipc, RtMidProcessArg, WorkerForker},
+};
+use aici_abi::{
+    bytes::limit_str, toktree::TokTrie, MidProcessArg, PostProcessArg, PreProcessArg, SeqId,
+};
 use aici_tokenizers::find_tokenizer;
 use aicirt::*;
 use anyhow::{anyhow, ensure, Result};
-use base64;
-use base64::Engine as _;
+use base64::{self, Engine as _};
 use bench::{TimerRef, TimerSet};
 use clap::Parser;
 use hex;
 use hostimpl::GlobalInfo;
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
-use std::collections::HashMap;
-use std::fs;
-use std::path::PathBuf;
-use std::sync::{Arc, Mutex};
-use std::time::{Duration, Instant};
+use std::{
+    collections::HashMap,
+    fs,
+    path::PathBuf,
+    sync::{Arc, Mutex},
+    time::{Duration, Instant},
+};
 use thread_priority::*;
 use worker::{fork_child, RtPostProcessArg, RtPreProcessArg, SeqWorkerHandle};
-
-use crate::hostimpl::*;
-use crate::moduleinstance::*;
-use crate::msgchannel::MessageChannel;
-use crate::shm::Shm;
-use crate::worker::{bench_ipc, RtMidProcessArg, WorkerForker};
-
-use crate::api::*;
 
 // percentage of available cores
 const BG_THREADS_FRACTION: usize = 50;

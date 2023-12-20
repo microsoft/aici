@@ -1,11 +1,10 @@
-use serde::{Deserialize, Serialize};
-use std::io;
-
 use crate::{
     bytes::{vec_from_bytes, TokenId},
     svob::SimpleVob,
     wprintln, SeqId,
 };
+use serde::{Deserialize, Serialize};
+use std::io;
 
 #[repr(transparent)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -169,8 +168,7 @@ pub enum StorageOp {
 
 #[allow(dead_code)]
 pub mod bin_string {
-    use serde::{Deserialize, Serialize};
-    use serde::{Deserializer, Serializer};
+    use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
     pub fn serialize<S: Serializer>(v: &Vec<u8>, s: S) -> Result<S::Ok, S::Error> {
         let binstr = String::from_iter(v.iter().map(|b| *b as char));
@@ -184,8 +182,7 @@ pub mod bin_string {
 }
 
 pub mod hex_string {
-    use serde::{Deserialize, Serialize};
-    use serde::{Deserializer, Serializer};
+    use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
     pub fn serialize<S: Serializer>(v: &Vec<u8>, s: S) -> Result<S::Ok, S::Error> {
         let hexstr = String::from_iter(v.iter().map(|b| format!("{:02x}", b)));

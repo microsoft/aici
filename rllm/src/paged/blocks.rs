@@ -1,16 +1,14 @@
-use std::{
-    collections::HashMap,
-    sync::{Arc, Mutex},
-    vec::Vec,
-};
-
+use super::cache_engine::CacheSize;
 use crate::{
     config::RllmConfig,
     paged::{cache_engine::CacheEngine, scheduler::SchedulerOutputs},
     seq::{SchedulingPhase, Sequence, SequenceGroup},
 };
-
-use super::cache_engine::CacheSize;
+use std::{
+    collections::HashMap,
+    sync::{Arc, Mutex},
+    vec::Vec,
+};
 
 #[derive(Debug, Clone, Copy)]
 pub enum BlockLocation {

@@ -1,10 +1,8 @@
-use crate::engine::ExpectedGeneration;
+use crate::{config::SamplingParams, engine::ExpectedGeneration, paged::BlockRef, LogitsProcessor};
 use aici_abi::TokenId;
 use aicirt::api::SequenceResult;
 use serde::{Deserialize, Serialize};
 use std::fmt::Debug;
-
-use crate::{config::SamplingParams, paged::BlockRef, LogitsProcessor};
 
 pub type Token = u32;
 pub type SeqId = usize;

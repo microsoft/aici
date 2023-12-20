@@ -1,8 +1,9 @@
-use std::ffi::CString;
-use std::io;
-use std::time::{Duration, Instant};
-
 use anyhow::Result;
+use std::{
+    ffi::CString,
+    io,
+    time::{Duration, Instant},
+};
 
 pub struct Semaphore {
     sem: *mut libc::sem_t,

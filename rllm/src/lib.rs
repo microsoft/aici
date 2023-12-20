@@ -8,12 +8,10 @@ mod engine;
 pub mod iface;
 pub mod util;
 
-use std::sync::atomic::AtomicBool;
-
 use config::AiciConfig;
 pub use engine::*;
 pub use llm::logits::LogitsProcessor;
-
+use std::sync::atomic::AtomicBool;
 pub use tch::{Device, IndexOp, Kind as DType, Shape, Tensor};
 
 pub struct LoaderArgs {

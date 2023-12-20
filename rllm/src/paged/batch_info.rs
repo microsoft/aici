@@ -1,11 +1,10 @@
+use super::{cache_engine::CacheEngine, scheduler::SchedulerOutputs};
+use crate::{config::RllmConfig, llm::kernels::to_offsets, seq::SchedulingPhase};
 use std::{
     fmt::Debug,
     sync::{Arc, Mutex},
 };
 use tch::Tensor;
-
-use super::{cache_engine::CacheEngine, scheduler::SchedulerOutputs};
-use crate::{config::RllmConfig, llm::kernels::to_offsets, seq::SchedulingPhase};
 
 pub struct BatchInfo {
     pub tokens: Tensor,         // u32, [num_tokens]

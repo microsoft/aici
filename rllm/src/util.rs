@@ -1,7 +1,6 @@
-use std::collections::HashMap;
-
 use crate::Tensor;
 use anyhow::{bail, Result};
+use std::collections::HashMap;
 use tch::{kind::Element, Device, IndexOp as _};
 #[cfg(feature = "cuda")]
 use tch_flash_attn::{

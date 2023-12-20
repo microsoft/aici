@@ -1,8 +1,5 @@
-use std::ffi::CString;
-use std::io;
-use std::ptr;
-
 use anyhow::{anyhow, ensure, Result};
+use std::{ffi::CString, io, ptr};
 
 pub struct Shm {
     addr: *mut u8,

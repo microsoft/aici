@@ -1,9 +1,12 @@
-use std::fmt::Debug;
-use std::rc::Rc;
-use std::time::Instant;
-use std::{collections::HashMap, path::PathBuf, time::Duration};
-
-use crate::api::ModuleInstId;
+use crate::{
+    api::ModuleInstId,
+    bench::{TimerRef, TimerSet},
+    hostimpl::AiciLimits,
+    moduleinstance::{ModuleInstance, WasmContext},
+    setup_bg_worker_pool,
+    shm::Shm,
+    with_timer, InstantiateReq,
+};
 use aici_abi::{
     InitPromptResult, MidProcessArg, PostProcessArg, PreProcessArg, StorageCmd, StorageOp,
     StorageResp, TokenId,
@@ -13,15 +16,13 @@ use anyhow::{anyhow, Result};
 use ipc_channel::ipc::{self, IpcOneShotServer, IpcReceiver, IpcReceiverSet, IpcSender};
 use libc::pid_t;
 use serde::{Deserialize, Serialize};
-
-use crate::bench::{TimerRef, TimerSet};
-use crate::{
-    hostimpl::AiciLimits,
-    moduleinstance::{ModuleInstance, WasmContext},
-    shm::Shm,
-    InstantiateReq,
+use std::{
+    collections::HashMap,
+    fmt::Debug,
+    path::PathBuf,
+    rc::Rc,
+    time::{Duration, Instant},
 };
-use crate::{setup_bg_worker_pool, with_timer};
 
 const QUICK_OP_MS: u64 = 10;
 

@@ -1,13 +1,14 @@
 // based on https://github.com/huggingface/candle/blob/main/candle-transformers/src/generation/mod.rs
 
-use std::sync::Arc;
-
-use crate::{util::to_vec1, DType, Tensor};
+use crate::{
+    config::{SamplingParams, SAMPLING_EPS},
+    util::to_vec1,
+    DType, Tensor,
+};
 use aici_abi::toktree::TokTrie;
 use anyhow::Result;
 use rand::{distributions::Distribution, SeedableRng};
-
-use crate::config::{SamplingParams, SAMPLING_EPS};
+use std::sync::Arc;
 
 pub struct LogitsProcessor {
     rng: rand::rngs::StdRng,

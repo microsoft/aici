@@ -1,16 +1,10 @@
-use std::{
-    collections::HashMap,
-    path::PathBuf,
-    sync::{Arc, Mutex},
-};
-
 use actix_web::{middleware::Logger, web, App, HttpServer};
 use aici_abi::toktree::TokTrie;
 use aicirt::api::{MkModuleReq, MkModuleResp};
 use anyhow::Result;
 use base64::Engine;
 use clap::Parser;
-
+use openai::responses::APIError;
 use rllm::{
     config::{ModelConfig, SamplingParams},
     iface::{AiciRtIface, AsyncCmdChannel},
@@ -18,8 +12,11 @@ use rllm::{
     util::apply_settings,
     AddRequest, DType, ExpectedGeneration, LoaderArgs, RllmEngine,
 };
-
-use openai::responses::APIError;
+use std::{
+    collections::HashMap,
+    path::PathBuf,
+    sync::{Arc, Mutex},
+};
 use tokio::sync::mpsc::{channel, error::TryRecvError, Receiver, Sender};
 
 mod completion;
