@@ -13,10 +13,10 @@ Earth is rounded into an ellipsoid with a circumference of about 40,000 km. It i
 
 Earth, like most other bodies in the Solar System, formed 4.5 billion years ago from gas in the early Solar System. During the first billion years of Earth's history, the ocean formed and then life developed within it. Life spread globally and has been altering Earth's atmosphere and surface, leading to the Great Oxidation Event two billion years ago. Humans emerged 300,000 years ago in Africa and have spread across every continent on Earth with the exception of Antarctica. Humans depend on Earth's biosphere and natural resources for their survival, but have increasingly impacted the planet's environment. Humanity's current impact on Earth's climate and biosphere is unsustainable, threatening the livelihood of humans and many other forms of life, and causing widespread extinctions.[23]
 
-Summary:"""
+"""
 
-concurrent_reqs = 5
-num_reqs = 20
+concurrent_reqs = 40
+num_reqs = concurrent_reqs
 min_tokens = 100
 max_tokens = 200
 
@@ -58,18 +58,26 @@ class Req:
         global curr_req
         self.req_no = curr_req
         curr_req += 1
+        self.tps = 0
         self.tokens = rnd.between(min_tokens, max_tokens)
         self.prompt = (
-            f"Hello, {self.req_no}, " + earth[rnd.between(0, len(earth) // 3) :]
+            f"Hello, {self.req_no}, " + 
+                earth[rnd.between(0, len(earth) // 3) :] +
+                earth[rnd.between(0, len(earth) // 3) :] +
+                earth[rnd.between(0, len(earth) // 3) :] +
+                "\nSummary:"
         )
         self.r = None
 
     def send(self):
-        print(f"send #{self.req_no}; {len(self.prompt)}B + {self.tokens} toks")
+        print(".", end="", flush=True)
+        t0 = time.monotonic()
+        #print(f"send #{self.req_no}; {len(self.prompt)}B + {self.tokens} toks")
         self.r = pyaici.rest.completion(
             self.prompt, ignore_eos=True, max_tokens=self.tokens
         )
-        print(self.r["usage"])
+        self.tps = self.tokens / (time.monotonic() - t0)
+        print(":", end="", flush=True)
 
 
 def main():
@@ -105,14 +113,21 @@ def main():
 
     completion_tokens = 0
     prompt_tokens = 0
+    tps = 0
     for req in requests:
         r: dict = req.r  # type: ignore
         completion_tokens += r["usage"]["completion_tokens"]
         prompt_tokens += r["usage"]["prompt_tokens"]
+        tps += req.tps
+    tps /= len(requests)
+    print("")
+    print(f"requests: {num_reqs}")
+    print(f"concurrent requests: {concurrent_reqs}")
     print(f"duration: {duration:.3f}")
     print(
         f"completion tokens: {completion_tokens} ({completion_tokens/duration:.3f} tps)"
     )
+    print(f"completion tokens per request: {tps:.3f} tps")
     print(f"prompt tokens: {prompt_tokens} ({prompt_tokens/duration:.3f} tps)")
 
 

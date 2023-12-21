@@ -944,15 +944,15 @@ impl RllmEngine {
             synchronize(self.device);
             l
         });
-        let torch_dur = t0.elapsed().as_micros() as f64 / 1000.0;
         let r = with_timer!(self.tim_sample, { self.sample(&logits, sched_out, &info) });
+        let dur = t0.elapsed().as_micros() as f64 / 1000.0;
 
         log::info!(
-            "model forward: step #{} {:.2}ms; {} tok(s); {:.2}ms/tok",
+            "model forward: step #{} {:.2}ms; {} tok(s); {:.1}tps",
             self.step_no,
-            torch_dur,
+            dur,
             info.tokens.numel(),
-            torch_dur / info.tokens.numel() as f64
+            info.tokens.numel() as f64 / (dur / 1000.0),
         );
 
         #[cfg(feature = "cuda")]
