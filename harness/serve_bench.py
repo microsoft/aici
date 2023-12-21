@@ -15,10 +15,10 @@ Earth, like most other bodies in the Solar System, formed 4.5 billion years ago 
 
 """
 
-concurrent_reqs = 60
+concurrent_reqs = 40
 num_reqs = concurrent_reqs
-min_tokens = 100
-max_tokens = 200
+min_tokens = 20
+max_tokens = 25
 
 if False:
     num_reqs = 2
