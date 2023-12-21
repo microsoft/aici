@@ -12,6 +12,9 @@ from safetensors import safe_open
 import sys
 import argparse
 import os
+import re
+import ujson
+import subprocess
 
 N_LOGITS = 128
 N_TOKENS = 30
@@ -121,6 +124,94 @@ def load_safe(fn):
     return inp
 
 
+# tokens: [ '':1, ' If':960, ' all':599, ' c':274, 'ats':1446, ' are':526, ' m':286, 'z':29920, 'x':29916, ' and':322, ' Fab':10629, 'ian':713, ' is':338, ' a':263, ' cat':6635, ',':29892, ' then':769, ' Fab':10629, 'ian':713, ' is':338 ]
+#  If all cats are mzx and Fabian is a cat, then Fabian is
+# top 10 candidates:
+#  -   286: '           m'   14.661 0.731229
+#  -   263: '           a'   13.354 0.197962
+#  -   341: '           M'   11.304 0.025479
+#  -   884: '        also'   11.264 0.024478
+#  -   385: '          an'   11.104 0.020853
+#  -   451: '         not'    7.468 0.009020
+#  -   611: '          ma'    6.674 0.004076
+#  - 29871: '            '    6.466 0.003148
+#  -   278: '         the'    6.440 0.003067
+#  -   503: '           z'    6.340 0.002776
+# sampled token:   286: ' m'
+
+d = {
+    "token": 286,
+    "candidates": [
+        {"token": 286, "logit": 14.661, "prob": 0.731229},
+        {"token": 263, "logit": 13.354, "prob": 0.197962},
+        {"token": 341, "logit": 11.304, "prob": 0.025479},
+        {"token": 884, "logit": 11.264, "prob": 0.024478},
+        {"token": 385, "logit": 11.104, "prob": 0.020853},
+        {"token": 451, "logit": 7.468, "prob": 0.009020},
+        {"token": 611, "logit": 6.674, "prob": 0.004076},
+        {"token": 29871, "logit": 6.466, "prob": 0.003148},
+        {"token": 278, "logit": 6.440, "prob": 0.003067},
+        {"token": 503, "logit": 6.340, "prob": 0.002776},
+    ],
+}
+
+
+def llamagen():
+    for k in prompts.keys():
+        out = subprocess.check_output(
+            [
+                "./tmp/llama.cpp/build/bin/main",
+                "-m",
+                "tmp/llama.cpp/models/codellama-34b-instruct.Q6_K.gguf",
+                "--prompt",
+                prompts[k],
+                "-n",
+                str(N_TOKENS),
+            ],
+            text=True,
+        )
+        log = out.split("\n")
+        if not [l for l in log if "TOK:" in l]:
+            print(out)
+            sys.exit(1)
+        os.makedirs(f"expected/{modelid}", exist_ok=True)
+        llama_cpp_log_to_test_case_inner(log, f"expected/{modelid}/{k}.safetensors")
+
+
+def llama_cpp_log_to_test_case_inner(lines: list[str], fn="tmp/compr.safetensors"):
+    prompt = None
+    tokens = []
+    logits = []
+    output = []
+    prob_mass = []
+    for line in lines:
+        # print("LINE", line)
+        if line.startswith("PROMPT: "):
+            xtokens = ujson.decode(line[8:])
+            prompt = torch.tensor(xtokens, dtype=torch.int32)
+        elif line.startswith("TOK: "):
+            d = ujson.decode(line[5:])
+            output.append(d["token"])
+            tokens.append([e["token"] for e in d["candidates"]])
+            logits.append([e["logit"] for e in d["candidates"]])
+            prob_mass.append(sum([e["prob"] for e in d["candidates"]]))
+
+    out = {
+        "prompt": prompt,
+        "output": torch.tensor(output, dtype=torch.int32),
+        "prob_mass": torch.tensor(prob_mass, dtype=torch.float32),
+        "tokens": torch.tensor(tokens, dtype=torch.int32),
+        "logits": torch.tensor(logits, dtype=torch.half),
+    }
+    print("Save", fn)
+    save_file(out, fn)
+
+
+def llama_cpp_log_to_test_case(log_fn: str, fn="tmp/compr.safetensors"):
+    with open(log_fn, "r") as f:
+        llama_cpp_log_to_test_case_inner(f.readlines(), fn)
+
+
 def save_test_case(fn="tmp/compr.safetensors"):
     inp = load_safe("tmp/reference.safetensors")
     tokens = []
@@ -189,7 +280,8 @@ def show(fn: str, n=0):
 
 def trunc(n: int, fn: str, wr: str):
     inp, n = show(fn, n)
-    if n <= 0: return
+    if n <= 0:
+        return
     if wr:
         print("Writing", fn)
         out = {
@@ -217,6 +309,7 @@ parser.add_argument(
 subparsers = parser.add_subparsers(dest="subcommand", required=True)
 
 parser_gen = subparsers.add_parser("generate", help="Generate responses")
+parser_gen.add_argument("--llama", action="store_true", help="Use llama.cpp")
 
 parser_show = subparsers.add_parser("show", help="Inspect a file")
 parser_show.add_argument("file", type=str, help="Path to the file")
@@ -228,6 +321,12 @@ parser_truncate.add_argument(
     "-w", "--write", action="store_true", help="Actually write the file"
 )
 
+parser_llamacpp = subparsers.add_parser(
+    "llamacpp", help="Convert llama.cpp log to testcase"
+)
+parser_llamacpp.add_argument("file", type=str, help="Path to the file llama.cpp log")
+
+
 args = parser.parse_args()
 
 modelid = args.model
@@ -235,10 +334,15 @@ modeln = models[modelid]
 
 subc = args.subcommand
 if subc == "generate":
-    gen_output()
+    if args.llama:
+        llamagen()
+    else:
+        gen_output()
 elif subc == "truncate":
     trunc(args.length, args.file, args.write)
 elif subc == "show":
     show(args.file)
+elif subc == "llamacpp":
+    llama_cpp_log_to_test_case(args.file)
 else:
     raise ValueError()
