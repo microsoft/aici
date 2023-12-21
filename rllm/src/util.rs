@@ -237,3 +237,8 @@ impl std::ops::Drop for TimerGuard {
 pub fn timer(name: &'static str) -> TimerGuard {
     TimerGuard::new(name)
 }
+
+pub fn log_time(name: &'static str, start: Instant) {
+    let duration = start.elapsed();
+    log::info!("{}: {:?}", name, duration);
+}

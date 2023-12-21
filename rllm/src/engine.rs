@@ -12,14 +12,17 @@ use crate::{
     },
     util::{
         get_setting, gpu_memory_size, gpu_peak_allocated_bytes, log_mem_stats, reset_mem_stats,
-        synchronize, timer, to_vec1, to_vec2,
+        synchronize, to_vec1, to_vec2,
     },
     DType, Device, IndexOp, LoaderArgs, LogitsProcessor, Tensor,
 };
 use aici_abi::toktree::TokTrie;
-use aicirt::api::{
-    AiciMidOp, AiciMidProcessReq, AiciPostOp, AiciPostProcessReq, AiciPreOp, AiciPreProcessReq,
-    ModuleInstId, SequenceResult,
+use aicirt::{
+    api::{
+        AiciMidOp, AiciMidProcessReq, AiciPostOp, AiciPostProcessReq, AiciPreOp, AiciPreProcessReq,
+        ModuleInstId, SequenceResult,
+    },
+    with_timer, TimerRef, TimerSet,
 };
 use anyhow::{bail, Error as E, Result};
 use hf_hub::{
@@ -242,6 +245,21 @@ pub struct RllmEngine {
     pub nv_profile: bool,
     pub num_errors: usize,
 
+    pub timers: TimerSet,
+
+    tim_step: TimerRef,
+
+    tim_aici_pre: TimerRef,
+    tim_schedule: TimerRef,
+    tim_aici_mid: TimerRef,
+    tim_run_model: TimerRef,
+
+    tim_model_fwd: TimerRef,
+    tim_sample: TimerRef,
+
+    tim_aici_bias: TimerRef,
+    tim_aici_post: TimerRef,
+
     aicirt: Option<AiciRtIface>,
 
     cache_engine: CacheEngine,
@@ -418,6 +436,8 @@ impl RllmEngine {
         let scheduler = Scheduler::new(rllm_config.clone(), &cache_size);
         let cache_engine = CacheEngine::new(rllm_config.clone(), &cache_size);
 
+        let timers = TimerSet::new();
+
         Ok(RllmEngine {
             config: rllm_config,
             tokenizer: Arc::new(tokenizer),
@@ -437,6 +457,16 @@ impl RllmEngine {
             cache_engine,
             nv_profile: false,
             aicirt: None,
+            tim_step: timers.new_timer("s"),
+            tim_aici_pre: timers.new_timer("s.aici_pre"),
+            tim_schedule: timers.new_timer("s.schedule"),
+            tim_aici_mid: timers.new_timer("s.aici_mid"),
+            tim_run_model: timers.new_timer("s.run"),
+            tim_model_fwd: timers.new_timer("s.run.model_fwd"),
+            tim_sample: timers.new_timer("s.run.sample"),
+            tim_aici_post: timers.new_timer("s.run.sample.aici_post"),
+            tim_aici_bias: timers.new_timer("s.run.sample.aici_bias"),
+            timers,
         })
     }
 
@@ -736,7 +766,7 @@ impl RllmEngine {
         Ok(self.dropped_outputs(sched_out))
     }
 
-    fn generate_outputs(
+    fn sample(
         &mut self,
         logits: &Tensor,
         sched_out: &mut SchedulerOutputs,
@@ -773,7 +803,7 @@ impl RllmEngine {
             sg.seqs.extend(to_add);
         }
 
-        let aici_bias = self.aici_bias(sched_out)?;
+        let aici_bias = with_timer!(self.tim_aici_bias, self.aici_bias(sched_out)?);
 
         let mut post_ops = Vec::new();
 
@@ -834,7 +864,10 @@ impl RllmEngine {
             }
         }
 
-        self.aici_post(sched_out, AiciPostProcessReq { ops: post_ops })?;
+        with_timer!(
+            self.tim_aici_post,
+            self.aici_post(sched_out, AiciPostProcessReq { ops: post_ops })?
+        );
 
         let mut outputs = self.dropped_outputs(sched_out);
         outputs.extend(
@@ -904,17 +937,18 @@ impl RllmEngine {
         }
 
         let t0 = Instant::now();
-        let logits = self.model.forward(&mut info);
-        synchronize(self.device);
+        let logits = with_timer!(self.tim_model_fwd, {
+            let l = self.model.forward(&mut info);
+            synchronize(self.device);
+            l
+        });
         let torch_dur = t0.elapsed().as_micros() as f64 / 1000.0;
-        let t1 = Instant::now();
-        let r = self.generate_outputs(&logits, sched_out, &info);
-        let gen_dur = t1.elapsed().as_micros() as f64 / 1000.0;
+        let r = with_timer!(self.tim_sample, { self.sample(&logits, sched_out, &info) });
+
         log::info!(
-            "model forward: step #{} {:.2}ms (+gen {:.3}ms); {} tok(s); {:.2}ms/tok",
+            "model forward: step #{} {:.2}ms; {} tok(s); {:.2}ms/tok",
             self.step_no,
             torch_dur,
-            gen_dur,
             info.tokens.numel(),
             torch_dur / info.tokens.numel() as f64
         );
@@ -1150,7 +1184,17 @@ impl RllmEngine {
 
     pub fn step(&mut self) -> Result<Vec<RequestOutput>> {
         let _no_grad = tch::no_grad_guard();
+        let r = with_timer!(self.tim_step, self.step_inner());
 
+        if self.step_no % 10 == 0 {
+            log::debug!("timers\n{}", self.timers);
+            self.timers.reset();
+        }
+
+        r
+    }
+
+    fn step_inner(&mut self) -> Result<Vec<RequestOutput>> {
         self.step_no += 1;
 
         #[cfg(feature = "cuda")]
@@ -1158,7 +1202,7 @@ impl RllmEngine {
             cudarc::driver::safe::profiler_start()?;
         }
 
-        self.aici_pre()?;
+        with_timer!(self.tim_aici_pre, self.aici_pre()?);
 
         self.scheduler.for_each_waiting_sg(|sg| {
             if sg.only_seq().get_len() == 0 {
@@ -1168,16 +1212,16 @@ impl RllmEngine {
             }
         });
 
-        let mut sched_out = self.scheduler.schedule();
+        let mut sched_out = with_timer!(self.tim_schedule, self.scheduler.schedule());
 
-        self.aici_mid(&mut sched_out)?;
+        with_timer!(self.tim_aici_mid, self.aici_mid(&mut sched_out)?);
 
         log::trace!(
             "scheduled: {} groups, dropped: {}",
             sched_out.next_seq_groups.len(),
             sched_out.dropped_seq_groups.len()
         );
-        let outputs = self.run_model(&mut sched_out);
+        let outputs = with_timer!(self.tim_run_model, self.run_model(&mut sched_out));
         // we run step_finished() regardless if model failed
         self.scheduler.step_finished(sched_out);
 

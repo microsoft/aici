@@ -107,7 +107,7 @@ impl Display for TimerRef {
 
 impl Display for TimerImpl {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let average = self.elapsed.as_micros() as f64 / self.num as f64;
+        let average = self.elapsed.as_micros() as f64 / std::cmp::max(1, self.num) as f64;
         write!(f, "R_{}: {:.0}us (x{})", self.name, average, self.num)
     }
 }
