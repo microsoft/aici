@@ -2,6 +2,7 @@ import pyaici.rest
 import ujson
 import concurrent.futures
 import time
+import argparse
 
 earth = """
 Earth is the third planet from the Sun and the only astronomical object known to harbor life. This is enabled by Earth being a water world, the only one in the Solar System sustaining liquid surface water. Almost all of Earth's water is contained in its global ocean, covering 70.8 of Earth's crust. The remaining 29.2 of Earth's crust is land, most of which is located in the form of continental landmasses within one hemisphere, Earth's land hemisphere. Most of Earth's land is somewhat humid and covered by vegetation, while large sheets of ice at Earth's polar deserts retain more water than Earth's groundwater, lakes, rivers and atmospheric water combined. Earth's crust consists of slowly moving tectonic plates, which interact to produce mountain ranges, volcanoes, and earthquakes. Earth has a liquid outer core that generates a magnetosphere capable of deflecting most of the destructive solar winds and cosmic radiation.
@@ -68,10 +69,26 @@ class Req:
         self.r = pyaici.rest.completion(
             self.prompt, ignore_eos=True, max_tokens=self.tokens
         )
-        print( self.r["usage"] )
+        print(self.r["usage"])
 
 
 def main():
+    parser = argparse.ArgumentParser(
+        description="Demo on using HF Transformers with aicirt"
+    )
+    parser.add_argument(
+        "--short",
+        "-s",
+        action="store_true",
+        help="path to JSONL trace file (generated with --aici-trace)",
+    )
+    args = parser.parse_args()
+    global num_reqs, concurrent_reqs, min_tokens, max_tokens
+    if args.short:
+        num_reqs = concurrent_reqs
+        min_tokens = 30
+        max_tokens = 35
+
     pyaici.rest.log_level = 0
     requests = [Req() for _ in range(num_reqs)]
 
@@ -83,17 +100,19 @@ def main():
         for future in concurrent.futures.as_completed(futures):
             result = future.result()
         # Handle result
-    
+
     duration = time.monotonic() - t0
 
     completion_tokens = 0
     prompt_tokens = 0
     for req in requests:
-        r: dict = req.r # type: ignore
+        r: dict = req.r  # type: ignore
         completion_tokens += r["usage"]["completion_tokens"]
         prompt_tokens += r["usage"]["prompt_tokens"]
     print(f"duration: {duration:.3f}")
-    print(f"completion tokens: {completion_tokens} ({completion_tokens/duration:.3f} tps)")
+    print(
+        f"completion tokens: {completion_tokens} ({completion_tokens/duration:.3f} tps)"
+    )
     print(f"prompt tokens: {prompt_tokens} ({prompt_tokens/duration:.3f} tps)")
 
 

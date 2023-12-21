@@ -12,7 +12,7 @@ use crate::{
     },
     util::{
         get_setting, gpu_memory_size, gpu_peak_allocated_bytes, log_mem_stats, reset_mem_stats,
-        to_vec1, to_vec2,
+        synchronize, timer, to_vec1, to_vec2,
     },
     DType, Device, IndexOp, LoaderArgs, LogitsProcessor, Tensor,
 };
@@ -905,13 +905,18 @@ impl RllmEngine {
 
         let t0 = Instant::now();
         let logits = self.model.forward(&mut info);
+        synchronize(self.device);
+        let torch_dur = t0.elapsed().as_micros() as f64 / 1000.0;
+        let t1 = Instant::now();
         let r = self.generate_outputs(&logits, sched_out, &info);
+        let gen_dur = t1.elapsed().as_micros() as f64 / 1000.0;
         log::info!(
-            "model forward: step #{} {:?}; {} tok(s); {:?}/tok",
+            "model forward: step #{} {:.2}ms (+gen {:.3}ms); {} tok(s); {:.2}ms/tok",
             self.step_no,
-            t0.elapsed(),
+            torch_dur,
+            gen_dur,
             info.tokens.numel(),
-            t0.elapsed() / info.tokens.numel() as u32
+            torch_dur / info.tokens.numel() as f64
         );
 
         #[cfg(feature = "cuda")]
