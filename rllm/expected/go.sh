@@ -9,24 +9,17 @@ COMMON_ARGS="--verbose --aicirt ../aicirt/target/release/aicirt"
 
 RLLM_LOG=debug
 
-if [ "X$1" = "X" ] ; then
-    RLLM_LOG=debug
-    HERE=`dirname $0`
-    FILES=`echo $HERE/*/args.txt`
-else
-    FILES=
-    for f in "$@" ; do
-        if [ -f "$f" ] ; then
-            FILES="$FILES $f"
-        elif [ -f "$f/args.txt" ] ; then
-            FILES="$FILES $f/args.txt"
-        else
-            echo "File $f not found"
-            exit 1
-        fi
-    done
-fi
-
+FILES=
+for f in "$@" ; do
+    if [ -f "$f" ] ; then
+        FILES="$FILES $f"
+    elif [ -f "$f/args.txt" ] ; then
+        FILES="$FILES $f/args.txt"
+    else
+        echo "File $f not found"
+        exit 1
+    fi
+done
 
 for A in $FILES ; do
     echo
