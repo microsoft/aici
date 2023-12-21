@@ -163,6 +163,7 @@ def llamagen():
                 "./tmp/llama.cpp/build/bin/main",
                 "-m",
                 "tmp/llama.cpp/models/codellama-34b-instruct.Q6_K.gguf",
+                "--top-k", "30000", # force sorting of probs
                 "--prompt",
                 prompts[k],
                 "-n",

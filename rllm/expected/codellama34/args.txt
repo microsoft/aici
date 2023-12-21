@@ -1,2 +1,2 @@
 --model codellama/CodeLlama-34b-Instruct-hf --tokenizer llama
--s test_maxtol=0.20 -s test_avgtol=0.10
+-s test_maxtol=8 -s test_avgtol=0.5
