@@ -7,7 +7,7 @@ COMMON_ARGS="--verbose --aicirt ../aicirt/target/release/aicirt"
 
 (cd ../aicirt && cargo build --release)
 
-RLLM_LOG=trace
+RLLM_LOG=debug
 
 if [ "X$1" = "X" ] ; then
     RLLM_LOG=debug

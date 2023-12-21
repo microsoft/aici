@@ -1,0 +1,2 @@
+--model microsoft/Orca-2-13b@refs/pr/22 --tokenizer orca
+-s test_maxtol=0.50 -s test_avgtol=0.10
