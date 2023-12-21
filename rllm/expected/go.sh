@@ -1,6 +1,5 @@
 #!/bin/sh
 
-set -x
 set -e
 
 # the PORT is in fact unused
@@ -8,7 +7,10 @@ COMMON_ARGS="--verbose --aicirt ../aicirt/target/release/aicirt"
 
 (cd ../aicirt && cargo build --release)
 
+RLLM_LOG=trace
+
 if [ "X$1" = "X" ] ; then
+    RLLM_LOG=debug
     HERE=`dirname $0`
     FILES=`echo $HERE/*/args.txt`
 else
@@ -27,12 +29,17 @@ fi
 
 
 for A in $FILES ; do
+    echo
+    echo
+    echo
+    echo "*** $A ***"
+    echo
     ARGS="$COMMON_ARGS `cat $A`"
     for S in $(dirname $A)/*.safetensors ; do
         ARGS="$ARGS --test $S"
     done
     RUST_BACKTRACE=1 \
-    RUST_LOG=info,rllm=debug,aicirt=info \
+    RUST_LOG=info,rllm=$RLLM_LOG,aicirt=info \
         cargo run $REL --bin rllm-server -- \
         $ARGS
 done

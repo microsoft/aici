@@ -1,3 +1,3 @@
 #!/bin/sh
 
-./expected/tests.sh
+./expected/go.sh

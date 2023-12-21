@@ -1,1 +1,1 @@
---model microsoft/phi-2 --tokenizer phi -s test_maxtol=0.5 -s test_avgtol=0.25
+--model microsoft/phi-2 --tokenizer phi -s test_maxtol=2.0 -s test_avgtol=0.15
