@@ -35,12 +35,13 @@ impl LogitsProcessor {
     }
 
     fn sample_argmax(&mut self, logits: &Tensor) -> Result<u32> {
-        let tokid = to_vec1::<f32>(logits)
-            .into_iter()
-            .enumerate()
-            .max_by(|(_, u), (_, v)| u.total_cmp(v))
-            .unwrap()
-            .0;
+        let tokid = logits.argmax(0, false).int64_value(&[]);
+        // let tokid = to_vec1::<f32>(logits)
+        //     .into_iter()
+        //     .enumerate()
+        //     .max_by(|(_, u), (_, v)| u.total_cmp(v))
+        //     .unwrap()
+        //     .0;
         Ok(tokid as u32)
     }
 
@@ -73,20 +74,21 @@ impl LogitsProcessor {
     }
 
     pub fn sample(&mut self, logits: &Tensor) -> Result<u32> {
-        let logits = logits.to_kind(DType::Float);
         let next_token = match self.temperature {
             None => self.sample_argmax(&logits)?,
             Some(temperature) => {
+                let logits = logits.to_kind(DType::Float);
                 let logits = logits / (temperature as f64);
                 let prs = logits.softmax(-1, DType::Float);
-                // let prs = candle_nn::ops::softmax_last_dim(logits)?;
-                let mut prs: Vec<f32> = to_vec1(&prs);
+
                 let top_p = self.top_p;
                 if top_p <= 0.0 || top_p >= 1.0 {
                     // simply sample from the predicted probability distribution
-                    self.sample_multinomial(&prs)?
+                    let sample = prs.multinomial(1, false).int64_value(&[0]);
+                    sample as u32
                 } else {
                     // top-p (nucleus) sampling, clamping the least likely tokens to zero
+                    let mut prs: Vec<f32> = to_vec1(&prs);
                     self.sample_topp(&mut prs, top_p as f32)?
                 }
             }

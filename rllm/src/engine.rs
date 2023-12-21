@@ -321,7 +321,7 @@ impl RllmEngine {
             scheduler: SchedulerConfig {
                 max_num_batched_tokens: model_len,
                 max_num_kv_tokens: model_len * 10,
-                max_num_seqs: 50,
+                max_num_seqs: 100,
                 max_model_len: model_len,
             },
             aici,
@@ -1190,7 +1190,7 @@ impl RllmEngine {
         let _no_grad = tch::no_grad_guard();
         let r = with_timer!(self.tim_step, self.step_inner());
 
-        if self.step_no % 10 == 0 {
+        if self.step_no % 50 == 0 {
             log::debug!("timers\n{}", self.timers.pp());
             self.timers.reset();
         }

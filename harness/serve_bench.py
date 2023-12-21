@@ -15,7 +15,7 @@ Earth, like most other bodies in the Solar System, formed 4.5 billion years ago 
 
 """
 
-concurrent_reqs = 40
+concurrent_reqs = 60
 num_reqs = concurrent_reqs
 min_tokens = 100
 max_tokens = 200
@@ -61,18 +61,18 @@ class Req:
         self.tps = 0
         self.tokens = rnd.between(min_tokens, max_tokens)
         self.prompt = (
-            f"Hello, {self.req_no}, " + 
-                earth[rnd.between(0, len(earth) // 3) :] +
-                earth[rnd.between(0, len(earth) // 3) :] +
-                earth[rnd.between(0, len(earth) // 3) :] +
-                "\nSummary:"
+            f"Hello, {self.req_no}, "
+            + earth[rnd.between(0, len(earth) // 3) :]
+            + earth[rnd.between(0, len(earth) // 3) :]
+            + earth[rnd.between(0, len(earth) // 3) :]
+            + "\nSummary:"
         )
         self.r = None
 
     def send(self):
         print(".", end="", flush=True)
         t0 = time.monotonic()
-        #print(f"send #{self.req_no}; {len(self.prompt)}B + {self.tokens} toks")
+        # print(f"send #{self.req_no}; {len(self.prompt)}B + {self.tokens} toks")
         self.r = pyaici.rest.completion(
             self.prompt, ignore_eos=True, max_tokens=self.tokens
         )
