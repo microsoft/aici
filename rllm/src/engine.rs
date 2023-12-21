@@ -474,7 +474,6 @@ impl RllmEngine {
 
     fn profile_model(config: Arc<RllmConfig>, model: &Box<dyn RllmModel>) -> CacheSize {
         let mut info = BatchInfoBuilder::new(config.clone()).profile_run();
-        log::debug!("profile {info:?}");
         let device = config.device.clone();
         reset_mem_stats(device);
         log_mem_stats("before model profile", device);
@@ -504,15 +503,18 @@ impl RllmEngine {
             gpu: gpu_cache_size / elt_size,
         };
 
+        let token_kv_size = elt_size / config.cache.block_size;
+
         const G: f64 = 1024.0 * 1024.0 * 1024.0;
         log::info!(
-            "caches: gpu:{:.3}GiB cpu:{:.3}GiB; blocks: {}/{}; tokens: {}/{}",
+            "caches: gpu:{:.3}GiB cpu:{:.3}GiB; blocks: {}/{}; tokens: {}/{}; {}KiB/token",
             gpu_cache_size as f64 / G,
             cpu_cache_size as f64 / G,
             r.gpu,
             r.cpu,
             r.gpu * config.cache.block_size,
             r.cpu * config.cache.block_size,
+            token_kv_size / 1024,
         );
 
         r
