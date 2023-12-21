@@ -1,6 +1,6 @@
 use crate::Tensor;
 use anyhow::{bail, Result};
-use std::collections::HashMap;
+use std::{collections::HashMap, time::Instant};
 use tch::{kind::Element, Device, IndexOp as _};
 use tch_flash_attn::cuda_get_device_properties;
 #[cfg(feature = "cuda")]
@@ -193,6 +193,14 @@ pub fn gpu_memory_size(device: Device) -> usize {
     }
 }
 
+pub fn synchronize(device: Device) {
+    match device {
+        #[cfg(feature = "cuda")]
+        Device::Cuda(n) => tch::Cuda::synchronize(n as i64),
+        _ => {}
+    }
+}
+
 pub fn pad_to_multiple<T>(v: &mut Vec<T>, multiple: usize)
 where
     T: Default + Clone,
@@ -203,4 +211,29 @@ where
         let pad_len = multiple - rem;
         v.extend(std::iter::repeat(T::default()).take(pad_len));
     }
+}
+
+pub struct TimerGuard {
+    name: &'static str,
+    start: Instant,
+}
+
+impl TimerGuard {
+    fn new(name: &'static str) -> TimerGuard {
+        TimerGuard {
+            name,
+            start: Instant::now(),
+        }
+    }
+}
+
+impl std::ops::Drop for TimerGuard {
+    fn drop(&mut self) {
+        let duration = self.start.elapsed();
+        log::info!("TIMER {}: {:?}", self.name, duration);
+    }
+}
+
+pub fn timer(name: &'static str) -> TimerGuard {
+    TimerGuard::new(name)
 }
