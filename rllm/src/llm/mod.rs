@@ -54,7 +54,7 @@ impl RotaryEmbedding {
         }
     }
 
-    pub fn apply(
+    pub fn forward(
         &self,
         positions: &Tensor, // [num_tokens]
         q: &Tensor,         // [num_tokens, num_heads * head_size]

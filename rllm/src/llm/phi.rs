@@ -28,7 +28,6 @@ pub struct PhiConfig {
     pub(crate) layer_norm_epsilon: f64,
     pub(crate) tie_word_embeddings: bool,
     pub(crate) torch_dtype: String,
-    // pub(crate) pad_vocab_size_multiple: usize,
 }
 
 impl RllmModelConfig for PhiConfig {
@@ -125,32 +124,23 @@ impl MHA {
     fn forward(&self, xs: &Tensor, batch_info: &mut BatchInfo) -> Tensor {
         let (seq_len, _hidden_size) = xs.size2().unwrap();
 
-        // println!("xs: {xs:?}");
-        // println!("wqkv: {:?}", self.wqkv);
-
         let ((q, k), v) = {
             let qkv = self
                 .wqkv
                 .forward(xs)
                 .reshape(&[seq_len, 3, -1, self.config.head_dim as i64]);
 
-            // println!("hd: {}", self.config.head_dim);
-            // println!("qkv: {qkv:?}");
-
             let mut qkv = qkv.chunk(3, 1);
             let v = qkv.pop().unwrap();
 
             (
                 self.rotary_emb
-                    .apply(&batch_info.positions, &qkv[0], &qkv[1]),
+                    .forward(&batch_info.positions, &qkv[0], &qkv[1]),
                 v.squeeze_dim(1),
             )
         };
 
         let y = varlen_attn(&self.config, q, k, v, batch_info, self.block_idx);
-
-        // println!("y: {y:?}");
-        // println!("out_proj: {:?}", self.out_proj);
 
         self.out_proj.forward(&y)
     }
@@ -216,26 +206,18 @@ impl MixFormerSequentialForCausalLM {
 
 impl RllmModel for MixFormerSequentialForCausalLM {
     fn forward(&self, batch_info: &mut BatchInfo) -> Tensor {
-        // let seq_len = batch_info.tokens.numel() as i64;
         let mut xs = self.embedding.forward(&batch_info.tokens);
         for block in self.blocks.iter() {
             xs = block.forward(&xs, batch_info);
         }
-        // println!("final xs: {xs:?}");
         let r = self.head.forward(&xs);
-        // println!("r: {r:?} tok:{}", self.config.tok_vocab_size);
 
         // it should approximately match...
-        assert!((r.size()[1] as usize) >= self.config.tok_vocab_size);
-        assert!((r.size()[1] as usize) < self.config.tok_vocab_size + 1000);
+        let tok_size = self.config.tok_vocab_size as i64;
+        assert!(r.size()[1] >= tok_size);
+        assert!(r.size()[1] < tok_size + 1000);
 
-        let r = r.i((.., 0..(self.config.tok_vocab_size as i64)));
-        let r = batch_info.extract_positions(&r);
-        // println!("rp: {r:?}");
-        r
-        // Ok(xs
-        //     .narrow(1, seq_len - 1, 1)
-        //     .apply(&self.head)
-        //     .squeeze_dim(1))
+        let r = r.i((.., 0..tok_size));
+        batch_info.extract_positions(&r)
     }
 }

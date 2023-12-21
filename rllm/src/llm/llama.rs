@@ -71,13 +71,11 @@ impl CausalSelfAttention {
 
         batch_info.log_tensor("x", &x);
 
-        // println!("x: {x:?} qP: {:?}", self.q_proj);
-
         let q = self.q_proj.forward(x);
         let k = self.k_proj.forward(x);
         let v = self.v_proj.forward(x);
 
-        let (q, k) = self.rotary.apply(&batch_info.positions, &q, &k);
+        let (q, k) = self.rotary.forward(&batch_info.positions, &q, &k);
 
         let v = v.reshape(&[
             seq_len,
@@ -122,7 +120,6 @@ struct Mlp {
 
 impl Mlp {
     fn forward(&self, x: &Tensor, batch_info: &BatchInfo) -> Tensor {
-        // println!("fc1: {:?}", self.c_fc1);
         let m1 = self.c_fc1.forward(x);
         let m2 = self.c_fc2.forward(x);
         batch_info.log_tensor("w1", &self.c_fc1.ws);
@@ -159,7 +156,6 @@ impl Block {
     fn forward(&self, x: &Tensor, batch_info: &mut BatchInfo, block_idx: usize) -> Tensor {
         let residual = x;
         let x = self.rms_1.forward(x);
-        // println!("x rms: {x:?}");
         let x = self.attn.forward(&x, batch_info, block_idx) + residual;
         let residual = &x;
         batch_info.log_tensor("x0", &x);
@@ -169,7 +165,6 @@ impl Block {
         batch_info.log_tensor("x2", &x);
         let x = x + residual;
         batch_info.log_tensor("x3", &x);
-        // println!("x: {}", x);
         x
     }
 
@@ -226,10 +221,7 @@ impl Llama {
         let ln_f = RmsNorm::from_cfg(&vs / "model" / "norm", cfg);
 
         let blocks: Vec<_> = (0..cfg.num_hidden_layers)
-            .map(|i| {
-                // log::info!("loading block {}/{}", i, cfg.num_hidden_layers);
-                Block::load(&vs / "model" / "layers" / i, &rotary, cfg).unwrap()
-            })
+            .map(|i| Block::load(&vs / "model" / "layers" / i, &rotary, cfg).unwrap())
             .collect();
 
         Ok(Self {
