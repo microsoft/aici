@@ -10,7 +10,10 @@ use crate::{
 use anyhow::Result;
 use serde::Deserialize;
 use std::rc::Rc;
-use tch::nn::{self, Module, Path};
+use tch::{
+    nn::{self, Module, Path},
+    IndexOp,
+};
 
 #[derive(Deserialize)]
 pub struct LlamaConfig {
@@ -56,9 +59,11 @@ impl RllmModelConfig for LlamaConfig {
 }
 
 struct CausalSelfAttention {
-    q_proj: nn::Linear,
-    k_proj: nn::Linear,
-    v_proj: nn::Linear,
+    q_proj: Option<nn::Linear>,
+    k_proj: Option<nn::Linear>,
+    v_proj: Option<nn::Linear>,
+    // after .finalize()
+    qkv_proj: Option<Tensor>,
     o_proj: nn::Linear,
     config: Rc<ModelConfig>,
     rotary: RotaryEmbedding,
@@ -71,9 +76,19 @@ impl CausalSelfAttention {
 
         batch_info.log_tensor("x", &x);
 
-        let q = self.q_proj.forward(x);
-        let k = self.k_proj.forward(x);
-        let v = self.v_proj.forward(x);
+        let kv_heads = self.config.num_key_value_heads as i64;
+        let q_heads = self.config.num_attention_heads as i64;
+
+        let qkv = x
+            .linear(&self.qkv_proj.as_ref().unwrap(), None::<&Tensor>)
+            .reshape(&[seq_len, q_heads + 2 * kv_heads, self.config.head_dim as i64]);
+        let q = qkv.i((.., 0..q_heads, ..)).reshape(&[seq_len, -1]);
+        let k = qkv
+            .i((.., q_heads..(kv_heads + q_heads), ..))
+            .reshape(&[seq_len, -1]);
+        let v = qkv
+            .i((.., (kv_heads + q_heads).., ..))
+            .reshape(&[seq_len, -1]);
 
         let (q, k) = self.rotary.forward(&batch_info.positions, &q, &k);
 
@@ -97,14 +112,15 @@ impl CausalSelfAttention {
         let size_in = cfg.hidden_size;
         let size_q = (cfg.hidden_size / cfg.num_attention_heads) * cfg.num_attention_heads;
         let size_kv = (cfg.hidden_size / cfg.num_attention_heads) * cfg.num_key_value_heads;
-        let q_proj = linear_no_bias(size_in, size_q, &vb / "q_proj");
-        let k_proj = linear_no_bias(size_in, size_kv, &vb / "k_proj");
-        let v_proj = linear_no_bias(size_in, size_kv, &vb / "v_proj");
+        let q_proj = Some(linear_no_bias(size_in, size_q, &vb / "q_proj"));
+        let k_proj = Some(linear_no_bias(size_in, size_kv, &vb / "k_proj"));
+        let v_proj = Some(linear_no_bias(size_in, size_kv, &vb / "v_proj"));
         let o_proj = linear_no_bias(size_q, size_in, &vb / "o_proj");
         Ok(Self {
             q_proj,
             k_proj,
             v_proj,
+            qkv_proj: None,
             o_proj,
             config: cfg.clone(),
             rotary: rotary.clone(),
@@ -202,6 +218,27 @@ impl RllmModel for Llama {
         let x = batch_info.extract_positions(&x0.squeeze_dim(0));
         let logits = self.lm_head.forward(&x);
         logits
+    }
+
+    fn finalize(&mut self) {
+        for block in self.blocks.iter_mut() {
+            // combine q, k, v projections into one tensor for performance
+            block.attn.qkv_proj = Some(
+                Tensor::cat(
+                    &[
+                        &block.attn.q_proj.as_ref().unwrap().ws,
+                        &block.attn.k_proj.as_ref().unwrap().ws,
+                        &block.attn.v_proj.as_ref().unwrap().ws,
+                    ],
+                    0,
+                )
+                .contiguous(),
+            );
+            // free memory:
+            block.attn.q_proj = None;
+            block.attn.k_proj = None;
+            block.attn.v_proj = None;
+        }
     }
 }
 

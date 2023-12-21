@@ -183,6 +183,7 @@ impl Display for Repo {
 
 pub trait RllmModel {
     fn forward(&self, batch_info: &mut BatchInfo) -> Tensor;
+    fn finalize(&mut self) {}
 }
 
 pub trait RllmModelConfig {
@@ -299,78 +300,11 @@ impl RllmEngine {
         }
     }
 
-    pub fn load(args: LoaderArgs) -> Result<RllmEngine> {
-        let _no_grad = tch::no_grad_guard();
+    fn load_model(rllm_config: &RllmConfig, filenames: Vec<PathBuf>) -> Result<Box<dyn RllmModel>> {
+        let mut vs = VarStore::new(rllm_config.device.clone());
 
-        let device = args.device;
-        let repo = Repo::from(&args)?;
-
-        let (tokenizer, tok_trie) = Self::load_tokenizer(&args)?;
-        let model_config = Self::load_model_config(&args)?;
-        let model_len = model_config.max_sequence_length;
-
-        let mut aici = args.aici.clone();
-        if aici.max_fuel == 0 {
-            aici.max_fuel = model_len * 10;
-        }
-
-        let rllm_config = RllmConfig {
-            model: model_config.clone(),
-            parallel: ParallelConfig::single(),
-            cache: CacheConfig::default(),
-            scheduler: SchedulerConfig {
-                max_num_batched_tokens: model_len,
-                max_num_kv_tokens: model_len * 10,
-                max_num_seqs: 100,
-                max_model_len: model_len,
-            },
-            aici,
-            dtype: model_config.dtype,
-            device: device.clone(),
-        };
-
-        rllm_config.verify_args()?;
-
-        let idx = repo.read("model.safetensors.index.json");
-
-        let filenames = if let Ok(idx) = idx {
-            let st_index: serde_json::Value = serde_json::from_slice(&idx)?;
-            let entries = st_index["weight_map"]
-                .as_object()
-                .unwrap()
-                .values()
-                .map(|v| v.as_str().unwrap().to_owned());
-
-            let h = HashSet::<String>::from_iter(entries);
-            let mut filenames = h.into_iter().collect::<Vec<_>>();
-            filenames.sort();
-            filenames
-        } else {
-            if repo.is_local() && repo.get("model.safetensors-rust").is_ok() {
-                vec!["model.safetensors-rust".to_string()]
-            } else {
-                vec!["model.safetensors".to_string()]
-            }
-        };
-
-        let filenames = filenames
-            .iter()
-            .map(|f| repo.get(f))
-            .collect::<Result<Vec<_>>>()?;
-
-        log::info!("building the model");
-
-        let eos_token_id = tok_trie.info().tok_eos;
-        let space_token_id = tok_trie.greedy_tokenize(b" ")[0];
-
-        let _ = Tensor::zeros(&[1], (model_config.dtype, device));
-        reset_mem_stats(device);
-        log_mem_stats("initial", device);
-
-        let mut vs = VarStore::new(device.clone());
-
-        let rc_cfg = Rc::new(model_config.clone());
-        let model: Box<dyn RllmModel> = match model_config.model_type {
+        let rc_cfg = Rc::new(rllm_config.model.clone());
+        let mut model: Box<dyn RllmModel> = match rllm_config.model.model_type {
             ModelType::Llama => Box::new(llama::Llama::load(vs.root(), &rc_cfg).unwrap()),
             ModelType::Phi => {
                 Box::new(phi::MixFormerSequentialForCausalLM::new(&rc_cfg, vs.root()))
@@ -429,6 +363,88 @@ impl RllmEngine {
         bar.finish();
 
         log::info!("model loaded");
+
+        model.finalize();
+
+        Ok(model)
+    }
+
+    fn model_filenames(repo: &Repo) -> Result<Vec<PathBuf>> {
+        let idx = repo.read("model.safetensors.index.json");
+
+        let filenames = if let Ok(idx) = idx {
+            let st_index: serde_json::Value = serde_json::from_slice(&idx)?;
+            let entries = st_index["weight_map"]
+                .as_object()
+                .unwrap()
+                .values()
+                .map(|v| v.as_str().unwrap().to_owned());
+
+            let h = HashSet::<String>::from_iter(entries);
+            let mut filenames = h.into_iter().collect::<Vec<_>>();
+            filenames.sort();
+            filenames
+        } else {
+            if repo.is_local() && repo.get("model.safetensors-rust").is_ok() {
+                vec!["model.safetensors-rust".to_string()]
+            } else {
+                vec!["model.safetensors".to_string()]
+            }
+        };
+
+        let filenames = filenames
+            .iter()
+            .map(|f| repo.get(f))
+            .collect::<Result<Vec<_>>>()?;
+
+        Ok(filenames)
+    }
+
+    pub fn load(args: LoaderArgs) -> Result<RllmEngine> {
+        let _no_grad = tch::no_grad_guard();
+
+        let device = args.device;
+        let repo = Repo::from(&args)?;
+
+        let (tokenizer, tok_trie) = Self::load_tokenizer(&args)?;
+        let model_config = Self::load_model_config(&args)?;
+        let model_len = model_config.max_sequence_length;
+
+        let mut aici = args.aici.clone();
+        if aici.max_fuel == 0 {
+            aici.max_fuel = model_len * 10;
+        }
+
+        let rllm_config = RllmConfig {
+            model: model_config.clone(),
+            parallel: ParallelConfig::single(),
+            cache: CacheConfig::default(),
+            scheduler: SchedulerConfig {
+                max_num_batched_tokens: model_len,
+                max_num_kv_tokens: model_len * 10,
+                max_num_seqs: 100,
+                max_model_len: model_len,
+            },
+            aici,
+            dtype: model_config.dtype,
+            device: device.clone(),
+        };
+
+        let filenames = Self::model_filenames(&repo)?;
+
+        rllm_config.verify_args()?;
+
+        log::info!("building the model");
+
+        let eos_token_id = tok_trie.info().tok_eos;
+        let space_token_id = tok_trie.greedy_tokenize(b" ")[0];
+
+        let _ = Tensor::zeros(&[1], (model_config.dtype, device));
+        reset_mem_stats(device);
+        log_mem_stats("initial", device);
+
+        let model = Self::load_model(&rllm_config, filenames)?;
+
         log_mem_stats("model fully loaded", device);
 
         let rllm_config = Arc::new(rllm_config);
