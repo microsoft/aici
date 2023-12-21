@@ -258,6 +258,7 @@ pub struct RllmEngine {
     tim_sample: TimerRef,
 
     tim_aici_bias: TimerRef,
+    tim_logit_sample: TimerRef,
     tim_aici_post: TimerRef,
 
     aicirt: Option<AiciRtIface>,
@@ -457,15 +458,16 @@ impl RllmEngine {
             cache_engine,
             nv_profile: false,
             aicirt: None,
-            tim_step: timers.new_timer("s"),
-            tim_aici_pre: timers.new_timer("s.aici_pre"),
-            tim_schedule: timers.new_timer("s.schedule"),
-            tim_aici_mid: timers.new_timer("s.aici_mid"),
-            tim_run_model: timers.new_timer("s.run"),
-            tim_model_fwd: timers.new_timer("s.run.model_fwd"),
-            tim_sample: timers.new_timer("s.run.sample"),
-            tim_aici_post: timers.new_timer("s.run.sample.aici_post"),
-            tim_aici_bias: timers.new_timer("s.run.sample.aici_bias"),
+            tim_step: timers.new_timer("step"),
+            tim_aici_pre: timers.new_timer("step.aici_pre"),
+            tim_schedule: timers.new_timer("step.schedule"),
+            tim_aici_mid: timers.new_timer("step.aici_mid"),
+            tim_run_model: timers.new_timer("step.run_model"),
+            tim_model_fwd: timers.new_timer("step.run_model.model_fwd"),
+            tim_sample: timers.new_timer("step.run_model.sample"),
+            tim_aici_bias: timers.new_timer("step.run_model.sample.aici_bias"),
+            tim_logit_sample: timers.new_timer("step.run_model.sample.sample"),
+            tim_aici_post: timers.new_timer("step.run_model.sample.aici_post"),
             timers,
         })
     }
@@ -827,7 +829,7 @@ impl RllmEngine {
                 let next_token = if seq.expected.is_some() {
                     self.check_expected(&logits, &sg.request_id, seq)
                 } else {
-                    sg.logits_processor.sample(&logits)?
+                    with_timer!(self.tim_logit_sample, sg.logits_processor.sample(&logits)?)
                 };
 
                 if seq.has_aici && next_token == self.eos_token_id {
@@ -1187,7 +1189,7 @@ impl RllmEngine {
         let r = with_timer!(self.tim_step, self.step_inner());
 
         if self.step_no % 10 == 0 {
-            log::debug!("timers\n{}", self.timers);
+            log::debug!("timers\n{}", self.timers.pp());
             self.timers.reset();
         }
 
