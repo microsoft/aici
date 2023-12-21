@@ -304,8 +304,10 @@ pub fn varlen_attn(
     block_idx: usize,
 ) -> Tensor // [num_tokens, num_heads * head_size]
 {
-    assert!(q.size() == k.size());
-    assert!(v.size() == k.size());
+    // println!("varlen_attn: q: {q:?} k: {k:?} v: {v:?}");
+    // doesn't hold for GQA:
+    // assert!(q.size() == k.size());
+    // assert!(v.size() == k.size());
 
     save_attn(config, &k, &v, batch_info, block_idx);
 

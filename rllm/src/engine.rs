@@ -679,6 +679,11 @@ impl RllmEngine {
                     min_logit = *l_exp;
                 }
 
+                // log::debug!(
+                //     "exp: {t} {tstr} {l_exp:.4} {l_act:.4} {d:.4}",
+                //     tstr = self.tok_trie.token_dbg(*t),
+                // );
+
                 // zero it out for the "unmentioned" test below
                 logits[*t as usize] = 0.0;
             }
