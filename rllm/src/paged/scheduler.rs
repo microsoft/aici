@@ -343,6 +343,8 @@ impl Scheduler {
             PreemptionMode::Swap
         };
 
+        log::debug!("preempting seq_group {} ({:?})", seq_group.request_id, mode);
+
         match mode {
             PreemptionMode::Swap => {
                 if !self.block_manager.can_swap_out(&seq_group) {
@@ -460,6 +462,7 @@ impl Scheduler {
             seq.sched_phase = status;
             if to_waiting {
                 seq.gpu_blocks.clear();
+                seq.num_kv_computed = 0;
             }
         }
     }
