@@ -1,4 +1,3 @@
-mod bench;
 mod hostimpl;
 mod moduleinstance;
 mod worker;
@@ -10,6 +9,7 @@ use crate::{
     msgchannel::MessageChannel,
     shm::Shm,
     worker::{bench_ipc, RtMidProcessArg, WorkerForker},
+    TimerRef, TimerSet
 };
 use aici_abi::{
     bytes::limit_str, toktree::TokTrie, MidProcessArg, PostProcessArg, PreProcessArg, SeqId,
@@ -18,7 +18,6 @@ use aici_tokenizers::find_tokenizer;
 use aicirt::*;
 use anyhow::{anyhow, ensure, Result};
 use base64::{self, Engine as _};
-use bench::{TimerRef, TimerSet};
 use clap::Parser;
 use hex;
 use hostimpl::GlobalInfo;

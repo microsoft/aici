@@ -2,10 +2,12 @@ pub mod api;
 pub mod msgchannel;
 pub mod semaphore;
 pub mod shm;
+mod bench;
 
 use anyhow::Result;
 use flexi_logger::{DeferredNow, Logger, WriteMode};
 use log::Record;
+pub use bench::*;
 
 pub enum LogMode {
     Normal,

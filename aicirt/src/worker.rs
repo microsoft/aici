@@ -1,11 +1,10 @@
 use crate::{
     api::ModuleInstId,
-    bench::{TimerRef, TimerSet},
     hostimpl::AiciLimits,
     moduleinstance::{ModuleInstance, WasmContext},
     setup_bg_worker_pool,
     shm::Shm,
-    with_timer, InstantiateReq,
+    with_timer, InstantiateReq, TimerRef, TimerSet,
 };
 use aici_abi::{
     InitPromptResult, MidProcessArg, PostProcessArg, PreProcessArg, StorageCmd, StorageOp,

@@ -49,6 +49,13 @@ impl TimerSet {
             set: self.clone(),
         }
     }
+
+    pub fn reset(&self) {
+        let mut inner = self.inner.lock().unwrap();
+        for timer in &mut inner.timers {
+            timer.reset();
+        }
+    }
 }
 
 impl TimerRef {
@@ -129,6 +136,12 @@ impl TimerImpl {
         self.elapsed += self.start.elapsed();
         self.num += 1;
         self.state = TimerState::Stopped;
+    }
+
+    fn reset(&mut self) {
+        assert!(self.state == TimerState::Stopped);
+        self.elapsed = Duration::new(0, 0);
+        self.num = 0;
     }
 }
 

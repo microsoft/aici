@@ -1,11 +1,11 @@
 use crate::{
     api::ModuleInstId,
-    bench::TimerSet,
     hostimpl::{
         setup_linker, AiciLimits, GlobalInfo, ModuleData, LOGIT_BIAS_ALLOW, LOGIT_BIAS_DISALLOW,
     },
     shm::Shm,
     worker::{GroupHandle, RtMidProcessArg, RtPostProcessArg, RtPreProcessArg, RtPreProcessResult},
+    TimerSet,
 };
 use aici_abi::{
     toktree::TokTrie, InitPromptArg, InitPromptResult, MidProcessResult, PostProcessArg,
