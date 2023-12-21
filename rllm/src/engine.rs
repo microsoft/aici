@@ -442,6 +442,7 @@ impl RllmEngine {
 
     fn profile_model(config: Arc<RllmConfig>, model: &Box<dyn RllmModel>) -> CacheSize {
         let mut info = BatchInfoBuilder::new(config.clone()).profile_run();
+        log::debug!("profile {info:?}");
         let device = config.device.clone();
         reset_mem_stats(device);
         log_mem_stats("before model profile", device);

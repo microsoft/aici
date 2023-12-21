@@ -12,6 +12,7 @@ use crate::{
 };
 use std::rc::Rc;
 use tch::nn::{self, Module, Path};
+use tch_flash_attn::paged_attention_v1;
 
 // note that this doesn't work for phi-2 - it seems particularly numerically unstable
 const CHECK: bool = false;
@@ -155,6 +156,10 @@ fn compute_varlen_attn(
 ) -> Tensor {
     let (key_cache, value_cache) = &mut batch_info.kv_cache[block_idx];
 
+    if q.size()[0] == 0 {
+        return Tensor::empty(&[0, config.hidden_size as i64], (q.kind(), q.device()));
+    }
+
     // then, extend key/value and fill them from cache
     let mut k = Tensor::empty(
         &[
@@ -255,6 +260,41 @@ fn compute_varlen_attn(
     y
 }
 
+fn compute_paged_attn(
+    config: &ModelConfig,
+    q: &Tensor,
+    y: &Tensor,
+    batch_info: &mut BatchInfo,
+    block_idx: usize,
+) -> Tensor {
+    if q.size()[0] == 0 {
+        return y.shallow_clone();
+    }
+
+    let mut out = Tensor::empty_like(q);
+    let (key_cache, value_cache) = &batch_info.kv_cache[block_idx];
+
+    let softmax_scale = 1f32 / (config.head_dim as f32).sqrt();
+
+    paged_attention_v1(
+        &mut out,
+        &q,
+        key_cache,
+        value_cache,
+        config.num_key_value_heads,
+        softmax_scale,
+        &batch_info.paged_block_tables,
+        &batch_info.paged_context_lens,
+        batch_info.paged_block_size,
+        batch_info.paged_max_context_len,
+        None,
+    );
+
+    let out = out.reshape(&[-1, config.hidden_size as i64]);
+
+    Tensor::cat(&[y, &out], 0)
+}
+
 pub fn varlen_attn(
     config: &ModelConfig,
     q: Tensor, // [num_tokens, num_heads, head_size]
@@ -262,12 +302,30 @@ pub fn varlen_attn(
     v: Tensor, // [num_tokens, num_heads, head_size]
     batch_info: &mut BatchInfo,
     block_idx: usize,
-) -> Tensor {
+) -> Tensor // [num_tokens, num_heads * head_size]
+{
     assert!(q.size() == k.size());
     assert!(v.size() == k.size());
 
     save_attn(config, &k, &v, batch_info, block_idx);
-    compute_varlen_attn(config, &q, batch_info, block_idx)
+
+    let y = compute_varlen_attn(
+        config,
+        &q.i((0..batch_info.q_multi, .., ..)),
+        batch_info,
+        block_idx,
+    );
+
+    #[cfg(feature = "cuda")]
+    let y = compute_paged_attn(
+        config,
+        &q.i((batch_info.q_multi.., .., ..)),
+        &y,
+        batch_info,
+        block_idx,
+    );
+
+    y
 }
 
 // x is [seq_len, num_heads, head_dim]
@@ -341,13 +399,4 @@ pub fn layer_norm(vs: nn::Path, config: &ModelConfig) -> nn::LayerNorm {
             ..nn::LayerNormConfig::default()
         },
     )
-}
-
-pub fn extract_positions(x: &Tensor, batch_info: &BatchInfo) -> Tensor {
-    // skip first zero
-    let mut idx = batch_info.seqlens_q.i(1..);
-    // subtract 1 from each index
-    let ones = Tensor::ones_like(&idx);
-    idx = idx - ones;
-    x.i((&idx, ..))
 }

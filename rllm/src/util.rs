@@ -192,3 +192,15 @@ pub fn gpu_memory_size(device: Device) -> usize {
         _ => 0,
     }
 }
+
+pub fn pad_to_multiple<T>(v: &mut Vec<T>, multiple: usize)
+where
+    T: Default + Clone,
+{
+    let len = v.len();
+    let rem = len % multiple;
+    if rem > 0 {
+        let pad_len = multiple - rem;
+        v.extend(std::iter::repeat(T::default()).take(pad_len));
+    }
+}

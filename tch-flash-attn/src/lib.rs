@@ -354,8 +354,8 @@ pub fn paged_attention_v1(
     value_cache: &Tensor, // [num_blocks, num_heads, head_size, block_size]
     num_kv_heads: usize,
     scale: f32,
-    block_tables: &Tensor, // [num_seqs, max_num_blocks_per_seq]
-    context_lens: &Tensor, // [num_seqs]
+    block_tables: &Tensor, // [num_seqs, max_num_blocks_per_seq], int
+    context_lens: &Tensor, // [num_seqs], int
     block_size: usize,
     max_context_len: usize,
     alibi_slopes: Option<&Tensor>,

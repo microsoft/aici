@@ -258,26 +258,29 @@ fn inference_loop(
 
 fn run_tests(args: &Args, loader_args: LoaderArgs) {
     let mut engine = RllmEngine::load(loader_args).expect("failed to load model");
+    let mut tests = args.test.clone();
 
-    for t in &args.test {
-        let exp = ExpectedGeneration::load(&PathBuf::from(t)).expect("can't load test");
-        log::info!(
-            "test {t}: {} tokens; {} logits",
-            exp.output.len(),
-            exp.output[0].logits.len()
-        );
-        if exp.output.len() > 11 {
-            let mut exp2 = exp.clone();
-            engine.add_expected_generation(exp, None).unwrap();
-            // add a few tokens in one go to test
-            exp2.output[6].ff_section_len = 4;
-            engine.add_expected_generation(exp2, None).unwrap();
-        } else {
-            engine.add_expected_generation(exp, None).unwrap();
+    while tests.len() > 0 || engine.num_pending_requests() > 0 {
+        if let Some(ref t) = tests.pop() {
+            let exp = ExpectedGeneration::load(&PathBuf::from(t)).expect("can't load test");
+            log::info!(
+                "test {t}: {} tokens; {} logits",
+                exp.output.len(),
+                exp.output[0].logits.len()
+            );
+            if exp.output.len() > 11 {
+                let mut exp2 = exp.clone();
+                engine.add_expected_generation(exp, None).unwrap();
+                // add a few tokens in one go to test
+                exp2.output[6].ff_section_len = 4;
+                engine.add_expected_generation(exp2, None).unwrap();
+            } else {
+                engine.add_expected_generation(exp, None).unwrap();
+            }
         }
-    }
 
-    engine.run_to_completion();
+        engine.step().expect("test step failed");
+    }
 
     if engine.num_errors > 0 {
         log::error!("there were {} errors", engine.num_errors);

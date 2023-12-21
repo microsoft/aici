@@ -1,7 +1,7 @@
 use crate::{
     config::{CommonModelConfig, ModelConfig, ModelType},
     engine::{RllmModel, RllmModelConfig},
-    llm::{extract_positions, layer_norm, linear, varlen_attn, RotaryEmbedding},
+    llm::{layer_norm, linear, varlen_attn, RotaryEmbedding},
     paged::BatchInfo,
     Tensor,
 };
@@ -230,7 +230,7 @@ impl RllmModel for MixFormerSequentialForCausalLM {
         assert!((r.size()[1] as usize) < self.config.tok_vocab_size + 1000);
 
         let r = r.i((.., 0..(self.config.tok_vocab_size as i64)));
-        let r = extract_positions(&r, batch_info);
+        let r = batch_info.extract_positions(&r);
         // println!("rp: {r:?}");
         r
         // Ok(xs

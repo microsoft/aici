@@ -3,7 +3,7 @@
 use crate::{
     config::{CommonModelConfig, ModelConfig, ModelType},
     engine::{RllmModel, RllmModelConfig},
-    llm::{extract_positions, linear_no_bias, varlen_attn, RmsNorm, RotaryEmbedding},
+    llm::{linear_no_bias, varlen_attn, RmsNorm, RotaryEmbedding},
     paged::BatchInfo,
     Tensor,
 };
@@ -204,7 +204,7 @@ impl RllmModel for Llama {
         }
         let x0 = self.ln_f.forward(&x);
         // println!("x: {}", x0);
-        let x = extract_positions(&x0.squeeze_dim(0), batch_info);
+        let x = batch_info.extract_positions(&x0.squeeze_dim(0));
         let logits = self.lm_head.forward(&x);
         logits
     }

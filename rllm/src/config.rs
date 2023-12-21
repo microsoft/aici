@@ -172,7 +172,7 @@ impl CacheConfig {
             log::warn!("Possibly too large swap space. {}", msg);
         }
         #[cfg(feature = "cuda")]
-        let paged_attn_kernel_v = 0;
+        let paged_attn_kernel_v = 1;
         #[cfg(not(feature = "cuda"))]
         let paged_attn_kernel_v = 0;
         Ok(Self {
