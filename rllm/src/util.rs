@@ -242,3 +242,10 @@ pub fn log_time(name: &'static str, start: Instant) {
     let duration = start.elapsed();
     log::info!("{}: {:?}", name, duration);
 }
+
+pub fn scalar_tensor<T>(v: T, d: Device) -> Tensor
+where
+    T: Element,
+{
+    Tensor::from_slice(&[v]).to(d).reshape(&[])
+}

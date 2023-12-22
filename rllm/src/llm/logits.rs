@@ -2,7 +2,7 @@
 
 use crate::{
     config::{SamplingParams, SAMPLING_EPS},
-    util::to_vec1,
+    util::{scalar_tensor, to_vec1},
     DType, Tensor,
 };
 use aici_abi::toktree::TokTrie;
@@ -34,15 +34,8 @@ impl LogitsProcessor {
         }
     }
 
-    fn sample_argmax(&mut self, logits: &Tensor) -> Result<u32> {
-        let tokid = logits.argmax(0, false).int64_value(&[]);
-        // let tokid = to_vec1::<f32>(logits)
-        //     .into_iter()
-        //     .enumerate()
-        //     .max_by(|(_, u), (_, v)| u.total_cmp(v))
-        //     .unwrap()
-        //     .0;
-        Ok(tokid as u32)
+    fn sample_argmax(&mut self, logits: &Tensor) -> Result<Tensor> {
+        Ok(logits.argmax(0, false))
     }
 
     fn sample_multinomial(&mut self, prs: &Vec<f32>) -> Result<u32> {
@@ -73,7 +66,7 @@ impl LogitsProcessor {
         self.sample_multinomial(prs)
     }
 
-    pub fn sample(&mut self, logits: &Tensor) -> Result<u32> {
+    pub fn sample(&mut self, logits: &Tensor) -> Result<Tensor> {
         let next_token = match self.temperature {
             None => self.sample_argmax(&logits)?,
             Some(temperature) => {
@@ -84,12 +77,12 @@ impl LogitsProcessor {
                 let top_p = self.top_p;
                 if top_p <= 0.0 || top_p >= 1.0 {
                     // simply sample from the predicted probability distribution
-                    let sample = prs.multinomial(1, false).int64_value(&[0]);
-                    sample as u32
+                    prs.multinomial(1, false)
                 } else {
                     // top-p (nucleus) sampling, clamping the least likely tokens to zero
                     let mut prs: Vec<f32> = to_vec1(&prs);
-                    self.sample_topp(&mut prs, top_p as f32)?
+                    let t = self.sample_topp(&mut prs, top_p as f32)?;
+                    scalar_tensor(t as i64, logits.device())
                 }
             }
         };

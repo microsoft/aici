@@ -12,7 +12,7 @@ use crate::{
     },
     util::{
         get_setting, gpu_memory_size, gpu_peak_allocated_bytes, log_mem_stats, reset_mem_stats,
-        synchronize, to_vec1, to_vec2,
+        scalar_tensor, synchronize, to_vec1, to_vec2,
     },
     DType, Device, IndexOp, LoaderArgs, LogitsProcessor, Tensor,
 };
@@ -260,6 +260,7 @@ pub struct RllmEngine {
 
     tim_aici_bias: TimerRef,
     tim_logit_sample: TimerRef,
+    tim_logit_sync: TimerRef,
     tim_aici_post: TimerRef,
 
     aicirt: Option<AiciRtIface>,
@@ -483,6 +484,7 @@ impl RllmEngine {
             tim_sample: timers.new_timer("step.run_model.sample"),
             tim_aici_bias: timers.new_timer("step.run_model.sample.aici_bias"),
             tim_logit_sample: timers.new_timer("step.run_model.sample.sample"),
+            tim_logit_sync: timers.new_timer("step.run_model.sample.sync"),
             tim_aici_post: timers.new_timer("step.run_model.sample.aici_post"),
             timers,
         })
@@ -827,6 +829,8 @@ impl RllmEngine {
 
         let mut post_ops = Vec::new();
 
+        let mut pre_sample = HashMap::new();
+
         for sg in sched_out.next_seq_groups.iter_mut() {
             for seq in sg.seqs.iter_mut() {
                 if seq.sched_phase != SchedulingPhase::Running {
@@ -843,13 +847,29 @@ impl RllmEngine {
 
                 seq.num_kv_computed = seq.get_len();
 
-                let mut info = "";
                 let next_token = if seq.expected.is_some() {
-                    self.check_expected(&logits, &sg.request_id, seq)
+                    let t = self.check_expected(&logits, &sg.request_id, seq);
+                    scalar_tensor(t as i64, logits.device())
                 } else {
                     with_timer!(self.tim_logit_sample, sg.logits_processor.sample(&logits)?)
                 };
 
+                pre_sample.insert(seq.seq_id, next_token);
+            }
+        }
+
+        for sg in sched_out.next_seq_groups.iter_mut() {
+            for seq in sg.seqs.iter_mut() {
+                if seq.sched_phase != SchedulingPhase::Running {
+                    continue;
+                }
+
+                let next_token = match pre_sample.get(&seq.seq_id) {
+                    Some(t) => with_timer!(self.tim_logit_sync, t.int64_value(&[]) as u32),
+                    None => continue,
+                };
+
+                let mut info = "";
                 if seq.has_aici && next_token == self.eos_token_id {
                     // replace with space, so the model doesn't get confused
                     // note that aici will still get the real EOS token
@@ -959,7 +979,10 @@ impl RllmEngine {
         let t0 = Instant::now();
         let logits = with_timer!(self.tim_model_fwd, {
             let l = self.model.forward(&mut info);
-            synchronize(self.device);
+            if false {
+                // without this, the timing is off but we may get better perf
+                synchronize(self.device);
+            }
             l
         });
         let r = with_timer!(self.tim_sample, { self.sample(&logits, sched_out, &info) });
@@ -1206,7 +1229,7 @@ impl RllmEngine {
         let _no_grad = tch::no_grad_guard();
         let r = with_timer!(self.tim_step, self.step_inner());
 
-        if self.step_no % 50 == 0 {
+        if self.step_no % 20 == 0 {
             log::debug!("timers\n{}", self.timers.pp());
             self.timers.reset();
         }
