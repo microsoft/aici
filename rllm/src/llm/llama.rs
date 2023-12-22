@@ -10,10 +10,7 @@ use crate::{
 use anyhow::Result;
 use serde::Deserialize;
 use std::rc::Rc;
-use tch::{
-    nn::{self, Module, Path},
-    IndexOp,
-};
+use tch::nn::{self, Module, Path};
 
 #[derive(Deserialize)]
 pub struct LlamaConfig {
@@ -59,11 +56,9 @@ impl RllmModelConfig for LlamaConfig {
 }
 
 struct CausalSelfAttention {
-    q_proj: Option<nn::Linear>,
-    k_proj: Option<nn::Linear>,
-    v_proj: Option<nn::Linear>,
-    // after .finalize()
-    qkv_proj: Option<Tensor>,
+    q_proj: nn::Linear,
+    k_proj: nn::Linear,
+    v_proj: nn::Linear,
     o_proj: nn::Linear,
     config: Rc<ModelConfig>,
     rotary: RotaryEmbedding,
@@ -76,19 +71,9 @@ impl CausalSelfAttention {
 
         batch_info.log_tensor("x", &x);
 
-        let kv_heads = self.config.num_key_value_heads as i64;
-        let q_heads = self.config.num_attention_heads as i64;
-
-        let qkv = x
-            .linear(&self.qkv_proj.as_ref().unwrap(), None::<&Tensor>)
-            .reshape(&[seq_len, q_heads + 2 * kv_heads, self.config.head_dim as i64]);
-        let q = qkv.i((.., 0..q_heads, ..)).reshape(&[seq_len, -1]);
-        let k = qkv
-            .i((.., q_heads..(kv_heads + q_heads), ..))
-            .reshape(&[seq_len, -1]);
-        let v = qkv
-            .i((.., (kv_heads + q_heads).., ..))
-            .reshape(&[seq_len, -1]);
+        let q = self.q_proj.forward(x);
+        let k = self.k_proj.forward(x);
+        let v = self.v_proj.forward(x);
 
         let (q, k) = self.rotary.forward(&batch_info.positions, &q, &k);
 
@@ -112,15 +97,14 @@ impl CausalSelfAttention {
         let size_in = cfg.hidden_size;
         let size_q = (cfg.hidden_size / cfg.num_attention_heads) * cfg.num_attention_heads;
         let size_kv = (cfg.hidden_size / cfg.num_attention_heads) * cfg.num_key_value_heads;
-        let q_proj = Some(linear_no_bias(size_in, size_q, &vb / "q_proj"));
-        let k_proj = Some(linear_no_bias(size_in, size_kv, &vb / "k_proj"));
-        let v_proj = Some(linear_no_bias(size_in, size_kv, &vb / "v_proj"));
+        let q_proj = linear_no_bias(size_in, size_q, &vb / "q_proj");
+        let k_proj = linear_no_bias(size_in, size_kv, &vb / "k_proj");
+        let v_proj = linear_no_bias(size_in, size_kv, &vb / "v_proj");
         let o_proj = linear_no_bias(size_q, size_in, &vb / "o_proj");
         Ok(Self {
             q_proj,
             k_proj,
             v_proj,
-            qkv_proj: None,
             o_proj,
             config: cfg.clone(),
             rotary: rotary.clone(),
@@ -129,18 +113,16 @@ impl CausalSelfAttention {
 }
 
 struct Mlp {
-    c_fc: Option<Tensor>,
-    c_fc1: Option<nn::Linear>,
-    c_fc2: Option<nn::Linear>,
+    c_fc1: nn::Linear,
+    c_fc2: nn::Linear,
     c_proj: nn::Linear,
 }
 
 impl Mlp {
     fn forward(&self, x: &Tensor, batch_info: &BatchInfo) -> Tensor {
-        let m = x.linear(&self.c_fc.as_ref().unwrap(), None::<&Tensor>);
-        let sz = m.size()[2];
-        let m1 = m.i((.., .., 0..(sz / 2)));
-        let m2 = m.i((.., .., (sz / 2)..));
+        let m1 = self.c_fc1.forward(x);
+        let m2 = self.c_fc2.forward(x);
+        batch_info.log_tensor("w1", &self.c_fc1.ws);
         batch_info.log_tensor("m1", &m1);
         batch_info.log_tensor("m2", &m2);
         let si = m1.silu();
@@ -152,13 +134,12 @@ impl Mlp {
     fn load(vb: Path, cfg: &ModelConfig) -> Result<Self> {
         let h_size = cfg.hidden_size;
         let i_size = cfg.intermediate_size;
-        let c_fc1 = Some(linear_no_bias(h_size, i_size, &vb / "gate_proj"));
-        let c_fc2 = Some(linear_no_bias(h_size, i_size, &vb / "up_proj"));
+        let c_fc1 = linear_no_bias(h_size, i_size, &vb / "gate_proj");
+        let c_fc2 = linear_no_bias(h_size, i_size, &vb / "up_proj");
         let c_proj = linear_no_bias(i_size, h_size, &vb / "down_proj");
         Ok(Self {
             c_fc1,
             c_fc2,
-            c_fc: None,
             c_proj,
         })
     }
@@ -221,42 +202,6 @@ impl RllmModel for Llama {
         let x = batch_info.extract_positions(&x0.squeeze_dim(0));
         let logits = self.lm_head.forward(&x);
         logits
-    }
-
-    fn finalize(&mut self) {
-        for block in self.blocks.iter_mut() {
-            // combine q, k, v projections into one tensor for performance
-            block.attn.qkv_proj = Some(
-                Tensor::cat(
-                    &[
-                        &block.attn.q_proj.as_ref().unwrap().ws,
-                        &block.attn.k_proj.as_ref().unwrap().ws,
-                        &block.attn.v_proj.as_ref().unwrap().ws,
-                    ],
-                    0,
-                )
-                .contiguous(),
-            );
-
-            // free memory:
-            block.attn.q_proj = None;
-            block.attn.k_proj = None;
-            block.attn.v_proj = None;
-
-            block.mlp.c_fc = Some(
-                Tensor::cat(
-                    &[
-                        &block.mlp.c_fc1.as_ref().unwrap().ws,
-                        &block.mlp.c_fc2.as_ref().unwrap().ws,
-                    ],
-                    0,
-                )
-                .contiguous(),
-            );
-
-            block.mlp.c_fc1 = None;
-            block.mlp.c_fc2 = None;
-        }
     }
 }
 

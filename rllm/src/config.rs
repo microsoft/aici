@@ -147,7 +147,7 @@ pub struct CacheConfig {
 
 impl Default for CacheConfig {
     fn default() -> Self {
-        Self::new(16, 0.88, 4).unwrap()
+        Self::new(16, 0.9, 4).unwrap()
     }
 }
 
