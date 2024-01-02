@@ -1,5 +1,5 @@
 use crate::{config::SamplingParams, engine::ExpectedGeneration, paged::BlockRef, LogitsProcessor};
-use aici_abi::TokenId;
+use aici_abi::{toktree::TokTrie, TokenId};
 use aicirt::api::SequenceResult;
 use serde::{Deserialize, Serialize};
 use std::fmt::Debug;
@@ -73,6 +73,7 @@ pub struct Sequence {
     tokens: Vec<Token>,
     pub prompt_len: usize,
     pub(crate) output_ptr: usize,
+    pub(crate) output_pending: Vec<u8>,
     pub(crate) num_kv_computed: usize,
     pub(crate) has_aici: bool,
     pub(crate) aici_sampling: AiciSampling,
@@ -111,6 +112,7 @@ impl Sequence {
             num_kv_computed: 0,
             prompt_len,
             output_ptr: prompt_len,
+            output_pending: Vec::new(),
             gpu_blocks: Vec::new(),
             cpu_blocks: Vec::new(),
             block_size,
@@ -144,6 +146,9 @@ impl Sequence {
     pub fn splice_tokens(&mut self, backtrack: usize, tokens: &[Token]) {
         self.tokens.truncate(self.get_len() - backtrack);
         self.output_ptr = std::cmp::min(self.output_ptr, self.get_len());
+        if backtrack > 0 {
+            self.output_pending.clear();
+        }
         self.trim_physical_blocks();
         self.append_tokens(tokens);
     }
@@ -172,6 +177,7 @@ impl Sequence {
             tokens: self.tokens.clone(),
             output_ptr: self.prompt_len,
             prompt_len: self.prompt_len,
+            output_pending: Vec::new(),
             gpu_blocks: self.gpu_blocks.iter().map(|x| x.fork()).collect(),
             cpu_blocks: self.cpu_blocks.iter().map(|x| x.fork()).collect(),
             block_size: self.block_size,
@@ -194,14 +200,42 @@ impl Sequence {
         }
     }
 
-    pub fn gen_output(&mut self) -> SeqOutput {
+    pub fn gen_output(&mut self, tok_trie: &TokTrie) -> SeqOutput {
         let new_output_tokens = self.tokens[self.output_ptr..].to_vec();
+        let mut buf = std::mem::take(&mut self.output_pending);
+        buf.append(&mut tok_trie.decode(&new_output_tokens));
+        if buf.len() > 0 {
+            let mut ep = buf.len() - 1;
+            if buf[ep] >= 0x80 {
+                let mut ln = 0;
+                // skip continuation bytes (0b10xx_xxxx), but not too many
+                while ln < 4 && buf[ep] & 0b1100_0000 == 0b1000_0000 {
+                    if ep == 0 {
+                        break;
+                    }
+                    ep -= 1;
+                    ln += 1;
+                }
+                // now buf[ep] is the first byte of the UTF-8 sequence
+                // make sure we have enough continuation bytes
+                if (buf[ep] & 0b1110_0000 == 0b1100_0000 && ln >= 1)
+                    || (buf[ep] & 0b1111_0000 == 0b1110_0000 && ln >= 2)
+                    || (ln >= 3)
+                {
+                    // OK
+                } else {
+                    // not enough, move the whole UTF-8 sequence to output_pending
+                    self.output_pending.extend(buf.drain(ep..));
+                }
+            }
+        }
         self.output_ptr = self.tokens.len();
+        let new_text = String::from_utf8_lossy(&buf).to_string();
         SeqOutput {
             seq_id: self.seq_id,
             index: self.index,
             new_output_tokens,
-            new_text: String::new(),
+            new_text,
             output_tokens: self.tokens[self.prompt_len..].to_vec(),
             finish_reason: self.finish_reason(),
             aici_logs: std::mem::take(&mut self.aici_logs),

@@ -926,11 +926,7 @@ impl RllmEngine {
             seq_outputs: sg
                 .seqs
                 .iter_mut()
-                .map(|seq| {
-                    let mut out = seq.gen_output();
-                    out.new_text = self.tok_trie.decode_str(&out.new_output_tokens);
-                    out
-                })
+                .map(|seq| seq.gen_output(&self.tok_trie))
                 .collect(),
             usage: sg.usage.clone(),
             is_final,
@@ -962,9 +958,6 @@ impl RllmEngine {
             .finish(self.step_no, iface);
 
         log::trace!("batch_info #{}: {:?}", info.step_no, info);
-        // log::trace!("{}", info.positions);
-        // log::trace!("{}", info.gather_mapping);
-        // log::trace!("{}", info.slot_mapping);
 
         #[cfg(feature = "cuda")]
         if self.nv_profile {
