@@ -48,7 +48,8 @@
         "__locale": "cpp",
         "ios": "cpp",
         "random": "cpp",
-        "cstdint": "cpp"
+        "cstdint": "cpp",
+        "chrono": "cpp"
     },
     "python.analysis.extraPaths": [
         "./vllm",

@@ -3,6 +3,12 @@ use std::{collections::HashMap, fmt::Display};
 use tch::{Kind, Tensor};
 use torch_sys::C_tensor;
 
+mod stream;
+mod event;
+
+pub use stream::*;
+pub use event::*;
+
 unsafe fn ptr_to_string(ptr: *mut libc::c_char) -> Option<String> {
     if !ptr.is_null() {
         let str = std::ffi::CStr::from_ptr(ptr).to_string_lossy().into_owned();
@@ -13,7 +19,7 @@ unsafe fn ptr_to_string(ptr: *mut libc::c_char) -> Option<String> {
     }
 }
 
-unsafe fn check_res(f: &str, res: *mut libc::c_char) {
+pub(crate) unsafe fn check_res(f: &str, res: *mut libc::c_char) {
     match ptr_to_string(res) {
         None => (),
         Some(err) => panic!("{}: {}", f, err),
@@ -421,7 +427,7 @@ extern "C" {
     fn cuda_reset_peak_memory_stats_C(device: i32) -> *mut libc::c_char;
     fn cuda_empty_cache_C() -> *mut libc::c_char;
     fn cuda_get_stats_allocated_bytes_C(device: i32, outp: *mut Stats) -> *mut libc::c_char;
-    fn cuda_get_device_properties_C(device: i64, outp: *mut CudaProps) -> *mut libc::c_char;
+    fn cuda_get_device_properties_C(device: i32, outp: *mut CudaProps) -> *mut libc::c_char;
 }
 
 pub fn cuda_reset_peak_memory_stats(device: usize) {
@@ -455,7 +461,7 @@ pub fn cuda_get_device_properties(device: usize) -> CudaProps {
     unsafe {
         check_res(
             "cuda_get_device_properties",
-            cuda_get_device_properties_C(device as i64, &mut props),
+            cuda_get_device_properties_C(device as i32, &mut props),
         );
     }
     props
