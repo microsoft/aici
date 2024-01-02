@@ -131,7 +131,7 @@ fn save_attn(
     batch_info: &mut BatchInfo,
     block_idx: usize,
 ) {
-    let (key_cache, value_cache) = &mut batch_info.kv_cache[block_idx];
+    let (mut key_cache, mut value_cache) = batch_info.kv_cache.get(block_idx);
 
     assert!(v.size() == k.size());
 
@@ -139,12 +139,24 @@ fn save_attn(
     if CHECK {
         let mut kk = key_cache.copy();
         let mut vv = value_cache.copy();
-        kernels::reshape_and_cache(k, v, key_cache, value_cache, &batch_info.slot_mapping);
+        kernels::reshape_and_cache(
+            k,
+            v,
+            &mut key_cache,
+            &mut value_cache,
+            &batch_info.slot_mapping,
+        );
         refkernels::reshape_and_cache(k, v, &mut kk, &mut vv, &batch_info.slot_mapping);
         check_all_close(&key_cache, &kk, 1e-5);
         check_all_close(&value_cache, &vv, 1e-5);
     } else {
-        kernels::reshape_and_cache(k, v, key_cache, value_cache, &batch_info.slot_mapping);
+        kernels::reshape_and_cache(
+            k,
+            v,
+            &mut key_cache,
+            &mut value_cache,
+            &batch_info.slot_mapping,
+        );
     }
 }
 
@@ -154,7 +166,7 @@ fn compute_varlen_attn(
     batch_info: &mut BatchInfo,
     block_idx: usize,
 ) -> Tensor {
-    let (key_cache, value_cache) = &mut batch_info.kv_cache[block_idx];
+    let (key_cache, value_cache) = batch_info.kv_cache.get(block_idx);
 
     if q.size()[0] == 0 {
         return Tensor::empty(&[0, config.hidden_size as i64], (q.kind(), q.device()));
@@ -174,8 +186,8 @@ fn compute_varlen_attn(
     kernels::gather_cached_kv(
         &mut k,
         &mut v,
-        key_cache,
-        value_cache,
+        &key_cache,
+        &value_cache,
         &batch_info.gather_mapping,
     );
 
@@ -272,15 +284,15 @@ fn compute_paged_attn(
     }
 
     let mut out = Tensor::empty_like(q);
-    let (key_cache, value_cache) = &batch_info.kv_cache[block_idx];
+    let (key_cache, value_cache) = batch_info.kv_cache.get(block_idx);
 
     let softmax_scale = 1f32 / (config.head_dim as f32).sqrt();
 
     paged_attention_v1(
         &mut out,
         &q,
-        key_cache,
-        value_cache,
+        &key_cache,
+        &value_cache,
         config.num_key_value_heads,
         softmax_scale,
         &batch_info.paged_block_tables,
@@ -308,8 +320,6 @@ pub fn varlen_attn(
     // doesn't hold for GQA:
     // assert!(q.size() == k.size());
     // assert!(v.size() == k.size());
-
-    batch_info.cache_awaiter.wait(block_idx);
 
     save_attn(config, &k, &v, batch_info, block_idx);
 

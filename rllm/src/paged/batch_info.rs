@@ -13,8 +13,8 @@ use std::{
 };
 use tch::{IndexOp, Tensor};
 
-pub trait CacheAwaiter {
-    fn wait(&self, layer_no: usize);
+pub trait CacheIface {
+    fn get(&self, layer_no: usize) -> (Tensor, Tensor);
 }
 
 pub struct BatchInfo {
@@ -28,12 +28,11 @@ pub struct BatchInfo {
     pub max_seqlen_q: usize,
     pub max_seqlen_k: usize,
     pub seq_id_to_idx: HashMap<SeqId, usize>, // seq_id -> index into seqlens_*
-    pub kv_cache: Vec<(Tensor, Tensor)>,
 
     pub infer_log: Mutex<Vec<(String, Tensor)>>,
     pub step_no: usize,
 
-    pub cache_awaiter: Box<dyn CacheAwaiter>,
+    pub kv_cache: Box<dyn CacheIface>,
 
     // for paged attn
     pub paged_block_tables: Tensor, // [num_seqs, max_num_blocks_per_seq]
@@ -186,19 +185,11 @@ impl BatchInfoBuilder {
 
     fn fake_finish(&mut self) -> BatchInfo {
         let (k, v) = CacheEngine::alloc_gpu_cache_layer(&self.config, 1);
-        let num_layers = self.config.get_num_layers_parallel();
-        let kv_cache = (0..num_layers)
-            .map(|_| (k.shallow_clone(), v.shallow_clone()))
-            .collect();
-        self.finish(0, kv_cache, Box::new(NoOpCacheAwaiter {}))
+        let kv_cache = Box::new(FakeKVCache { k, v });
+        self.finish(0, kv_cache)
     }
 
-    pub fn finish(
-        &mut self,
-        step_no: usize,
-        kv_cache: Vec<(Tensor, Tensor)>,
-        cache_awaiter: Box<dyn CacheAwaiter>,
-    ) -> BatchInfo {
+    pub fn finish(&mut self, step_no: usize, kv_cache: Box<dyn CacheIface>) -> BatchInfo {
         let mut positions: Vec<i64> = Vec::new();
         let mut tokens: Vec<i32> = Vec::new();
         let mut logit_idxs: Vec<i32> = Vec::new();
@@ -316,12 +307,17 @@ impl BatchInfoBuilder {
             paged_max_context_len,
             paged_block_tables,
             paged_context_lens,
-            cache_awaiter,
         }
     }
 }
 
-pub struct NoOpCacheAwaiter {}
-impl CacheAwaiter for NoOpCacheAwaiter {
-    fn wait(&self, _layer_no: usize) {}
+struct FakeKVCache {
+    k: Tensor,
+    v: Tensor,
+}
+
+impl CacheIface for FakeKVCache {
+    fn get(&self, _layer_no: usize) -> (Tensor, Tensor) {
+        (self.k.shallow_clone(), self.v.shallow_clone())
+    }
 }

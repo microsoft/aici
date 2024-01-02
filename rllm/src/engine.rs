@@ -5,10 +5,7 @@ use crate::{
     },
     iface::AiciRtIface,
     llm::{llama, phi},
-    paged::{
-        BatchInfo, BatchInfoBuilder, CacheEngine, CacheSize, NoOpCacheAwaiter, Scheduler,
-        SchedulerOutputs,
-    },
+    paged::{BatchInfo, BatchInfoBuilder, CacheEngine, CacheSize, Scheduler, SchedulerOutputs},
     seq::{
         AiciSampling, FinishReason, RequestOutput, SchedulingPhase, SeqId, SeqOutput, Sequence,
         SequenceGroup, Token, TokenUsage,
@@ -946,32 +943,23 @@ impl RllmEngine {
             return self.empty_outputs(sched_out);
         }
 
-        let mut issued_cache_op = false;
-        let cache_engine = &self.cache_engine;
-        if sched_out.blocks_to_swap_in.len() > 0 {
-            cache_engine.swap_in(&sched_out.blocks_to_swap_in);
-            issued_cache_op = true;
-        }
-        if sched_out.blocks_to_swap_out.len() > 0 {
-            cache_engine.swap_out(&sched_out.blocks_to_swap_out);
-            issued_cache_op = true;
-        }
-        if sched_out.blocks_to_copy.len() > 0 {
-            cache_engine.copy(&sched_out.blocks_to_copy);
-            issued_cache_op = true;
-        }
+        let iface = {
+            self.cache_engine.new_round();
+            if sched_out.blocks_to_swap_in.len() > 0 {
+                self.cache_engine.swap_in(&sched_out.blocks_to_swap_in);
+            }
+            if sched_out.blocks_to_swap_out.len() > 0 {
+                self.cache_engine.swap_out(&sched_out.blocks_to_swap_out);
+            }
+            if sched_out.blocks_to_copy.len() > 0 {
+                self.cache_engine.copy(&sched_out.blocks_to_copy);
+            }
+            self.cache_engine.get_cache_iface()
+        };
 
         let mut info = BatchInfoBuilder::new(self.config.clone())
             .sched_out(sched_out)
-            .finish(
-                self.step_no,
-                self.cache_engine.get_gpu_cache(),
-                if issued_cache_op {
-                    cache_engine.get_cache_awaiter()
-                } else {
-                    Box::new(NoOpCacheAwaiter {})
-                },
-            );
+            .finish(self.step_no, iface);
 
         log::trace!("batch_info #{}: {:?}", info.step_no, info);
         // log::trace!("{}", info.positions);
