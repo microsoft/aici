@@ -2,9 +2,9 @@
 pub use crate::llm::refkernels::*;
 use tch::{Device, Tensor};
 #[cfg(feature = "cuda")]
-pub use tch_flash_attn::flash_attn_varlen as varlen_attn;
+pub use tch_cuda::flash_attn_varlen as varlen_attn;
 #[cfg(feature = "cuda")]
-pub use tch_flash_attn::*;
+pub use tch_cuda::*;
 
 /// Convert a vector of lengths into a tensor of offsets, as expected by flash attn.
 pub fn to_offsets(seqlens: impl Iterator<Item = usize>, device: Device) -> (usize, Tensor) {

@@ -2833,7 +2833,7 @@ dependencies = [
  "serde",
  "serde_json",
  "tch",
- "tch-flash-attn",
+ "tch-cuda",
  "tokenizers 0.15.0",
  "tokio",
  "torch-sys",
@@ -3521,7 +3521,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "tch-flash-attn"
+name = "tch-cuda"
 version = "0.1.0"
 dependencies = [
  "anyhow",

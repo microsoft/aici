@@ -12,7 +12,7 @@ use crate::{
 };
 use std::rc::Rc;
 use tch::nn::{self, Module, Path};
-use tch_flash_attn::paged_attention_v1;
+use tch_cuda::paged_attention_v1;
 
 // note that this doesn't work for phi-2 - it seems particularly numerically unstable
 const CHECK: bool = false;

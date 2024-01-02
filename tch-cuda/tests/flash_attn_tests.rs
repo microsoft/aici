@@ -47,7 +47,7 @@ fn flash_attn_varlen() -> Result<()> {
         let q = q.transpose(0, 1);
         let k = k.transpose(0, 1);
         let v = v.transpose(0, 1);
-        tch_flash_attn::flash_attn_varlen(&q, &k, &v, &seqlens_q, &seqlens_k, 32, 32, 0.5, false)
+        tch_cuda::flash_attn_varlen(&q, &k, &v, &seqlens_q, &seqlens_k, 32, 32, 0.5, false)
             .transpose(0, 1)
     };
     let ys = ys.to_kind(Kind::Float);

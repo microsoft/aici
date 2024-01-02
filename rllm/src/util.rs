@@ -2,9 +2,9 @@ use crate::Tensor;
 use anyhow::{bail, Result};
 use std::{collections::HashMap, time::Instant};
 use tch::{kind::Element, Device, IndexOp as _};
-use tch_flash_attn::cuda_get_device_properties;
+use tch_cuda::cuda_get_device_properties;
 #[cfg(feature = "cuda")]
-use tch_flash_attn::{
+use tch_cuda::{
     cuda_empty_cache, cuda_get_stats_allocated_bytes, cuda_reset_peak_memory_stats,
 };
 

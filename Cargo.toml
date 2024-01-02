@@ -7,7 +7,7 @@ members = [
     "aicirt",
     "pyvm",
     "rllm",
-    "tch-flash-attn",
+    "tch-cuda",
 ]
 resolver = "2"
 
