@@ -27,11 +27,11 @@ extern "C" {
     fn cuda_stream_id_C(cu_str: *mut CUDAStream, id: *mut i64) -> *mut c_char;
 }
 
-pub struct Stream {
+pub struct CudaStream {
     pub(crate) cu_str: *mut CUDAStream,
 }
 
-impl Clone for Stream {
+impl Clone for CudaStream {
     fn clone(&self) -> Self {
         let mut cu_str: *mut CUDAStream = std::ptr::null_mut();
         unsafe {
@@ -44,7 +44,7 @@ impl Clone for Stream {
     }
 }
 
-impl Stream {
+impl CudaStream {
     pub fn new(device: Device) -> Self {
         Self::create(StreamType::StrLowPri, device)
     }
@@ -122,20 +122,20 @@ impl Stream {
     }
 
     pub fn guard(&self) -> StreamGuard {
-        let prev = Stream::current(self.device());
+        let prev = CudaStream::current(self.device());
         self.set_current();
         StreamGuard { prev }
     }
 }
 
-impl Drop for Stream {
+impl Drop for CudaStream {
     fn drop(&mut self) {
         unsafe { check_res("cuda_stream_free_C", cuda_stream_free_C(self.cu_str)) };
     }
 }
 
 pub struct StreamGuard {
-    prev: Stream,
+    prev: CudaStream,
 }
 
 impl Drop for StreamGuard {

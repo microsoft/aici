@@ -8,8 +8,6 @@ mod engine;
 pub mod iface;
 pub mod util;
 
-pub mod events;
-
 use config::AiciConfig;
 pub use engine::*;
 pub use llm::logits::LogitsProcessor;

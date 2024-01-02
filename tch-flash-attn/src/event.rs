@@ -1,12 +1,12 @@
-use crate::{check_res, CUDAStream, Stream};
+use crate::{check_res, CUDAStream, CudaStream};
 use std::{
     os::raw::{c_char, c_int},
     sync::Arc,
 };
 
 #[repr(C)]
-pub(crate) struct CUDAEvent {
-    priv_: [u8; 0],
+struct CUDAEvent {
+    _private: [u8; 0],
 }
 
 extern "C" {
@@ -32,11 +32,11 @@ struct EventInner {
 }
 
 #[derive(Clone)]
-pub struct Event {
+pub struct CudaEvent {
     cu_ev: Arc<EventInner>,
 }
 
-impl Event {
+impl CudaEvent {
     /// Create a new event, where .synchronize() yields and .elapsed_time() is not available.
     pub fn new() -> Self {
         Self::create(false, false)
@@ -73,7 +73,7 @@ impl Event {
     /// Has to be called always with the same `stream`.
     /// Calls to `.query()` and `.block()` then wait for the completion of the work
     /// captured here.
-    pub fn record(&mut self, stream: &Stream) {
+    pub fn record(&mut self, stream: &CudaStream) {
         unsafe {
             check_res(
                 "cuda_event_record_C",
@@ -85,7 +85,7 @@ impl Event {
     /// Makes all future work submitted to the given stream wait for this event.
     /// Does not block the CPU.
     /// Note: cudaStreamWaitEvent must be called on the same device as the stream.
-    pub fn wait(&mut self, stream: &Stream) {
+    pub fn wait(&mut self, stream: &CudaStream) {
         unsafe {
             check_res(
                 "cuda_event_block_C",
@@ -95,7 +95,7 @@ impl Event {
     }
 
     /// Compute time in milliseconds between the two events.
-    pub fn elapsed_time(&self, end_event: &Event) -> f32 {
+    pub fn elapsed_time(&self, end_event: &CudaEvent) -> f32 {
         let mut elapsed = 0.0;
         unsafe {
             check_res(
@@ -131,7 +131,7 @@ impl Event {
     }
 }
 
-impl Drop for Event {
+impl Drop for CudaEvent {
     fn drop(&mut self) {
         unsafe { check_res("cuda_event_free_C", cuda_event_free_C(self.cu_ev.ptr)) };
     }
