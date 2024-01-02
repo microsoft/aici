@@ -17,7 +17,9 @@
 				"ms-python.python",
 				"ms-python.black-formatter",
 				"1YiB.rust-bundle",
-				"dtsvet.vscode-wasm"
+				"dtsvet.vscode-wasm",
+				"ms-vscode.cpptools",
+				"GitHub.copilot"
 			]
 		}
 	},

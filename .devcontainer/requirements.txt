@@ -4,7 +4,7 @@ ray >= 2.5.1
 pandas  # Required for Ray data.
 sentencepiece  # Required for LLaMA tokenizer.
 numpy
-torch >= 2.0.0
+torch == 2.1.0
 transformers >= 4.33.1  # Required for Code Llama.
 xformers >= 0.0.21
 fastapi
