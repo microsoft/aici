@@ -6,8 +6,6 @@ default-run = "rllm-server"
 
 [dependencies]
 anyhow = "1.0.75"
-tch = { path = "../tch-rs" }
-torch-sys = { path = "../tch-rs/torch-sys" }
 clap = "4.4.8"
 hf-hub = "0.3.2"
 tokenizers = { version = "0.15.0", features = ["hf-hub"] }
@@ -23,6 +21,8 @@ futures = "0.3.29"
 uuid = { version = "1.6.1", features = ["v4"] }
 derive_more = "0.99.17"
 tch-flash-attn = { path = "../tch-flash-attn", optional = true }
+tch = "0.14.0"
+torch-sys = "0.14.0"
 
 aicirt = { path = "../aicirt" }
 aici_abi = { path = "../aici_abi" }

@@ -1,0 +1,16 @@
+[workspace]
+exclude = ["tch-rs"]
+members = [
+    "aici_abi",
+    "aici_ast_runner",
+    "aici_tokenizers",
+    "aicirt",
+    "pyvm",
+    "rllm",
+    "tch-flash-attn",
+]
+resolver = "2"
+
+
+[profile.release]
+debug = 1

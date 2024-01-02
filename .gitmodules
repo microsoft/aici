@@ -2,9 +2,6 @@
 	path = vllm
 	url = https://github.com/mmoskal/vllm
 	branch = hooks
-[submodule "tch-rs"]
-	path = tch-rs
-	url = https://github.com/LaurentMazare/tch-rs
 [submodule "tch-flash-attn/cutlass"]
 	path = tch-flash-attn/cutlass
 	url = https://github.com/NVIDIA/cutlass.git

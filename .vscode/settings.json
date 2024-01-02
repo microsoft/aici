@@ -4,13 +4,7 @@
     },
     "python.formatting.provider": "none",
     "rust-analyzer.linkedProjects": [
-        "tch-flash-attn/Cargo.toml",
-        "rllm/Cargo.toml",
-        "aicirt/Cargo.toml",
-        "aici_abi/Cargo.toml",
-        "aici_tokenizers/Cargo.toml",
-        "aici_ast_runner/Cargo.toml",
-        "pyvm/Cargo.toml"
+        "./Cargo.toml"
     ],
     "rust-analyzer.diagnostics.disabled": [],
     "files.associations": {
