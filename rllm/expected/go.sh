@@ -2,10 +2,12 @@
 
 set -e
 
-# the PORT is in fact unused
-COMMON_ARGS="--verbose --aicirt ../aicirt/target/release/aicirt"
+BIN=$(cd ../target; pwd)
 
-(cd ../aicirt && cargo build --release)
+# the PORT is in fact unused
+COMMON_ARGS="--verbose --aicirt $BIN/release/aicirt"
+
+cargo build --release --package aicirt
 
 RLLM_LOG=debug
 

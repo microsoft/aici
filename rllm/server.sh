@@ -4,6 +4,8 @@ set -e
 REL=
 LOOP=
 
+BIN=$(cd ../target; pwd)
+
 if [ "$1" = loop ] ; then
     REL=--release
     LOOP=1
@@ -37,7 +39,7 @@ case "$1" in
 esac
 shift
 
-ARGS="--verbose --port 8080 --aicirt ../aicirt/target/release/aicirt $ARGS"
+ARGS="--verbose --port 8080 --aicirt $BIN/release/aicirt $ARGS"
 
 (cd ../aicirt && cargo build --release)
 
@@ -46,7 +48,7 @@ if echo "$*" | grep -q -- --profile-step ; then
     cargo build --release
 RUST_LOG=info \
     nsys profile -c cudaProfilerApi \
-    ./target/release/rllm-server \
+    $BIN/rllm-server \
     $ARGS "$@"
     nsys stats ./report1.nsys-rep > tmp/perf.txt
     echo "Opening tmp/perf.txt in VSCode; use Alt-Z to toggle word wrap"
@@ -56,24 +58,24 @@ fi
 
 cargo build $REL --bin rllm-server
 if [ "X$REL" = "X" ] ; then
-    BIN=./target/debug/rllm-server
+    BIN_SERVER=$BIN/debug/rllm-server
 else
-    BIN=./target/release/rllm-server
+    BIN_SERVER=$BIN/release/rllm-server
 fi
 
 export RUST_BACKTRACE=1
 export RUST_LOG=info,rllm=debug,aicirt=info
 
-echo "running $BIN $ARGS $@"
+echo "running $BIN_SERVER $ARGS $@"
 
 if [ "$LOOP" = "" ] ; then
-    $BIN $ARGS "$@"
+    $BIN_SERVER $ARGS "$@"
     exit $?
 fi
 
 set +e
 while : ; do
-    $BIN --daemon $ARGS "$@" 2>&1 | rotatelogs -e -D ./logs/%Y-%m-%d-%H_%M_%S.txt 3600 
+    $BIN_SERVER --daemon $ARGS "$@" 2>&1 | rotatelogs -e -D ./logs/%Y-%m-%d-%H_%M_%S.txt 3600 
     echo "restarting..."
     sleep 2
 done
