@@ -237,7 +237,7 @@ pub fn swap_blocks(
     _src: &Tensor,
     _dst: &Tensor,
     _block_mapping: &HashMap<usize, usize>,
-    // _stream: &CudaStream,
+    _stream: &CudaStream,
 ) {
     todo!()
 }

@@ -5,7 +5,10 @@ use crate::{
     },
     iface::AiciRtIface,
     llm::{llama, phi},
-    paged::{BatchInfo, BatchInfoBuilder, CacheEngine, CacheSize, Scheduler, SchedulerOutputs},
+    paged::{
+        BatchInfo, BatchInfoBuilder, CacheEngine, CacheSize, NoOpCacheAwaiter, Scheduler,
+        SchedulerOutputs,
+    },
     seq::{
         AiciSampling, FinishReason, RequestOutput, SchedulingPhase, SeqId, SeqOutput, Sequence,
         SequenceGroup, Token, TokenUsage,
@@ -958,13 +961,17 @@ impl RllmEngine {
             issued_cache_op = true;
         }
 
-        if issued_cache_op {
-            cache_engine.wait_for_copy();
-        }
-
         let mut info = BatchInfoBuilder::new(self.config.clone())
             .sched_out(sched_out)
-            .finish(self.step_no, self.cache_engine.get_gpu_cache());
+            .finish(
+                self.step_no,
+                self.cache_engine.get_gpu_cache(),
+                if issued_cache_op {
+                    cache_engine.get_cache_awaiter()
+                } else {
+                    Box::new(NoOpCacheAwaiter {})
+                },
+            );
 
         log::trace!("batch_info #{}: {:?}", info.step_no, info);
         // log::trace!("{}", info.positions);

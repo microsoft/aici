@@ -1,29 +1,20 @@
 // based on https://github.com/vllm-project/vllm/blob/b9fe4616f98b77b4b9458bce203aa6544cb31ef2/vllm/worker/cache_engine.py
 
+use tch_cuda::{CudaEvent, CudaStream};
+
 use crate::{config::RllmConfig, llm::kernels, Device, Tensor};
 use std::{collections::HashMap, sync::Arc};
 
+use super::CacheAwaiter;
+
 type KVCache = (Tensor, Tensor);
-
-// TODO
-pub struct CudaEvent;
-pub struct CudaStream;
-
-impl CudaEvent {
-    pub fn new() -> Self {
-        Self
-    }
-
-    pub fn record(&self, _stream: &CudaStream) {}
-}
 
 pub struct CacheEngine {
     gpu_cache: Vec<KVCache>,
     cpu_cache: Vec<KVCache>,
 
     cache_stream: CudaStream,
-    events: Vec<CudaEvent>,
-    // cuda_device: candle_core::CudaDevice,
+    events: Arc<Vec<CudaEvent>>,
 }
 
 pub struct CacheSize {
@@ -31,31 +22,35 @@ pub struct CacheSize {
     pub cpu: usize,
 }
 
+struct MyCacheAwaiter {
+    events: Arc<Vec<CudaEvent>>,
+    stream: CudaStream,
+}
+
+impl CacheAwaiter for MyCacheAwaiter {
+    fn wait(&self, layer: usize) {
+        self.events[layer].wait(&self.stream)
+    }
+}
+
 impl CacheEngine {
     pub fn new(config: Arc<RllmConfig>, num_blocks: &CacheSize) -> Self {
         let num_layers = config.get_num_layers_parallel();
-
         let (gpu_cache, cpu_cache) = Self::allocate_caches(&config, num_blocks);
-
-        // let cuda_device = match &config.device {
-        //     Device::Cuda(c) => c.clone(),
-        //     _ => panic!(),
-        // };
-
-        // let cache_stream = cuda_device.fork_default_stream().unwrap();
-        let events = (0..num_layers).map(|_| CudaEvent::new()).collect();
-
         Self {
             gpu_cache,
             cpu_cache,
-            cache_stream: CudaStream,
-            events,
-            // cuda_device,
+            cache_stream: CudaStream::new(config.device),
+            events: Arc::new((0..num_layers).map(|_| CudaEvent::new()).collect()),
         }
     }
 
-    pub fn wait_for_copy(&self) {
-        // self.cuda_device.wait_for(&self.cache_stream).unwrap();
+    pub fn get_cache_awaiter(&self) -> Box<dyn CacheAwaiter> {
+        let d = self.gpu_cache[0].0.device();
+        Box::new(MyCacheAwaiter {
+            events: self.events.clone(),
+            stream: CudaStream::current(d),
+        })
     }
 
     pub fn get_gpu_cache(&self) -> Vec<KVCache> {
@@ -128,12 +123,11 @@ impl CacheEngine {
 
     fn swap(&self, src: &[KVCache], dst: &[KVCache], src_to_dst: &HashMap<usize, usize>) {
         let stream = &self.cache_stream;
-        for (i, (src_key_cache, src_value_cache)) in src.iter().enumerate() {
-            let (dst_key_cache, dst_value_cache) = &dst[i];
-            kernels::swap_blocks(src_key_cache, dst_key_cache, src_to_dst);
-            kernels::swap_blocks(src_value_cache, dst_value_cache, src_to_dst);
-            let event = &self.events[i];
-            event.record(stream);
+        for (i, (src_k_cache, src_v_cache)) in src.iter().enumerate() {
+            let (dst_k_cache, dst_v_cache) = &dst[i];
+            kernels::swap_blocks(src_k_cache, dst_k_cache, src_to_dst, &self.cache_stream);
+            kernels::swap_blocks(src_v_cache, dst_v_cache, src_to_dst, &self.cache_stream);
+            self.events[i].record(stream);
         }
     }
 

@@ -73,7 +73,7 @@ impl CudaEvent {
     /// Has to be called always with the same `stream`.
     /// Calls to `.query()` and `.block()` then wait for the completion of the work
     /// captured here.
-    pub fn record(&mut self, stream: &CudaStream) {
+    pub fn record(&self, stream: &CudaStream) {
         unsafe {
             check_res(
                 "cuda_event_record_C",
@@ -85,7 +85,7 @@ impl CudaEvent {
     /// Makes all future work submitted to the given stream wait for this event.
     /// Does not block the CPU.
     /// Note: cudaStreamWaitEvent must be called on the same device as the stream.
-    pub fn wait(&mut self, stream: &CudaStream) {
+    pub fn wait(&self, stream: &CudaStream) {
         unsafe {
             check_res(
                 "cuda_event_block_C",

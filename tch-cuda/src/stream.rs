@@ -75,6 +75,7 @@ impl CudaStream {
         Self { cu_str }
     }
 
+    /// Wait for all the kernels in this stream to complete.
     pub fn synchronize(&self) {
         unsafe {
             check_res(
@@ -84,6 +85,7 @@ impl CudaStream {
         };
     }
 
+    /// Checks if all the work submitted has been completed.
     pub fn query(&self) -> bool {
         let mut done: c_int = 0;
         unsafe {
@@ -95,6 +97,8 @@ impl CudaStream {
         done != 0
     }
 
+    /// Set the stream as current on the stream's device.
+    /// Doesn't change the torch notion of current device.
     pub fn set_current(&self) {
         unsafe {
             check_res(
@@ -121,6 +125,8 @@ impl CudaStream {
         id
     }
 
+    /// Set the stream as current on the stream's device.
+    /// Doesn't change the torch notion of current device.
     pub fn guard(&self) -> StreamGuard {
         let prev = CudaStream::current(self.device());
         self.set_current();

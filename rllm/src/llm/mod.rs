@@ -309,6 +309,8 @@ pub fn varlen_attn(
     // assert!(q.size() == k.size());
     // assert!(v.size() == k.size());
 
+    batch_info.cache_awaiter.wait(block_idx);
+
     save_attn(config, &k, &v, batch_info, block_idx);
 
     let y = compute_varlen_attn(

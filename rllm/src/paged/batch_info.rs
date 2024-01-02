@@ -13,6 +13,10 @@ use std::{
 };
 use tch::{IndexOp, Tensor};
 
+pub trait CacheAwaiter {
+    fn wait(&self, layer_no: usize);
+}
+
 pub struct BatchInfo {
     pub tokens: Tensor,         // u32, [num_tokens]
     pub positions: Tensor,      // i64, [num_tokens]
@@ -28,6 +32,8 @@ pub struct BatchInfo {
 
     pub infer_log: Mutex<Vec<(String, Tensor)>>,
     pub step_no: usize,
+
+    pub cache_awaiter: Box<dyn CacheAwaiter>,
 
     // for paged attn
     pub paged_block_tables: Tensor, // [num_seqs, max_num_blocks_per_seq]
@@ -184,10 +190,15 @@ impl BatchInfoBuilder {
         let kv_cache = (0..num_layers)
             .map(|_| (k.shallow_clone(), v.shallow_clone()))
             .collect();
-        self.finish(0, kv_cache)
+        self.finish(0, kv_cache, Box::new(NoOpCacheAwaiter {}))
     }
 
-    pub fn finish(&mut self, step_no: usize, kv_cache: Vec<(Tensor, Tensor)>) -> BatchInfo {
+    pub fn finish(
+        &mut self,
+        step_no: usize,
+        kv_cache: Vec<(Tensor, Tensor)>,
+        cache_awaiter: Box<dyn CacheAwaiter>,
+    ) -> BatchInfo {
         let mut positions: Vec<i64> = Vec::new();
         let mut tokens: Vec<i32> = Vec::new();
         let mut logit_idxs: Vec<i32> = Vec::new();
@@ -305,6 +316,12 @@ impl BatchInfoBuilder {
             paged_max_context_len,
             paged_block_tables,
             paged_context_lens,
+            cache_awaiter,
         }
     }
+}
+
+pub struct NoOpCacheAwaiter {}
+impl CacheAwaiter for NoOpCacheAwaiter {
+    fn wait(&self, _layer_no: usize) {}
 }
