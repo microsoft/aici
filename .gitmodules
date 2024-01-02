@@ -3,5 +3,5 @@
 	url = https://github.com/mmoskal/vllm
 	branch = hooks
 [submodule "tch-flash-attn/cutlass"]
-	path = tch-flash-attn/cutlass
+	path = tch-cuda/cutlass
 	url = https://github.com/NVIDIA/cutlass.git
