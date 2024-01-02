@@ -39,6 +39,20 @@ $
 `prob_mass` refers to the sum of probiblites of the top 128 logits after softmax
 (for every token of output). It should be very close to 1.
 
+## Models
+
+The following models have been tested:
+
+* [CodeLlama-13b-Instruct-hf](https://huggingface.co/codellama/CodeLlama-13b-Instruct-hf)
+* [CodeLlama-34b-Instruct-hf](https://huggingface.co/codellama/CodeLlama-34b-Instruct-hf)
+  - this barely fits in the 80GB A100, not much space for KV-cache
+* [Llama-2-7b-hf](https://huggingface.co/meta-llama/Llama-2-7b-hf)
+* [Orca-2-13b](https://huggingface.co/microsoft/Orca-2-13b)
+* [phi-1_5](https://huggingface.co/microsoft/phi-1_5)
+* [phi-2](https://huggingface.co/microsoft/phi-2)
+
+In general all Llama models should work.
+
 ## Credits
 
 Some OpenAI JSON datatype definitions are copied from
