@@ -1,6 +1,6 @@
 ## AICIrt
 
 ## rLLM
-* [ ] load-test
+* [x] load-test
 * [ ] swap to CPU
-* [ ] auto-detect GPU cache size
+* [x] auto-detect GPU cache size

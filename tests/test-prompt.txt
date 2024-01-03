@@ -1,0 +1,5 @@
+```python
+def print_prime(n):
+   """
+   Print all primes between 1 and n
+   """

@@ -17,17 +17,22 @@ Rust for constraints (plus a Python package for interfacing with LLM runtime).
 
 Use Docker container, using the setup in `.devcontainer` (in VSCode "Reopen in container").
 
-The HuggingFace Transformers support is outdated. Do not use `./scripts/hf.sh`.
+To run rLLM server, go to `rllm/` and run `./server.sh code`.
+This will run the inference server with CodeLlama 13B model (which is expected by testcases).
+You can also try other models, see [rllm/README.md](rllm/README.md) for details.
 
-Setup vLLM with `./scripts/init-vllm.sh`.
-It generates files in workspace, so they will survive container rebuilds.
-When done (it takes a few minutes), you can test out vLLM with `./scripts/vllm.sh`.
+Once the server is running, open a second terminal and use `./scripts/upload.sh`.
+It has several modes:
 
-Then run the server (after installing vllm):
-* `./scripts/server.sh`
-* from a different terminal: `./scripts/upload.py`
+* you can just pass it prompt: 
+  `./scripts/upload.sh "The answer to the ultimate question of life, the universe and everything is"`
+* similarly, you can pass it `.txt` file with prompt: `./scripts/upload.sh tests/test-prompt.txt`
+* if you pass it a `.py` file, it will compile `pyvm` WASM module, upload it, and then use it to run
+  the Python code: `./scripts/upload.sh pyvm/samples/test.py`
+* you can also pass it a `.json` file, which will compile AST runner and use it to interpret the AST
 
-You can now also run tests with `pytest` (while the server is running).
+You can now also run tests with `pytest` (while the server is running with codellama 13B model) 
+for the AST runner, or with `./scripts/test-pyvm.sh` for PyVM.
 
 ## Architecture
 

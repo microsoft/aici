@@ -6,6 +6,12 @@ LOOP=
 
 BIN=$(cd ../target; pwd)
 
+if [ -f "../tch-cuda/cutlass/README.md" ] ; then
+  :
+else
+  (cd .. && git submodule update --init --recursive)
+fi
+
 if [ "$1" = loop ] ; then
     REL=--release
     LOOP=1
@@ -41,7 +47,7 @@ shift
 
 ARGS="--verbose --port 8080 --aicirt $BIN/release/aicirt $ARGS"
 
-(cd ../aicirt && cargo build --release)
+cargo build --release --package aicirt
 
 if echo "$*" | grep -q -- --profile-step ; then
     rm -f profile.ncu-rep report1.*
