@@ -1,6 +1,9 @@
+mod cfg;
+mod lex;
 mod rx;
 
 use aici_abi::{
+    aici_stop,
     svob::SimpleVob,
     toktree::{Recognizer, SpecialToken, TokTrie},
     AiciVm, InitPromptArg, InitPromptResult, MidProcessArg, MidProcessResult, PostProcessArg,
@@ -43,7 +46,7 @@ fn get_cb_obj() -> PyObjectRef {
 
 #[rustpython_derive::pymodule]
 mod _aici {
-    use crate::{rx::RecRx, PyConstraint, VmExt, GLOBAL_STATE};
+    use crate::{cfg::CfgParser, rx::RecRx, PyConstraint, VmExt, GLOBAL_STATE};
     use aici_abi::{
         recognizer::{AnythingGoes, StackRecognizer},
         svob::SimpleVob,
@@ -166,6 +169,14 @@ mod _aici {
     fn regex_constraint(regex: PyStrRef) -> PyResult<Constraint> {
         let rx = RecRx::from_rx(regex.as_str()).to_stack_recognizer();
         Ok(Constraint(Mutex::new(Box::new(rx))))
+    }
+
+    #[pyfunction(name = "CfgConstraint")]
+    fn cfg_constraint(cfg: PyStrRef, vm: &VirtualMachine) -> PyResult<Constraint> {
+        match CfgParser::from_yacc(cfg.as_str()) {
+            Ok(cfg) => Ok(Constraint(Mutex::new(Box::new(cfg)))),
+            Err(e) => Err(vm.new_runtime_error(format!("{}", e))),
+        }
     }
 
     impl Constructor for Constraint {
@@ -361,7 +372,7 @@ trait VmExt {
             Err(e) => {
                 let vm = self.get_vm();
                 vm.print_exception(e.clone());
-                panic!("Python Exception: {e:?}");
+                aici_stop();
             }
         }
     }

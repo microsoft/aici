@@ -139,3 +139,12 @@ class RegexConstraint(Constraint):
 
     def __init__(self, pattern: str):
         ...
+
+
+class CfgConstraint(Constraint):
+    """
+    A constraint that allows only tokens that match the specified yacc-like grammar.
+    """
+
+    def __init__(self, yacc_grammar: str):
+        ...
