@@ -1,6 +1,7 @@
 import aici
 
-c_yacc = """
+# note that VSCode syntax highlighting is not perfect r""" ... """ (it assumes regexp)
+c_yacc = r"""
 // based on http://www.lysator.liu.se/c/ANSI-C-grammar-y.html
 
 %start translation_unit
@@ -446,12 +447,11 @@ function_definition
 """
 
 
-
-
 async def test_grammar():
     await aici.FixedTokens(
         "Here's a program:\n",
     )
     await aici.gen_tokens(yacc=c_yacc, max_tokens=40, store_var="x")
+
 
 aici.test(test_grammar())

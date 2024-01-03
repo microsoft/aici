@@ -7,7 +7,7 @@ use aici_abi::{
 use anyhow::Result;
 use cfgrammar::{
     yacc::{YaccGrammar, YaccKind},
-    Symbol, TIdx,
+    Span, Spanned, Symbol, TIdx,
 };
 use lrtable::{from_yacc, Action, Minimiser, StIdx, StateTable};
 use rustc_hash::FxHashMap;
@@ -68,6 +68,22 @@ fn quote_rx(name: &str) -> String {
 }
 
 impl CfgParser {
+    fn span_to_str(s: &Span, src: &str) -> String {
+        let mut line = 1;
+        let mut last_nl = 0;
+        for (idx, ch) in src.chars().enumerate() {
+            if idx == s.start() {
+                break;
+            }
+            if ch == '\n' {
+                line += 1;
+                last_nl = idx;
+            }
+        }
+        let column = s.start() - last_nl;
+        format!("({},{})", line, column)
+    }
+
     pub fn from_yacc(yacc: &str) -> Result<Self> {
         let grmkind = YaccKind::Original(cfgrammar::yacc::YaccOriginalActionKind::NoAction);
         let grm = match YaccGrammar::new(grmkind, yacc) {
@@ -75,7 +91,15 @@ impl CfgParser {
             Err(e) => {
                 let err_str = e
                     .iter()
-                    .map(|e| format!("{}", e))
+                    .map(|e| {
+                        let spans = e
+                            .spans()
+                            .iter()
+                            .map(|s| Self::span_to_str(s, yacc))
+                            .collect::<Vec<_>>()
+                            .join(", ");
+                        format!("{}: {}", spans, e)
+                    })
                     .collect::<Vec<_>>()
                     .join("\n");
                 anyhow::bail!("yacc grammar errors:\n{}", err_str);
@@ -84,7 +108,14 @@ impl CfgParser {
 
         // TIME: all these annotation are for native release x86 build for C grammar
         // TIME: 27ms
-        let (sgraph, stable) = from_yacc(&grm, Minimiser::Pager).unwrap();
+        let (sgraph, stable) = match from_yacc(&grm, Minimiser::Pager) {
+            Ok(r) => r,
+            Err(e) => {
+                // not sure this works:
+                // anyhow::bail!("state table error:\n{e} on {:?}", grm.action(e.pidx));
+                anyhow::bail!("state table error:\n{e}");
+            }
+        };
 
         if false {
             wprintln!("core\n{}\n\n", sgraph.pp(&grm, true));
