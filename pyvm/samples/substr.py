@@ -15,7 +15,8 @@ Provide a quote from the text, prefixed by 'Source: "', to support your answer.
 async def test_substr():
     await aici.FixedTokens(prompt)
     await aici.gen_tokens(max_tokens=60, stop_at="Source: \"", store_var="answer")
-    await aici.gen_tokens(substring=earth, max_tokens=60, store_var="source")
+    await aici.gen_tokens(substring=earth, substring_end="\"", max_tokens=60, store_var="source")
+    # make sure we can continue generating afterwards
     await aici.FixedTokens("\nThe tilt is")
     await aici.gen_tokens(max_tokens=6, store_var="tilt")
 
