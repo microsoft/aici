@@ -195,6 +195,14 @@ impl SubStrMatcher {
         StackRecognizer::from(self)
     }
 
+    fn append_to_src_off(&self, off: usize, byte: u8) -> SubStrState {
+        if off < self.source.len() && self.source.as_bytes()[off] == byte {
+            SubStrState::SourceOffset(off + 1)
+        } else {
+            SubStrState::Dead
+        }
+    }
+
     fn append_inner(&self, state: SubStrState, byte: u8) -> SubStrState {
         match state {
             SubStrState::Dead => SubStrState::Dead,
@@ -216,23 +224,10 @@ impl SubStrMatcher {
                         }
                         SubStrState::Dead
                     }
-                    Node::Leaf { source_offset } => {
-                        let off = *source_offset;
-                        if off < self.source.len() && self.source.as_bytes()[off] == byte {
-                            SubStrState::SourceOffset(off + 1)
-                        } else {
-                            SubStrState::Dead
-                        }
-                    }
+                    Node::Leaf { source_offset } => self.append_to_src_off(*source_offset, byte),
                 }
             }
-            SubStrState::SourceOffset(off) => {
-                if off < self.source.len() && self.source.as_bytes()[off] == byte {
-                    SubStrState::SourceOffset(off + 1)
-                } else {
-                    SubStrState::Dead
-                }
-            }
+            SubStrState::SourceOffset(off) => self.append_to_src_off(off, byte),
         }
     }
 }
