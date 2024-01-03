@@ -26,7 +26,7 @@ def ask_completion(*args, **kwargs):
     with open(path, "w") as f:
         ujson.dump(res, f, indent=1)
     print(f"response saved to {path}")
-    print("Usage:", res['usage'])
+    print("Usage:", res["usage"])
     print("Storage:", res["storage"])
 
 
@@ -196,6 +196,7 @@ def main():
             aici_module=mod,
             aici_arg=arg,
             ignore_eos=True,
+            max_tokens=2000,
         )
         return
 
