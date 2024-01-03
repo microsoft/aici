@@ -148,3 +148,14 @@ class CfgConstraint(Constraint):
 
     def __init__(self, yacc_grammar: str):
         ...
+
+
+class SubStrConstraint(Constraint):
+    """
+    A constraint that allows only word-substrings of given string.
+    """
+
+    def __init__(self, template: str, stop_at: str):
+        ...
+
+

@@ -7,6 +7,7 @@ from _aici import (
     detokenize,
     RegexConstraint,
     CfgConstraint,
+    SubStrConstraint,
     Constraint,
     get_var,
     set_var,
@@ -485,6 +486,8 @@ class ChooseConstraint(Constraint):
 async def gen_tokens(
     regex: str | None = None,
     yacc: str | None = None,
+    substring: str | None = None,
+    substring_end: str = "\"",
     options: list[str] | None = None,
     store_var: str | None = None,
     stop_at: str | None = None,
@@ -497,9 +500,11 @@ async def gen_tokens(
     `regex` and `options` are mutually exclusive.
     """
     res: list[Token] = []
-    assert len([x for x in [regex, options, yacc] if x is not None]) <= 1
+    assert len([x for x in [regex, options, yacc, substring] if x is not None]) <= 1
     if regex is not None:
         next_token = ConstrainedToken(lambda: RegexConstraint(regex))
+    elif substring is not None:
+        next_token = ConstrainedToken(lambda: SubStrConstraint(substring, substring_end))
     elif yacc is not None:
         next_token = ConstrainedToken(lambda: CfgConstraint(yacc))
     elif options is not None:

@@ -1,6 +1,7 @@
 mod cfg;
 mod lex;
 mod rx;
+mod substring;
 
 use aici_abi::{
     aici_stop,
@@ -46,7 +47,9 @@ fn get_cb_obj() -> PyObjectRef {
 
 #[rustpython_derive::pymodule]
 mod _aici {
-    use crate::{cfg::CfgParser, rx::RecRx, PyConstraint, VmExt, GLOBAL_STATE};
+    use crate::{
+        cfg::CfgParser, rx::RecRx, substring::SubStrMatcher, PyConstraint, VmExt, GLOBAL_STATE,
+    };
     use aici_abi::{
         recognizer::{AnythingGoes, StackRecognizer},
         svob::SimpleVob,
@@ -177,6 +180,12 @@ mod _aici {
             Ok(cfg) => Ok(Constraint(Mutex::new(Box::new(cfg)))),
             Err(e) => Err(vm.new_runtime_error(format!("{}", e))),
         }
+    }
+
+    #[pyfunction(name = "SubStrConstraint")]
+    fn substr_constraint(templ: PyStrRef, end_str: PyStrRef) -> PyResult<Constraint> {
+        let rx = SubStrMatcher::new(templ.as_str(), end_str.as_str()).to_stack_recognizer();
+        Ok(Constraint(Mutex::new(Box::new(rx))))
     }
 
     impl Constructor for Constraint {

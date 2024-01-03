@@ -8,12 +8,15 @@ prompt = f"""[INST] Here's some text:
 {earth}
 
 Based on the text answer the question: Is Earth axis aligned with its orbit?
-Provide a quote from the text, prefixed by "Source: ", to support your answer.
+Provide a quote from the text, prefixed by 'Source: "', to support your answer.
 [/INST]
 """
 
 async def test_substr():
     await aici.FixedTokens(prompt)
-    await aici.gen_tokens(max_tokens=60)
+    await aici.gen_tokens(max_tokens=60, stop_at="Source: \"", store_var="answer")
+    await aici.gen_tokens(substring=earth, max_tokens=60, store_var="source")
+    await aici.FixedTokens("\nThe tilt is")
+    await aici.gen_tokens(max_tokens=6, store_var="tilt")
 
 aici.test(test_substr())
