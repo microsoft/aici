@@ -37,7 +37,7 @@ def _compile_wasm(wasm_runner_buildsh, scriptargs=["build"]):
     if r.returncode != 0:
         raise RuntimeError(f"error compiling aici promptlib module")
     
-    file_path = script_dir + "/target/strip.wasm"
+    file_path = script_dir + "/../target/strip.wasm"
     return file_path
 
 

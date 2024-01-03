@@ -20,7 +20,7 @@ def upload_wasm():
     )
     if r.returncode != 0:
         sys.exit(1)
-    file_path = prog + "/target/opt.wasm"
+    file_path = prj_dir + "/target/opt.wasm"
     pyaici.rest.log_level = 0
     ast_module = pyaici.rest.upload_module(file_path)
 

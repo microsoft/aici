@@ -4,27 +4,25 @@ set -x
 set -e
 # (cd ../aicirt && cargo build --release)
 cargo build --release --target wasm32-unknown-unknown
-cp target/wasm32-unknown-unknown/release/aici_ast_runner.wasm target/opt.wasm
-# wasm-opt -Oz target/wasm32-unknown-unknown/release/aici_ast_runner.wasm -o target/opt.wasm
-wasm-strip -k name target/opt.wasm # -o target/strip.wasm
-ls -l target/opt.wasm
-# curl -X POST -T "target/opt.wasm" "http://127.0.0.1:8080/v1/aici_modules"
+BIN=$(cd ../target; pwd)
+cp $BIN/wasm32-unknown-unknown/release/aici_ast_runner.wasm $BIN/opt.wasm
+# wasm-opt -Oz $BIN/wasm32-unknown-unknown/release/aici_ast_runner.wasm -o $BIN/opt.wasm
+wasm-strip -k name $BIN/opt.wasm # -o $BIN/strip.wasm
+ls -l $BIN/opt.wasm
+# curl -X POST -T "$BIN/opt.wasm" "http://127.0.0.1:8080/v1/aici_modules"
 if [ "X$1" = "Xbuild" ] ; then
   exit
 fi
 if [ "X$1" = "Xsize" ] ; then
   node size.js
-  fx target/dominators.json
+  fx $BIN/dominators.json
   exit
 fi
 
-p=`pwd`
-cd ../aicirt
-cargo build --release
-cd ..
+cargo build --release --package aicirt
 mkdir -p tmp
 if [ "X$1" = "Xcache" ] ; then
-  ./aicirt/target/release/aicirt --module $p/target/opt.wasm | tee tmp/runlog.txt
+  $BIN/release/aicirt --module $BIN/opt.wasm | tee tmp/runlog.txt
   exit
 fi
 
@@ -32,7 +30,7 @@ PERF=
 if [ `uname` = Linux ] ; then
   PERF="perf stat"
 fi
-RUST_LOG=info $PERF ./aicirt/target/release/aicirt --tokenizer gpt4 --module $p/target/opt.wasm
-RUST_LOG=info $PERF ./aicirt/target/release/aicirt \
-  --tokenizer gpt4 --module $p/target/opt.wasm --run | tee tmp/runlog.txt
-ls -l $p/target/opt.wasm
+RUST_LOG=info $PERF $BIN/release/aicirt --tokenizer gpt4 --module $BIN/opt.wasm
+RUST_LOG=info $PERF $BIN/release/aicirt \
+  --tokenizer gpt4 --module $BIN/opt.wasm --run | tee tmp/runlog.txt
+ls -l $BIN/opt.wasm

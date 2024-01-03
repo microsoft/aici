@@ -12,7 +12,7 @@ def upload_wasm(prog="."):
     r = subprocess.run(["sh", "wasm.sh", "build"], cwd=prog)
     if r.returncode != 0:
         sys.exit(1)
-    file_path = prog + "/target/opt.wasm"
+    file_path = "../target/opt.wasm"
     return pyaici.rest.upload_module(file_path)
 
 
