@@ -11,7 +11,7 @@ pub mod toktree;
 pub type TokenId = bytes::TokenId;
 
 pub use host::{
-    _print, arg_bytes, return_logit_bias, self_seq_id, stdout, tokenize, tokenize_bytes,
+    _print, aici_stop, arg_bytes, return_logit_bias, self_seq_id, stdout, tokenize, tokenize_bytes,
     StorageCmd, StorageOp, StorageResp, VariableStorage,
 };
 
@@ -174,7 +174,8 @@ pub trait AiciVm {
     }
 
     fn aici_mid_process(&mut self) {
-        let arg: MidProcessArg = serde_json::from_slice(&host::process_arg_bytes()).unwrap();
+        let arg: MidProcessArg = serde_json::from_slice(&host::process_arg_bytes())
+            .expect("aici_mid_process: failed to deserialize MidProcessArg");
         let res = self.mid_process(arg);
         match &res {
             MidProcessResult::SampleWithBias { allowed_tokens } => {
@@ -184,7 +185,7 @@ pub trait AiciVm {
             }
             _ => {}
         }
-        let res_bytes = serde_json::to_vec(&res).unwrap();
+        let res_bytes = serde_json::to_vec(&res).expect("aici_mid_process: failed to serialize");
         host::return_process_result(&res_bytes);
     }
 

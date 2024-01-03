@@ -431,7 +431,7 @@ impl Scheduler {
         }
         if reason != FinishReason::AiciStop && seq.has_aici {
             seq.aici_logs.push(SequenceResult::from_error(format!(
-                "Abnormal finish: {:?}",
+                "\nAbnormal finish: {:?}",
                 reason
             )))
         }

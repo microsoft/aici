@@ -1,7 +1,8 @@
 use crate::{
     api::ModuleInstId,
     hostimpl::{
-        setup_linker, AiciLimits, GlobalInfo, ModuleData, LOGIT_BIAS_ALLOW, LOGIT_BIAS_DISALLOW,
+        setup_linker, AiciLimits, GlobalInfo, ModuleData, WasmError, LOGIT_BIAS_ALLOW,
+        LOGIT_BIAS_DISALLOW,
     },
     shm::Shm,
     worker::{GroupHandle, RtMidProcessArg, RtPostProcessArg, RtPreProcessArg, RtPreProcessResult},
@@ -111,7 +112,7 @@ impl ModuleInstance {
         Results: wasmtime::WasmResults,
     {
         if self.store.data().had_error {
-            return Err(anyhow!("Previous WASM Error"));
+            anyhow::bail!(WasmError::new("Previous WASM Error"));
         }
         let f = self
             .instance
@@ -123,7 +124,11 @@ impl ModuleInstance {
             Ok(r) => Ok(r),
             Err(e) => {
                 ctx.had_error = true;
-                Err(anyhow!("{:?}\n\n{}", e, ctx.string_log()))
+                if let Some(e) = e.downcast_ref::<WasmError>() {
+                    Err(anyhow!(e.prefix(&ctx.string_log())))
+                } else {
+                    Err(anyhow!("{:?}\n\n{}", e, ctx.string_log()))
+                }
             }
         }
     }
@@ -390,7 +395,12 @@ impl ModuleInstance {
             },
 
             Err(e) => {
-                let error = format!("Error ({lbl}): {e:?}");
+                let error = if let Some(e) = e.downcast_ref::<WasmError>() {
+                    // skip backtrace for WasmError
+                    format!("Error ({lbl}): {e}")
+                } else {
+                    format!("Error ({lbl}): {e:?}")
+                };
                 let logs = logs + "\n" + &error;
                 log::warn!("exec: {error}");
                 SequenceResult {

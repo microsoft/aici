@@ -43,6 +43,10 @@ extern "C" {
 
     // This can be also obtained from the TokTrie.
     fn aici_host_eos_token() -> TokenId;
+
+    // Stop the program - any error info is assumed to have been printed already.
+    // Backtraces will be limited.
+    fn aici_host_stop();
 }
 
 // TODO: add <T>
@@ -322,4 +326,10 @@ pub fn self_seq_id() -> SeqId {
 /// Return the ID of the EOS token.
 pub fn eos_token() -> TokenId {
     unsafe { aici_host_eos_token() }
+}
+
+/// Stop the program - any error info is assumed to have been printed already.
+pub fn aici_stop() -> ! {
+    unsafe { aici_host_stop() };
+    panic!("didn't stop");
 }
