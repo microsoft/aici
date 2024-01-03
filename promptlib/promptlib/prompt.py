@@ -1,14 +1,23 @@
+from typing import List
+from .aici import AICI
 
 class PromptNode:
     """
     A node in a prompt tree, representing a prompt or a group of prompts.
     """
 
-    def __init__(self, id:str=None, tag:str=None):
+    id_counter = 0
+
+    def __init__(self, attrs:List[str]=None):
         self.children = []
         self.parent = None
-        self.id = id
-        self.tag = tag
+        self.id = self.get_next_id()
+        self.attrs = attrs
+
+    @classmethod
+    def get_next_id(cls):
+        cls.id_counter += 1
+        return f"_{cls.id_counter}"
 
     def add_child(self, child):
         # this function should be overriden to validate that adding the child is ok
@@ -20,13 +29,12 @@ class PromptNode:
     
     def set_parent(self, parent):
         self.parent = parent
-        
+
     def _get_attributes(self):
         dict = {}
         if self.id is not None:
-            dict["id"] = self.id
-        if self.tag is not None:
-            dict["tag"] = self.tag
+            dict["tag"] = self.id  ## NOTE: this is confusing but the ast runner tag is the promptlib ID.
+            dict["label"] = self.id ## NOTE: the ast runner label is also the promptlib ID
         return dict
 
     def get_text(self):
@@ -81,14 +89,20 @@ class PromptNode:
         
         steps = []
         if includeSelf:
-            steps.append(self._get_plan_step())
+            plan_step = self._get_plan_step()
+            if( plan_step is None):
+                pass
+            elif( isinstance(plan_step, list)):
+                steps.extend(plan_step)
+            else:
+                steps.append(plan_step)
 
         if self.children is not None:
             if len(self.children) > 1:
-               child_steps = []
+               child_branches = []
                for c in self.children:
-                   child_steps.extend(c._get_plan_steps_descending(stopNode=stopNode))
-               steps.append({"Parallel": {"steps": [child_steps]}})
+                   child_branches.append(c._get_plan_steps_descending(stopNode=stopNode))
+               steps.append({"Fork": {"branches": child_branches}})
             elif len(self.children) == 1:
                 steps.extend(self.children[0]._get_plan_steps_descending(stopNode=stopNode)),
         return [s for s in steps if s is not None]
@@ -99,37 +113,76 @@ class PromptNode:
         else:
             steps = self.parent._get_plan_steps_ascending()
         if includeSelf:
-            steps.append(self._get_plan_step())
+            plan_step = self._get_plan_step()
+            if( plan_step is None):
+                pass
+            elif( isinstance(plan_step, list)):
+                steps.extend(plan_step)
+            else:
+                steps.append(plan_step)
         return steps
 
-    def build_linear_plan(self):
-        steps = self._get_plan_steps_ascending()
-        steps = [s for s in steps if s is not None]
-        return {"steps": steps}
+    def _get_match_content(self):
+        return "{{" + self.id + "}}"
+
+    def _get_predecessor_matches(self, attrs:list):
+        id_match = [] # list of tuples (id, bool)
+        if self.parent is not None:
+            id_match.extend(self.parent._get_predecessor_matches(attrs))
+
+        match_content = self._get_match_content()
+        # match if the intersection of attrs and self.attrs is non-empty
+        if self.attrs is not None and attrs is not None:
+            id_match.append((self.id, len(set(self.attrs).intersection(attrs)) > 0, match_content))
+        else:
+            id_match.append((self.id, False, match_content))
+        return id_match
+
+
+    #def build_linear_plan(self):
+    #    steps = self._get_plan_steps_ascending()
+    #    steps = [s for s in steps if s is not None]
+    #    return {"steps": steps}
 
     # This builds a plan to execute all the children starting at self
     def build_tree_plan(self):
         steps = {"steps": self._get_plan_steps_descending()}
         return steps
 
+    def __add__(self, o):
+        assert isinstance(o, str), "Can only add strings to a prompt"
+        return append(self, o)
+
+
+class PromptProgram(PromptNode):
+    def __init__(self, endpoint:AICI):
+        super().__init__()
+        self.endpoint = endpoint
+
+    def run(self):
+        plan = self.build_tree_plan()
+        return self.endpoint.run(plan)
 
 class TextNode(PromptNode):
 
-    def __init__(self, text:str, tag:str=None):
-        super().__init__(tag=tag)
+    def __init__(self, text:str, attrs:List[str]=None):
+        super().__init__(attrs=attrs)
         self.text = text
 
     def get_text(self):
         return self.text
     
+    def _get_match_content(self):
+        return self.get_text()
+    
     def _get_plan_step(self):
-        dict = {"text": self.text}
+        dict = {"text": {"String": {"str": self.text}}}
         dict.update(self._get_attributes())
         return {"Fixed": dict}
 
 
-def append(prompt_code:PromptNode, text:str, tag:str=None) -> PromptNode:
-    node = TextNode(text, tag=tag)
+def append(prompt_code:PromptNode, text:str, attrs:List[str]=None) -> PromptNode:
+    node = TextNode(text, attrs=attrs)
     prompt_code.add_child(node)
     return node
 
@@ -151,8 +204,8 @@ class BeginBlockNode(PromptNode):
         return steps
 
 
-def begin(prompt_code:PromptNode, id:str=None, tag:str=None) -> PromptNode:
-    node = BeginBlockNode(id=id, tag=tag)
+def begin(prompt_code:PromptNode, tag:str=None) -> PromptNode:
+    node = BeginBlockNode(tag=tag)
     prompt_code.add_child(node)
     return node
 

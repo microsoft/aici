@@ -5,9 +5,8 @@ import sys
 import os
 import re
 from typing import Optional
-from .endpoint import Endpoint
 
-class AICI(Endpoint):
+class AICI:
     # TODO remove this default base_url once we deploy a semi-permanent server
     def __init__(self, base_url="http://127.0.0.1:8080/v1/", wasm_runner_id=None, wasm_runner_path=None, wasm_runner_buildsh=None ):
         self.base_url = base_url
@@ -19,12 +18,9 @@ class AICI(Endpoint):
                 wasm_runner_path = _compile_wasm(wasm_runner_buildsh)
             wasm_runner_id = _upload_wasm(self.base_url, wasm_runner_path)
         self.wasm_runner_id = wasm_runner_id
-
-    def supportsAIVM(self):
-        return True
     
     def run(self, prompt_plan):
-        _submit_program(self.base_url, self.wasm_runner_id, prompt_plan, log=True)
+        return _submit_program(self.base_url, self.wasm_runner_id, prompt_plan, log=True)
 
 
 def _compile_wasm(wasm_runner_buildsh, scriptargs=["build"]):
@@ -91,6 +87,9 @@ def _submit_program(base_url, aici_module, aici_arg, temperature=0, max_tokens=2
                                 raise "Bailing out due to WASM error: " + l
                         #else:
                         #    print(ch["text"], end="")
+                    # make sure texts is long enough
+                    while len(texts) <= idx:
+                        texts.append("")
                     texts[idx] += ch["text"]
             #elif decoded_line == "data: [DONE]":
             #    print(" [DONE]")
@@ -107,4 +106,6 @@ def _submit_program(base_url, aici_module, aici_arg, temperature=0, max_tokens=2
         ujson.dump(
             {"request": json, "texts": texts, "response": full_resp}, f, indent=1
         )
+
+    return texts, json, full_resp
     #print(f"response saved to {path}")

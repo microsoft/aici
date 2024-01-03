@@ -78,5 +78,10 @@
         "wprintln"
     ],
     "mypy.configFile": "vllm/mypy.ini",
-    "rust-analyzer.showUnlinkedFileNotification": false
+    "rust-analyzer.showUnlinkedFileNotification": false,
+    "jupyter.notebookFileRoot": "${workspaceFolder}",
+    "jupyter.widgetScriptSources": [
+        "jsdelivr.com",
+        "unpkg.com"
+    ]
 }
