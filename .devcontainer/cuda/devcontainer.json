@@ -15,6 +15,18 @@
 		"source=profile,target=/root,type=volume",
 		"target=/root/.vscode-server,type=volume"
 	],
+	"customizations": {
+		"vscode": {
+			"extensions": [
+				"ms-python.python",
+				"ms-python.black-formatter",
+				"1YiB.rust-bundle",
+				"dtsvet.vscode-wasm",
+				"ms-vscode.cpptools",
+				"GitHub.copilot"
+			]
+		}
+	},
 	"forwardPorts": [
 		8080
 	]

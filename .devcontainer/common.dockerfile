@@ -37,14 +37,3 @@ RUN rustup target add wasm32-wasi
 
 # run as root please; note that settings in devcontainer.json are also needed...
 USER root
-
-LABEL devcontainer.metadata='[{ \
-"customizations": { "vscode": { "extensions": [ \
-    "ms-python.python", \
-    "ms-python.black-formatter", \
-    "1YiB.rust-bundle", \
-    "dtsvet.vscode-wasm", \
-    "ms-vscode.cpptools", \
-    "GitHub.copilot" \
-] } } \
-}]'
