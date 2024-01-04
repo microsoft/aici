@@ -6,10 +6,10 @@ use aici_abi::{
     PostProcessResult, PreProcessArg, PreProcessResult,
 };
 
-// This constraints enforces an upper case letter every second byte
+// This constraints enforces an upper case letter every 4th byte
 // The state is the position in the output stream
-struct EvenUpper {}
-impl FunctionalRecognizer<usize> for EvenUpper {
+struct QuadUpper {}
+impl FunctionalRecognizer<usize> for QuadUpper {
     fn initial(&self) -> usize {
         0
     }
@@ -37,7 +37,7 @@ impl FunctionalRecognizer<usize> for EvenUpper {
 pub struct Runner {
     toktrie: TokTrie,
     tokens: Vec<u32>,
-    rec: StackRecognizer<usize, EvenUpper>,
+    rec: StackRecognizer<usize, QuadUpper>,
 }
 
 impl Runner {
@@ -46,7 +46,7 @@ impl Runner {
         Runner {
             toktrie: TokTrie::from_host(),
             tokens: Vec::new(),
-            rec: StackRecognizer::from(EvenUpper {}),
+            rec: StackRecognizer::from(QuadUpper {}),
         }
     }
 }

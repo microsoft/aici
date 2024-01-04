@@ -64,12 +64,16 @@ def main():
     elif fn.endswith(".wasm"):
         mod = pyaici.rest.upload_module(fn)
         pyaici.rest.log_level = 3
-        if len(sys.argv) > 2:
+        if len(sys.argv) > 2 and sys.argv[2]:
             arg = open(sys.argv[2]).read()
         else:
             arg = ""
+        if len(sys.argv) > 3:
+            prompt = sys.argv[3]
+        else:
+            prompt = ""
         ask_completion(
-            prompt="",
+            prompt=prompt,
             aici_module=mod,
             aici_arg=arg,
             ignore_eos=True,
