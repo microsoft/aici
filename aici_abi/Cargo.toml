@@ -22,3 +22,7 @@ rustc-hash = { version = "1.1.0", optional = true }
 default = ["cfg", "rx"]
 cfg = ["dep:cfgrammar", "dep:lrlex", "dep:lrpar", "dep:lrtable", "dep:vob", "dep:rustc-hash"]
 rx = ["dep:regex-automata"]
+
+[[bin]]
+name = "uppercase"
+path = "src/uppercase.rs"

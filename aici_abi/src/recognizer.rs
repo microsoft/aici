@@ -28,14 +28,7 @@ impl<R: Recognizer + Clone> AiciVm for AiciRecognizer<R> {
     }
 
     fn post_process(&mut self, arg: PostProcessArg) -> PostProcessResult {
-        for token in &arg.tokens {
-            let bytes = self.trie.token(*token);
-            // println!("process {} {:?}", token, bytes);
-            for b in bytes {
-                self.rec.push_byte(*b)
-            }
-            self.rec.collapse();
-        }
+        self.trie.append_tokens(&mut self.rec, &arg.tokens);
         PostProcessResult::from_arg(&arg)
     }
 }

@@ -394,6 +394,12 @@ impl TokTrie {
         self.add_bias(r, logits)
     }
 
+    pub fn append_tokens(&self, r: &mut impl Recognizer, ts: &[TokenId]) {
+        for t in ts {
+            self.append_token(r, *t)
+        }
+    }
+
     pub fn append_token(&self, r: &mut impl Recognizer, t: TokenId) {
         let bytes = self.token(t);
         for &byte in bytes {

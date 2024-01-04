@@ -253,6 +253,7 @@ impl ModuleInstance {
 
     fn do_pre_process(&mut self, rtarg: RtPreProcessArg) -> Result<PreProcessResult> {
         let mut ff_tokens = Vec::new();
+        let mut cnt = 0;
         loop {
             let mut res = self.do_pre_process_inner(&rtarg)?;
 
@@ -270,6 +271,10 @@ impl ModuleInstance {
                     res.attention_masks.clear();
                     return Ok(res); // we're stopping - no point returning ff_tokens
                 } else {
+                    cnt += 1;
+                    if cnt > 10 {
+                        bail!("too many ff_tokens rounds from pre_process")
+                    }
                     continue;
                 }
             }
