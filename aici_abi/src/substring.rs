@@ -1,6 +1,6 @@
 use std::fmt::Display;
 
-use aici_abi::{
+use crate::{
     bytes::limit_str,
     recognizer::{FunctionalRecognizer, StackRecognizer},
     toktree::SpecialToken,

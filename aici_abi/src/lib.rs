@@ -8,6 +8,16 @@ pub mod rng;
 pub mod svob;
 pub mod toktree;
 
+#[cfg(feature = "cfg")]
+pub mod cfg;
+#[cfg(feature = "cfg")]
+mod lex;
+
+#[cfg(feature = "rx")]
+pub mod rx;
+
+pub mod substring;
+
 pub type TokenId = bytes::TokenId;
 
 pub use host::{

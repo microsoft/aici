@@ -1,8 +1,3 @@
-mod cfg;
-mod lex;
-mod rx;
-mod substring;
-
 use aici_abi::{
     aici_stop,
     svob::SimpleVob,
@@ -47,11 +42,12 @@ fn get_cb_obj() -> PyObjectRef {
 
 #[rustpython_derive::pymodule]
 mod _aici {
-    use crate::{
-        cfg::CfgParser, rx::RecRx, substring::SubStrMatcher, PyConstraint, VmExt, GLOBAL_STATE,
-    };
+    use crate::{PyConstraint, VmExt, GLOBAL_STATE};
     use aici_abi::{
+        cfg::CfgParser,
         recognizer::{AnythingGoes, StackRecognizer},
+        rx::RecRx,
+        substring::SubStrMatcher,
         svob::SimpleVob,
         toktree::SpecialToken,
         TokenId,

@@ -1,5 +1,5 @@
 use crate::lex::{Lexer, LexerState, StateID, VobIdx, VobSet};
-use aici_abi::{
+use crate::{
     svob::SimpleVob,
     toktree::{Recognizer, SpecialToken, TokTrie},
     wprint, wprintln,
@@ -525,7 +525,7 @@ pub fn cfg_test() -> Result<()> {
     }
 
     if false {
-        let mut rng = aici_abi::rng::Rng::new(0);
+        let mut rng = crate::rng::Rng::new(0);
         let mut ok = true;
         let mut idx = 0;
         while idx < sample.len() {

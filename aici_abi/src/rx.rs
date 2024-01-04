@@ -1,4 +1,4 @@
-use aici_abi::{
+use crate::{
     recognizer::{FunctionalRecognizer, StackRecognizer},
     toktree::SpecialToken,
     wprintln,

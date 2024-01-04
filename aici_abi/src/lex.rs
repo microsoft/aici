@@ -1,4 +1,4 @@
-use aici_abi::wprintln;
+use crate::wprintln;
 use regex_automata::{
     dfa::{dense, Automaton},
     util::syntax,

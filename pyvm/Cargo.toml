@@ -5,16 +5,9 @@ edition = "2021"
 
 [dependencies]
 aici_abi = { path = "../aici_abi" }
-regex-automata = { version = "0.4.3", default-features = false, features = ["std", "dfa", "syntax", "perf", "meta"] }
 serde = { version = "1.0.192", features = ["derive"] }
 serde_json = "1.0.108"
-cfgrammar = "0.13.3"
-lrlex = "0.13.3"
-lrpar = "0.13.3"
-lrtable = "0.13.3"
 anyhow = "1.0.75"
-vob = "3.0.3"
-rustc-hash = "1.1.0"
 rustpython-vm = { git = "https://github.com/RustPython/RustPython", rev = "317f44945420e",  default-features = false, features = ["compiler"] }
 rustpython-derive = { git = "https://github.com/RustPython/RustPython", rev = "317f44945420e" }
 libc = "0.2.150"
