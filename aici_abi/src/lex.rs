@@ -1,4 +1,3 @@
-use crate::wprintln;
 use regex_automata::{
     dfa::{dense, Automaton},
     util::syntax,
@@ -106,7 +105,7 @@ impl VobSet {
                     }
                 }
             }
-            wprintln!(
+            println!(
                 "vob set: {} VOBs, {} nonempty",
                 self.vobs.len(),
                 self.non_empty.len()
@@ -134,14 +133,14 @@ impl Lexer {
             .build_many(&patterns)
             .unwrap();
 
-        wprintln!(
+        println!(
             "dfa: {} bytes, {} patterns",
             dfa.memory_usage(),
             patterns.len(),
         );
         if false {
             for p in &patterns {
-                wprintln!("  {}", p)
+                println!("  {}", p)
             }
         }
 
@@ -176,7 +175,7 @@ impl Lexer {
                     let idx = dfa.match_pattern(s2, idx).as_usize();
                     v.set(idx, true);
                     if LOG_LEXER {
-                        wprintln!("  match: {:?} {}", *s, patterns[idx])
+                        println!("  match: {:?} {}", *s, patterns[idx])
                     }
                 }
             }
@@ -201,7 +200,7 @@ impl Lexer {
             }
 
             if LOG_LEXER {
-                wprintln!("iter {} {}", num_set, states.len());
+                println!("iter {} {}", num_set, states.len());
             }
             if num_set == 0 {
                 break;
@@ -218,7 +217,7 @@ impl Lexer {
             vobidx_by_state_off[k.as_usize() >> shift] = vobset.get(v);
         }
 
-        wprintln!("initial: {:?}; {} states", initial, states.len());
+        println!("initial: {:?}; {} states", initial, states.len());
 
         let mut lex = Lexer {
             dfa,
@@ -231,11 +230,11 @@ impl Lexer {
         if LOG_LEXER {
             for s in &states {
                 if lex.is_dead(*s) {
-                    wprintln!("dead: {:?} {}", s, lex.dfa.is_dead_state(*s));
+                    println!("dead: {:?} {}", s, lex.dfa.is_dead_state(*s));
                 }
             }
 
-            wprintln!("reachable: {:#?}", reachable_patterns);
+            println!("reachable: {:#?}", reachable_patterns);
         }
 
         lex
@@ -276,7 +275,7 @@ impl Lexer {
             .unwrap();
 
         if LOG_LEXER {
-            wprintln!("token: {}", pat_idx);
+            println!("token: {}", pat_idx);
         }
 
         Some(pat_idx)
@@ -288,7 +287,7 @@ impl Lexer {
         if let Some(byte) = byte {
             let state = dfa.next_state(prev, byte);
             if LOG_LEXER {
-                wprintln!(
+                println!(
                     "lex: {:?} -{:?}-> {:?} d={}",
                     prev,
                     byte as char,
@@ -305,7 +304,7 @@ impl Lexer {
                 } else {
                     let state = dfa.next_state(self.initial.state, byte);
                     if LOG_LEXER {
-                        wprintln!("lex0: {:?} -{:?}-> {:?}", self.initial, byte as char, state);
+                        println!("lex0: {:?} -{:?}-> {:?}", self.initial, byte as char, state);
                     }
                     Some((self.mk_state(state), tok))
                 }

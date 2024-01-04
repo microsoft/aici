@@ -2,7 +2,6 @@ use crate::lex::{Lexer, LexerState, StateID, VobIdx, VobSet};
 use crate::{
     svob::SimpleVob,
     toktree::{Recognizer, SpecialToken, TokTrie},
-    wprint, wprintln,
 };
 use anyhow::Result;
 use cfgrammar::{
@@ -118,10 +117,10 @@ impl CfgParser {
         };
 
         if false {
-            wprintln!("core\n{}\n\n", sgraph.pp(&grm, true));
+            println!("core\n{}\n\n", sgraph.pp(&grm, true));
             for pidx in grm.iter_pidxs() {
                 let prod = grm.prod(pidx);
-                wprintln!("{:?} -> {}", prod, prod.len());
+                println!("{:?} -> {}", prod, prod.len());
             }
         }
 
@@ -180,7 +179,7 @@ impl CfgParser {
             }
         }
 
-        wprintln!("patterns: {:?}", friendly_pattern_names);
+        println!("patterns: {:?}", friendly_pattern_names);
 
         let mut vobset = VobSet::new();
         // all-zero has to be inserted first
@@ -266,7 +265,7 @@ impl CfgParser {
             let act = self.stable.action(stidx, lexeme);
 
             if LOG_PARSER {
-                wprintln!(
+                println!(
                     "parse: {:?} {:?} -> {:?}",
                     pstack,
                     self.friendly_token_name(lexeme),
@@ -299,10 +298,10 @@ impl CfgParser {
 
     #[allow(dead_code)]
     fn print_viable(&self, lbl: &str, vob: &Vob) {
-        wprintln!("viable tokens {}:", lbl);
+        println!("viable tokens {}:", lbl);
         for (idx, b) in vob.iter().enumerate() {
             if b {
-                wprintln!("  {}: {}", idx, self.friendly_pattern_names[idx]);
+                println!("  {}: {}", idx, self.friendly_pattern_names[idx]);
             }
         }
     }
@@ -312,11 +311,11 @@ impl CfgParser {
     fn try_push(&mut self, byte: Option<u8>) -> Option<ByteState> {
         let top = self.byte_states.last().unwrap().clone();
         if LOG_PARSER {
-            wprint!("try_push: ");
+            print!("try_push: ");
             if let Some(b) = byte {
-                wprint!("{:?}", b as char)
+                print!("{:?}", b as char)
             } else {
-                wprint!("<EOF>")
+                print!("<EOF>")
             }
         }
         let (info, res) = match self.lexer.advance(top.lexer_state, byte) {
@@ -331,7 +330,7 @@ impl CfgParser {
             Some((ls, Some(pat_idx))) => ("parse", self.run_parser(pat_idx, &top, ls)),
         };
         if LOG_PARSER {
-            wprintln!(
+            println!(
                 " -> {} {}",
                 info,
                 if res.is_none() { "error" } else { "ok" }
@@ -359,7 +358,7 @@ impl CfgParser {
             s.yacc_actions += 1;
         }
         if LOG_PARSER {
-            wprintln!();
+            println!();
         }
         let pstack = self.pstack_for(top);
         if self.skip_patterns[pat_idx] {
@@ -367,7 +366,7 @@ impl CfgParser {
             let viable = self.viable_vobidx(stidx);
             //self.print_viable("reset", &viable);
             if LOG_PARSER {
-                wprintln!("parse: {:?} skip", pstack);
+                println!("parse: {:?} skip", pstack);
             }
             // reset viable states - they have been narrowed down to SKIP
             self.mk_byte_state(ls, top.parse_stack_idx, viable)
@@ -498,7 +497,7 @@ pub fn cfg_test() -> Result<()> {
             let tok = *tok;
             trie.compute_bias(&mut cfg, &mut vob);
             if !vob.is_allowed(tok) {
-                wprintln!("reject, line={}, tok={:?}", line, trie.token_str(tok));
+                println!("reject, line={}, tok={:?}", line, trie.token_str(tok));
                 panic!();
             }
             for b in trie.token(tok) {
@@ -507,7 +506,7 @@ pub fn cfg_test() -> Result<()> {
                 }
             }
             if false {
-                wprintln!(
+                println!(
                     "tok: {:?} {}; {}",
                     trie.token_str(tok),
                     vob.is_allowed(tok),
@@ -519,9 +518,9 @@ pub fn cfg_test() -> Result<()> {
         }
 
         #[cfg(not(target_arch = "wasm32"))]
-        wprintln!("time: {:?} ", t0.elapsed());
+        println!("time: {:?} ", t0.elapsed());
 
-        wprintln!("stats:  {}", cfg.get_stats());
+        println!("stats:  {}", cfg.get_stats());
     }
 
     if false {
@@ -530,11 +529,11 @@ pub fn cfg_test() -> Result<()> {
         let mut idx = 0;
         while idx < sample.len() {
             let b = sample[idx];
-            // wprintln!("idx {} {:?}", idx, b as char);
+            // println!("idx {} {:?}", idx, b as char);
             let r = cfg.try_push_byte(b);
             if !r {
                 ok = false;
-                wprintln!(
+                println!(
                     "reject at\n{:?}\n{:?}",
                     String::from_utf8_lossy(&sample[idx.saturating_sub(50)..idx]),
                     String::from_utf8_lossy(&sample[idx..std::cmp::min(idx + 30, sample.len())])
@@ -547,13 +546,13 @@ pub fn cfg_test() -> Result<()> {
                 let max_pop = cfg.byte_states.len() - 1;
                 if max_pop > 0 && rng.gen_up_to(4) == 0 {
                     let num = rng.gen_up_to(max_pop - 1) + 1;
-                    // wprintln!("pop {} {}", num, cfg.byte_states.len());
+                    // println!("pop {} {}", num, cfg.byte_states.len());
                     cfg.pop_bytes(num);
                     idx -= num;
                 }
 
                 if rng.gen_up_to(10) == 0 {
-                    // wprintln!("collapse");
+                    // println!("collapse");
                     cfg.collapse();
                 }
             }
@@ -561,12 +560,12 @@ pub fn cfg_test() -> Result<()> {
 
         if ok {
             if cfg.special_allowed(SpecialToken::EndOfSentence) {
-                wprintln!("accept EOS");
+                println!("accept EOS");
             } else {
-                wprintln!("reject EOS");
+                println!("reject EOS");
             }
         } else {
-            wprintln!("reject");
+            println!("reject");
         }
     }
 

@@ -21,8 +21,8 @@ pub mod substring;
 pub type TokenId = bytes::TokenId;
 
 pub use host::{
-    _print, aici_stop, arg_bytes, return_logit_bias, self_seq_id, stdout, tokenize, tokenize_bytes,
-    StorageCmd, StorageOp, StorageResp, VariableStorage,
+    aici_stop, arg_bytes, return_logit_bias, self_seq_id, tokenize, tokenize_bytes, StorageCmd,
+    StorageOp, StorageResp, VariableStorage,
 };
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -268,23 +268,5 @@ macro_rules! include_bytes_aligned {
         };
 
         &ALIGNED.bytes
-    }};
-}
-
-#[macro_export]
-macro_rules! wprintln {
-    () => {
-        $crate::_print("\n")
-    };
-    ($($arg:tt)*) => {{
-        $crate::_print(&format!($($arg)*));
-        $crate::_print("\n");
-    }};
-}
-
-#[macro_export]
-macro_rules! wprint {
-    ($($arg:tt)*) => {{
-        $crate::_print(&format!($($arg)*));
     }};
 }

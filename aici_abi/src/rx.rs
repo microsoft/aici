@@ -1,7 +1,6 @@
 use crate::{
     recognizer::{FunctionalRecognizer, StackRecognizer},
     toktree::SpecialToken,
-    wprintln,
 };
 use regex_automata::{
     dfa::{dense, Automaton},
@@ -29,7 +28,7 @@ impl RecRx {
             .syntax(syntax::Config::new().unicode(false).utf8(false))
             .build(&rx)
             .unwrap();
-        wprintln!("dfa: {} bytes", dfa.memory_usage());
+        println!("dfa: {} bytes", dfa.memory_usage());
         Self { dfa }
     }
 

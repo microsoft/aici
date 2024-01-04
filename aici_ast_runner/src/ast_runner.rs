@@ -18,7 +18,7 @@ use aici_abi::{
     svob::SimpleVob,
     tokenize, tokenize_bytes,
     toktree::{Recognizer, SpecialToken, TokTrie},
-    wprintln, AiciVm, InitPromptArg, InitPromptResult, MidProcessArg, MidProcessResult,
+    AiciVm, InitPromptArg, InitPromptResult, MidProcessArg, MidProcessResult,
     PostProcessArg, PostProcessResult, PreProcessArg, PreProcessResult, TokenId, VariableStorage,
 };
 use core::panic;
@@ -754,7 +754,7 @@ impl StepState {
             let mut mask = vec![1.0f32; ctx.tokens.len()];
             for (idx, tok) in ctx.tokens.iter().enumerate() {
                 if self.mask_tags.contains(&tok.tag) {
-                    wprintln!(
+                    println!(
                         "masking t[{}] = {:?} tag={:?}",
                         idx,
                         ctx.trie.token_str(tok.id),
@@ -813,13 +813,13 @@ impl StepState {
                             })
                             .collect::<Vec<_>>();
                         let mut new_state = StepState::from_ast(&self.ast);
-                        // wprintln!("tokens: {p} {pref:?} {tokens:?}");
+                        // println!("tokens: {p} {pref:?} {tokens:?}");
                         new_state.specific = StepSpecific::Options { tokens };
                         new_state.max_tokens -= self.num_tokens;
                         new_state.max_bytes -= self.num_bytes;
                         new_state.max_words -= self.num_words;
                         new_state.is_derived = true;
-                        // wprintln!("here: {new_state:?}");
+                        // println!("here: {new_state:?}");
                         return Some(new_state);
                     }
                 }
@@ -858,12 +858,12 @@ impl StepState {
     fn finish(&mut self, runner: &RunnerCtx) {
         let sidx = runner.bytes.len() - self.num_bytes;
         let my_bytes = runner.bytes[sidx..].to_vec();
-        wprintln!("finish: {self:?} {:?}", String::from_utf8_lossy(&my_bytes));
+        println!("finish: {self:?} {:?}", String::from_utf8_lossy(&my_bytes));
         for s in &self.attrs.stmts {
             match s {
                 Stmt::Set { var, expr } => {
                     let val = runner.expand_with_curr(&expr, self);
-                    wprintln!("  set {:?} := {:?}", var, String::from_utf8_lossy(&val));
+                    println!("  set {:?} := {:?}", var, String::from_utf8_lossy(&val));
                     runner.vars.set(&var.0, val);
                 }
             }
@@ -929,7 +929,7 @@ impl Runner {
         states.push(StepState::from_ast(&Step::Stop {}));
 
         for (idx, state) in states.iter_mut().enumerate() {
-            wprintln!("[{}] {} {:?}", idx, state.pp(), state);
+            println!("[{}] {} {:?}", idx, state.pp(), state);
         }
 
         Self {
@@ -946,7 +946,7 @@ impl Runner {
     }
 
     fn stop(&mut self, info: &str) {
-        wprintln!("stop: {}", info);
+        println!("stop: {}", info);
         self.finish_states();
         self.state_idx = self.states.len() - 1;
         // don't finish the states
@@ -969,7 +969,7 @@ impl Runner {
     fn advance(&mut self, token: TokenId) {
         let bytes = self.ctx.trie.token(token);
         if LOG_ADVANCE {
-            wprintln!(
+            println!(
                 "advance {} {:?} {:?}",
                 token,
                 String::from_utf8_lossy(bytes),
@@ -979,7 +979,7 @@ impl Runner {
 
         if token == self.ctx.trie.special_token(SpecialToken::EndOfSentence) {
             if self.state_idx < self.states.len() - 1 {
-                wprintln!("EOS: advancing to next state");
+                println!("EOS: advancing to next state");
                 self.state_idx += 1;
             }
         }
@@ -1040,7 +1040,7 @@ impl Runner {
         }
 
         if LOG_ADVANCE {
-            wprintln!(" => {:?}", self.curr_state());
+            println!(" => {:?}", self.curr_state());
         }
     }
 
@@ -1072,7 +1072,7 @@ impl Runner {
                     let backtrack = (self.ctx.tokens.len() - lidx.unwrap()) as u32;
 
                     let t0 = self.ctx.tokens.iter().map(|t| t.id).collect::<Vec<_>>();
-                    wprintln!(
+                    println!(
                         "slice: {t0:?} -> {:?} + {:?}",
                         &t0[..lidx.unwrap()],
                         tokens[0]
@@ -1137,10 +1137,10 @@ impl Runner {
     fn maybe_wait(&mut self) -> bool {
         if let StepSpecific::Wait { vars } = &self.curr_state().specific {
             if vars.iter().any(|name| self.ctx.vars.get(&name.0).is_none()) {
-                wprintln!("wait {vars:?} suspend");
+                println!("wait {vars:?} suspend");
                 true
             } else {
-                wprintln!("wait {vars:?} done");
+                println!("wait {vars:?} done");
                 self.state_idx += 1;
                 false
             }
@@ -1159,7 +1159,7 @@ impl Runner {
 
 impl AiciVm for Runner {
     fn init_prompt(&mut self, arg: InitPromptArg) -> InitPromptResult {
-        wprintln!("prompt: {:?}", arg.prompt);
+        println!("prompt: {:?}", arg.prompt);
         for t in arg.prompt {
             self.ctx.tokens.push(TokenInfo {
                 id: t,
@@ -1190,13 +1190,13 @@ impl AiciVm for Runner {
         let tokens = arg.tokens;
         let ntok = tokens.len();
         if ntok > 1 && LOG_ADVANCE {
-            wprintln!("<<< {} tokens", ntok);
+            println!("<<< {} tokens", ntok);
         }
         for token in tokens {
             self.advance(token);
         }
         if ntok > 1 && LOG_ADVANCE {
-            wprintln!(">>>");
+            println!(">>>");
         }
 
         self.finish_states();
@@ -1238,9 +1238,9 @@ impl AiciVm for Runner {
         self.finish_states();
 
         if arg.fork_group.len() > 1 {
-            wprintln!("fork group: {:?}", arg.fork_group);
+            println!("fork group: {:?}", arg.fork_group);
             if self.state_idx == 0 && !self.curr_state().specific.is_fork() {
-                wprintln!("initial fork; nothing to see here");
+                println!("initial fork; nothing to see here");
             } else {
                 let st = self.states.remove(self.state_idx);
                 if let StepSpecific::Fork { mut branches } = st.specific {
@@ -1289,7 +1289,7 @@ fn runner_from_env() -> Runner {
                 if line == 0 {
                     col -= 1;
                     if col == 0 {
-                        wprintln!(
+                        println!(
                             "at: {:?} <HERE> {:?}",
                             String::from_utf8_lossy(&a[off.saturating_sub(30)..off]),
                             String::from_utf8_lossy(&a[off..std::cmp::min(a.len(), off + 30)]),
@@ -1301,7 +1301,7 @@ fn runner_from_env() -> Runner {
                     line -= 1;
                 }
             }
-            wprintln!("JSON AST parsing error: {:?}", e);
+            println!("JSON AST parsing error: {:?}", e);
             panic!()
         }
     }

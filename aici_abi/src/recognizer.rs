@@ -30,7 +30,7 @@ impl<R: Recognizer + Clone> AiciVm for AiciRecognizer<R> {
     fn post_process(&mut self, arg: PostProcessArg) -> PostProcessResult {
         for token in &arg.tokens {
             let bytes = self.trie.token(*token);
-            // wprintln!("process {} {:?}", token, bytes);
+            // println!("process {} {:?}", token, bytes);
             for b in bytes {
                 self.rec.push_byte(*b)
             }
@@ -102,7 +102,7 @@ impl<S: Copy + Debug, R: FunctionalRecognizer<S>> Recognizer for StackRecognizer
     }
 
     fn trie_finished(&mut self) {
-        // wprintln!("{:?}", &self.stack[0..=self.stack_ptr]);
+        // println!("{:?}", &self.stack[0..=self.stack_ptr]);
         assert!(self.stack_ptr == 0);
     }
 

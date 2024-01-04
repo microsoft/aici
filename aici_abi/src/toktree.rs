@@ -241,7 +241,7 @@ impl TokTrie {
 
     pub fn token_id(&self, bytes: &[u8]) -> Option<TokenId> {
         let (tok, len) = self.prefix_token_id(bytes);
-        // wprintln!("tok_id {:?} {:?} {:?} ", bytes, tok, len);
+        // println!("tok_id {:?} {:?} {:?} ", bytes, tok, len);
         if len == bytes.len() {
             Some(tok)
         } else {

@@ -397,15 +397,6 @@ pub fn setup_linker(engine: &wasmtime::Engine) -> Result<Arc<wasmtime::Linker<Mo
 
     linker.func_wrap(
         "env",
-        "aici_host_print",
-        |mut caller: wasmtime::Caller<'_, ModuleData>, ptr: u32, len: u32| {
-            let m = read_caller_mem(&caller, ptr, len);
-            caller.data_mut().write_log(&m);
-        },
-    )?;
-
-    linker.func_wrap(
-        "env",
         "aici_host_read_blob",
         |mut caller: wasmtime::Caller<'_, ModuleData>, blob_id: u32, ptr: u32, len: u32| {
             if blob_id == BlobId::TRIE.0 {

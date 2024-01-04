@@ -1,10 +1,9 @@
 use crate::{
     bytes::{vec_from_bytes, TokenId},
     svob::SimpleVob,
-    wprintln, SeqId,
+    SeqId,
 };
 use serde::{Deserialize, Serialize};
-use std::io;
 
 #[repr(transparent)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -12,9 +11,6 @@ struct BlobId(u32);
 
 #[allow(dead_code)]
 extern "C" {
-    // Log a string.
-    fn aici_host_print(ptr: *const u8, len: u32);
-
     // Read binary blob.
     // Always returns the size of the blob, will write up to `size` bytes to `dst`.
     fn aici_host_read_blob(blob: BlobId, dst: *mut u8, size: u32) -> u32;
@@ -62,24 +58,6 @@ fn read_blob(blob: BlobId, prefetch_size: usize) -> Vec<u8> {
     buffer
 }
 
-#[cfg(not(target_arch = "wasm32"))]
-pub type Printer = std::io::Stdout;
-
-#[cfg(target_arch = "wasm32")]
-pub struct Printer {}
-
-#[cfg(target_arch = "wasm32")]
-impl io::Write for Printer {
-    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
-        unsafe { aici_host_print(buf.as_ptr(), buf.len() as u32) };
-        Ok(buf.len())
-    }
-
-    fn flush(&mut self) -> io::Result<()> {
-        Ok(())
-    }
-}
-
 pub fn init_panic() {
     #[cfg(target_arch = "wasm32")]
     std::panic::set_hook(Box::new(|info| {
@@ -95,35 +73,8 @@ pub fn init_panic() {
             },
         };
 
-        let err_info = format!("Panicked at '{}', {}:{}:{}\n", msg, file, line, col);
-        _print(&err_info);
+        println!("Panicked at '{}', {}:{}:{}", msg, file, line, col);
     }))
-}
-
-pub fn stdout() -> Printer {
-    #[cfg(target_arch = "wasm32")]
-    {
-        Printer {}
-    }
-
-    #[cfg(not(target_arch = "wasm32"))]
-    {
-        io::stdout()
-    }
-}
-
-pub fn _print(msg: &str) {
-    #[cfg(target_arch = "wasm32")]
-    {
-        let vec: Vec<u8> = msg.into();
-        unsafe { aici_host_print(vec.as_ptr(), vec.len() as u32) };
-    }
-
-    #[cfg(not(target_arch = "wasm32"))]
-    {
-        use std::io::Write;
-        std::io::stdout().write_all(msg.as_bytes()).unwrap();
-    }
 }
 
 #[no_mangle]
@@ -301,7 +252,7 @@ pub fn tokenize_bytes(s: &[u8]) -> Vec<TokenId> {
     let id = unsafe { aici_host_tokenize(s.as_ptr(), s.len() as u32) };
     let r = read_blob(id, 4 * (s.len() / 3 + 10));
     let res = vec_from_bytes(&r);
-    wprintln!(
+    println!(
         "tokenize_bytes: {:?} -> {:?}",
         String::from_utf8_lossy(s),
         res
@@ -314,7 +265,7 @@ pub fn tokenize(s: &str) -> Vec<TokenId> {
     let id = unsafe { aici_host_tokenize(s.as_ptr(), s.len() as u32) };
     let r = read_blob(id, 4 * (s.len() / 3 + 10));
     let res = vec_from_bytes(&r);
-    wprintln!("tokenize: {:?} -> {:?}", s, res);
+    println!("tokenize: {:?} -> {:?}", s, res);
     res
 }
 

@@ -75,7 +75,6 @@
         "usize",
         "vllm",
         "waitpid",
-        "wprintln"
     ],
     "mypy.configFile": "vllm/mypy.ini",
     "rust-analyzer.showUnlinkedFileNotification": false,
