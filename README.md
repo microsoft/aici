@@ -12,10 +12,26 @@ It takes [WebAssembly](https://webassembly.org/) (WASM) modules with a specific 
 The WASM module can be generated in any language that can compile to WASM, but this project focuses on 
 Rust for constraints (plus a Python package for interfacing with LLM runtime).
 
-
 ## Getting started
 
-Use Docker container, using the setup in `.devcontainer` (in VSCode "Reopen in container").
+There are several levels at which you can use AICI.
+
+* you can use the provided PyVM or SimpleVM on a remote server;
+  no devcontainer is required in that case
+* you can modify one of the provided VMs or build a new one;
+  this typically requires rust, and the preferred way to work with it is to use the
+  provided **AICI Client-side** devcontainer - it should work on any machine with Docker and VSCode
+* if you want to run the inference server (rllm) locally, use the **AICI with CUDA** container;
+  this requires a CUDA-capable GPU (currently only 8.0 (A100) is supported)
+* finally, if you want to try the AICI integration with vLLM, use the 
+  **AICI with CUDA and vLLM (experimental)** container
+
+Each of the above containers takes longer than the previous one to build.
+
+If you're not familiar with [devcontainers](https://containers.dev/),
+you need to install the [Dev Containers VSCode extension](https://marketplace.visualstudio.com/items?itemName=ms-vscode-remote.remote-containers)
+and from the command palette in VSCode select **Dev Containers: Reopen in Container...**.
+It pops a list of available devcontainers, select the one you want to use.
 
 To run rLLM server, go to `rllm/` and run `./server.sh code`.
 This will run the inference server with CodeLlama 13B model (which is expected by testcases).
