@@ -9,23 +9,19 @@
   - have no ' '
 */
 
-mod cfg;
-mod lex;
-mod rx;
-
-use crate::rx::RecRx;
 use aici_abi::{
     aici_expose_all,
     bytes::limit_str,
+    cfg::CfgParser,
+    rx::RecRx,
+    rx::RxStackRecognizer,
     svob::SimpleVob,
     tokenize, tokenize_bytes,
     toktree::{Recognizer, SpecialToken, TokTrie},
     wprintln, AiciVm, InitPromptArg, InitPromptResult, MidProcessArg, MidProcessResult,
     PostProcessArg, PostProcessResult, PreProcessArg, PreProcessResult, TokenId, VariableStorage,
 };
-use cfg::CfgParser;
 use core::panic;
-use rx::RxStackRecognizer;
 use serde::{Deserialize, Serialize};
 use std::fmt::Debug;
 
@@ -660,7 +656,7 @@ impl StepState {
                         panic!("can't have both yacc= and rx=")
                     }
                     (Some(yacc), None) => StepSpecific::Cfg {
-                        cfg: CfgParser::from_yacc(yacc),
+                        cfg: CfgParser::from_yacc(yacc).expect("invalid grammar"),
                     },
                     _ => {
                         let defl = "(.|\n)+".to_string();
@@ -1278,7 +1274,7 @@ impl AiciVm for Runner {
 }
 
 fn main() {
-    cfg::cfg_test().unwrap();
+    aici_abi::cfg::cfg_test().unwrap();
     //    let _run = sample_prog();
 }
 
