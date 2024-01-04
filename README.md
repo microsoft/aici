@@ -33,22 +33,123 @@ you need to install the [Dev Containers VSCode extension](https://marketplace.vi
 and from the command palette in VSCode select **Dev Containers: Reopen in Container...**.
 It pops a list of available devcontainers, select the one you want to use.
 
-To run rLLM server, go to `rllm/` and run `./server.sh code`.
-This will run the inference server with CodeLlama 13B model (which is expected by testcases).
-You can also try other models, see [rllm/README.md](rllm/README.md) for details.
+### Interacting with server
 
-Once the server is running, open a second terminal and use `./scripts/upload.sh`.
-It has several modes:
+To get started interacting with a cloud AICI server first export the API key.
+If running local server, leave `AICI_API_BASE` unset.
+
+```bash
+export AICI_API_BASE="https://aici.azurewebsites.net/v1/#key=wht_..."
+```
+
+Now, use `./scripts/upload.sh` to upload a prompt and a WASM module:
 
 * you can just pass it prompt: 
   `./scripts/upload.sh "The answer to the ultimate question of life, the universe and everything is"`
 * similarly, you can pass it `.txt` file with prompt: `./scripts/upload.sh tests/test-prompt.txt`
-* if you pass it a `.py` file, it will compile `pyvm` WASM module, upload it, and then use it to run
+* if you pass it a `.py` file, it will compile `PyVM` WASM module, upload it, and then use it to run
   the Python code: `./scripts/upload.sh pyvm/samples/test.py`
-* you can also pass it a `.json` file, which will compile AST runner and use it to interpret the AST
+* you can also pass it a `.json` file, which will compile DeclarativeVM and use it to interpret the AST
+* finally, you can pass it a `.wasm` file, which will upload it and run it:
+  `./scripts/upload.sh target/wasm32-wasi/release/uppercase.wasm`
 
 You can now also run tests with `pytest` (while the server is running with codellama 13B model) 
 for the AST runner, or with `./scripts/test-pyvm.sh` for PyVM.
+
+
+### Running local server
+
+To run rLLM server, go to `rllm/` and run `./server.sh orca`.
+This will run the inference server with Orca-2 13B model (which is expected by testcases).
+You can also try other models, see [rllm/README.md](rllm/README.md) for details.
+
+## Provided VMs
+
+We provide several VMs that you can use directly or as base for your own VMs.
+
+### Yes/no
+
+The [yes/no VM](aici_abi/src/yesno.rs)
+only allows the model to say "Yes" or "No" in answer to the question in the prompt.
+
+```
+$ ./scripts/sample-yesno.sh "Can orcas sing?"
++ cd aici_abi
++ cargo build --release
+    Finished release [optimized + debuginfo] target(s) in 0.09s
++ ./scripts/upload.sh target/wasm32-wasi/release/yesno.wasm '' 'Can orcas sing?'
+upload module... 192kB -> 668kB id:0583a3ab
+[0]: tokenize: "Yes" -> [8241]
+[0]: tokenize: "No" -> [3782]
+[0]: tokenize: "\n" -> [13]
+[DONE]
+
+[Prompt] Can orcas sing?
+
+[Response] 
+Yes
+```
+
+Note that the same effect can be achieved with PyVM and [10x less lines of code](pyvm/samples/yesno.py).
+This is just for demonstration purposes.
+
+```
+$ ./scripts/upload.sh pyvm/samples/yesno.py "Are dolphins fish?"
+...
+No
+```
+
+### Uppercase
+
+The [uppercase VM](aici_abi/src/uppercase.rs) shows usage of the `FunctionalRecognizer` interface.
+It forces every 4th letter of the model output to be uppercase.
+
+```
+$ ./scripts/sample-uppercase.sh 
+    Finished release [optimized + debuginfo] target(s) in 0.09s
+upload module... 198kB -> 695kB id:c58fca60
+[0]: user passed in 0 bytes
+[0]: init_prompt: [1] ""
+[0]: tokenize: "Here's a tweet:\n" -> [10605, 29915, 29879, 263, 7780, 300, 29901, 13]
+[DONE]
+
+[Prompt] 
+
+[Response] Here's a tweet:
+I'm SO EXCITED! I'm GoinG toBe aMom!I'm GoinG toHaVeA BaBy!
+```
+
+Again, this could be done with PyVM and a simple regex.
+
+### PyVM
+
+The [PyVM](pyvm) embeds [RustPython](https://github.com/RustPython/RustPython)
+(a Python 3 language implementation) in the WASM module together with native
+primitives for specific kinds of output constraints:
+fixed token output, regexps, LR(1) grammars, substring constrains etc.
+Python code is typically only used lightly, for gluing the primitives together,
+and thus is not performance critical.
+
+There are [several samples](pyvm/samples/) available.
+The scripts use the [aici module](pyvm/aici-pylib/aici.py) to communicate with the AICI runtime
+and use the native constraints.
+
+To run a PyVM sample use:
+
+```
+$ ./scripts/upload.sh pyvm/samples/test.py
+```
+
+You will see the console output of the program.
+
+### DeclarativeVM
+
+The [DeclarativeVM](aici_ast_runner/src/ast_runner.rs) exposes similar constraints
+to PyVM, but the glueing is done via a JSON AST (Abstract Syntax Tree) and thus is
+more restrictive.
+
+There is no reason to use it as is, but it can be used as a base for other VMs.
+
 
 ## Architecture
 

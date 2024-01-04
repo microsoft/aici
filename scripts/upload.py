@@ -54,8 +54,12 @@ def main():
         mod = upload_wasm("pyvm")
         pyaici.rest.log_level = 3
         arg = open(fn).read()
+        if len(sys.argv) > 2:
+            prompt = sys.argv[2]
+        else:
+            prompt = ""
         ask_completion(
-            prompt="",
+            prompt=prompt,
             aici_module=mod,
             aici_arg=arg,
             ignore_eos=True,
