@@ -9,3 +9,9 @@ def llama_prompt(prompt: str) -> str:
 
 def codellama_prompt(prompt: str) -> str:
     return f"[INST] {prompt} [/INST]\n"
+
+system_message = "You are a helpful assistant."
+orca_prefix = f"<|im_start|>system\n{system_message}<|im_end|>\n<|im_start|>user\n"
+orca_suffix =  "<|im_end|>\n<|im_start|>assistant\n"
+def orca_prompt(prompt: str) -> str:
+    return orca_prefix + prompt + orca_suffix

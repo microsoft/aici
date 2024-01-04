@@ -7,11 +7,11 @@ import pyaici.rest
 import pyaici.util
 import pyaici.ast as ast
 
-model_name = "codellama/CodeLlama-13b-Instruct-hf"
+model_name = "microsoft/Orca-2-13b"
 
 
 def wrap(text):
-    return pyaici.util.codellama_prompt(text)
+    return pyaici.util.orca_prompt(text)
 
 
 def greedy_query(prompt: str, steps: list, n=1):
@@ -23,7 +23,7 @@ def greedy_query(prompt: str, steps: list, n=1):
     res = pyaici.rest.completion(
         prompt=prompt,
         aici_module=ast_module,
-        aici_arg={"steps": steps},
+        aici_arg={"steps": steps},  # type: ignore
         temperature=temperature,
         max_tokens=200,
         n=n,
@@ -73,9 +73,9 @@ def test_gen_num():
         "",
         [
             ast.fixed("I am about "),
-            ast.gen(max_tokens=5, rx=r"\d+"),
+            ast.gen(max_tokens=2, rx=r"\d+"),
             ast.fixed(" years and "),
-            ast.gen(max_tokens=5, rx=r"\d+"),
+            ast.gen(max_tokens=2, rx=r"\d+"),
             ast.fixed(" months."),
         ],
     )
@@ -85,10 +85,13 @@ def test_grammar():
     expect(
         """```
 int fib(int n) {
-    if (n <= 1) {
-        return n;
+    if (n == 0) {
+        return 0;
     }
-    return fib(n-1) + fib(n-2);
+    if (n == 1) {
+        return 1;
+    }
+    return fib(n - 1) + fib(n - 2);
 }""",
         wrap("Write fib function in C"),
         [
@@ -119,14 +122,14 @@ def test_json():
         """{
 "name":"J. Random Hacker",
 "valid":true,
-"description":"J. Random Hacker is a legendary hacker from Seattle, known for his unparalleled skills in computer security and his unwavering dedic",
-"type":"bar",
+"description":"J. Random Hacker is a talented and creative individual based in Seattle, Washington. With a passion for technology and a kn",
+"type":"something",
 "address":{
-"street":"123 Main St",
+"street":"123 Hacker St",
 "city":"Seattle",
 "state":"WA"
 },
-"age":35,
+"age":25,
 "fraction":0.5
 }""",
         wrap("Write about J. Random Hacker from Seattle"),
@@ -147,11 +150,11 @@ def test_json_N():
 
 def test_ff_0():
     expect(
-        ", 3 + 8 is 11.\n",
+        ", 3 + 8 = 11",
         "Hello",
         [
             {"Gen": {"rx": ", ", "max_tokens": 10}},
-            {"Fixed": {"text": {"String": {"str": "3 + 8 is"}}}},
+            {"Fixed": {"text": {"String": {"str": "3 + 8 ="}}}},
             {"Gen": {"max_tokens": 5}},
         ],
     )
@@ -236,9 +239,9 @@ def test_backtrack_1():
             [
                 ast.fixed("The word 'hello'"),
                 ast.label("lang", ast.fixed(french)),
-                ast.gen(rx=r" '[^']*'", max_tokens=15, set_var="french"),
+                ast.gen(rx=r" '[^'\.]*'", max_tokens=15, set_var="french"),
                 ast.fixed(" or", following="lang"),
-                ast.gen(rx=r" '[^']*'", max_tokens=15, set_var="blah"),
+                ast.gen(rx=r" '[^'\.]*'", max_tokens=15, set_var="blah"),
                 ast.fixed("\nResults:{{french}}{{blah}}", expand_vars=True),
             ],
         )
@@ -264,15 +267,16 @@ def test_backtrack_2():
 
 def test_inner_1():
     expect(
-        "<...><city>Warsaw</city> is the capital city of Poland and is known for its rich history, cultural land",
+        "<...><city>Poznań</city> is a vibrant city in western Poland, known for its rich history, beautiful",
         "",
         [
-            ast.fixed("[INST] "),
+            ast.fixed(pyaici.util.orca_prefix),
             # there is currently a bug going back to the first token, so we label the stuff after [INST] instead
             ast.label(
                 "start",
                 ast.fixed(
-                    "List 5 names of cities in Poland. Use <city>City Name</city> syntax. Say DONE when done. [/INST]\n"
+                    "List 5 names of cities in Poland. Use <city>City Name</city> syntax. Say DONE when done."
+                    + pyaici.util.orca_suffix
                 ),
             ),
             ast.gen(
@@ -285,8 +289,9 @@ def test_inner_1():
                 },
             ),
             ast.fixed(
-                "Pick a specific capital city and say something about it. "
-                "Use <city>City Name</city> syntax when referring to city names. [/INST]\n",
+                "Pick a specific city and say something about it. "
+                "Wrap city names in <city></city>, for example <city>London</city>." 
+                  + pyaici.util.orca_suffix,
                 # backtrack to start, to erase info about 'Poland'
                 following="start",
             ),
@@ -304,8 +309,8 @@ def test_wait_1():
     expect(
         [
             """The word 'hello' in
-french: 'bonjour'
-spanish: 'hola'
+french: 'bonjour.'
+spanish: 'hola.'
 """,
             "*",
         ],

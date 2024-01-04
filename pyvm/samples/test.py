@@ -1,6 +1,8 @@
 import aici
 import re
 
+# asserts for microsoft/Orca-2-13b
+
 async def test_backtrack_one():
     await aici.FixedTokens("3+")
     l = aici.Label()
@@ -20,23 +22,23 @@ async def test_fork():
         french, german = await aici.wait_vars("french", "german")
         await aici.FixedTokens(f"{french} is the same as {german}.")
         await aici.gen_tokens(max_tokens=5)
-        aici.check_vars({"french": ' "bonjour"', "german": ' "Hallo"'})
+        aici.check_vars({"german": ' "hallo"', "french": ' "bonjour"'})
     elif id == 1:
         await aici.FixedTokens(" German is")
-        await aici.gen_tokens(regex=r' "[^"]+"', store_var="german", max_tokens=5)
+        await aici.gen_tokens(regex=r' "[^"\.]+"', store_var="german", max_tokens=5)
     elif id == 2:
         await aici.FixedTokens(" French is")
-        await aici.gen_tokens(regex=r' "[^"]+"', store_var="french", max_tokens=5)
+        await aici.gen_tokens(regex=r' "[^"\.]+"', store_var="french", max_tokens=5)
 
 
 async def test_backtrack_lang():
     await aici.FixedTokens("The word 'hello' in")
     l = aici.Label()
     await aici.FixedTokens(" French is", following=l)
-    await aici.gen_tokens(regex=r' "[^"]+"', store_var="french", max_tokens=5)
+    await aici.gen_tokens(regex=r' "[^"\.]+"', store_var="french", max_tokens=5)
     await aici.FixedTokens(" German is", following=l)
-    await aici.gen_tokens(regex=r' "[^"]+"', store_var="german", max_tokens=5)
-    aici.check_vars({"french": ' "bonjour"', "german": ' "Hallo"'})
+    await aici.gen_tokens(regex=r' "[^"\.]+"', store_var="german", max_tokens=5)
+    aici.check_vars({"french": ' "bonjour"', "german": ' "hallo"'})
 
 
 async def test_main():
@@ -51,7 +53,7 @@ async def test_main():
     await aici.FixedTokens("The word 'hello' in French is")
     # try unconstrained output
     await aici.gen_tokens(store_var="french", max_tokens=5)
-    await aici.FixedTokens("\nAnd in German")
+    await aici.FixedTokens("\nIn German it translates to")
     await aici.gen_tokens(regex=r' "[^"]+"', store_var="german")
     await aici.FixedTokens("\nFive")
     await aici.gen_tokens(
@@ -67,9 +69,9 @@ async def test_main():
         {
             "test": "hello",
             "french": " 'bonjour'.",
-            "german": ' "Hallo"',
-            "five": " euros",
-            "dollars": "6.5",
+            "german": ' "guten Tag"',
+            "five": " pounds",
+            "dollars": "7.5",
         }
     )
 
@@ -159,7 +161,7 @@ async def test_eos():
     await aici.FixedTokens("The word 'hello' in French is")
     await SampleEos()
     await aici.gen_tokens(regex=r' "[^"]+"', max_tokens=6, store_var="french")
-    aici.check_vars({"french": ' "Bonjour"'})
+    aici.check_vars({"french": ' "bonjour"'})
 
 
-aici.test(test_drugs())
+aici.test(test_fork())

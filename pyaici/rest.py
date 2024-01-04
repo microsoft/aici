@@ -136,6 +136,7 @@ def completion(
                         storage[w["name"]] = w["value"]
                 err = ch.get("error", "")
                 if err:
+                    res["error"] = err
                     print(f"*** Error in [{idx}]: {err}")
                 if log_level > 2:
                     l = ch["logs"].rstrip("\n")
