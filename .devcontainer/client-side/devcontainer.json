@@ -16,8 +16,11 @@
 			]
 		}
 	},
+	"remoteUser": "root",
+	"containerUser": "root",
 	"mounts": [
 		"source=profile,target=/root,type=volume",
+		"target=/root/.cargo,type=volume",
 		"target=/root/.vscode-server,type=volume"
 	]
 }
