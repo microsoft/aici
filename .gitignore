@@ -17,3 +17,4 @@ rllm/report*.sqlite
 *.ncu-rep
 *.nsys-rep
 rllm/logs
+.DS_Store
