@@ -1,21 +1,14 @@
 // For format details, see https://aka.ms/devcontainer.json
 {
-	"name": "AICI with CUDA",
+	"name": "AICI Client-side",
 	"build": {
-		"dockerfile": "../Dockerfile-cuda",
+		"dockerfile": "../Dockerfile-client",
 		"context": ".."
 	},
-	"runArgs": [
-		"--privileged",
-		"--gpus",
-		"all",
-		"--shm-size=8g"
-	],
+	"remoteUser": "root",
+	"containerUser": "root",
 	"mounts": [
 		"source=profile,target=/root,type=volume",
 		"target=/root/.vscode-server,type=volume"
-	],
-	"forwardPorts": [
-		8080
 	]
 }

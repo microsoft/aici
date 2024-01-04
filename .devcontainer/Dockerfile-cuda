@@ -1,0 +1,5 @@
+# syntax = edrevo/dockerfile-plus
+# ^^^ this line enables the INCLUDE+ directive
+
+INCLUDE+ cuda-settings.dockerfile
+INCLUDE+ common.dockerfile

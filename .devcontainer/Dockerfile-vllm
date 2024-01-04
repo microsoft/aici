@@ -1,0 +1,19 @@
+# syntax = edrevo/dockerfile-plus
+# ^^^ this line enables the INCLUDE+ directive
+
+INCLUDE+ cuda-settings.dockerfile
+INCLUDE+ common.dockerfile
+
+ENV NVTE_FRAMEWORK=pytorch
+
+COPY vllm-requirements.txt /tmp/requirements.txt
+RUN pip install -r /tmp/requirements.txt
+
+# crashes docker?
+# RUN pip install -v -U git+https://github.com/facebookresearch/xformers.git@main#egg=xformers
+
+# takes forever!
+RUN pip install git+https://github.com/NVIDIA/TransformerEngine.git@stable
+# RUN pip install typing_extensions==4.5.0
+
+RUN pip install -U flash-attn

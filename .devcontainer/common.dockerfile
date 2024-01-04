@@ -1,5 +1,3 @@
-FROM mcr.microsoft.com/devcontainers/cpp:ubuntu-22.04
-
 # makes it easier to diagnose ccache issues
 ENV CCACHE_DEBUG="1"
 
@@ -10,15 +8,9 @@ RUN apt-add-repository ppa:git-core/ppa
 RUN apt-get update && apt-get install -y git
 
 RUN DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
-        build-essential \
-        ca-certificates \
-        ccache \
-        cmake \
-        curl \
-        libjpeg-dev \
-        libpng-dev \
-    strace wabt \
-    linux-tools-common linux-tools-generic \
+    build-essential ca-certificates ccache \
+    cmake curl libjpeg-dev libpng-dev \
+    strace linux-tools-common linux-tools-generic \
     llvm-dev libclang-dev clang ccache apache2-utils git-lfs \
     screen bsdmainutils \
     pip python3-dev \
@@ -45,3 +37,14 @@ RUN rustup target add wasm32-wasi
 
 # run as root please; note that settings in devcontainer.json are also needed...
 USER root
+
+LABEL devcontainer.metadata='[{ \
+"customizations": { "vscode": { "extensions": [ \
+    "ms-python.python", \
+    "ms-python.black-formatter", \
+    "1YiB.rust-bundle", \
+    "dtsvet.vscode-wasm", \
+    "ms-vscode.cpptools", \
+    "GitHub.copilot" \
+] } } \
+}]'
