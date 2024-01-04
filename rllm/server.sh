@@ -47,7 +47,7 @@ shift
 
 ARGS="--verbose --port 8080 --aicirt $BIN/release/aicirt $ARGS"
 
-cargo build --release --package aicirt
+(cd ../aicirt; cargo build --release)
 
 if echo "$*" | grep -q -- --profile-step ; then
     rm -f profile.ncu-rep report1.*

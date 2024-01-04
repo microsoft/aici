@@ -7,7 +7,7 @@ BIN=$(cd ../target; pwd)
 # the PORT is in fact unused
 COMMON_ARGS="--verbose --aicirt $BIN/release/aicirt"
 
-cargo build --release --package aicirt
+(cd ../aicirt; cargo build --release)
 
 RLLM_LOG=debug
 

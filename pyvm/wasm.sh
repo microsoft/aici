@@ -16,7 +16,8 @@ if [ "X$1" = "Xsize" ] ; then
   exit
 fi
 
-cargo build --release --package aicirt
+(cd ../aicirt; cargo build --release)
+
 mkdir -p tmp
 if [ "X$1" = "Xcache" ] ; then
   $BIN/release/aicirt --module $BIN/opt.wasm | tee tmp/runlog.txt
