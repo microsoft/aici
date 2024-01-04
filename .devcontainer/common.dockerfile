@@ -32,7 +32,6 @@ ENV RUSTUP_HOME=/usr/local/rustup \
 
 RUN curl https://sh.rustup.rs -sSf | sh -s -- \
      -y --no-modify-path --profile minimal --default-toolchain $RUST_VERSION
-RUN rustup target add wasm32-unknown-unknown
 RUN rustup target add wasm32-wasi
 RUN rustup component add rustfmt
 

@@ -3,10 +3,9 @@
 set -x
 set -e
 # (cd ../aicirt && cargo build --release)
-cargo build --release --target wasm32-unknown-unknown
+cargo build --release --target wasm32-wasi
 BIN=$(cd ../target; pwd)
-cp $BIN/wasm32-unknown-unknown/release/aici_ast_runner.wasm $BIN/opt.wasm
-# wasm-opt -Oz $BIN/wasm32-unknown-unknown/release/aici_ast_runner.wasm -o $BIN/opt.wasm
+cp $BIN/wasm32-wasi/release/aici_ast_runner.wasm $BIN/opt.wasm
 wasm-strip -k name $BIN/opt.wasm # -o $BIN/strip.wasm
 ls -l $BIN/opt.wasm
 # curl -X POST -T "$BIN/opt.wasm" "http://127.0.0.1:8080/v1/aici_modules"
