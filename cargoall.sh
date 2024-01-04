@@ -3,7 +3,6 @@
 F="
 aici_abi
 aici_ast_runner
-aici_tokenizers
 aicirt
 pyvm
 rllm

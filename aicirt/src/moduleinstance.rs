@@ -12,8 +12,7 @@ use aici_abi::{
     toktree::TokTrie, InitPromptArg, InitPromptResult, MidProcessResult, PostProcessArg,
     PostProcessResult, PreProcessResult, TokenId,
 };
-use aici_tokenizers::Tokenizer;
-use aicirt::api::{AiciMidProcessResultInner, AiciPostProcessResultInner, SequenceResult};
+use aicirt::{api::{AiciMidProcessResultInner, AiciPostProcessResultInner, SequenceResult}, bintokens::Tokenizer};
 use anyhow::{anyhow, bail, ensure, Result};
 use serde::Deserialize;
 use std::{path::PathBuf, sync::Arc, time::Instant};

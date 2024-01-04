@@ -26,7 +26,6 @@ torch-sys = "0.14.0"
 
 aicirt = { path = "../aicirt" }
 aici_abi = { path = "../aici_abi" }
-aici_tokenizers = { path = "../aici_tokenizers" }
 libc = "0.2.150"
 base64 = "0.21.5"
 indicatif = "0.17.7"

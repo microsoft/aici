@@ -18,7 +18,6 @@ serde_json = { version = "1.0.108", features = ["preserve_order"] }
 sha2 = "0.10.7"
 wasmtime = { version = "16.0.0", default-features = false, features = ["cranelift", "parallel-compilation", "pooling-allocator"] }
 aici_abi = { path = "../aici_abi" }
-aici_tokenizers = { path = "../aici_tokenizers" }
 tokenizers = "0.15.0"
 thread-priority = "0.15.1"
 ipc-channel = "0.18.0"

@@ -287,21 +287,10 @@ dependencies = [
 ]
 
 [[package]]
-name = "aici_tokenizers"
-version = "0.1.0"
-dependencies = [
- "aici_abi",
- "anyhow",
- "serde",
- "serde_json",
-]
-
-[[package]]
 name = "aicirt"
 version = "0.1.0"
 dependencies = [
  "aici_abi",
- "aici_tokenizers",
  "anyhow",
  "base64 0.21.5",
  "cap",
@@ -2751,7 +2740,6 @@ version = "0.1.0"
 dependencies = [
  "actix-web",
  "aici_abi",
- "aici_tokenizers",
  "aicirt",
  "anyhow",
  "base64 0.21.5",

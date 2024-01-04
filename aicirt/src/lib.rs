@@ -2,6 +2,7 @@ pub mod api;
 pub mod msgchannel;
 pub mod semaphore;
 pub mod shm;
+pub mod bintokens;
 mod bench;
 
 use anyhow::Result;

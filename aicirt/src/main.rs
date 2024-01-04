@@ -14,8 +14,7 @@ use crate::{
 use aici_abi::{
     bytes::limit_str, toktree::TokTrie, MidProcessArg, PostProcessArg, PreProcessArg, SeqId,
 };
-use aici_tokenizers::find_tokenizer;
-use aicirt::*;
+use aicirt::{*, bintokens::find_tokenizer};
 use anyhow::{anyhow, ensure, Result};
 use base64::{self, Engine as _};
 use clap::Parser;
