@@ -1,5 +1,11 @@
 # syntax = edrevo/dockerfile-plus
 # ^^^ this line enables the INCLUDE+ directive
 
+FROM nvcr.io/nvidia/pytorch:23.09-py3
+
 INCLUDE+ cuda-settings.dockerfile
 INCLUDE+ common.dockerfile
+
+RUN pip install torch==2.1.0 nvidia-cuda-runtime
+# the .so file seems to be missing
+RUN ln -s /usr/local/lib/python3.10/dist-packages/nvidia/cuda_runtime/lib/libcudart.so{.*,}
