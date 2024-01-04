@@ -15,8 +15,8 @@ lrtable = "0.13.3"
 anyhow = "1.0.75"
 vob = "3.0.3"
 rustc-hash = "1.1.0"
-rustpython-vm = { version = "0.3.0", git = "https://github.com/RustPython/RustPython", default-features = false, features = ["compiler"] }
-rustpython-derive = { version = "0.3.0", git = "https://github.com/RustPython/RustPython" }
+rustpython-vm = { git = "https://github.com/RustPython/RustPython", rev = "317f44945420e",  default-features = false, features = ["compiler"] }
+rustpython-derive = { git = "https://github.com/RustPython/RustPython", rev = "317f44945420e" }
 libc = "0.2.150"
 lazy_static = "1.4.0"
 num-traits = "0.2.17"
