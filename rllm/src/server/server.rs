@@ -144,7 +144,7 @@ async fn tunnel_info(
 ) -> Result<web::Json<serde_json::Value>, APIError> {
     let name = req
         .headers()
-        .get("x-user-name")
+        .get("x-user-id")
         .map_or("(no header)", |v| v.to_str().unwrap_or("(invalid header)"));
     log::info!("user: {:?}", name);
     let url = "https://github.com/microsoft/aici/blob/main/proxy.md";
