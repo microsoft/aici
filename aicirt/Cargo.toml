@@ -16,11 +16,11 @@ rayon = "1.7.0"
 serde = { version = "1.0.192", features = ["derive"] }
 serde_json = { version = "1.0.108", features = ["preserve_order"] }
 sha2 = "0.10.7"
-wasmtime = { version = "13.0.0", default-features = false, features = ["cranelift", "parallel-compilation", "pooling-allocator", "vtune"] }
+wasmtime = { version = "16.0.0", default-features = false, features = ["cranelift", "parallel-compilation", "pooling-allocator"] }
 aici_abi = { path = "../aici_abi" }
 aici_tokenizers = { path = "../aici_tokenizers" }
-tokenizers = "0.14.1"
-thread-priority = "0.13.1"
+tokenizers = "0.15.0"
+thread-priority = "0.15.1"
 ipc-channel = "0.18.0"
 flexi_logger = "0.27.3"
 cap = "0.1.2"
