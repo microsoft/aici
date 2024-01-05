@@ -7,7 +7,7 @@ use clap::Parser;
 use openai::responses::APIError;
 use rllm::{
     config::{ModelConfig, SamplingParams},
-    iface::{AiciRtIface, AsyncCmdChannel},
+    iface::{kill_self, AiciRtIface, AsyncCmdChannel},
     seq::RequestOutput,
     util::apply_settings,
     AddRequest, DType, ExpectedGeneration, LoaderArgs, RllmEngine,
@@ -97,7 +97,7 @@ pub struct Args {
 
     /// Exit after processing warmup request
     #[arg(long, default_value_t = false)]
-    wramup_only: bool,
+    warmup_only: bool,
 
     /// Set engine setting; try '--setting help' to list them
     #[arg(long, short, name = "NAME=VALUE")]
@@ -198,6 +198,7 @@ fn inference_loop(
     handle: Arc<Mutex<InferenceWorker>>,
     mut engine: RllmEngine,
     mut recv: Receiver<InferenceReq>,
+    warmup_only: bool,
 ) {
     loop {
         loop {
@@ -248,6 +249,10 @@ fn inference_loop(
                             if outp.is_final {
                                 let text = engine.seq_output_text(&outp.seq_outputs[0]).unwrap();
                                 log::info!("warmup done: {text:?}");
+                                if warmup_only {
+                                    log::info!("warmup done; exiting");
+                                    kill_self();
+                                }
                             }
                         } else {
                             log::warn!("output for unknown request {id}");
@@ -305,6 +310,7 @@ fn spawn_inference_loop(
     // prep for move
     let profile_step = args.profile_step;
     let warmup = args.warmup.clone();
+    let warmup_only = args.warmup_only.clone();
 
     std::thread::spawn(move || {
         let mut engine = RllmEngine::load(loader_args).expect("failed to load model");
@@ -335,7 +341,7 @@ fn spawn_inference_loop(
                     .unwrap();
             }
         }
-        inference_loop(handle, engine, recv)
+        inference_loop(handle, engine, recv, warmup_only)
     });
 
     handle_res

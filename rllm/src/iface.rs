@@ -122,6 +122,12 @@ pub struct Args {
     pub busy_wait_time: u64,
 }
 
+pub fn kill_self() {
+    unsafe {
+        libc::kill(libc::getpid(), libc::SIGTERM);
+    }
+}
+
 impl AiciRtIface {
     pub fn start_aicirt(args: &Args, tok_trie: &TokTrie) -> Result<Self> {
         let busy_wait_time = Duration::from_millis(args.busy_wait_time);
