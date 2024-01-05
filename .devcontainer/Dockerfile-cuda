@@ -12,3 +12,5 @@ RUN ln -s /usr/local/lib/python3.10/dist-packages/nvidia/cuda_runtime/lib/libcud
 
 # perf tool
 RUN apt-get install -y linux-tools-`uname -r`
+
+RUN source /usr/local/nvm/nvm.sh && npm install -g yarn
