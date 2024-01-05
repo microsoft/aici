@@ -95,6 +95,10 @@ pub struct Args {
     #[arg(long, short)]
     warmup: Option<String>,
 
+    /// Exit after processing warmup request
+    #[arg(long, default_value_t = false)]
+    wramup_only: bool,
+
     /// Set engine setting; try '--setting help' to list them
     #[arg(long, short, name = "NAME=VALUE")]
     setting: Vec<String>,

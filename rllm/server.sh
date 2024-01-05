@@ -3,6 +3,8 @@
 set -e
 REL=
 LOOP=
+BUILD=
+ADD_ARGS=
 
 BIN=$(cd ../target; pwd)
 
@@ -15,6 +17,12 @@ fi
 if [ "$1" = loop ] ; then
     REL=--release
     LOOP=1
+    shift
+fi
+
+if [ "$1" = warm ] ; then
+    REL=--release
+    ADD_ARGS="--warmup-only"
     shift
 fi
 
@@ -38,6 +46,10 @@ case "$1" in
   orca )
     ARGS="-m microsoft/Orca-2-13b@refs/pr/22 -t orca -w expected/orca/cats.safetensors"
     ;;
+  build )
+    BUILD=1
+    REL=--release
+    ;;
   * )
     echo "try one of models: phi, phi2, 7b, code, code34" 
     exit 1
@@ -45,7 +57,7 @@ case "$1" in
 esac
 shift
 
-ARGS="--verbose --port 8080 --aicirt $BIN/release/aicirt $ARGS"
+ARGS="--verbose --port 8080 --aicirt $BIN/release/aicirt $ARGS $ADD_ARGS"
 
 (cd ../aicirt; cargo build --release)
 
@@ -63,6 +75,11 @@ RUST_LOG=info \
 fi
 
 cargo build $REL --bin rllm-server
+
+if [ "$BUILD" = "1" ] ; then
+    exit
+fi
+
 if [ "X$REL" = "X" ] ; then
     BIN_SERVER=$BIN/debug/rllm-server
 else
