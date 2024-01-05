@@ -36,13 +36,13 @@ function docker_cmd() {
 
 if [ "$INNER" = 1 ] ; then
     echo "Running inner..."
-    screen "$0" --inner2
     docker_cmd "cd rllm && ./server.sh loop $MODEL"
     exit 0
 fi
 
 if [ "$INNER" = 2 ] ; then
     echo "Running inner2..."
+    screen "$0" --inner1
     docker_cmd "cd tmp/ws-http-tunnel && source /usr/local/nvm/nvm.sh && yarn worker"
     exit 0
 fi
@@ -85,13 +85,10 @@ fi
 echo "Stopping inner servers..."
 docker_cmd "./scripts/kill-server.sh"
 
-echo "Building and warming up..."
-docker_cmd "cd rllm && ./server.sh warm $MODEL"
-echo
-echo "Model good to go."
-echo
+echo "Building ..."
+docker_cmd "cd rllm && ./server.sh build"
 
 screen -wipe >/dev/null || :
 
 echo "Starting screen..."
-screen -dmS rllm-server "$0" --inner1
+screen "$0" --inner2
