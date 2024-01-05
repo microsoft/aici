@@ -304,7 +304,7 @@ impl AsyncCmdChannel {
                 };
                 if resp["is_wasm_error"].as_bool().unwrap_or(false) {
                     Err(anyhow::anyhow!(
-                        WasmError::new(&info).prefix(format!("While executing {op}:").as_str())
+                        WasmError::new(info).prefix(format!("While executing {op}:").as_str())
                     ))
                 } else {
                     Err(anyhow::anyhow!(

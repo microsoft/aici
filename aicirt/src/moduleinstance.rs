@@ -113,7 +113,7 @@ impl ModuleInstance {
         Results: wasmtime::WasmResults,
     {
         if self.store.data().had_error {
-            anyhow::bail!(WasmError::new("Previous WASM Error"));
+            anyhow::bail!(WasmError::new("Previous WASM Error".to_string()));
         }
         let f = self
             .instance
@@ -127,6 +127,13 @@ impl ModuleInstance {
                 ctx.had_error = true;
                 if let Some(e) = e.downcast_ref::<WasmError>() {
                     Err(anyhow!(e.prefix(&ctx.string_log())))
+                } else if let Some(bt) = e.downcast_ref::<wasmtime::WasmBacktrace>() {
+                    Err(WasmError::anyhow(format!(
+                        "{}\n{}\n\n{}",
+                        ctx.string_log(),
+                        bt,
+                        e.root_cause()
+                    )))
                 } else {
                     Err(anyhow!("{:?}\n\n{}", e, ctx.string_log()))
                 }

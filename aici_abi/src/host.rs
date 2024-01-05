@@ -58,22 +58,10 @@ fn read_blob(blob: BlobId, prefetch_size: usize) -> Vec<u8> {
     buffer
 }
 
-pub fn init_panic() {
+fn init_panic() {
     #[cfg(target_arch = "wasm32")]
     std::panic::set_hook(Box::new(|info| {
-        let file = info.location().unwrap().file();
-        let line = info.location().unwrap().line();
-        let col = info.location().unwrap().column();
-
-        let msg = match info.payload().downcast_ref::<&'static str>() {
-            Some(s) => *s,
-            None => match info.payload().downcast_ref::<String>() {
-                Some(s) => &s[..],
-                None => "Box<Any>",
-            },
-        };
-
-        println!("Panicked at '{}', {}:{}:{}", msg, file, line, col);
+        println!("{}", info);
     }))
 }
 

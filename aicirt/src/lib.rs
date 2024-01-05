@@ -57,13 +57,13 @@ pub struct WasmError {
 }
 
 impl WasmError {
-    pub fn new(msg: &str) -> Self {
+    pub fn new(msg: String) -> Self {
         Self {
-            msg: msg.to_string(),
+            msg
         }
     }
 
-    pub fn anyhow(msg: &str) -> anyhow::Error {
+    pub fn anyhow(msg: String) -> anyhow::Error {
         anyhow::anyhow!(Self::new(msg))
     }
 

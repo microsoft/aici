@@ -287,7 +287,7 @@ impl SeqHandle {
         match self.recv_with_timeout(timeout) {
             Ok(SeqResp::Error { msg, is_wasm_error }) => {
                 if is_wasm_error {
-                    Err(WasmError::anyhow(&msg))
+                    Err(WasmError::anyhow(msg))
                 } else {
                     Err(anyhow!("{}", msg))
                 }

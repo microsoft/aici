@@ -496,7 +496,7 @@ pub fn setup_linker(engine: &wasmtime::Engine) -> Result<Arc<wasmtime::Linker<Mo
     )?;
 
     linker.func_wrap("env", "aici_host_stop", || {
-        Err::<(), _>(WasmError::anyhow("*** aici_host_stop"))
+        Err::<(), _>(WasmError::anyhow("*** aici_host_stop".to_string()))
     })?;
 
     let linker = Arc::new(linker);
