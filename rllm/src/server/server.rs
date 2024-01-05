@@ -14,6 +14,7 @@ use rllm::{
 };
 use std::{
     collections::HashMap,
+    fmt::Display,
     path::PathBuf,
     sync::{Arc, Mutex},
     time::Instant,
@@ -28,6 +29,18 @@ pub struct ServerStats {
     pub num_requests: usize,
     pub num_tokens: usize,
     pub start_time: Instant,
+}
+
+impl Display for ServerStats {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "requests: {}; tokens: {}; uptime: {:?}",
+            self.num_requests,
+            self.num_tokens,
+            self.start_time.elapsed()
+        )
+    }
 }
 
 #[derive(Clone)]
@@ -163,12 +176,10 @@ async fn tunnel_info(
     let url = "https://github.com/microsoft/aici/blob/main/proxy.md";
     let model = &data.model_config.meta.id;
     let stats = data.stats.lock().unwrap().clone();
-    let runtime = format!("{:?}", stats.start_time.elapsed());
     let msg = format!(
         r#"
 Model: {model}
-Stats: {stats:?}
-Runtime: {runtime}
+Stats: {stats}
 
 More info at: {url}"#
     );
