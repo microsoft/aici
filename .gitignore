@@ -9,7 +9,6 @@ target
 tokenizer.json
 .hypothesis
 perf.data
-*/src/tokenizers
 tokenizer.bin
 log.txt
 rllm/*.safetensor
