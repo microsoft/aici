@@ -16,11 +16,19 @@ use std::{
     collections::HashMap,
     path::PathBuf,
     sync::{Arc, Mutex},
+    time::Instant,
 };
 use tokio::sync::mpsc::{channel, error::TryRecvError, Receiver, Sender};
 
 mod completion;
 mod openai;
+
+#[derive(Clone, Debug)]
+pub struct ServerStats {
+    pub num_requests: usize,
+    pub num_tokens: usize,
+    pub start_time: Instant,
+}
 
 #[derive(Clone)]
 pub struct OpenAIServerData {
@@ -29,6 +37,7 @@ pub struct OpenAIServerData {
     pub tokenizer: Arc<tokenizers::Tokenizer>,
     pub tok_trie: Arc<TokTrie>,
     pub side_cmd_ch: AsyncCmdChannel,
+    pub stats: Arc<Mutex<ServerStats>>,
 }
 
 #[derive(Parser, Debug)]
@@ -153,9 +162,13 @@ async fn tunnel_info(
     log::info!("user: {:?}", name);
     let url = "https://github.com/microsoft/aici/blob/main/proxy.md";
     let model = &data.model_config.meta.id;
+    let stats = data.stats.lock().unwrap().clone();
+    let runtime = format!("{:?}", stats.start_time.elapsed());
     let msg = format!(
         r#"
 Model: {model}
+Stats: {stats:?}
+Runtime: {runtime}
 
 More info at: {url}"#
     );
@@ -198,6 +211,7 @@ fn inference_loop(
     handle: Arc<Mutex<InferenceWorker>>,
     mut engine: RllmEngine,
     mut recv: Receiver<InferenceReq>,
+    stats: Arc<Mutex<ServerStats>>,
     warmup_only: bool,
 ) {
     loop {
@@ -211,7 +225,10 @@ fn inference_loop(
                 Ok(InferenceReq::AddRequest(req)) => {
                     let id = req.request_id.clone();
                     match engine.queue_request(req) {
-                        Ok(_) => {}
+                        Ok(_) => {
+                            let mut stats = stats.lock().unwrap();
+                            stats.num_requests += 1;
+                        }
                         Err(e) => {
                             let tx = handle.lock().unwrap().running.remove(&id).unwrap();
                             if let Err(e) = tx.try_send(Err(e)) {
@@ -226,6 +243,10 @@ fn inference_loop(
         }
 
         let outputs = engine.step().expect("run_model() failed");
+        {
+            let mut stats = stats.lock().unwrap();
+            stats.num_tokens += 1;
+        }
 
         {
             let running = &mut handle.lock().unwrap().running;
@@ -302,6 +323,7 @@ fn spawn_inference_loop(
     args: &Args,
     loader_args: LoaderArgs,
     iface: AiciRtIface,
+    stats: Arc<Mutex<ServerStats>>,
 ) -> Arc<Mutex<InferenceWorker>> {
     let (handle, recv) = InferenceWorker::new();
     let handle_res = Arc::new(Mutex::new(handle));
@@ -341,7 +363,7 @@ fn spawn_inference_loop(
                     .unwrap();
             }
         }
-        inference_loop(handle, engine, recv, warmup_only)
+        inference_loop(handle, engine, recv, stats, warmup_only)
     });
 
     handle_res
@@ -415,9 +437,14 @@ async fn main() -> () {
         shm_prefix: args.shm_prefix.clone(),
         busy_wait_time: args.busy_wait_time,
     };
+    let stats = Arc::new(Mutex::new(ServerStats {
+        num_requests: 0,
+        num_tokens: 0,
+        start_time: Instant::now(),
+    }));
     let iface = AiciRtIface::start_aicirt(&rt_args, &tok_trie).expect("failed to start aicirt");
     let side_cmd_ch = iface.side_cmd.clone();
-    let handle = spawn_inference_loop(&args, loader_args, iface);
+    let handle = spawn_inference_loop(&args, loader_args, iface, stats.clone());
 
     let app_data = OpenAIServerData {
         worker: handle.clone(),
@@ -425,6 +452,7 @@ async fn main() -> () {
         tokenizer: Arc::new(tokenizer),
         tok_trie: Arc::new(tok_trie),
         side_cmd_ch,
+        stats,
     };
     let app_data = web::Data::new(app_data);
     let host = "127.0.0.1";
