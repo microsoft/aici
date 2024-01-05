@@ -61,6 +61,7 @@ fn read_blob(blob: BlobId, prefetch_size: usize) -> Vec<u8> {
 fn init_panic() {
     #[cfg(target_arch = "wasm32")]
     std::panic::set_hook(Box::new(|info| {
+        // skip 'run with `RUST_BACKTRACE=1`' message (not relevant for remote running)
         println!("{}", info);
     }))
 }
