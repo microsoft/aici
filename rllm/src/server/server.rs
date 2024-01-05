@@ -418,14 +418,14 @@ async fn main() -> () {
         args.local_weights = Some(args.model.clone());
     }
 
-    let loader_args = LoaderArgs {
-        model_id: args.model.clone(),
-        revision: args.revision.clone(),
-        local_weights: args.local_weights.clone(),
-        tokenizer: args.tokenizer.clone(),
-        dtype,
-        ..LoaderArgs::default()
-    };
+    let mut loader_args = LoaderArgs::default();
+    loader_args.model_id = args.model.clone();
+    loader_args.revision = args.revision.clone();
+    loader_args.local_weights = args.local_weights.clone();
+    loader_args.tokenizer = args.tokenizer.clone();
+    if dtype.is_some() {
+        loader_args.dtype = dtype;
+    }
 
     if args.test.len() > 0 {
         run_tests(&args, loader_args);
