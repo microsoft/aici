@@ -4,7 +4,7 @@ use crate::{
     moduleinstance::{ModuleInstance, WasmContext},
     setup_bg_worker_pool,
     shm::Shm,
-    with_timer, InstantiateReq, TimerRef, TimerSet,
+    with_timer, InstantiateReq, TimerRef, TimerSet, WasmError,
 };
 use aici_abi::{
     InitPromptResult, MidProcessArg, PostProcessArg, PreProcessArg, StorageCmd, StorageOp,
@@ -206,6 +206,7 @@ enum SeqResp {
     },
     Error {
         msg: String,
+        is_wasm_error: bool,
     },
 }
 
@@ -284,7 +285,13 @@ impl SeqHandle {
 
     fn seq_recv_with_timeout(&self, timeout: Duration) -> Result<SeqResp> {
         match self.recv_with_timeout(timeout) {
-            Ok(SeqResp::Error { msg }) => Err(anyhow!("SeqError: {}", msg)),
+            Ok(SeqResp::Error { msg, is_wasm_error }) => {
+                if is_wasm_error {
+                    Err(WasmError::anyhow(&msg))
+                } else {
+                    Err(anyhow!("{}", msg))
+                }
+            }
             r => r,
         }
     }
@@ -438,7 +445,8 @@ impl SeqCtx {
             let resp = match self.dispatch_one(cmd) {
                 Ok(v) => v,
                 Err(e) => SeqResp::Error {
-                    msg: format!("{e:?}"),
+                    msg: WasmError::maybe_stacktrace(&e),
+                    is_wasm_error: WasmError::is_self(&e),
                 },
             };
             self.cmd_resp.send(resp).unwrap();

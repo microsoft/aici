@@ -6,6 +6,7 @@ use aici_abi::{
     bytes::{clone_vec_as_bytes, limit_str, vec_from_bytes, TokRxInfo},
     PostProcessArg, PreProcessArg, StorageCmd,
 };
+use aicirt::WasmError;
 use anyhow::{anyhow, Result};
 use std::{rc::Rc, sync::Arc, time::Duration};
 use tokenizers::Tokenizer;
@@ -495,36 +496,9 @@ pub fn setup_linker(engine: &wasmtime::Engine) -> Result<Arc<wasmtime::Linker<Mo
     )?;
 
     linker.func_wrap("env", "aici_host_stop", || {
-        Err::<(), _>(anyhow!(WasmError::new("*** aici_host_stop")))
+        Err::<(), _>(WasmError::anyhow("*** aici_host_stop"))
     })?;
 
     let linker = Arc::new(linker);
     Ok(linker)
 }
-
-#[derive(Debug)]
-pub struct WasmError {
-    pub msg: String,
-}
-
-impl WasmError {
-    pub fn new(msg: &str) -> Self {
-        Self {
-            msg: msg.to_string(),
-        }
-    }
-
-    pub fn prefix(&self, prefix: &str) -> Self {
-        Self {
-            msg: format!("{}\n{}", prefix, self.msg),
-        }
-    }
-}
-
-impl std::fmt::Display for WasmError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "WASM Error:\n{}", self.msg)
-    }
-}
-
-impl std::error::Error for WasmError {}

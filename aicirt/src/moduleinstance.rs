@@ -1,18 +1,20 @@
 use crate::{
     api::ModuleInstId,
     hostimpl::{
-        setup_linker, AiciLimits, GlobalInfo, ModuleData, WasmError, LOGIT_BIAS_ALLOW,
-        LOGIT_BIAS_DISALLOW,
+        setup_linker, AiciLimits, GlobalInfo, ModuleData, LOGIT_BIAS_ALLOW, LOGIT_BIAS_DISALLOW,
     },
     shm::Shm,
     worker::{GroupHandle, RtMidProcessArg, RtPostProcessArg, RtPreProcessArg, RtPreProcessResult},
-    TimerSet,
+    TimerSet, WasmError,
 };
 use aici_abi::{
     toktree::TokTrie, InitPromptArg, InitPromptResult, MidProcessResult, PostProcessArg,
     PostProcessResult, PreProcessResult, TokenId,
 };
-use aicirt::{api::{AiciMidProcessResultInner, AiciPostProcessResultInner, SequenceResult}, bintokens::Tokenizer};
+use aicirt::{
+    api::{AiciMidProcessResultInner, AiciPostProcessResultInner, SequenceResult},
+    bintokens::Tokenizer,
+};
 use anyhow::{anyhow, bail, ensure, Result};
 use serde::Deserialize;
 use std::{path::PathBuf, sync::Arc, time::Instant};
@@ -399,12 +401,7 @@ impl ModuleInstance {
             },
 
             Err(e) => {
-                let error = if let Some(e) = e.downcast_ref::<WasmError>() {
-                    // skip backtrace for WasmError
-                    format!("Error ({lbl}): {e}")
-                } else {
-                    format!("Error ({lbl}): {e:?}")
-                };
+                let error = format!("Error ({lbl}): {}", WasmError::maybe_stacktrace(&e));
                 let logs = logs + "\n" + &error;
                 log::warn!("exec: {error}");
                 SequenceResult {

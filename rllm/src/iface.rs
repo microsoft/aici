@@ -11,6 +11,7 @@ use aicirt::{
     },
     msgchannel::MessageChannel,
     shm::Shm,
+    WasmError,
 };
 use anyhow::Result;
 use futures::future::select_all;
@@ -301,10 +302,16 @@ impl AsyncCmdChannel {
                     Some(text) => text.to_string(),
                     _ => serde_json::to_string(&resp)?,
                 };
-                Err(anyhow::anyhow!(
-                    "Bad response  ({op}): {}",
-                    limit_str(&info, 2000)
-                ))
+                if resp["is_wasm_error"].as_bool().unwrap_or(false) {
+                    Err(anyhow::anyhow!(
+                        WasmError::new(&info).prefix(format!("While executing {op}:").as_str())
+                    ))
+                } else {
+                    Err(anyhow::anyhow!(
+                        "Bad response ({op}): {}",
+                        limit_str(&info, 2000)
+                    ))
+                }
             }
         }
     }

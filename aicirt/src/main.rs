@@ -9,12 +9,12 @@ use crate::{
     msgchannel::MessageChannel,
     shm::Shm,
     worker::{bench_ipc, RtMidProcessArg, WorkerForker},
-    TimerRef, TimerSet
+    TimerRef, TimerSet,
 };
 use aici_abi::{
     bytes::limit_str, toktree::TokTrie, MidProcessArg, PostProcessArg, PreProcessArg, SeqId,
 };
-use aicirt::{*, bintokens::find_tokenizer};
+use aicirt::{bintokens::find_tokenizer, *};
 use anyhow::{anyhow, ensure, Result};
 use base64::{self, Engine as _};
 use clap::Parser;
@@ -763,15 +763,16 @@ trait Exec {
                         })
                     }
                     Err(err) => {
-                        let err = format!("{:?}", err);
-                        log::warn!("dispatch error: {}", err);
+                        let errmsg = WasmError::maybe_stacktrace(&err);
+                        log::warn!("dispatch error: {}", errmsg);
                         log::info!(
                             "for data: {}",
                             String::from_utf8_lossy(&msg[0..std::cmp::min(100, msg.len())])
                         );
                         json!({
                             "type": "error",
-                            "error": err
+                            "error": errmsg,
+                            "is_wasm_error": WasmError::is_self(&err)
                         })
                     }
                 };
