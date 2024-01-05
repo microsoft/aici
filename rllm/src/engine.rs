@@ -491,15 +491,16 @@ impl RllmEngine {
     }
 
     fn profile_model(config: Arc<RllmConfig>, model: &Box<dyn RllmModel>) -> CacheSize {
-        let mut info = BatchInfoBuilder::new(config.clone()).profile_run();
         let device = config.device.clone();
-        reset_mem_stats(device);
-        log_mem_stats("before model profile", device);
-        let _logits = model.forward(&mut info);
-        log_mem_stats("after model profile", device);
-
         let gpu_mem = gpu_memory_size(device);
+
         let gpu_cache_size = if gpu_mem > 0 {
+            let mut info = BatchInfoBuilder::new(config.clone()).profile_run();
+            reset_mem_stats(device);
+            log_mem_stats("before model profile", device);
+            let _logits = model.forward(&mut info);
+            log_mem_stats("after model profile", device);
+
             let frac = config.cache.gpu_memory_utilization;
             let peak = gpu_peak_allocated_bytes(device) as isize;
             let left = (gpu_mem as f64 * frac) as isize - peak;
