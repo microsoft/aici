@@ -1,8 +1,12 @@
 // based on https://github.com/vllm-project/vllm/blob/b9fe4616f98b77b4b9458bce203aa6544cb31ef2/vllm/worker/cache_engine.py
 
+#[cfg(not(feature = "cuda"))]
+use super::cuda_stub::{CudaEvent, CudaStream};
+#[cfg(feature = "cuda")]
 use tch_cuda::{CudaEvent, CudaStream};
 
 use crate::{config::RllmConfig, llm::kernels, Device, Tensor};
+use core::panic;
 use std::{collections::HashMap, sync::Arc};
 
 use super::CacheIface;
@@ -132,6 +136,13 @@ impl CacheEngine {
         (gpu_cache, cpu_cache)
     }
 
+    #[cfg(not(feature = "cuda"))]
+    fn swap(&self, _src: &[KVCache], _dst: &[KVCache], _src_to_dst: &HashMap<usize, usize>) {
+        let _ = self.cache_stream;
+        panic!("swap not implemented for CPU");
+    }
+
+    #[cfg(feature = "cuda")]
     fn swap(&self, src: &[KVCache], dst: &[KVCache], src_to_dst: &HashMap<usize, usize>) {
         let stream = &self.cache_stream;
         for (i, (src_k_cache, src_v_cache)) in src.iter().enumerate() {

@@ -12,7 +12,6 @@ use crate::{
 };
 use std::rc::Rc;
 use tch::nn::{self, Module, Path};
-use tch_cuda::paged_attention_v1;
 
 // note that this doesn't work for phi-2 - it seems particularly numerically unstable
 const CHECK: bool = false;
@@ -272,6 +271,7 @@ fn compute_varlen_attn(
     y
 }
 
+#[cfg(feature = "cuda")]
 fn compute_paged_attn(
     config: &ModelConfig,
     q: &Tensor,
@@ -279,6 +279,8 @@ fn compute_paged_attn(
     batch_info: &mut BatchInfo,
     block_idx: usize,
 ) -> Tensor {
+    use tch_cuda::paged_attention_v1;
+
     if q.size()[0] == 0 {
         return y.shallow_clone();
     }
@@ -329,6 +331,9 @@ pub fn varlen_attn(
         batch_info,
         block_idx,
     );
+
+    #[cfg(not(feature = "cuda"))]
+    assert!(q.i((batch_info.q_multi.., .., ..)).numel() == 0);
 
     #[cfg(feature = "cuda")]
     let y = compute_paged_attn(

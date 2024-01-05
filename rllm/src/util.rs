@@ -2,10 +2,10 @@ use crate::Tensor;
 use anyhow::{bail, Result};
 use std::{collections::HashMap, time::Instant};
 use tch::{kind::Element, Device, IndexOp as _};
-use tch_cuda::cuda_get_device_properties;
 #[cfg(feature = "cuda")]
 use tch_cuda::{
-    cuda_empty_cache, cuda_get_stats_allocated_bytes, cuda_reset_peak_memory_stats,
+    cuda_empty_cache, cuda_get_device_properties, cuda_get_stats_allocated_bytes,
+    cuda_reset_peak_memory_stats,
 };
 
 const SETTINGS: [(&'static str, &'static str, f64); 4] = [
@@ -167,7 +167,9 @@ pub fn log_mem_stats(lbl: &str, device: Device) {
             let stats = cuda_get_stats_allocated_bytes(n);
             log::info!("cuda mem: {lbl} {stats}");
         }
-        _ => {}
+        _ => {
+            let _ = lbl;
+        }
     }
 }
 
