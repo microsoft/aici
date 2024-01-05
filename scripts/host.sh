@@ -77,6 +77,9 @@ if [ $START_CONTAINER = 1 ] ; then
         --privileged --gpus all --shm-size=8g \
         --name $CONT -d \
         rllm-server:latest /bin/sh -c "while : ; do sleep 100 ; done"
+
+    # do some magical nvidia setup; without it the first run of server is super-slow
+    docker exec -it $CONT /opt/nvidia/nvidia_entrypoint.sh nvidia-smi
 fi
 
 echo "Stopping inner servers..."
