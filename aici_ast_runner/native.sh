@@ -8,11 +8,11 @@ set -e
 if test -f tokenizer.bin ; then
   echo "Skipping tokenizer"
 else
-  (cd ../aicirt && cargo run --release -- --tokenizer $T --save-tokenizer ../aici_ast_runner/tokenizer.bin)
+  (cd ../aicirt && cargo run --release -- --tokenizer $T --save-tokenizer ../declvm/tokenizer.bin)
 fi
 cargo build --release
 if [ `uname` = Linux ] ; then
-  perf stat ./target/release/aici_ast_runner
+  perf stat ./target/release/declvm
 else
-  ./target/release/aici_ast_runner
+  ./target/release/declvm
 fi

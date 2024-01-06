@@ -1,5 +1,5 @@
 [package]
-name = "aici_ast_runner"
+name = "declvm"
 version = "0.1.0"
 edition = "2021"
 
@@ -17,5 +17,5 @@ vob = "3.0.3"
 rustc-hash = "1.1.0"
 
 [[bin]]
-name = "aici_ast_runner"
-path = "src/ast_runner.rs"
+name = "declvm"
+path = "src/declvm.rs"

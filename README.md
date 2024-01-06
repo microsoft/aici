@@ -143,7 +143,7 @@ You will see the console output of the program.
 
 ### DeclVM
 
-The [DeclVM](aici_ast_runner/src/ast_runner.rs) exposes similar constraints
+The [DeclVM](declvm/src/declvm.rs) exposes similar constraints
 to PyVM, but the glueing is done via a JSON AST (Abstract Syntax Tree) and thus is
 more restrictive.
 

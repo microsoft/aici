@@ -2,7 +2,7 @@
 
 F="
 aici_abi
-aici_ast_runner
+declvm
 aicirt
 pyvm
 rllm

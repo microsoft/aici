@@ -89,7 +89,7 @@ or .txt (no vm).
     if vm == "pyvm":
         aici_module = upload_wasm("pyvm")
     elif vm == "declvm":
-        aici_module = upload_wasm("aici_ast_runner")
+        aici_module = upload_wasm("declvm")
     elif vm is None:
         if args.prompt == "":
             parser.print_help()

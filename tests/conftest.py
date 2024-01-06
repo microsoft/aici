@@ -11,7 +11,7 @@ ast_module_path = prj_dir + "/tmp/ast_module.txt"
 def upload_wasm():
     import pyaici.rest
 
-    prog = prj_dir + "/aici_ast_runner"
+    prog = prj_dir + "/declvm"
     r = subprocess.run(
         ["sh", "wasm.sh", "build"],
         cwd=prog,
