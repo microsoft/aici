@@ -156,19 +156,6 @@ struct Stepper {
     pre_recv_timer: TimerRef,
 }
 
-fn is_hex_string(s: &str) -> bool {
-    s.chars().all(|c| c.is_digit(16))
-}
-
-fn valid_tagname(s: &str) -> bool {
-    match s.chars().next() {
-        Some(c) if c.is_alphabetic() => s
-            .chars()
-            .all(|c| c == '_' || c == '-' || c == '.' || c.is_digit(10) || c.is_alphabetic()),
-        _ => false,
-    }
-}
-
 impl ModuleRegistry {
     pub fn new(wasm_ctx: WasmContext, shm: Shm) -> Result<Self> {
         let forker = WorkerForker::new(wasm_ctx.clone(), shm);
@@ -337,7 +324,7 @@ impl ModuleRegistry {
     }
 
     fn set_tags(&self, req: SetTagsReq, auth: AuthInfo) -> Result<Value> {
-        ensure!(is_hex_string(&req.module_id), "invalid module_id");
+        ensure!(valid_module_id(&req.module_id), "invalid module_id");
         let _ = self.ensure_module_in_fs(&req.module_id)?;
 
         let user_pref = if auth.is_admin {
@@ -352,11 +339,11 @@ impl ModuleRegistry {
             if tagname.len() > 50 {
                 bail_user!("tag name too long");
             }
-            if !valid_tagname(tagname) {
-                bail_user!("tag name not identifier")
-            }
             if tagname.len() > 20 && is_hex_string(tagname) {
                 bail_user!("tag name looks too hex")
+            }
+            if !valid_tagname(tagname) {
+                bail_user!("tag name not identifier")
             }
             if !tagname.starts_with(&user_pref) {
                 bail_user!("permission denied for tagname")
@@ -387,6 +374,14 @@ impl ModuleRegistry {
         Ok(json!(resp))
     }
 
+    fn read_tag(&self, tagname: &str) -> Result<TagInfo> {
+        let path = self.tag_path(tagname);
+        match fs::read(path) {
+            Ok(bytes) => serde_json::from_slice(&bytes).map_err(anyhow::Error::from),
+            Err(_) => bail_user!("tag {tagname} not found"),
+        }
+    }
+
     fn get_tags(&self, _req: Value) -> Result<Value> {
         let tagspath = self.cache_path.join("tags");
         fs::create_dir_all(&tagspath)?;
@@ -403,7 +398,11 @@ impl ModuleRegistry {
         Ok(json!(resp))
     }
 
-    fn instantiate(&mut self, req: InstantiateReq) -> Result<Value> {
+    fn instantiate(&mut self, mut req: InstantiateReq) -> Result<Value> {
+        if valid_tagname(&req.module_id) {
+            let taginfo = self.read_tag(&req.module_id)?;
+            req.module_id = taginfo.module_id;
+        }
         ensure!(is_hex_string(&req.module_id), "invalid module_id");
         let module_path = self.ensure_module_in_fs(&req.module_id)?;
         log::debug!("instance {} -> {}", req.module_id, req.req_id);

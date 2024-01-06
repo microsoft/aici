@@ -153,7 +153,7 @@ pub struct InstantiateReq {
     pub req_id: String,
     // [TokenId] or str
     pub prompt: Value,
-    pub module_id: String,
+    pub module_id: String, // or tag name
     #[serde(default)]
     pub module_arg: Value,
 }

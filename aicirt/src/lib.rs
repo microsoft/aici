@@ -106,3 +106,27 @@ macro_rules! bail_user {
         return Err($crate::UserError::anyhow(format!($($tt)*)))
     };
 }
+
+pub fn is_hex_string(s: &str) -> bool {
+    s.chars().all(|c| c.is_digit(16))
+}
+
+pub fn valid_module_or_tag(s: &str) -> bool {
+    valid_module_id(s) || valid_tagname(s)
+}
+
+pub fn valid_module_id(s: &str) -> bool {
+    s.len() == 64 && is_hex_string(s)
+}
+
+pub fn valid_tagname(s: &str) -> bool {
+    match s.chars().next() {
+        Some(c) if c.is_alphabetic() => {
+            !valid_module_id(s)
+                && s.chars().all(|c| {
+                    c == '_' || c == '-' || c == '.' || c.is_digit(10) || c.is_alphabetic()
+                })
+        }
+        _ => false,
+    }
+}

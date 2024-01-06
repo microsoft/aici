@@ -63,7 +63,7 @@ or .txt (no vm).
         "--vm",
         "-v",
         type=str,
-        help="path to .wasm file to upload or 'pyvm' or 'declvm'",
+        help="path to .wasm file to upload, tag name, or one of special names 'pyvm' or 'declvm'",
     )
     parser.add_argument(
         "--tag",
@@ -117,8 +117,10 @@ or .txt (no vm).
             print("\nError: --prompt empty and no --vm; bailing")
             sys.exit(1)
         pass
-    else:
+    elif vm.endswith(".wasm"):
         aici_module = pyaici.rest.upload_module(vm)
+    else:
+        aici_module = vm
 
     if args.tag:
         if not aici_module:
