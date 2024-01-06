@@ -101,7 +101,7 @@ def infer_args(cmd: argparse.ArgumentParser):
     )
 
 
-def main():
+def main_inner():
     parser = argparse.ArgumentParser(
         description="Upload an AICI VM and completion request to rllm or vllm",
         prog="pyaici",
@@ -267,6 +267,12 @@ def main():
             max_tokens=2000,
         )
 
+
+def main():
+    try:
+        main_inner()
+    except RuntimeError as e:
+        cli_error(str(e))
 
 if __name__ == "__main__":
     main()

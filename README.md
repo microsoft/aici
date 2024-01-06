@@ -45,13 +45,13 @@ export AICI_API_BASE="https://aici.azurewebsites.net/v1/#key=wht_..."
 Now, use query the model with or without AICI VM:
 
 ```bash
-./scripts/upload.sh --prompt "The answer to the ultimate question of life"
-./scripts/upload.sh pyvm/samples/test.py
-./scripts/upload.sh declvm/arg2.json
-./scripts/upload.sh --vm target/wasm32-wasi/release/uppercase.wasm
+./scripts/aici.sh infer --prompt "The answer to the ultimate question of life"
+./scripts/aici.sh run pyvm/samples/test.py
+./scripts/aici.sh run declvm/arg2.json
+./scripts/aici.sh run --build aici_abi::uppercase
 ```
 
-Run `./scripts/upload.sh -h` to see usage info.
+Run `./scripts/aici.sh -h` to see usage info.
 
 If the server is running with Orca-2 13B model,
 you can also run tests with `pytest` for the DeclVM, or with `./scripts/test-pyvm.sh` for PyVM.
