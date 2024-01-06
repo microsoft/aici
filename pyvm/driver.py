@@ -8,11 +8,11 @@ import pyaici.rest
 import pyaici.util
 
 
-def upload_wasm(prog="."):
-    r = subprocess.run(["sh", "wasm.sh", "build"], cwd=prog)
+def upload_wasm():
+    r = subprocess.run(["cargo", "build", "--release"], cwd=".")
     if r.returncode != 0:
         sys.exit(1)
-    file_path = "../target/opt.wasm"
+    file_path = "../target/wasm32-wasi/release/aici_pyvm.wasm"
     return pyaici.rest.upload_module(file_path)
 
 
