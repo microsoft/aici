@@ -52,7 +52,7 @@ impl Debug for LabelName {
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq, Hash)]
 pub struct TagName(String);
 
-pub const SEP: &str = "\u{FF0C}"; // this is '，' - Fullwidth Comma
+pub const SEP: &str = "\u{FF0C}"; // this is '，' - full-width Comma
 pub const SEP_REPL: &str = ", ";
 
 #[derive(Serialize, Deserialize, Clone)]
@@ -84,7 +84,7 @@ pub enum Expr {
         rx: String,
         /// The template for the result. Defaults to "$1".
         template: Option<String>,
-        /// When set, find all occurances of `rx` and add SEP between them.
+        /// When set, find all occurrences of `rx` and add SEP between them.
         /// Also, if SEP occurs in any element, replace it with SEP_REPL.
         #[serde(default)]
         list: bool,
@@ -1063,18 +1063,18 @@ impl Runner {
             if let Some(label) = &state.following {
                 if let StepSpecific::Options { tokens } = &state.specific {
                     assert!(tokens.len() == 1);
-                    let lidx = self.find_label(label);
-                    if lidx.is_none() {
+                    let lbl_idx = self.find_label(label);
+                    if lbl_idx.is_none() {
                         panic!("label not found: {label:?}");
                     }
-                    // lidx is index of the first token with the label
+                    // lbl_idx is index of the first token with the label
                     // we want to pop that token and everything that follows
-                    let backtrack = (self.ctx.tokens.len() - lidx.unwrap()) as u32;
+                    let backtrack = (self.ctx.tokens.len() - lbl_idx.unwrap()) as u32;
 
                     let t0 = self.ctx.tokens.iter().map(|t| t.id).collect::<Vec<_>>();
                     println!(
                         "slice: {t0:?} -> {:?} + {:?}",
-                        &t0[..lidx.unwrap()],
+                        &t0[..lbl_idx.unwrap()],
                         tokens[0]
                     );
 

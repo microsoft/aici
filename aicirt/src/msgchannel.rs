@@ -24,7 +24,7 @@ impl MessageChannel {
     }
 
     fn new_ex(name: &str, size: usize, unlink: bool) -> Result<Self> {
-        log::debug!("msgch: {} size={}k", name, size / 1024);
+        log::debug!("msg ch: {} size={}k", name, size / 1024);
 
         let shm = Shm::new(&Self::shm_name(name), size, unlink)?;
         let write_sem = Semaphore::new(&format!("{0}-wr", name), 1, unlink)?;

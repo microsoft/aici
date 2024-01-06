@@ -197,7 +197,7 @@ impl AiciRtIface {
             .exec("tokens", json!({}))
             .map_err(|e| anyhow::anyhow!("check for pending aicirt processes! {e}"))?;
 
-        // well, this is somewhat unlikely as we're passing the same toknizer name down...
+        // well, this is somewhat unlikely as we're passing the same tokenizer name down...
         if tokens.vocab_size != tok_trie.info().vocab_size {
             return Err(anyhow::anyhow!(
                 "Vocab size mismatch: {:?} != {:?}",

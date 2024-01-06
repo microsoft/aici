@@ -37,7 +37,7 @@ pub fn box_from_bytes<T>(bytes: &[u8]) -> Box<T> {
 pub fn vec_from_bytes<T>(bytes: &[u8]) -> Vec<T> {
     if bytes.len() % size_of::<T>() != 0 {
         panic!(
-            "vecT: got {} bytes, needed mult of {}",
+            "vecT: got {} bytes, needed multiple of {}",
             bytes.len(),
             size_of::<T>()
         );

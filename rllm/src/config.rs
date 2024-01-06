@@ -94,8 +94,8 @@ pub struct ModelConfig {
     pub vocab_size: usize,
     pub tok_vocab_size: usize,
 
-    pub layer_norm_eps: f64, // defl. 1e-5
-    pub rope_theta: f32,     // defl. 10000
+    pub layer_norm_eps: f64, // default 1e-5
+    pub rope_theta: f32,     // default 10000
 
     pub device: Device,
     pub dtype: DType,

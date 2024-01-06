@@ -33,7 +33,7 @@ impl Clone for RotaryEmbedding {
 
 impl RotaryEmbedding {
     pub fn new(config: &Rc<ModelConfig>) -> Self {
-        // precompute freqs_cis
+        // pre-compute freqs_cis
         let rotary_dim = config.rotary_dim;
         let theta: Vec<_> = (0..rotary_dim)
             .step_by(2)

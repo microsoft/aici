@@ -346,7 +346,7 @@ impl ModuleRegistry {
                 bail_user!("tag name not identifier")
             }
             if !tagname.starts_with(&user_pref) {
-                bail_user!("permission denied for tagname")
+                bail_user!("permission denied for tag name")
             }
         }
 
@@ -374,11 +374,11 @@ impl ModuleRegistry {
         Ok(json!(resp))
     }
 
-    fn read_tag(&self, tagname: &str) -> Result<TagInfo> {
-        let path = self.tag_path(tagname);
+    fn read_tag(&self, tag_name: &str) -> Result<TagInfo> {
+        let path = self.tag_path(tag_name);
         match fs::read(path) {
             Ok(bytes) => serde_json::from_slice(&bytes).map_err(anyhow::Error::from),
-            Err(_) => bail_user!("tag {tagname} not found"),
+            Err(_) => bail_user!("tag {tag_name} not found"),
         }
     }
 

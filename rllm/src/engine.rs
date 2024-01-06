@@ -273,7 +273,6 @@ impl RllmEngine {
     pub fn load_tokenizer(args: &LoaderArgs) -> Result<(Tokenizer, TokTrie)> {
         let byte_tokenizer = aicirt::bintokens::find_tokenizer(&args.tokenizer)?;
         let hf_bytes = byte_tokenizer.get_hf_bytes();
-        // std::fs::write("toks.json", &hf_bytes).unwrap();
         let tokenizer = Tokenizer::from_bytes(&hf_bytes).expect("can't load hf tokenizer");
         let tokens = byte_tokenizer.token_bytes();
         let trie = TokTrie::from(&byte_tokenizer.tokrx_info(), &tokens);
@@ -731,11 +730,6 @@ impl RllmEngine {
                 if *l_exp < min_logit {
                     min_logit = *l_exp;
                 }
-
-                // log::debug!(
-                //     "exp: {t} {tstr} {l_exp:.4} {l_act:.4} {d:.4}",
-                //     tstr = self.tok_trie.token_dbg(*t),
-                // );
 
                 // zero it out for the "unmentioned" test below
                 logits[*t as usize] = 0.0;

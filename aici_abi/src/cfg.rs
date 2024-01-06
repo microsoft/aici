@@ -110,8 +110,10 @@ impl CfgParser {
         let (sgraph, stable) = match from_yacc(&grm, Minimiser::Pager) {
             Ok(r) => r,
             Err(e) => {
-                // not sure this works:
-                // anyhow::bail!("state table error:\n{e} on {:?}", grm.action(e.pidx));
+                if false {
+                    // not sure this works:
+                    anyhow::bail!("state table error:\n{e} on {:?}", grm.action(e.pidx));
+                }
                 anyhow::bail!("state table error:\n{e}");
             }
         };
