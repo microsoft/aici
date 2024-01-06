@@ -15,7 +15,7 @@ use aici_abi::{
     bytes::limit_str, toktree::TokTrie, MidProcessArg, PostProcessArg, PreProcessArg, SeqId,
 };
 use aicirt::{bintokens::find_tokenizer, *};
-use anyhow::{anyhow, ensure, Result};
+use anyhow::{anyhow, bail, ensure, Result};
 use base64::{self, Engine as _};
 use clap::Parser;
 use hex;
@@ -160,6 +160,15 @@ fn is_hex_string(s: &str) -> bool {
     s.chars().all(|c| c.is_digit(16))
 }
 
+fn valid_tagname(s: &str) -> bool {
+    match s.chars().next() {
+        Some(c) if c.is_alphabetic() => s
+            .chars()
+            .all(|c| c == '_' || c == '-' || c == '.' || c.is_digit(10) || c.is_alphabetic()),
+        _ => false,
+    }
+}
+
 impl ModuleRegistry {
     pub fn new(wasm_ctx: WasmContext, shm: Shm) -> Result<Self> {
         let forker = WorkerForker::new(wasm_ctx.clone(), shm);
@@ -188,12 +197,21 @@ impl ModuleRegistry {
         }
     }
 
+    fn meta_path(&self, module_id: &str) -> PathBuf {
+        self.cache_path.join(format!("{}.json", module_id))
+    }
+
     fn wasm_path(&self, module_id: &str) -> PathBuf {
         self.cache_path.join(format!("{}.wasm", module_id))
     }
 
     fn elf_path(&self, module_id: &str) -> PathBuf {
         self.cache_path.join(format!("{}.elf", module_id))
+    }
+
+    fn tag_path(&self, tagname: &str) -> PathBuf {
+        assert!(valid_tagname(tagname));
+        self.cache_path.join(format!("tags/{}.json", tagname))
     }
 
     fn compile_module(&self, module_id: &str, force: bool) -> Result<()> {
@@ -287,8 +305,7 @@ impl ModuleRegistry {
     ) -> Result<()> {
         fs::create_dir_all(&self.cache_path)?;
         Ok(if !self.wasm_path(module_id).exists() {
-            let jsonpath = self.cache_path.join(format!("{}.json", module_id));
-            fs::write(jsonpath, meta_bytes)?;
+            fs::write(self.meta_path(module_id), meta_bytes)?;
             fs::write(self.wasm_path(module_id), wasm_bytes)?;
             self.compile_module(module_id, true)?
         } else {
@@ -300,6 +317,58 @@ impl ModuleRegistry {
         let wasm_bytes = base64::engine::general_purpose::STANDARD.decode(req.binary)?;
         let meta_bytes = serde_json::to_vec(&req.meta)?;
         self.create_module(wasm_bytes, meta_bytes)
+    }
+
+    fn set_tags(&self, req: SetTagsReq) -> Result<Value> {
+        ensure!(is_hex_string(&req.module_id), "invalid module_id");
+        let _ = self.ensure_module_in_fs(&req.module_id)?;
+
+        for tagname in &req.tags {
+            if tagname.len() > 50 {
+                bail!("tag name too long");
+            }
+            if !valid_tagname(tagname) {
+                bail!("tag name not identifier")
+            }
+            if tagname.len() > 20 && is_hex_string(tagname) {
+                bail!("tag name looks too hex")
+            }
+        }
+
+        fs::create_dir_all(&self.cache_path.join("tags"))?;
+        let mut resp = GetTagsResp { tags: vec![] };
+        for tagname in &req.tags {
+            log::info!("tag {} -> {}", tagname, req.module_id);
+            let info = TagInfo {
+                tag: tagname.clone(),
+                module_id: req.module_id.clone(),
+                updated_at: get_unix_time(),
+                updated_by: "???".to_string(),
+                wasm_size: self.wasm_path(&req.module_id).metadata()?.len(),
+                meta_size: self.meta_path(&req.module_id).metadata()?.len(),
+                compiled_size: self.elf_path(&req.module_id).metadata()?.len(),
+            };
+            fs::write(self.tag_path(tagname), &serde_json::to_vec(&info)?)?;
+            resp.tags.push(info)
+        }
+
+        Ok(json!(resp))
+    }
+
+    fn get_tags(&self, _req: Value) -> Result<Value> {
+        let tagspath = self.cache_path.join("tags");
+        fs::create_dir_all(&tagspath)?;
+        let mut resp = GetTagsResp { tags: vec![] };
+        log::info!("read {tagspath:?}");
+        for file in fs::read_dir(&tagspath)? {
+            let file = file?.path();
+            log::info!("file: {file:?}");
+            if file.to_string_lossy().ends_with(".json") {
+                let bytes = fs::read(file)?;
+                resp.tags.push(serde_json::from_slice(&bytes)?);
+            }
+        }
+        Ok(json!(resp))
     }
 
     fn instantiate(&mut self, req: InstantiateReq) -> Result<Value> {
@@ -731,6 +800,8 @@ impl Exec for ModuleRegistry {
     #[inline(never)]
     fn exec(&mut self, json: Value) -> Result<Value> {
         match json["op"].as_str() {
+            Some("set_tags") => self.set_tags(serde_json::from_value(json)?),
+            Some("get_tags") => self.get_tags(serde_json::from_value(json)?),
             Some("mk_module") => self.mk_module(serde_json::from_value(json)?),
             Some("instantiate") => self.instantiate(serde_json::from_value(json)?),
             _ => return Err(anyhow!("bad op")),

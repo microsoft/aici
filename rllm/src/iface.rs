@@ -6,8 +6,8 @@ use aici_abi::{
 use aicirt::{
     api::{
         AiciMidProcessReq, AiciMidProcessResp, AiciPostProcessReq, AiciPostProcessResp,
-        AiciPreProcessReq, AiciPreProcessResp, InstantiateReq, MkModuleReq, MkModuleResp,
-        TokensResp,
+        AiciPreProcessReq, AiciPreProcessResp, GetTagsResp, InstantiateReq, MkModuleReq,
+        MkModuleResp, SetTagsReq, TokensResp,
     },
     msgchannel::MessageChannel,
     shm::Shm,
@@ -259,6 +259,14 @@ impl AsyncCmdChannel {
             pending_reqs,
             cmd_ch: Arc::new(Mutex::new(cmd.cmd_ch)),
         })
+    }
+
+    pub async fn set_tags(&self, req: SetTagsReq) -> Result<GetTagsResp> {
+        self.exec("set_tags", req).await
+    }
+
+    pub async fn get_tags(&self) -> Result<GetTagsResp> {
+        self.exec("get_tags", json!({})).await
     }
 
     pub async fn mk_module(&self, req: MkModuleReq) -> Result<MkModuleResp> {

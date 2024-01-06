@@ -3,7 +3,7 @@ import ujson
 import os
 import urllib.parse
 import sys
-
+import time
 from typing import Optional
 
 base_url = os.environ.get("AICI_API_BASE", "http://127.0.0.1:8080/v1/")
@@ -70,6 +70,40 @@ def upload_module(file_path: str) -> str:
             raise response_error("module upload", resp)
 
 
+def pp_tag(d: dict) -> str:
+    t = time.strftime("%F %T %z", time.localtime(d["updated_at"]))
+    M = 1024 * 1024
+    return f'{d["tag"]} -> {d["module_id"][0:8]}...; {d["wasm_size"]/M:.3}MiB/{d["compiled_size"]/M:.3}MiB ({t} by {d["updated_by"]})'
+
+
+def list_tags():
+    resp = requests.get(
+        _mk_url("aici_modules/tags"),
+        headers=_headers(),
+    )
+    if resp.status_code == 200:
+        dd = resp.json()
+        return dd["tags"]
+    else:
+        raise response_error("module tag", resp)
+
+
+def tag_module(module_id: str, tags: list[str]):
+    resp = requests.post(
+        _mk_url("aici_modules/tags"),
+        headers=_headers(),
+        json={"module_id": module_id, "tags": tags},
+    )
+    if resp.status_code == 200:
+        dd = resp.json()
+        if log_level > 0:
+            for t in dd["tags"]:
+                print("TAG: " + pp_tag(t))
+        return dd["tags"]
+    else:
+        raise response_error("module tag", resp)
+
+
 def completion(
     prompt,
     aici_module=None,
@@ -109,7 +143,7 @@ def completion(
         "logs": logs,
         "raw_storage": storage,
         "error": None,
-        "usage": {}
+        "usage": {},
     }
 
     for line in resp.iter_lines():

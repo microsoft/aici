@@ -62,6 +62,14 @@ impl APIError {
             }
         }
     }
+
+    pub fn just_msg(value: anyhow::Error) -> Self {
+        log::info!("Error: {value}");
+        Self {
+            code: actix_web::http::StatusCode::BAD_REQUEST,
+            msg: format!("{value}"),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

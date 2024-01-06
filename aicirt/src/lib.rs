@@ -93,3 +93,10 @@ impl std::fmt::Display for WasmError {
 }
 
 impl std::error::Error for WasmError {}
+
+pub fn get_unix_time() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_secs()
+}

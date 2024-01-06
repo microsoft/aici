@@ -126,6 +126,28 @@ pub struct MkModuleResp {
     pub time: u64,
 }
 
+#[derive(Serialize, Deserialize)]
+pub struct SetTagsReq {
+    pub module_id: String,
+    pub tags: Vec<String>,
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct TagInfo {
+    pub tag: String,
+    pub module_id: String,
+    pub updated_at: u64, // unix time
+    pub updated_by: String,
+    pub wasm_size: u64,
+    pub meta_size: u64,
+    pub compiled_size: u64,
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct GetTagsResp {
+    pub tags: Vec<TagInfo>,
+}
+
 #[derive(Serialize, Deserialize, Clone)]
 pub struct InstantiateReq {
     pub req_id: String,

@@ -1,6 +1,6 @@
 use actix_web::{middleware::Logger, web, App, HttpServer};
 use aici_abi::toktree::TokTrie;
-use aicirt::api::{MkModuleReq, MkModuleResp};
+use aicirt::api::{GetTagsResp, MkModuleReq, MkModuleResp, SetTagsReq};
 use anyhow::Result;
 use base64::Engine;
 use clap::Parser;
@@ -130,12 +130,32 @@ pub struct Args {
     daemon: bool,
 }
 
+#[actix_web::get("/v1/aici_modules/tags")]
+async fn get_aici_module_tags(
+    data: web::Data<OpenAIServerData>,
+) -> Result<web::Json<GetTagsResp>, APIError> {
+    let r = data.side_cmd_ch.get_tags().await.map_err(APIError::just_msg)?;
+    Ok(web::Json(r))
+}
+
+#[actix_web::post("/v1/aici_modules/tags")]
+async fn tag_aici_module(
+    data: web::Data<OpenAIServerData>,
+    body: web::Json<SetTagsReq>,
+) -> Result<web::Json<GetTagsResp>, APIError> {
+    let r = data
+        .side_cmd_ch
+        .set_tags(body.0)
+        .await
+        .map_err(APIError::just_msg)?;
+    Ok(web::Json(r))
+}
+
 #[actix_web::post("/v1/aici_modules")]
 async fn upload_aici_module(
     data: web::Data<OpenAIServerData>,
     body: web::Bytes,
 ) -> Result<web::Json<MkModuleResp>, APIError> {
-    body.len();
     let binary = base64::engine::general_purpose::STANDARD.encode(body);
     let r = data
         .side_cmd_ch
@@ -144,7 +164,7 @@ async fn upload_aici_module(
             meta: serde_json::Value::Null,
         })
         .await
-        .map_err(APIError::from)?;
+        .map_err(APIError::just_msg)?;
     Ok(web::Json(r))
 }
 
@@ -475,6 +495,8 @@ async fn main() -> () {
             .service(models)
             .service(tunnel_info)
             .service(completion::completions)
+            .service(get_aici_module_tags)
+            .service(tag_aici_module)
             .configure(|cfg| {
                 cfg.app_data(web::PayloadConfig::new(128 * 1024 * 1024))
                     .service(upload_aici_module);
@@ -487,11 +509,4 @@ async fn main() -> () {
     .run()
     .await
     .expect("failed to start server (run)");
-}
-
-pub(crate) fn get_unix_time() -> u64 {
-    std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap()
-        .as_secs()
 }

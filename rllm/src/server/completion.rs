@@ -1,5 +1,4 @@
 use crate::{
-    get_unix_time,
     openai::{
         requests::CompletionRequest,
         responses::{
@@ -10,7 +9,7 @@ use crate::{
     InferenceResult, OpenAIServerData,
 };
 use actix_web::{post, web, web::Bytes, Either, HttpResponse};
-use aicirt::api::InstantiateReq;
+use aicirt::{api::InstantiateReq, get_unix_time};
 use rllm::{config::SamplingParams, seq::Token, AddRequest};
 use serde_json::{json, Value};
 use tokio::sync::mpsc::Receiver;
