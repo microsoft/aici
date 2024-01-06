@@ -1,25 +1,96 @@
 {
-  "prompt": "Hello world!\n",
-  "sampling_params": {
-    "temperature": 0,
-    "n": 1,
-    "max_tokens": 120
-  },
   "steps": [
     {
-      "Gen": {
-        "rx": ", ",
-        "max_tokens": 10
+      "Fixed": {
+        "text": {
+          "String": {
+            "str": "The word 'hello'"
+          }
+        }
       }
     },
     {
       "Fixed": {
-        "text": "3 + 8 has"
+        "text": {
+          "String": {
+            "str": " in French is translated as"
+          }
+        },
+        "label": "lang"
       }
     },
     {
       "Gen": {
-        "max_tokens": 10
+        "rx": " '[^']*'",
+        "inner": [],
+        "max_tokens": 15,
+        "stmts": [
+          {
+            "Set": {
+              "var": "french",
+              "expr": {
+                "Current": {}
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "Fixed": {
+        "text": {
+          "String": {
+            "str": " or"
+          }
+        },
+        "following": "lang"
+      }
+    },
+    {
+      "Gen": {
+        "rx": " '[^']*'",
+        "inner": [],
+        "max_tokens": 15,
+        "stmts": [
+          {
+            "Set": {
+              "var": "blah",
+              "expr": {
+                "Current": {}
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "Fixed": {
+        "text": {
+          "Concat": {
+            "parts": [
+              {
+                "String": {
+                  "str": "\nResults: "
+                }
+              },
+              {
+                "Var": {
+                  "var": "french"
+                }
+              },
+              {
+                "String": {
+                  "str": " "
+                }
+              },
+              {
+                "Var": {
+                  "var": "blah"
+                }
+              }
+            ]
+          }
+        }
       }
     }
   ]

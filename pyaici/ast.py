@@ -267,3 +267,16 @@ def json_to_steps(json_value):
                 continue
         new_steps.append(step)
     return new_steps
+
+
+def clear_none(obj):
+    if isinstance(obj, dict):
+        kk = list(obj.keys())
+        for key in kk:
+            if obj[key] is None:
+                del obj[key]
+            else:
+                clear_none(obj[key])
+    elif isinstance(obj, list):
+        for o in obj:
+            clear_none(o)

@@ -47,6 +47,7 @@ Now, use query the model with or without AICI VM:
 ```bash
 ./scripts/upload.sh --prompt "The answer to the ultimate question of life"
 ./scripts/upload.sh pyvm/samples/test.py
+./scripts/upload.sh declvm/arg2.json
 ./scripts/upload.sh --vm target/wasm32-wasi/release/uppercase.wasm
 ```
 
