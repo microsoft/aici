@@ -49,6 +49,16 @@ def response_error(kind: str, resp: requests.Response):
     )
 
 
+def req(tp: str, url: str, **kwargs):
+    url = _mk_url(url)
+    headers = _headers()
+    if log_level >= 4:
+        print(f"{tp.upper()} {url} headers={headers}")
+        if "json" in kwargs:
+            print(ujson.dumps(kwargs["json"]))
+    return requests.request(tp, url, headers=headers, **kwargs)
+
+
 def upload_module(file_path: str) -> str:
     """
     Upload a WASM module to the server.
@@ -57,7 +67,7 @@ def upload_module(file_path: str) -> str:
     if log_level > 0:
         print("upload module... ", end="")
     with open(file_path, "rb") as f:
-        resp = requests.post(_mk_url("aici_modules"), headers=_headers(), data=f)
+        resp = req("post", "aici_modules", data=f)
         if resp.status_code == 200:
             dd = resp.json()
             mod_id = dd["module_id"]
@@ -77,10 +87,7 @@ def pp_tag(d: dict) -> str:
 
 
 def list_tags():
-    resp = requests.get(
-        _mk_url("aici_modules/tags"),
-        headers=_headers(),
-    )
+    resp = req("get", "aici_modules/tags")
     if resp.status_code == 200:
         dd = resp.json()
         return dd["tags"]
@@ -89,11 +96,7 @@ def list_tags():
 
 
 def tag_module(module_id: str, tags: list[str]):
-    resp = requests.post(
-        _mk_url("aici_modules/tags"),
-        headers=_headers(),
-        json={"module_id": module_id, "tags": tags},
-    )
+    resp = req("post", "aici_modules/tags", json={"module_id": module_id, "tags": tags})
     if resp.status_code == 200:
         dd = resp.json()
         if log_level > 0:
@@ -124,12 +127,7 @@ def completion(
         "aici_arg": aici_arg,
         "ignore_eos": ignore_eos,
     }
-    resp = requests.post(
-        _mk_url("completions"),
-        headers=_headers(),
-        json=json,
-        stream=True,
-    )
+    resp = req("post", "completions", json=json, stream=True)
     if resp.status_code != 200:
         raise response_error("completions", resp)
     texts = [""] * n

@@ -2,4 +2,4 @@
 
 HERE=`dirname $0`
 PYTHONPATH=$HERE/.. \
-python $HERE/upload.py "$@"
+python -m pyaici.cli "$@"
