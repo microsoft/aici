@@ -5,4 +5,4 @@ if [ -z "$PROMPT" ]; then
 fi
 set -x
 (cd aici_abi &&  cargo build --release) && \
-    ./scripts/upload.sh target/wasm32-wasi/release/yesno.wasm "" "$PROMPT"
+    ./scripts/upload.sh --vm target/wasm32-wasi/release/yesno.wasm --prompt "$PROMPT"

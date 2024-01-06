@@ -42,19 +42,18 @@ If running local server, leave `AICI_API_BASE` unset.
 export AICI_API_BASE="https://aici.azurewebsites.net/v1/#key=wht_..."
 ```
 
-Now, use `./scripts/upload.sh` to upload a prompt and a WASM module:
+Now, use query the model with or without AICI VM:
 
-* you can just pass it prompt: 
-  `./scripts/upload.sh "The answer to the ultimate question of life, the universe and everything is"`
-* similarly, you can pass it `.txt` file with prompt: `./scripts/upload.sh tests/test-prompt.txt`
-* if you pass it a `.py` file, it will compile `PyVM` WASM module, upload it, and then use it to run
-  the Python code: `./scripts/upload.sh pyvm/samples/test.py`
-* you can also pass it a `.json` file, which will compile DeclarativeVM and use it to interpret the AST
-* finally, you can pass it a `.wasm` file, which will upload it and run it:
-  `./scripts/upload.sh target/wasm32-wasi/release/uppercase.wasm`
+```bash
+./scripts/upload.sh --prompt "The answer to the ultimate question of life"
+./scripts/upload.sh pyvm/samples/test.py
+./scripts/upload.sh --vm target/wasm32-wasi/release/uppercase.wasm
+```
 
-You can now also run tests with `pytest` (while the server is running with codellama 13B model) 
-for the AST runner, or with `./scripts/test-pyvm.sh` for PyVM.
+Run `./scripts/upload.sh -h` to see usage info.
+
+If the server is running with Orca-2 13B model,
+you can also run tests with `pytest` for the DeclVM, or with `./scripts/test-pyvm.sh` for PyVM.
 
 
 ### Running local server
@@ -77,7 +76,7 @@ $ ./scripts/sample-yesno.sh "Can orcas sing?"
 + cd aici_abi
 + cargo build --release
     Finished release [optimized + debuginfo] target(s) in 0.09s
-+ ./scripts/upload.sh target/wasm32-wasi/release/yesno.wasm '' 'Can orcas sing?'
++ ./scripts/upload.sh --vm target/wasm32-wasi/release/yesno.wasm --prompt 'Can orcas sing?'
 upload module... 192kB -> 668kB id:0583a3ab
 [0]: tokenize: "Yes" -> [8241]
 [0]: tokenize: "No" -> [3782]
@@ -94,7 +93,7 @@ Note that the same effect can be achieved with PyVM and [10x less lines of code]
 This is just for demonstration purposes.
 
 ```
-$ ./scripts/upload.sh pyvm/samples/yesno.py "Are dolphins fish?"
+$ ./scripts/upload.sh --prompt "Are dolphins fish?" pyvm/samples/yesno.py
 ...
 No
 ```
@@ -142,9 +141,9 @@ $ ./scripts/upload.sh pyvm/samples/test.py
 
 You will see the console output of the program.
 
-### DeclarativeVM
+### DeclVM
 
-The [DeclarativeVM](aici_ast_runner/src/ast_runner.rs) exposes similar constraints
+The [DeclVM](aici_ast_runner/src/ast_runner.rs) exposes similar constraints
 to PyVM, but the glueing is done via a JSON AST (Abstract Syntax Tree) and thus is
 more restrictive.
 
