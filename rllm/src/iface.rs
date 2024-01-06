@@ -11,7 +11,7 @@ use aicirt::{
     },
     msgchannel::MessageChannel,
     shm::Shm,
-    UserError,
+    user_error,
 };
 use anyhow::Result;
 use futures::future::select_all;
@@ -322,9 +322,7 @@ impl AsyncCmdChannel {
                     _ => serde_json::to_string(&resp)?,
                 };
                 if resp["is_user_error"].as_bool().unwrap_or(false) {
-                    Err(anyhow::anyhow!(
-                        UserError::new(info).prefix(format!("While executing {op}:").as_str())
-                    ))
+                    Err(user_error!("While executing {op}:\n{info}"))
                 } else {
                     Err(anyhow::anyhow!(
                         "Bad response ({op}): {}",

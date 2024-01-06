@@ -13,7 +13,9 @@ use aici_abi::{
 };
 use aicirt::{
     api::{AiciMidProcessResultInner, AiciPostProcessResultInner, SequenceResult},
+    bail_user,
     bintokens::Tokenizer,
+    user_error,
 };
 use anyhow::{anyhow, bail, ensure, Result};
 use serde::Deserialize;
@@ -113,7 +115,7 @@ impl ModuleInstance {
         Results: wasmtime::WasmResults,
     {
         if self.store.data().had_error {
-            anyhow::bail!(UserError::new("Previous WASM Error".to_string()));
+            bail_user!("Previous WASM Error");
         }
         let f = self
             .instance
@@ -126,14 +128,14 @@ impl ModuleInstance {
             Err(e) => {
                 ctx.had_error = true;
                 if let Some(e) = e.downcast_ref::<UserError>() {
-                    Err(anyhow!(e.prefix(&ctx.string_log())))
+                    Err(user_error!("{}\n{}", ctx.string_log(), e))
                 } else if let Some(bt) = e.downcast_ref::<wasmtime::WasmBacktrace>() {
-                    Err(UserError::anyhow(format!(
+                    Err(user_error!(
                         "{}\n{}\n\n{}",
                         ctx.string_log(),
                         bt,
                         e.root_cause()
-                    )))
+                    ))
                 } else {
                     Err(anyhow!("{:?}\n\n{}", e, ctx.string_log()))
                 }

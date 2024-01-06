@@ -10,7 +10,10 @@ use aici_abi::{
     InitPromptResult, MidProcessArg, PostProcessArg, PreProcessArg, StorageCmd, StorageOp,
     StorageResp, TokenId,
 };
-use aicirt::api::{AiciMidProcessResultInner, AiciPostProcessResultInner, SequenceResult};
+use aicirt::{
+    api::{AiciMidProcessResultInner, AiciPostProcessResultInner, SequenceResult},
+    user_error,
+};
 use anyhow::{anyhow, Result};
 use ipc_channel::ipc::{self, IpcOneShotServer, IpcReceiver, IpcReceiverSet, IpcSender};
 use libc::pid_t;
@@ -287,7 +290,7 @@ impl SeqHandle {
         match self.recv_with_timeout(timeout) {
             Ok(SeqResp::Error { msg, is_user_error }) => {
                 if is_user_error {
-                    Err(UserError::anyhow(msg))
+                    Err(user_error!("{}", msg))
                 } else {
                     Err(anyhow!("{}", msg))
                 }

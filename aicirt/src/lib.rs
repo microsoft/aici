@@ -49,6 +49,13 @@ pub fn setup_log() {
     init_log(LogMode::Normal).expect("Failed to initialize log")
 }
 
+pub fn get_unix_time() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_secs()
+}
+
 /// An error thrown from the WASM runtime or otherwise originating from user error
 /// - should not generate additional stacktraces from where it's caught.
 #[derive(Debug)]
@@ -76,12 +83,6 @@ impl UserError {
             format!("{:?}", e)
         }
     }
-
-    pub fn prefix(&self, prefix: &str) -> Self {
-        Self {
-            msg: format!("{}\n{}", prefix, self.msg),
-        }
-    }
 }
 
 impl std::fmt::Display for UserError {
@@ -92,17 +93,16 @@ impl std::fmt::Display for UserError {
 
 impl std::error::Error for UserError {}
 
-pub fn get_unix_time() -> u64 {
-    std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap()
-        .as_secs()
+#[macro_export]
+macro_rules! user_error {
+    ($($tt:tt)*) => {
+        $crate::UserError::anyhow(format!($($tt)*))
+    };
 }
-
 
 #[macro_export]
 macro_rules! bail_user {
     ($($tt:tt)*) => {
-        return Err(UserError::anyhow(format!($($tt)*)))
+        return Err($crate::UserError::anyhow(format!($($tt)*)))
     };
 }
