@@ -1,7 +1,8 @@
 // based on https://github.com/vllm-project/vllm/blob/b9fe4616f98b77b4b9458bce203aa6544cb31ef2/vllm/config.py
 
 use crate::{DType, Device};
-use anyhow::{bail, Result};
+use aicirt::{bail_user, valid_module_or_tag};
+use anyhow::Result;
 use serde::{Deserialize, Serialize};
 
 static GB: usize = 1 << 30;
@@ -23,21 +24,21 @@ impl RllmConfig {
         let model = &self.model;
         let parallel = &self.parallel;
         if model.num_hidden_layers % parallel.pipeline_parallel_size != 0 {
-            bail!(
+            bail_user!(
                 "Number of hidden layers ({}) must be divisible by the pipeline parallel size ({}).",
                 model.num_hidden_layers,
                 parallel.pipeline_parallel_size
             );
         }
         if model.num_key_value_heads % parallel.tensor_parallel_size != 0 {
-            bail!(
+            bail_user!(
                 "Number of key/value heads ({}) must be divisible by the tensor parallel size ({}).",
                 model.num_key_value_heads,
                 parallel.tensor_parallel_size
             );
         }
         if self.aici.max_fuel < 100 {
-            bail!("max_fuel not configured");
+            bail_user!("max_fuel not configured");
         }
         Ok(())
     }
@@ -154,7 +155,7 @@ impl Default for CacheConfig {
 impl CacheConfig {
     pub fn new(block_size: usize, gpu_memory_utilization: f64, swap_space: usize) -> Result<Self> {
         if gpu_memory_utilization > 1.0 {
-            bail!(
+            bail_user!(
                 "GPU memory utilization must be less than 1.0. Got {}.",
                 gpu_memory_utilization
             );
@@ -167,7 +168,7 @@ impl CacheConfig {
             total_cpu_memory as f64 / GB as f64
         );
         if swap_space_bytes > (total_cpu_memory * 7 / 10) {
-            bail!("Too large swap space. {}", msg);
+            bail_user!("Too large swap space. {}", msg);
         } else if swap_space_bytes > (total_cpu_memory * 4 / 10) {
             log::warn!("Possibly too large swap space. {}", msg);
         }
@@ -310,59 +311,58 @@ impl SamplingParams {
     }
 
     fn _verify_args(&self) -> Result<()> {
-        fn is_hex_string(s: &str) -> bool {
-            s.chars().all(|c| c.is_digit(16))
-        }
-
         if let Some(mod_id) = self.aici_module.as_ref() {
-            if !is_hex_string(mod_id) || mod_id.len() != 64 {
-                bail!("aici_module must be a 64-char hex string, got {}.", mod_id);
+            if !valid_module_or_tag(mod_id) {
+                bail_user!(
+                    "aici_module must be a 64-char hex string or tag name, got {}.",
+                    mod_id
+                );
             }
         }
 
         if self.n < 1 {
-            bail!("n must be at least 1, got {}.", self.n);
+            bail_user!("n must be at least 1, got {}.", self.n);
         }
         if self.best_of < self.n {
-            bail!(
+            bail_user!(
                 "best_of must be greater than or equal to n, got n={} and best_of={}.",
                 self.n,
                 self.best_of
             );
         }
         if !(self.presence_penalty >= -2.0 && self.presence_penalty <= 2.0) {
-            bail!(
+            bail_user!(
                 "presence_penalty must be in [-2, 2], got {}.",
                 self.presence_penalty
             );
         }
         if !(self.frequency_penalty >= -2.0 && self.frequency_penalty <= 2.0) {
-            bail!(
+            bail_user!(
                 "frequency_penalty must be in [-2, 2], got {}.",
                 self.frequency_penalty
             );
         }
         if self.temperature < 0.0 {
-            bail!(
+            bail_user!(
                 "temperature must be non-negative, got {}.",
                 self.temperature
             );
         }
         if !(self.top_p > 0.0 && self.top_p <= 1.0) {
-            bail!("top_p must be in (0, 1], got {}.", self.top_p);
+            bail_user!("top_p must be in (0, 1], got {}.", self.top_p);
         }
         if self.top_k < -1 || self.top_k == 0 {
-            bail!(
+            bail_user!(
                 "top_k must be -1 (disable), or at least 1, got {}.",
                 self.top_k
             );
         }
         if self.max_tokens < 1 {
-            bail!("max_tokens must be at least 1, got {}.", self.max_tokens);
+            bail_user!("max_tokens must be at least 1, got {}.", self.max_tokens);
         }
         if let Some(logprobs) = self.logprobs {
             if logprobs < 0 {
-                bail!("logprobs must be non-negative, got {}.", logprobs);
+                bail_user!("logprobs must be non-negative, got {}.", logprobs);
             }
         }
         Ok(())
@@ -371,19 +371,19 @@ impl SamplingParams {
     fn _verify_beam_search(&self) -> Result<()> {
         if self.use_beam_search {
             if self.best_of == 1 {
-                bail!(
+                bail_user!(
                     "best_of must be greater than 1 when using beam search. Got {}.",
                     self.best_of
                 );
             }
             if self.temperature > SAMPLING_EPS {
-                bail!("temperature must be 0 when using beam search.");
+                bail_user!("temperature must be 0 when using beam search.");
             }
             if self.top_p < 1.0 - SAMPLING_EPS {
-                bail!("top_p must be 1 when using beam search.");
+                bail_user!("top_p must be 1 when using beam search.");
             }
             if self.top_k != -1 {
-                bail!("top_k must be -1 when using beam search.");
+                bail_user!("top_k must be -1 when using beam search.");
             }
             Ok(())
         } else {
@@ -394,14 +394,14 @@ impl SamplingParams {
     fn _verify_non_beam_search(&self) -> Result<()> {
         if !self.use_beam_search {
             if let EarlyStopping::True = self.early_stopping {
-                bail!(
+                bail_user!(
                     "early_stopping is not effective and must be False when not using beam search."
                 );
             }
             if !(self.length_penalty >= 1.0 - SAMPLING_EPS
                 && self.length_penalty <= 1.0 + SAMPLING_EPS)
             {
-                bail!("length_penalty is not effective and must be the default value of 1.0 when not using beam search.");
+                bail_user!("length_penalty is not effective and must be the default value of 1.0 when not using beam search.");
             }
         }
         Ok(())
@@ -410,16 +410,16 @@ impl SamplingParams {
     fn _verify_greedy_sampling(&self) -> Result<()> {
         if self.temperature < SAMPLING_EPS {
             if self.best_of > 1 {
-                bail!(
+                bail_user!(
                     "best_of must be 1 when using greedy sampling. Got {}.",
                     self.best_of
                 );
             }
             if self.top_p < 1.0 - SAMPLING_EPS {
-                bail!("top_p must be 1 when using greedy sampling.");
+                bail_user!("top_p must be 1 when using greedy sampling.");
             }
             if self.top_k != -1 {
-                bail!("top_k must be -1 when using greedy sampling.");
+                bail_user!("top_k must be -1 when using greedy sampling.");
             }
         }
         Ok(())
