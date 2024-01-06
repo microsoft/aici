@@ -1,6 +1,6 @@
 use actix_web::{middleware::Logger, web, App, HttpServer};
 use aici_abi::toktree::TokTrie;
-use aicirt::api::{GetTagsResp, MkModuleReq, MkModuleResp, SetTagsReq};
+use aicirt::api::{AuthInfo, GetTagsResp, MkModuleReq, MkModuleResp, SetTagsReq};
 use anyhow::Result;
 use base64::Engine;
 use clap::Parser;
@@ -132,20 +132,26 @@ pub struct Args {
 
 #[actix_web::get("/v1/aici_modules/tags")]
 async fn get_aici_module_tags(
+    req: actix_web::HttpRequest,
     data: web::Data<OpenAIServerData>,
 ) -> Result<web::Json<GetTagsResp>, APIError> {
-    let r = data.side_cmd_ch.get_tags().await.map_err(APIError::just_msg)?;
+    let r = data
+        .side_cmd_ch
+        .get_tags(auth_info(&req))
+        .await
+        .map_err(APIError::just_msg)?;
     Ok(web::Json(r))
 }
 
 #[actix_web::post("/v1/aici_modules/tags")]
 async fn tag_aici_module(
+    req: actix_web::HttpRequest,
     data: web::Data<OpenAIServerData>,
     body: web::Json<SetTagsReq>,
 ) -> Result<web::Json<GetTagsResp>, APIError> {
     let r = data
         .side_cmd_ch
-        .set_tags(body.0)
+        .set_tags(body.0, auth_info(&req))
         .await
         .map_err(APIError::just_msg)?;
     Ok(web::Json(r))
@@ -153,16 +159,20 @@ async fn tag_aici_module(
 
 #[actix_web::post("/v1/aici_modules")]
 async fn upload_aici_module(
+    req: actix_web::HttpRequest,
     data: web::Data<OpenAIServerData>,
     body: web::Bytes,
 ) -> Result<web::Json<MkModuleResp>, APIError> {
     let binary = base64::engine::general_purpose::STANDARD.encode(body);
     let r = data
         .side_cmd_ch
-        .mk_module(MkModuleReq {
-            binary,
-            meta: serde_json::Value::Null,
-        })
+        .mk_module(
+            MkModuleReq {
+                binary,
+                meta: serde_json::Value::Null,
+            },
+            auth_info(&req),
+        )
         .await
         .map_err(APIError::just_msg)?;
     Ok(web::Json(r))
@@ -181,6 +191,16 @@ async fn models(
             owned_by: "owner".to_string(),
         },
     ])))
+}
+
+pub fn auth_info(req: &actix_web::HttpRequest) -> AuthInfo {
+    let user = req
+        .headers()
+        .get("x-user-id")
+        .map_or("localhost", |v| v.to_str().unwrap_or("(invalid header)"));
+    AuthInfo {
+        user: user.to_string(),
+    }
 }
 
 #[actix_web::get("/ws-http-tunnel/info")]

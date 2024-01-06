@@ -132,7 +132,7 @@ pub struct SetTagsReq {
     pub tags: Vec<String>,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Clone)]
 pub struct TagInfo {
     pub tag: String,
     pub module_id: String,
@@ -163,4 +163,17 @@ pub type Token = TokenId;
 #[derive(Serialize, Deserialize, Debug)]
 pub struct TokensResp {
     pub vocab_size: u32,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct AuthInfo {
+    pub user: String,
+}
+
+impl Default for AuthInfo {
+    fn default() -> Self {
+        AuthInfo {
+            user: "local".to_string(),
+        }
+    }
 }

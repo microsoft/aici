@@ -6,7 +6,7 @@ use aici_abi::{
 use aicirt::{
     api::{
         AiciMidProcessReq, AiciMidProcessResp, AiciPostProcessReq, AiciPostProcessResp,
-        AiciPreProcessReq, AiciPreProcessResp, GetTagsResp, InstantiateReq, MkModuleReq,
+        AiciPreProcessReq, AiciPreProcessResp, AuthInfo, GetTagsResp, InstantiateReq, MkModuleReq,
         MkModuleResp, SetTagsReq, TokensResp,
     },
     msgchannel::MessageChannel,
@@ -261,23 +261,27 @@ impl AsyncCmdChannel {
         })
     }
 
-    pub async fn set_tags(&self, req: SetTagsReq) -> Result<GetTagsResp> {
-        self.exec("set_tags", req).await
+    pub async fn set_tags(&self, req: SetTagsReq, authinfo: AuthInfo) -> Result<GetTagsResp> {
+        self.exec("set_tags", req, authinfo).await
     }
 
-    pub async fn get_tags(&self) -> Result<GetTagsResp> {
-        self.exec("get_tags", json!({})).await
+    pub async fn get_tags(&self, authinfo: AuthInfo) -> Result<GetTagsResp> {
+        self.exec("get_tags", json!({}), authinfo).await
     }
 
-    pub async fn mk_module(&self, req: MkModuleReq) -> Result<MkModuleResp> {
-        self.exec("mk_module", req).await
+    pub async fn mk_module(&self, req: MkModuleReq, authinfo: AuthInfo) -> Result<MkModuleResp> {
+        self.exec("mk_module", req, authinfo).await
     }
 
-    pub async fn instantiate(&self, req: InstantiateReq) -> Result<InitPromptResult> {
-        self.exec("instantiate", req).await
+    pub async fn instantiate(
+        &self,
+        req: InstantiateReq,
+        authinfo: AuthInfo,
+    ) -> Result<InitPromptResult> {
+        self.exec("instantiate", req, authinfo).await
     }
 
-    pub async fn exec<T: Serialize, R>(&self, op: &str, data: T) -> Result<R>
+    pub async fn exec<T: Serialize, R>(&self, op: &str, data: T, authinfo: AuthInfo) -> Result<R>
     where
         R: for<'d> Deserialize<'d>,
     {
@@ -285,6 +289,7 @@ impl AsyncCmdChannel {
         let mut data = serde_json::to_value(data)?;
         data["op"] = Value::String(op.to_string());
         data["$rid"] = Value::String(rid.clone());
+        data["$auth"] = serde_json::to_value(authinfo)?;
 
         let (tx, rx) = oneshot::channel();
         self.pending_reqs.lock().unwrap().insert(rid.clone(), tx);

@@ -319,7 +319,7 @@ impl ModuleRegistry {
         self.create_module(wasm_bytes, meta_bytes)
     }
 
-    fn set_tags(&self, req: SetTagsReq) -> Result<Value> {
+    fn set_tags(&self, req: SetTagsReq, auth: AuthInfo) -> Result<Value> {
         ensure!(is_hex_string(&req.module_id), "invalid module_id");
         let _ = self.ensure_module_in_fs(&req.module_id)?;
 
@@ -336,18 +336,22 @@ impl ModuleRegistry {
         }
 
         fs::create_dir_all(&self.cache_path.join("tags"))?;
+
+        let info = TagInfo {
+            tag: String::new(),
+            module_id: req.module_id.clone(),
+            updated_at: get_unix_time(),
+            updated_by: auth.user.clone(),
+            wasm_size: self.wasm_path(&req.module_id).metadata()?.len(),
+            meta_size: self.meta_path(&req.module_id).metadata()?.len(),
+            compiled_size: self.elf_path(&req.module_id).metadata()?.len(),
+        };
+
         let mut resp = GetTagsResp { tags: vec![] };
         for tagname in &req.tags {
-            log::info!("tag {} -> {}", tagname, req.module_id);
-            let info = TagInfo {
-                tag: tagname.clone(),
-                module_id: req.module_id.clone(),
-                updated_at: get_unix_time(),
-                updated_by: "???".to_string(),
-                wasm_size: self.wasm_path(&req.module_id).metadata()?.len(),
-                meta_size: self.meta_path(&req.module_id).metadata()?.len(),
-                compiled_size: self.elf_path(&req.module_id).metadata()?.len(),
-            };
+            log::info!("tag {} -> {} by {}", tagname, req.module_id, auth.user);
+            let mut info = info.clone();
+            info.tag = tagname.clone();
             fs::write(self.tag_path(tagname), &serde_json::to_vec(&info)?)?;
             resp.tags.push(info)
         }
@@ -359,15 +363,15 @@ impl ModuleRegistry {
         let tagspath = self.cache_path.join("tags");
         fs::create_dir_all(&tagspath)?;
         let mut resp = GetTagsResp { tags: vec![] };
-        log::info!("read {tagspath:?}");
         for file in fs::read_dir(&tagspath)? {
             let file = file?.path();
-            log::info!("file: {file:?}");
             if file.to_string_lossy().ends_with(".json") {
                 let bytes = fs::read(file)?;
                 resp.tags.push(serde_json::from_slice(&bytes)?);
             }
         }
+        resp.tags.sort_by_key(|e| e.updated_at);
+        resp.tags.reverse();
         Ok(json!(resp))
     }
 
@@ -770,7 +774,7 @@ impl Stepper {
 
 impl Exec for Stepper {
     #[inline(never)]
-    fn exec(&mut self, json: Value) -> Result<Value> {
+    fn exec(&mut self, json: Value, _auth: AuthInfo) -> Result<Value> {
         match json["op"].as_str() {
             Some("tokens") => Ok(json!({ "vocab_size": self.globals.tokrx_info.vocab_size })),
             Some("pre_process") => {
@@ -798,9 +802,9 @@ impl Exec for Stepper {
 
 impl Exec for ModuleRegistry {
     #[inline(never)]
-    fn exec(&mut self, json: Value) -> Result<Value> {
+    fn exec(&mut self, json: Value, auth: AuthInfo) -> Result<Value> {
         match json["op"].as_str() {
-            Some("set_tags") => self.set_tags(serde_json::from_value(json)?),
+            Some("set_tags") => self.set_tags(serde_json::from_value(json)?, auth),
             Some("get_tags") => self.get_tags(serde_json::from_value(json)?),
             Some("mk_module") => self.mk_module(serde_json::from_value(json)?),
             Some("instantiate") => self.instantiate(serde_json::from_value(json)?),
@@ -810,17 +814,28 @@ impl Exec for ModuleRegistry {
 }
 
 trait Exec {
-    fn exec(&mut self, json: Value) -> Result<Value>;
+    fn exec(&mut self, json: Value, auth: AuthInfo) -> Result<Value>;
 
     fn exec_wrapped(&mut self, msg: &[u8]) -> Value {
         match serde_json::from_slice::<Value>(msg) {
             Ok(json) => {
                 let rid = json["$rid"].as_str().map(|v| v.to_string());
+
                 log::trace!("dispatch: rid={:?} op={:?}", rid, json["op"]);
                 let val = match json["op"].as_str() {
                     Some("ping") => Ok(json!({ "pong": 1 })),
                     Some("stop") => worker::stop_process(),
-                    _ => self.exec(json),
+                    _ => {
+                        let auth = if json["$auth"].as_object().is_none() {
+                            Ok(AuthInfo::default())
+                        } else {
+                            serde_json::from_value(json["$auth"].clone())
+                        };
+                        match auth {
+                            Err(e) => Err(anyhow!(e)),
+                            Ok(auth) => self.exec(json, auth),
+                        }
+                    }
                 };
                 let mut resp = match val {
                     Ok(v) => {

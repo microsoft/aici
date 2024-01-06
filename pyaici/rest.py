@@ -71,7 +71,7 @@ def upload_module(file_path: str) -> str:
 
 
 def pp_tag(d: dict) -> str:
-    t = time.strftime("%F %T %z", time.localtime(d["updated_at"]))
+    t = time.strftime("%F %T", time.localtime(d["updated_at"]))
     M = 1024 * 1024
     return f'{d["tag"]} -> {d["module_id"][0:8]}...; {d["wasm_size"]/M:.3}MiB/{d["compiled_size"]/M:.3}MiB ({t} by {d["updated_by"]})'
 

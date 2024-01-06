@@ -1,4 +1,5 @@
 use crate::{
+    auth_info,
     openai::{
         requests::CompletionRequest,
         responses::{
@@ -68,6 +69,7 @@ macro_rules! bail_if_error {
 
 #[post("/v1/completions")]
 async fn completions(
+    req: actix_web::HttpRequest,
     data: web::Data<OpenAIServerData>,
     request: web::Json<CompletionRequest>,
 ) -> Either<Result<web::Json<CompletionResponse>, APIError>, HttpResponse> {
@@ -125,12 +127,15 @@ async fn completions(
     if let Some(mod_id) = sampling_params.aici_module.as_ref() {
         let inst = data
             .side_cmd_ch
-            .instantiate(InstantiateReq {
-                req_id: request_id.clone(),
-                prompt: json!(token_ids),
-                module_id: mod_id.clone(),
-                module_arg: json!(sampling_params.aici_arg),
-            })
+            .instantiate(
+                InstantiateReq {
+                    req_id: request_id.clone(),
+                    prompt: json!(token_ids),
+                    module_id: mod_id.clone(),
+                    module_arg: json!(sampling_params.aici_arg),
+                },
+                auth_info(&req),
+            )
             .await;
         bail_if_error!(inst);
     }
