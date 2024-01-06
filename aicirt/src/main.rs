@@ -877,7 +877,7 @@ trait Exec {
                         })
                     }
                     Err(err) => {
-                        let errmsg = WasmError::maybe_stacktrace(&err);
+                        let errmsg = UserError::maybe_stacktrace(&err);
                         log::warn!("dispatch error: {}", errmsg);
                         log::info!(
                             "for data: {}",
@@ -886,7 +886,7 @@ trait Exec {
                         json!({
                             "type": "error",
                             "error": errmsg,
-                            "is_wasm_error": WasmError::is_self(&err)
+                            "is_user_error": UserError::is_self(&err)
                         })
                     }
                 };

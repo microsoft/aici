@@ -6,7 +6,7 @@ use aici_abi::{
     bytes::{clone_vec_as_bytes, limit_str, vec_from_bytes, TokRxInfo},
     PostProcessArg, PreProcessArg, StorageCmd,
 };
-use aicirt::WasmError;
+use aicirt::UserError;
 use anyhow::{anyhow, Result};
 use std::{rc::Rc, sync::Arc, time::Duration};
 use tokenizers::Tokenizer;
@@ -496,7 +496,7 @@ pub fn setup_linker(engine: &wasmtime::Engine) -> Result<Arc<wasmtime::Linker<Mo
     )?;
 
     linker.func_wrap("env", "aici_host_stop", || {
-        Err::<(), _>(WasmError::anyhow("*** aici_host_stop".to_string()))
+        Err::<(), _>(UserError::anyhow("*** aici_host_stop".to_string()))
     })?;
 
     let linker = Arc::new(linker);

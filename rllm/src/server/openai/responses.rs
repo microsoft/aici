@@ -1,6 +1,6 @@
 use actix_web::error;
 use aici_abi::StorageCmd;
-use aicirt::WasmError;
+use aicirt::UserError;
 use serde::{Deserialize, Serialize};
 use std::fmt::{Debug, Display};
 
@@ -48,8 +48,8 @@ impl APIError {
     }
 
     pub fn from_anyhow(value: anyhow::Error) -> Self {
-        if WasmError::is_self(&value) {
-            log::info!("WasmError: {value}");
+        if UserError::is_self(&value) {
+            log::info!("UserError: {value}");
             Self {
                 code: actix_web::http::StatusCode::BAD_REQUEST,
                 msg: format!("{value}"),

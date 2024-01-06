@@ -5,7 +5,7 @@ use crate::{
     },
     shm::Shm,
     worker::{GroupHandle, RtMidProcessArg, RtPostProcessArg, RtPreProcessArg, RtPreProcessResult},
-    TimerSet, WasmError,
+    TimerSet, UserError,
 };
 use aici_abi::{
     toktree::TokTrie, InitPromptArg, InitPromptResult, MidProcessResult, PostProcessArg,
@@ -113,7 +113,7 @@ impl ModuleInstance {
         Results: wasmtime::WasmResults,
     {
         if self.store.data().had_error {
-            anyhow::bail!(WasmError::new("Previous WASM Error".to_string()));
+            anyhow::bail!(UserError::new("Previous WASM Error".to_string()));
         }
         let f = self
             .instance
@@ -125,10 +125,10 @@ impl ModuleInstance {
             Ok(r) => Ok(r),
             Err(e) => {
                 ctx.had_error = true;
-                if let Some(e) = e.downcast_ref::<WasmError>() {
+                if let Some(e) = e.downcast_ref::<UserError>() {
                     Err(anyhow!(e.prefix(&ctx.string_log())))
                 } else if let Some(bt) = e.downcast_ref::<wasmtime::WasmBacktrace>() {
-                    Err(WasmError::anyhow(format!(
+                    Err(UserError::anyhow(format!(
                         "{}\n{}\n\n{}",
                         ctx.string_log(),
                         bt,
@@ -408,7 +408,7 @@ impl ModuleInstance {
             },
 
             Err(e) => {
-                let error = format!("Error ({lbl}): {}", WasmError::maybe_stacktrace(&e));
+                let error = format!("Error ({lbl}): {}", UserError::maybe_stacktrace(&e));
                 let logs = logs + "\n" + &error;
                 log::warn!("exec: {error}");
                 SequenceResult {
