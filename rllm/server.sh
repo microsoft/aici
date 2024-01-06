@@ -86,6 +86,19 @@ else
     BIN_SERVER=$BIN/release/rllm-server
 fi
 
+if [ `uname` = Darwin ] ; then
+  mkdir -p tmp
+  TP=tmp/torch-path.txt
+  if test -f $TP ; then
+    :
+  else
+    python -c "from torch.utils import cpp_extension; print(cpp_extension.library_paths()[0])" > $TP
+  fi
+  TP=`cat $TP`
+  echo "Updating torch RPATH: $TP on $BIN_SERVER"
+  install_name_tool -add_rpath $TP $BIN_SERVER
+fi
+
 export RUST_BACKTRACE=1
 export RUST_LOG=info,rllm=debug,aicirt=info
 
