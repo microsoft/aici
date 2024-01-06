@@ -194,12 +194,19 @@ async fn models(
 }
 
 pub fn auth_info(req: &actix_web::HttpRequest) -> AuthInfo {
+    // we default to localhost/admin when no headers given
     let user = req
         .headers()
         .get("x-user-id")
         .map_or("localhost", |v| v.to_str().unwrap_or("(invalid header)"));
+    let role = req
+        .headers()
+        .get("x-user-role")
+        .map_or("admin", |v| v.to_str().unwrap_or("(invalid header)"));
+    let is_admin = role == "admin";
     AuthInfo {
         user: user.to_string(),
+        is_admin,
     }
 }
 

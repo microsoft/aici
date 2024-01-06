@@ -15,7 +15,7 @@ use aici_abi::{
     bytes::limit_str, toktree::TokTrie, MidProcessArg, PostProcessArg, PreProcessArg, SeqId,
 };
 use aicirt::{bintokens::find_tokenizer, *};
-use anyhow::{anyhow, bail, ensure, Result};
+use anyhow::{anyhow, ensure, Result};
 use base64::{self, Engine as _};
 use clap::Parser;
 use hex;
@@ -340,15 +340,26 @@ impl ModuleRegistry {
         ensure!(is_hex_string(&req.module_id), "invalid module_id");
         let _ = self.ensure_module_in_fs(&req.module_id)?;
 
+        let user_pref = if auth.is_admin {
+            // admins can do any prefix
+            String::new()
+        } else {
+            // other users can only do myself.something
+            auth.user.clone() + "."
+        };
+
         for tagname in &req.tags {
             if tagname.len() > 50 {
-                bail!("tag name too long");
+                bail_user!("tag name too long");
             }
             if !valid_tagname(tagname) {
-                bail!("tag name not identifier")
+                bail_user!("tag name not identifier")
             }
             if tagname.len() > 20 && is_hex_string(tagname) {
-                bail!("tag name looks too hex")
+                bail_user!("tag name looks too hex")
+            }
+            if !tagname.starts_with(&user_pref) {
+                bail_user!("permission denied for tagname")
             }
         }
 
@@ -844,7 +855,7 @@ trait Exec {
                     Some("stop") => worker::stop_process(),
                     _ => {
                         let auth = if json["$auth"].as_object().is_none() {
-                            Ok(AuthInfo::default())
+                            Ok(AuthInfo::local_user())
                         } else {
                             serde_json::from_value(json["$auth"].clone())
                         };
@@ -1059,7 +1070,7 @@ fn install_from_cmdline(cli: &Cli, wasm_ctx: WasmContext, shm: Shm) {
         };
 
         let json = reg
-            .create_module(wasm_bytes, meta_bytes, AuthInfo::default())
+            .create_module(wasm_bytes, meta_bytes, AuthInfo::local_user())
             .unwrap();
         json["module_id"].as_str().unwrap().to_string()
     };

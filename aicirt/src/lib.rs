@@ -58,9 +58,7 @@ pub struct WasmError {
 
 impl WasmError {
     pub fn new(msg: String) -> Self {
-        Self {
-            msg
-        }
+        Self { msg }
     }
 
     pub fn anyhow(msg: String) -> anyhow::Error {
@@ -99,4 +97,12 @@ pub fn get_unix_time() -> u64 {
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap()
         .as_secs()
+}
+
+
+#[macro_export]
+macro_rules! bail_user {
+    ($($tt:tt)*) => {
+        return Err(WasmError::anyhow(format!($($tt)*)))
+    };
 }

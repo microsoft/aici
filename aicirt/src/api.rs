@@ -168,12 +168,14 @@ pub struct TokensResp {
 #[derive(Serialize, Deserialize, Debug)]
 pub struct AuthInfo {
     pub user: String,
+    pub is_admin: bool,
 }
 
-impl Default for AuthInfo {
-    fn default() -> Self {
+impl AuthInfo {
+    pub fn local_user() -> Self {
         AuthInfo {
             user: "local".to_string(),
+            is_admin: false,
         }
     }
 }
