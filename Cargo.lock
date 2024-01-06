@@ -252,23 +252,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "aici_ast_runner"
-version = "0.1.0"
-dependencies = [
- "aici_abi",
- "anyhow",
- "cfgrammar",
- "lrlex",
- "lrpar",
- "lrtable",
- "regex-automata 0.3.9",
- "rustc-hash",
- "serde",
- "serde_json",
- "vob",
-]
-
-[[package]]
 name = "aici_pyvm"
 version = "0.1.0"
 dependencies = [
@@ -980,6 +963,23 @@ dependencies = [
  "darling_core",
  "quote",
  "syn 1.0.109",
+]
+
+[[package]]
+name = "declvm"
+version = "0.1.0"
+dependencies = [
+ "aici_abi",
+ "anyhow",
+ "cfgrammar",
+ "lrlex",
+ "lrpar",
+ "lrtable",
+ "regex-automata 0.3.9",
+ "rustc-hash",
+ "serde",
+ "serde_json",
+ "vob",
 ]
 
 [[package]]
