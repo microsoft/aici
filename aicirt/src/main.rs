@@ -201,6 +201,10 @@ impl ModuleRegistry {
         self.cache_path.join(format!("{}.json", module_id))
     }
 
+    fn sys_meta_path(&self, module_id: &str) -> PathBuf {
+        self.cache_path.join(format!("{}-sys.json", module_id))
+    }
+
     fn wasm_path(&self, module_id: &str) -> PathBuf {
         self.cache_path.join(format!("{}.wasm", module_id))
     }
@@ -253,7 +257,12 @@ impl ModuleRegistry {
         Ok(self.elf_path(module_id))
     }
 
-    fn create_module(&self, wasm_bytes: Vec<u8>, meta_bytes: Vec<u8>) -> Result<Value> {
+    fn create_module(
+        &self,
+        wasm_bytes: Vec<u8>,
+        meta_bytes: Vec<u8>,
+        auth: AuthInfo,
+    ) -> Result<Value> {
         let timer = Instant::now();
 
         // make sure meta_bytes is valid JSON
@@ -267,7 +276,7 @@ impl ModuleRegistry {
         let module_id = &module_id;
 
         if self.module_needs_check(module_id) {
-            match self.write_and_compile(module_id, &meta_bytes, &wasm_bytes) {
+            match self.write_and_compile(module_id, &meta_bytes, &wasm_bytes, &auth) {
                 Err(e) => {
                     let mut lck = self.modules.lock().unwrap();
                     lck.remove(module_id);
@@ -302,21 +311,29 @@ impl ModuleRegistry {
         module_id: &String,
         meta_bytes: &Vec<u8>,
         wasm_bytes: &Vec<u8>,
+        auth: &AuthInfo,
     ) -> Result<()> {
         fs::create_dir_all(&self.cache_path)?;
         Ok(if !self.wasm_path(module_id).exists() {
             fs::write(self.meta_path(module_id), meta_bytes)?;
             fs::write(self.wasm_path(module_id), wasm_bytes)?;
+            fs::write(
+                self.sys_meta_path(module_id),
+                serde_json::to_vec(&json!({
+                    "created": get_unix_time(),
+                    "auth": auth,
+                }))?,
+            )?;
             self.compile_module(module_id, true)?
         } else {
             self.compile_module(module_id, false)?
         })
     }
 
-    fn mk_module(&self, req: MkModuleReq) -> Result<Value> {
+    fn mk_module(&self, req: MkModuleReq, auth: AuthInfo) -> Result<Value> {
         let wasm_bytes = base64::engine::general_purpose::STANDARD.decode(req.binary)?;
         let meta_bytes = serde_json::to_vec(&req.meta)?;
-        self.create_module(wasm_bytes, meta_bytes)
+        self.create_module(wasm_bytes, meta_bytes, auth)
     }
 
     fn set_tags(&self, req: SetTagsReq, auth: AuthInfo) -> Result<Value> {
@@ -806,7 +823,7 @@ impl Exec for ModuleRegistry {
         match json["op"].as_str() {
             Some("set_tags") => self.set_tags(serde_json::from_value(json)?, auth),
             Some("get_tags") => self.get_tags(serde_json::from_value(json)?),
-            Some("mk_module") => self.mk_module(serde_json::from_value(json)?),
+            Some("mk_module") => self.mk_module(serde_json::from_value(json)?, auth),
             Some("instantiate") => self.instantiate(serde_json::from_value(json)?),
             _ => return Err(anyhow!("bad op")),
         }
@@ -1041,7 +1058,9 @@ fn install_from_cmdline(cli: &Cli, wasm_ctx: WasmContext, shm: Shm) {
             None => serde_json::to_vec(&Value::Null).unwrap(),
         };
 
-        let json = reg.create_module(wasm_bytes, meta_bytes).unwrap();
+        let json = reg
+            .create_module(wasm_bytes, meta_bytes, AuthInfo::default())
+            .unwrap();
         json["module_id"].as_str().unwrap().to_string()
     };
 
