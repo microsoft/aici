@@ -137,14 +137,14 @@ and use the native constraints.
 
 To run a PyVM sample (using VM tagged with `pyvm-latest`) use:
 
-```
-$ ./scripts/aici.sh run pyvm/samples/test.py
+```bash
+./scripts/aici.sh run pyvm/samples/test.py
 ```
 
 If you want to build it yourself, use:
 
-```
-$ ./scripts/aici.sh run --build pyvm pyvm/samples/test.py
+```bash
+./scripts/aici.sh run --build pyvm pyvm/samples/test.py
 ```
 
 You will see the console output of the program.
