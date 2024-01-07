@@ -49,6 +49,7 @@ fi
 
 echo "Pulling..."
 git pull
+(cd tmp/ws-http-tunnel && git pull)
 
 if [ "$FULL" = 1 ] ; then
     echo "Building full..."
