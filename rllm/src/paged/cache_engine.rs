@@ -6,7 +6,6 @@ use super::cuda_stub::{CudaEvent, CudaStream};
 use tch_cuda::{CudaEvent, CudaStream};
 
 use crate::{config::RllmConfig, llm::kernels, Device, Tensor};
-use core::panic;
 use std::{collections::HashMap, sync::Arc};
 
 use super::CacheIface;
