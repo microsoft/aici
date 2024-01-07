@@ -250,9 +250,9 @@ def main_inner():
             aici_arg = open(fn).read()
             if not aici_module:
                 if fn.endswith(".py"):
-                    aici_module = "pyvm"
+                    aici_module = "pyvm-latest"
                 elif fn.endswith(".json"):
-                    aici_module = "declvm"
+                    aici_module = "declvm-latest"
                 else:
                     cli_error("Can't determine VM type from file name: " + fn)
                 print(f"Running with tagged vm: {aici_module}")
