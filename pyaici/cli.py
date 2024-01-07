@@ -12,11 +12,11 @@ def cli_error(msg: str):
     sys.exit(1)
 
 
-def upload_wasm(prog: str):
+def build_rust(folder: str):
     bin_file = ""
-    spl = prog.split("::")
+    spl = folder.split("::")
     if len(spl) > 1:
-        prog = spl[0]
+        folder = spl[0]
         bin_file = spl[1]
     r = subprocess.run(
         [
@@ -26,7 +26,7 @@ def upload_wasm(prog: str):
             "--no-deps",
             "--format-version=1",
         ],
-        cwd=prog,
+        cwd=folder,
         stdout=-1,
         check=True,
     )
@@ -39,7 +39,7 @@ def upload_wasm(prog: str):
     bins = [trg for trg in pkg["targets"] if trg["kind"] == ["bin"]]
     if len(bins) == 0:
         cli_error("no bin targets found")
-    bins_str = ", ".join([prog + "::" + trg["name"] for trg in bins])
+    bins_str = ", ".join([folder + "::" + trg["name"] for trg in bins])
     if bin_file:
         if len([trg for trg in bins if trg["name"] == bin_file]) == 0:
             cli_error(f"{bin_file} not found; try one of {bins_str}")
@@ -66,7 +66,7 @@ def upload_wasm(prog: str):
             "--target",
             triple,
         ],
-        cwd=prog,
+        cwd=folder,
     )
     if r.returncode != 0:
         sys.exit(1)
@@ -228,7 +228,7 @@ def main_inner():
 
     if args.build:
         assert not aici_module
-        aici_module = upload_wasm(args.build)
+        aici_module = build_rust(args.build)
 
     if args.upload:
         assert not aici_module

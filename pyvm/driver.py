@@ -1,24 +1,15 @@
-import subprocess
 import sys
 import os
 import re
 
-import pyaici.ast as ast
 import pyaici.rest
 import pyaici.util
-
-
-def upload_wasm():
-    r = subprocess.run(["cargo", "build", "--release"], cwd=".")
-    if r.returncode != 0:
-        sys.exit(1)
-    file_path = "../target/wasm32-wasi/release/aici_pyvm.wasm"
-    return pyaici.rest.upload_module(file_path)
+import pyaici.cli
 
 
 class Tester:
     def __init__(self):
-        self.mod = upload_wasm()
+        self.mod = pyaici.cli.build_rust(".")
         self.oks = []
         self.failures = []
         pyaici.rest.log_level = 0
