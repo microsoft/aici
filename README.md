@@ -74,11 +74,10 @@ only allows the model to say "Yes" or "No" in answer to the question in the prom
 
 ```
 $ ./scripts/sample-yesno.sh "Can orcas sing?"
-+ cd aici_abi
-+ cargo build --release
+will build yesno from /workspaces/aici/aici_abi/Cargo.toml
     Finished release [optimized + debuginfo] target(s) in 0.09s
-+ ./scripts/upload.sh --vm target/wasm32-wasi/release/yesno.wasm --prompt 'Can orcas sing?'
-upload module... 192kB -> 668kB id:0583a3ab
+built: /workspaces/aici/target/wasm32-wasi/release/yesno.wasm, 0.187 MiB
+upload module... 191kB -> 668kB id:255ce305
 [0]: tokenize: "Yes" -> [8241]
 [0]: tokenize: "No" -> [3782]
 [0]: tokenize: "\n" -> [13]
@@ -94,7 +93,7 @@ Note that the same effect can be achieved with PyVM and [10x less lines of code]
 This is just for demonstration purposes.
 
 ```
-$ ./scripts/upload.sh --prompt "Are dolphins fish?" pyvm/samples/yesno.py
+$ ./scripts/aici.sh run pyvm/samples/yesno.py --prompt "Are dolphins fish?"
 ...
 No
 ```
@@ -106,8 +105,10 @@ It forces every 4th letter of the model output to be uppercase.
 
 ```
 $ ./scripts/sample-uppercase.sh 
+will build uppercase from /workspaces/aici/aici_abi/Cargo.toml
     Finished release [optimized + debuginfo] target(s) in 0.09s
-upload module... 198kB -> 695kB id:c58fca60
+built: /workspaces/aici/target/wasm32-wasi/release/uppercase.wasm, 0.193 MiB
+upload module... 197kB -> 687kB id:4d3b70bf
 [0]: user passed in 0 bytes
 [0]: init_prompt: [1] ""
 [0]: tokenize: "Here's a tweet:\n" -> [10605, 29915, 29879, 263, 7780, 300, 29901, 13]
@@ -134,10 +135,16 @@ There are [several samples](pyvm/samples/) available.
 The scripts use the [aici module](pyvm/aici-pylib/aici.py) to communicate with the AICI runtime
 and use the native constraints.
 
-To run a PyVM sample use:
+To run a PyVM sample (using VM tagged with `pyvm-latest`) use:
 
 ```
-$ ./scripts/upload.sh pyvm/samples/test.py
+$ ./scripts/aici.sh run pyvm/samples/test.py
+```
+
+If you want to build it yourself, use:
+
+```
+$ ./scripts/aici.sh run --build pyvm pyvm/samples/test.py
 ```
 
 You will see the console output of the program.
@@ -166,7 +173,7 @@ The (harness)[harness] folder contains samples for using aicirt with different L
 - [vLLM script](harness/run_vllm.py), run with `./scripts/vllm.sh`
 - [vLLM REST server](harness/vllm_server.py), run with `./scripts/server.sh`;
   the REST server is compatible with OpenAI and adds an endpoint for uploading WASM modules;
-  see [./scripts/upload.py](scripts/upload.py) for an example on how it can be used
+  see [pyaici.rest](pyaici/rest.py) for an example on how it can be used
 
 
 ```mermaid
