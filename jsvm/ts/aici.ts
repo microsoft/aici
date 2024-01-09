@@ -58,17 +58,18 @@ export function get_prompt_len(): number {
 }
 
 export class MidProcessResult {
-  _stop = false;
   _skipMe = false;
-  _logitBias: TokenSet | null = null;
-  _backtrack: number = 0;
-  _ffTokens: Token[] = [];
+
+  _n_stop = false;
+  _n_logit_bias: TokenSet | null = null;
+  _n_backtrack: number = 0;
+  _n_ff_tokens: Token[] = [];
 
   constructor() {}
 
   static stop(): MidProcessResult {
     const res = new MidProcessResult();
-    res._stop = true;
+    res._n_stop = true;
     return res;
   }
 
@@ -80,7 +81,7 @@ export class MidProcessResult {
 
   static bias(bias: TokenSet): MidProcessResult {
     const res = new MidProcessResult();
-    res._logitBias = bias;
+    res._n_logit_bias = bias;
     return res;
   }
 
@@ -88,16 +89,16 @@ export class MidProcessResult {
     const res = new MidProcessResult();
     assert(backtrack >= 0);
     assert(Array.isArray(tokens));
-    res._backtrack = backtrack;
-    res._ffTokens = tokens;
+    res._n_backtrack = backtrack;
+    res._n_ff_tokens = tokens;
     return res;
   }
 }
 
 export class PreProcessResult {
-  suspended = false;
-  ff_tokens: Token[] = [];
-  attention_masks: number[][] = [[]];
+  _n_suspended = false;
+  _n_ff_tokens: Token[] = [];
+  _n_attention_masks: number[][] = [[]];
 
   constructor() {}
 
@@ -107,28 +108,28 @@ export class PreProcessResult {
 
   static suspend(): PreProcessResult {
     const res = new PreProcessResult();
-    res.suspended = true;
+    res._n_suspended = true;
     return res;
   }
 
   static fork(num_forks: number): PreProcessResult {
     const res = new PreProcessResult();
-    res.attention_masks = Array.from({ length: num_forks }, () => []);
+    res._n_attention_masks = Array.from({ length: num_forks }, () => []);
     return res;
   }
 
   static ff_tokens_pre(toks: Token[]): PreProcessResult {
     const res = new PreProcessResult();
-    res.ff_tokens = toks;
+    res._n_ff_tokens = toks;
     return res;
   }
 }
 
 export class PostProcessResult {
-  stop_seq: boolean;
+  _n_stop_seq: boolean;
 
   constructor(stop_seq = false) {
-    this.stop_seq = stop_seq;
+    this._n_stop_seq = stop_seq;
   }
 
   static continue_(): PostProcessResult {
@@ -483,8 +484,8 @@ export class AiciAsync implements AiciCallbacks {
       assert(this._token instanceof NextToken);
       const r2 = this._token._pre_process();
       assert(r2 instanceof PreProcessResult);
-      assert(r2.attention_masks.length === 1, "nested fork not allowed");
-      if (r2.suspended) {
+      assert(r2._n_attention_masks.length === 1, "nested fork not allowed");
+      if (r2._n_suspended) {
         // Need to generate one fake token...
         this._pending_cb = this._token;
         const f = new FixedTokens("░");
@@ -495,7 +496,7 @@ export class AiciAsync implements AiciCallbacks {
       assert(r instanceof MidProcessResult);
     }
 
-    assert(Array.isArray(r._ffTokens));
+    assert(Array.isArray(r._n_ff_tokens));
     return r;
   }
 

@@ -3,12 +3,13 @@ use std::sync::Mutex;
 use aici_abi::{
     svob::SimpleVob,
     toktree::{Recognizer, SpecialToken, TokTrie},
-    TokenId, VariableStorage,
+    AiciVm, InitPromptArg, InitPromptResult, MidProcessArg, MidProcessResult, PostProcessArg,
+    PostProcessResult, PreProcessArg, PreProcessResult, TokenId, VariableStorage,
 };
 use rquickjs::{
     class::Trace,
     function::{IntoJsFunc, ParamRequirement, Params},
-    qjs, Context, Ctx, Function, IntoJs, Module, Object, Runtime, Value,
+    qjs, Context, Ctx, FromJs, Function, IntoAtom, IntoJs, Module, Object, Result, Runtime, Value,
 };
 
 struct ModuleState {
@@ -59,35 +60,58 @@ impl<'js> IntoJsFunc<'js, ()> for ConsoleLog {
     }
 }
 
-fn error_to_string(ctx: &Ctx, e: rquickjs::Error) -> String {
-    match e {
-        rquickjs::Error::Exception => {
-            let v = ctx.catch();
-            match v.as_exception() {
-                Some(e) if e.message().is_some() => format!(
-                    "Exception: {}\n{}",
-                    e.message().unwrap(),
-                    e.stack().unwrap_or(String::new())
-                ),
-                _ => format!("{v:?}"),
-            }
-        }
-        _ => format!("{e}"),
+trait CtxExt<'js> {
+    fn error_to_string(&self, e: rquickjs::Error) -> String;
+    fn unwrap_js<T>(&self, result: Result<T>) -> T;
+    fn eval2<V: FromJs<'js>, S: Into<Vec<u8>>>(&self, source: S) -> V;
+}
+
+trait ObjectExt<'js> {
+    fn get2<K: IntoAtom<'js>, V: FromJs<'js>>(&self, k: K) -> V;
+}
+
+impl<'js> ObjectExt<'js> for Object<'js> {
+    fn get2<K: IntoAtom<'js>, V: FromJs<'js>>(&self, k: K) -> V {
+        self.ctx().unwrap_js(self.get(k))
     }
 }
 
-fn unwrap_js<T>(ctx: &Ctx, result: Result<T, rquickjs::Error>) -> T {
-    match result {
-        Ok(r) => r,
-        Err(e) => {
-            println!("{}", error_to_string(ctx, e));
-            std::process::exit(1)
+impl<'js> CtxExt<'js> for Ctx<'js> {
+    fn error_to_string(&self, e: rquickjs::Error) -> String {
+        match e {
+            rquickjs::Error::Exception => {
+                let v = self.catch();
+                match v.as_exception() {
+                    Some(e) if e.message().is_some() => format!(
+                        "Exception: {}\n{}",
+                        e.message().unwrap(),
+                        e.stack().unwrap_or(String::new())
+                    ),
+                    _ => format!("{v:?}"),
+                }
+            }
+            _ => format!("{e}"),
         }
+    }
+
+    fn unwrap_js<T>(&self, result: Result<T>) -> T {
+        match result {
+            Ok(r) => r,
+            Err(e) => {
+                println!("{}", self.error_to_string(e));
+                std::process::exit(1)
+            }
+        }
+    }
+
+    fn eval2<V: FromJs<'js>, S: Into<Vec<u8>>>(&self, source: S) -> V {
+        self.unwrap_js(self.eval(source))
     }
 }
 
 /// A class which will be exported from the module.
 #[rquickjs::class]
+#[derive(Clone)]
 pub struct TokenSet {
     inner: SimpleVob,
 }
@@ -181,6 +205,7 @@ impl Constraint {
 }
 
 #[rquickjs::module]
+#[allow(non_snake_case)]
 mod aici_mod {
     pub use super::{Constraint, TokenSet};
 
@@ -203,7 +228,7 @@ mod aici_mod {
     }
 
     #[rquickjs::function]
-    fn detokenize(tokens: Vec<TokenId>) -> Vec<u8> {
+    pub fn detokenize(tokens: Vec<TokenId>) -> Vec<u8> {
         let trie = &mut GLOBAL_STATE.lock().unwrap().trie;
         let bytes = tokens
             .iter()
@@ -213,42 +238,40 @@ mod aici_mod {
     }
 
     #[rquickjs::function]
-    fn get_var(name: String) -> Option<Vec<u8>> {
+    pub fn get_var(name: String) -> Option<Vec<u8>> {
         let name = name.as_str();
         let v = GLOBAL_STATE.lock().unwrap().vars.get(name);
         v
     }
 
     #[rquickjs::function]
-    fn set_var(name: String, value: StrOrBuffer) {
+    pub fn set_var(name: String, value: StrOrBuffer) {
         let name = name.as_str();
         let vars = &GLOBAL_STATE.lock().unwrap().vars;
         vars.set(name, (&value.as_bytes()).to_vec());
     }
 
     #[rquickjs::function]
-    fn append_var(name: String, value: StrOrBuffer) {
+    pub fn append_var(name: String, value: StrOrBuffer) {
         let name = name.as_str();
         let vars = &GLOBAL_STATE.lock().unwrap().vars;
         vars.append(name, (&value.as_bytes()).to_vec());
     }
 
     #[rquickjs::function]
-    fn eos_token() -> TokenId {
+    pub fn eos_token() -> TokenId {
         let trie = &GLOBAL_STATE.lock().unwrap().trie;
         trie.special_token(SpecialToken::EndOfSentence)
     }
 
     #[rquickjs::function]
-    #[qjs(rename = "RegexConstraint")]
-    fn regex_constraint(regex: String) -> Constraint {
+    pub fn RegexConstraint(regex: String) -> Constraint {
         let rx = RecRx::from_rx(regex.as_str()).to_stack_recognizer();
         Constraint::new(Box::new(rx))
     }
 
     #[rquickjs::function]
-    #[qjs(rename = "CfgConstraint")]
-    fn cfg_constraint<'js>(ctx: Ctx<'js>, cfg: String) -> Result<Constraint> {
+    pub fn CfgConstraint<'js>(ctx: Ctx<'js>, cfg: String) -> Result<Constraint> {
         match CfgParser::from_yacc(cfg.as_str()) {
             Ok(cfg) => Ok(Constraint::new(Box::new(cfg))),
             Err(e) => Err(Exception::throw_type(&ctx, &format!("{}", e))),
@@ -256,8 +279,7 @@ mod aici_mod {
     }
 
     #[rquickjs::function]
-    #[qjs(rename = "SubStrConstraint")]
-    fn substr_constraint(templ: String, end_str: String) -> Constraint {
+    pub fn SubStrConstraint(templ: String, end_str: String) -> Constraint {
         let rx = SubStrMatcher::new(templ.as_str(), end_str.as_str()).to_stack_recognizer();
         Constraint::new(Box::new(rx))
     }
@@ -310,16 +332,6 @@ impl Runner {
         let rt = Runtime::new().unwrap();
         let ctx = Context::full(&rt).unwrap();
 
-        let print = r#"
-import * as _aici from '_aici'
-console.info('Hello', {})
-const t = _aici.TokenSet()
-console.info('Hello', t, t.length)
-export function foo() {
-    console.log("foo")
-}
-"#;
-
         let aici_js = include_str!("../ts/aici.js");
 
         ctx.with(|ctx| {
@@ -335,12 +347,92 @@ export function foo() {
 
             Module::declare_def::<js_aici_mod, _>(ctx.clone(), "_aici").unwrap();
 
-            let _ = unwrap_js(&ctx, ctx.clone().compile("main", print));
-            // let v: Value = unwrap_js(&ctx, ctx.clone().eval("globalThis.foo"));
-            let _ = unwrap_js(&ctx, ctx.clone().compile("aici", aici_js));
-            let _ = unwrap_js(&ctx, ctx.clone().compile("main", source));
+            let _ = ctx.unwrap_js(ctx.clone().compile("aici", aici_js));
+            let _ = ctx.unwrap_js(ctx.clone().compile("main", source));
         });
 
         Self { interpreter: ctx }
     }
+
+    pub fn with_cb<F, R>(&self, f: F) -> R
+    where
+        F: FnOnce(Ctx) -> R,
+    {
+        self.interpreter.with(f)
+    }
 }
+
+/*
+export interface AiciCallbacks {
+  init_prompt(prompt: Token[]): void;
+  pre_process(): PreProcessResult;
+  mid_process(fork_group: SeqId[]): MidProcessResult;
+  post_process(backtrack: number, tokens: Token[]): PostProcessResult;
+}
+*/
+
+impl AiciVm for Runner {
+    fn init_prompt(&mut self, arg: InitPromptArg) -> InitPromptResult {
+        self.with_cb(|ctx| {
+            let cb: Function = ctx.eval2("globalThis._aici_cb.init_prompt");
+            let _: Value = ctx.unwrap_js(cb.call((&arg.prompt,)));
+            InitPromptResult::default()
+        })
+    }
+
+    fn pre_process(&mut self, _arg: PreProcessArg) -> PreProcessResult {
+        self.with_cb(|ctx| {
+            let cb: Function = ctx.eval2("globalThis._aici_cb.pre_process");
+            let r: Object = ctx.unwrap_js(cb.call(()));
+            PreProcessResult {
+                attention_masks: r.get2("_n_attention_masks"),
+                suspend: r.get2("_n_suspended"),
+                ff_tokens: r.get2("_n_ff_tokens"),
+            }
+        })
+    }
+
+    fn mid_process(&mut self, arg: MidProcessArg) -> MidProcessResult {
+        self.with_cb(|ctx| {
+            let cb: Function = ctx.eval2("globalThis._aici_cb.mid_process");
+            let fg: Vec<u32> = arg.fork_group.iter().map(|v| v.0.clone()).collect();
+            let r: Object = ctx.unwrap_js(cb.call((&fg,)));
+            let stop: bool = r.get2("_n_stop");
+            if stop {
+                MidProcessResult::Stop
+            } else {
+                let backtrack: u32 = r.get2("_n_backtrack");
+                let ff_tokens: Vec<TokenId> = r.get2("_n_ff_tokens");
+
+                if backtrack > 0 || ff_tokens.len() > 0 {
+                    MidProcessResult::Splice {
+                        backtrack,
+                        ff_tokens,
+                    }
+                } else {
+                    // TODO perf - clone on TokenSet
+                    let logit_bias: TokenSet = r.get2("_n_logit_bias");
+                    aici_abi::return_logit_bias(&logit_bias.inner);
+                    MidProcessResult::SampleWithBias {
+                        allowed_tokens: SimpleVob::new(),
+                    }
+                }
+            }
+        })
+    }
+
+    fn post_process(&mut self, arg: PostProcessArg) -> PostProcessResult {
+        self.with_cb(|ctx| {
+            let cb: Function = ctx.eval2("globalThis._aici_cb.post_process");
+            let r: Object = ctx.unwrap_js(cb.call((arg.backtrack, &arg.tokens)));
+            let stop: bool = r.get2("_n_stop_seq");
+            PostProcessResult { stop }
+        })
+    }
+}
+
+fn runner_from_env() -> Runner {
+    Runner::new(aici_abi::arg_bytes())
+}
+
+aici_abi::aici_expose_all!(Runner, runner_from_env());
