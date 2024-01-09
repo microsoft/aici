@@ -320,7 +320,7 @@ pub fn setup_linker(engine: &wasmtime::Engine) -> Result<Arc<wasmtime::Linker<Mo
     linker.func_wrap(
         "wasi_snapshot_preview1",
         "proc_exit",
-        |code: i32| -> Result<()> { Err(anyhow!("proc_exit: {code}")) },
+        |code: i32| -> Result<()> { Err(user_error!("proc_exit: {code}")) },
     )?;
 
     linker.func_wrap(

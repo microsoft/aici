@@ -2,11 +2,6 @@ declare module "_aici" {
   type Buffer = Uint8Array;
 
   /**
-   * Use aici.start() instead.
-   */
-  function register(cb: any /* AiciCallbacks */): void;
-
-  /**
    * Return token indices for a given string (or byte sequence).
    */
   function tokenize(text: string | Buffer): number[];
@@ -49,11 +44,14 @@ declare module "_aici" {
    */
   class TokenSet {
     /**
-     * Create an empty set (with len() set to the total number of tokens).
+     * Create an empty set (with .length set to the total number of tokens).
      */
     constructor();
 
-    [index: number]: boolean;
+    add(t: number): void;
+    delete(t: number): void;
+    has(t: number): boolean;
+    clear(): void;
 
     /**
      * Number of all tokens (not only in the set).

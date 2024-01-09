@@ -1,5 +1,6 @@
 /// <reference path="./native.d.ts" />
-import { TokenSet, tokenize, detokenize, RegexConstraint, CfgConstraint, SubStrConstraint, Constraint, get_var, set_var, eos_token, } from "_aici";
+import { TokenSet, tokenize, detokenize, RegexConstraint, CfgConstraint, SubStrConstraint, Constraint, get_var, set_var, append_var, eos_token, } from "_aici";
+export { TokenSet, tokenize, detokenize, RegexConstraint, CfgConstraint, SubStrConstraint, Constraint, get_var, set_var, append_var, eos_token, };
 import * as _aici from "_aici";
 export class AssertionError extends Error {
 }
@@ -307,7 +308,7 @@ export class AiciAsync {
         this._fork_group = [];
         assert(AiciAsync.instance === null);
         AiciAsync.instance = this;
-        _aici.register(this);
+        globalThis._aici_cb = this;
         f();
         if (this._getPrompt) {
             assert(this._getPrompt instanceof GetPrompt);
@@ -446,10 +447,10 @@ export class ChooseConstraint extends Constraint {
     allow_tokens(ts) {
         for (const o of this.options) {
             if (this.ptr < o.length) {
-                ts[o[this.ptr]] = true;
+                ts.add(o[this.ptr]);
             }
             else if (this.ptr === o.length) {
-                ts[eos_token()] = true;
+                ts.add(eos_token());
             }
         }
     }

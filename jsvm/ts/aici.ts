@@ -14,6 +14,20 @@ import {
   eos_token,
 } from "_aici";
 
+export {
+  TokenSet,
+  tokenize,
+  detokenize,
+  RegexConstraint,
+  CfgConstraint,
+  SubStrConstraint,
+  Constraint,
+  get_var,
+  set_var,
+  append_var,
+  eos_token,
+};
+
 import * as _aici from "_aici";
 
 type Token = number;
@@ -405,8 +419,7 @@ export class AiciAsync implements AiciCallbacks {
   constructor(f: () => Promise<void>) {
     assert(AiciAsync.instance === null);
     AiciAsync.instance = this;
-
-    _aici.register(this);
+    (globalThis as any)._aici_cb = this;
 
     f();
 
@@ -578,9 +591,9 @@ export class ChooseConstraint extends Constraint {
   allow_tokens(ts: TokenSet): void {
     for (const o of this.options) {
       if (this.ptr < o.length) {
-        ts[o[this.ptr]] = true;
+        ts.add(o[this.ptr]);
       } else if (this.ptr === o.length) {
-        ts[eos_token()] = true;
+        ts.add(eos_token());
       }
     }
   }
