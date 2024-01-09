@@ -5,6 +5,7 @@ members = [
     "declvm",
     "aicirt",
     "pyvm",
+    "jsvm",
     "rllm",
     "tch-cuda",
 ]

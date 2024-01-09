@@ -269,6 +269,24 @@ dependencies = [
 ]
 
 [[package]]
+name = "aici_jsvm"
+version = "0.1.0"
+dependencies = [
+ "aici_abi",
+ "anyhow",
+ "glob",
+ "indexmap 2.1.0",
+ "lazy_static",
+ "libc",
+ "num-traits",
+ "once_cell",
+ "rquickjs",
+ "rquickjs-sys",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "aici_pyvm"
 version = "0.1.0"
 dependencies = [
@@ -2767,6 +2785,31 @@ dependencies = [
  "tokio",
  "torch-sys",
  "uuid",
+]
+
+[[package]]
+name = "rquickjs"
+version = "0.4.0"
+source = "git+https://github.com/mmoskal/rquickjs?rev=d67a104f5d89b5532c5#d67a104f5d89b5532c5c5c4ec190cbca74cdf6c4"
+dependencies = [
+ "rquickjs-core",
+]
+
+[[package]]
+name = "rquickjs-core"
+version = "0.4.0"
+source = "git+https://github.com/mmoskal/rquickjs?rev=d67a104f5d89b5532c5#d67a104f5d89b5532c5c5c4ec190cbca74cdf6c4"
+dependencies = [
+ "rquickjs-sys",
+]
+
+[[package]]
+name = "rquickjs-sys"
+version = "0.4.0"
+source = "git+https://github.com/mmoskal/rquickjs?rev=d67a104f5d89b5532c5#d67a104f5d89b5532c5c5c4ec190cbca74cdf6c4"
+dependencies = [
+ "anyhow",
+ "cc",
 ]
 
 [[package]]
