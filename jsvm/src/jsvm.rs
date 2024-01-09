@@ -1,6 +1,8 @@
 use std::sync::Mutex;
 
 use aici_abi::{
+    aici_stop,
+    recognizer::{AnythingGoes, StackRecognizer},
     svob::SimpleVob,
     toktree::{Recognizer, SpecialToken, TokTrie},
     AiciVm, InitPromptArg, InitPromptResult, MidProcessArg, MidProcessResult, PostProcessArg,
@@ -99,7 +101,7 @@ impl<'js> CtxExt<'js> for Ctx<'js> {
             Ok(r) => r,
             Err(e) => {
                 println!("{}", self.error_to_string(e));
-                std::process::exit(1)
+                aici_stop();
             }
         }
     }
@@ -183,6 +185,11 @@ impl Constraint {
 
 #[rquickjs::methods]
 impl Constraint {
+    #[qjs(constructor)]
+    pub fn ctor() -> Self {
+        Self::new(Box::new(StackRecognizer::from(AnythingGoes {})))
+    }
+
     pub fn eos_allowed(&mut self) -> bool {
         self.inner.eos_allowed()
     }

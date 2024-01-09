@@ -35,6 +35,56 @@ type SeqId = number;
 type int = number;
 type Buffer = Uint8Array;
 
+function dbgarg(arg: any, depth: number): string {
+  if (arg === null) return "null";
+  if (arg === undefined) return "undefined";
+  if (typeof arg === "object") {
+    if (Array.isArray(arg)) {
+      if (depth > 2 && arg.length > 0) return "[...]";
+      let suff = "]";
+      if (arg.length > 20) {
+        arg = arg.slice(0, 20);
+        suff = ", ...]";
+      }
+      return `[${arg.map((x: any) => dbgarg(x, depth + 1)).join(", ")}${suff}`;
+    } else {
+      let keys = Object.keys(arg);
+      if (depth > 2 && keys.length > 0) return "{...}";
+      let suff = "}";
+      if (keys.length > 20) {
+        suff = ", ...}";
+        keys = keys.slice(0, 20);
+      }
+      return `{${keys
+        .map((k) => `${k}: ${dbgarg(arg[k], depth + 1)}`)
+        .join(", ")}${suff}`;
+    }
+  } else {
+    if (depth === 0 || typeof arg !== "string") {
+      return arg.toString();
+    } else {
+      const r = arg.toString();
+      if (r.length > 100) {
+        return r.substring(0, 100) + "...";
+      } else return r;
+    }
+  }
+}
+
+export function inspect(v: any) {
+  return dbgarg(v, 0);
+}
+
+export function log(...args: any[]) {
+  (console as any)._print(args.map((x) => inspect(x)).join(" "));
+}
+
+console.log = log;
+console.info = log;
+console.warn = log;
+console.debug = log;
+console.trace = log;
+
 export class AssertionError extends Error {}
 
 function assert(cond: boolean, msg = "Assertion failed"): asserts cond {
@@ -219,6 +269,13 @@ export class NextToken {
 
 /**
  * Forces next tokens to be exactly the given text.
+ */
+export async function fixed(text: string) {
+  await new FixedTokens(text).run();
+}
+
+/**
+ * Forces next tokens to be exactly the given text.
  * If following is given, the text replaces everything that follows the label.
  */
 export class FixedTokens extends NextToken {
@@ -272,13 +329,10 @@ export class StopToken extends NextToken {
  * The constraint will be constructed in mid_process() phase, which has slightly longer time limit.
  */
 export class ConstrainedToken extends NextToken {
-  mk_constraint: () => Constraint;
-  _constraint: Constraint | null;
+  _constraint: Constraint | null = null;
 
-  constructor(mk_constraint: () => Constraint) {
+  constructor(public mk_constraint: () => Constraint) {
     super();
-    this.mk_constraint = mk_constraint;
-    this._constraint = null;
   }
 
   mid_process(): MidProcessResult {
@@ -418,9 +472,14 @@ export class AiciAsync implements AiciCallbacks {
   }
 
   constructor(f: () => Promise<void>) {
-    assert(AiciAsync.instance === null);
+    assert(!AiciAsync.instance);
     AiciAsync.instance = this;
     (globalThis as any)._aici_cb = this;
+
+    this.init_prompt = this.init_prompt.bind(this);
+    this.pre_process = this.pre_process.bind(this);
+    this.mid_process = this.mid_process.bind(this);
+    this.post_process = this.post_process.bind(this);
 
     f();
 
@@ -464,6 +523,7 @@ export class AiciAsync implements AiciCallbacks {
   }
 
   pre_process(): PreProcessResult {
+    console.log("tok", this._token);
     assert(this._token instanceof NextToken);
     if (this._token.finished) {
       this._token = new StopToken();
@@ -673,7 +733,7 @@ export async function gen_text(options: GenOptions): Promise<string> {
 
 export function check_var(name: string, value: string): void {
   const v = get_var(name);
-  if (v === null) {
+  if (v == null) {
     throw new AssertionError(`Variable ${name} is unset`);
   }
   const vStr = v.toString();

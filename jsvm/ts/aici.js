@@ -24,15 +24,15 @@ export function get_prompt_len() {
 }
 export class MidProcessResult {
     constructor() {
-        this._stop = false;
         this._skipMe = false;
-        this._logitBias = null;
-        this._backtrack = 0;
-        this._ffTokens = [];
+        this._n_stop = false;
+        this._n_logit_bias = null;
+        this._n_backtrack = 0;
+        this._n_ff_tokens = [];
     }
     static stop() {
         const res = new MidProcessResult();
-        res._stop = true;
+        res._n_stop = true;
         return res;
     }
     static skipMe() {
@@ -42,46 +42,46 @@ export class MidProcessResult {
     }
     static bias(bias) {
         const res = new MidProcessResult();
-        res._logitBias = bias;
+        res._n_logit_bias = bias;
         return res;
     }
     static splice(backtrack, tokens) {
         const res = new MidProcessResult();
         assert(backtrack >= 0);
         assert(Array.isArray(tokens));
-        res._backtrack = backtrack;
-        res._ffTokens = tokens;
+        res._n_backtrack = backtrack;
+        res._n_ff_tokens = tokens;
         return res;
     }
 }
 export class PreProcessResult {
     constructor() {
-        this.suspended = false;
-        this.ff_tokens = [];
-        this.attention_masks = [[]];
+        this._n_suspended = false;
+        this._n_ff_tokens = [];
+        this._n_attention_masks = [[]];
     }
     static continue_() {
         return new PreProcessResult();
     }
     static suspend() {
         const res = new PreProcessResult();
-        res.suspended = true;
+        res._n_suspended = true;
         return res;
     }
     static fork(num_forks) {
         const res = new PreProcessResult();
-        res.attention_masks = Array.from({ length: num_forks }, () => []);
+        res._n_attention_masks = Array.from({ length: num_forks }, () => []);
         return res;
     }
     static ff_tokens_pre(toks) {
         const res = new PreProcessResult();
-        res.ff_tokens = toks;
+        res._n_ff_tokens = toks;
         return res;
     }
 }
 export class PostProcessResult {
     constructor(stop_seq = false) {
-        this.stop_seq = stop_seq;
+        this._n_stop_seq = stop_seq;
     }
     static continue_() {
         return new PostProcessResult();
@@ -153,6 +153,12 @@ export class NextToken {
         this.curr_tokens = null;
         this.fork_group = [];
     }
+}
+/**
+ * Forces next tokens to be exactly the given text.
+ */
+export async function fixed(text) {
+    await new FixedTokens(text).run();
 }
 /**
  * Forces next tokens to be exactly the given text.
@@ -306,9 +312,13 @@ export class AiciAsync {
         this._tokens = [];
         this._prompt_len = 0;
         this._fork_group = [];
-        assert(AiciAsync.instance === null);
+        assert(!AiciAsync.instance);
         AiciAsync.instance = this;
         globalThis._aici_cb = this;
+        this.init_prompt = this.init_prompt.bind(this);
+        this.pre_process = this.pre_process.bind(this);
+        this.mid_process = this.mid_process.bind(this);
+        this.post_process = this.post_process.bind(this);
         f();
         if (this._getPrompt) {
             assert(this._getPrompt instanceof GetPrompt);
@@ -345,6 +355,7 @@ export class AiciAsync {
         assert(this._token instanceof NextToken);
     }
     pre_process() {
+        console.log("tok", this._token);
         assert(this._token instanceof NextToken);
         if (this._token.finished) {
             this._token = new StopToken();
@@ -362,8 +373,8 @@ export class AiciAsync {
             assert(this._token instanceof NextToken);
             const r2 = this._token._pre_process();
             assert(r2 instanceof PreProcessResult);
-            assert(r2.attention_masks.length === 1, "nested fork not allowed");
-            if (r2.suspended) {
+            assert(r2._n_attention_masks.length === 1, "nested fork not allowed");
+            if (r2._n_suspended) {
                 // Need to generate one fake token...
                 this._pending_cb = this._token;
                 const f = new FixedTokens("░");
@@ -373,7 +384,7 @@ export class AiciAsync {
             r = this._token._mid_process(fork_group);
             assert(r instanceof MidProcessResult);
         }
-        assert(Array.isArray(r._ffTokens));
+        assert(Array.isArray(r._n_ff_tokens));
         return r;
     }
     post_process(backtrack, tokens) {
@@ -500,7 +511,7 @@ export async function gen_text(options) {
 }
 export function check_var(name, value) {
     const v = get_var(name);
-    if (v === null) {
+    if (v == null) {
         throw new AssertionError(`Variable ${name} is unset`);
     }
     const vStr = v.toString();

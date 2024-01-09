@@ -110,5 +110,8 @@
     "jupyter.widgetScriptSources": [
         "jsdelivr.com",
         "unpkg.com"
-    ]
+    ],
+    "files.readonlyInclude": {
+        "*/ts/*.js": true
+    }
 }
