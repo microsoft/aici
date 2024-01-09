@@ -2,6 +2,61 @@
 import { TokenSet, tokenize, detokenize, RegexConstraint, CfgConstraint, SubStrConstraint, Constraint, get_var, set_var, append_var, eos_token, } from "_aici";
 export { TokenSet, tokenize, detokenize, RegexConstraint, CfgConstraint, SubStrConstraint, Constraint, get_var, set_var, append_var, eos_token, };
 import * as _aici from "_aici";
+function dbgarg(arg, depth) {
+    if (arg === null)
+        return "null";
+    if (arg === undefined)
+        return "undefined";
+    if (typeof arg === "object") {
+        if (Array.isArray(arg)) {
+            if (depth > 2 && arg.length > 0)
+                return "[...]";
+            let suff = "]";
+            if (arg.length > 20) {
+                arg = arg.slice(0, 20);
+                suff = ", ...]";
+            }
+            return `[${arg.map((x) => dbgarg(x, depth + 1)).join(", ")}${suff}`;
+        }
+        else {
+            let keys = Object.keys(arg);
+            if (depth > 2 && keys.length > 0)
+                return "{...}";
+            let suff = "}";
+            if (keys.length > 20) {
+                suff = ", ...}";
+                keys = keys.slice(0, 20);
+            }
+            return `{${keys
+                .map((k) => `${k}: ${dbgarg(arg[k], depth + 1)}`)
+                .join(", ")}${suff}`;
+        }
+    }
+    else {
+        if (depth === 0 || typeof arg !== "string") {
+            return arg.toString();
+        }
+        else {
+            const r = arg.toString();
+            if (r.length > 100) {
+                return r.substring(0, 100) + "...";
+            }
+            else
+                return r;
+        }
+    }
+}
+export function inspect(v) {
+    return dbgarg(v, 0);
+}
+export function log(...args) {
+    console._print(args.map((x) => inspect(x)).join(" "));
+}
+console.log = log;
+console.info = log;
+console.warn = log;
+console.debug = log;
+console.trace = log;
 export class AssertionError extends Error {
 }
 function assert(cond, msg = "Assertion failed") {

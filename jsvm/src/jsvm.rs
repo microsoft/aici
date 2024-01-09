@@ -9,9 +9,7 @@ use aici_abi::{
     PostProcessResult, PreProcessArg, PreProcessResult, TokenId, VariableStorage,
 };
 use rquickjs::{
-    class::Trace,
-    function::{IntoJsFunc, ParamRequirement, Params},
-    qjs, Context, Ctx, FromJs, Function, IntoAtom, IntoJs, Module, Object, Result, Runtime, Value,
+    class::Trace, Context, Ctx, FromJs, Function, IntoAtom, Module, Object, Result, Runtime, Value,
 };
 
 struct ModuleState {
@@ -26,40 +24,6 @@ lazy_static::lazy_static! {
         trie: TokTrie::from_host(),
         vars: VariableStorage::new(),
     });
-}
-
-// TODO do something nicer for objects and arrays
-fn val_to_str(v: &Value) -> String {
-    let mut len = std::mem::MaybeUninit::uninit();
-    let ptr =
-        unsafe { qjs::JS_ToCStringLen(v.ctx().as_raw().as_ptr(), len.as_mut_ptr(), v.as_raw()) };
-    if ptr.is_null() {
-        return "???".to_string();
-    }
-    let len = unsafe { len.assume_init() };
-    let bytes: &[u8] = unsafe { std::slice::from_raw_parts(ptr as _, len as _) };
-    let result = String::from_utf8_lossy(bytes).to_string();
-    unsafe { qjs::JS_FreeCString(v.ctx().as_raw().as_ptr(), ptr) };
-    result
-}
-
-struct ConsoleLog;
-impl<'js> IntoJsFunc<'js, ()> for ConsoleLog {
-    fn param_requirements() -> ParamRequirement {
-        ParamRequirement::any()
-    }
-
-    fn call<'a>(&self, params: Params<'a, 'js>) -> rquickjs::Result<Value<'js>> {
-        for idx in 0..params.len() {
-            let v = params.arg(idx).unwrap();
-            print!("{}", val_to_str(&v));
-            if idx < params.len() - 1 {
-                print!(" ");
-            }
-        }
-        println!("");
-        ().into_js(params.ctx())
-    }
 }
 
 trait CtxExt<'js> {
@@ -332,6 +296,10 @@ pub struct Runner {
     interpreter: Context,
 }
 
+fn _print(msg: String) {
+    println!("{msg}");
+}
+
 impl Runner {
     pub fn new(arg: Vec<u8>) -> Self {
         let source = String::from_utf8(arg).unwrap();
@@ -344,12 +312,8 @@ impl Runner {
         ctx.with(|ctx| {
             let global = ctx.globals();
             let cons = Object::new(ctx.clone()).unwrap();
-            let f = Function::new(ctx.clone(), ConsoleLog).unwrap();
-            cons.set("log", f.clone()).unwrap();
-            cons.set("info", f.clone()).unwrap();
-            cons.set("warn", f.clone()).unwrap();
-            cons.set("error", f.clone()).unwrap();
-            cons.set("debug", f.clone()).unwrap();
+            let f = Function::new(ctx.clone(), _print).unwrap();
+            cons.set("_print", f).unwrap();
             global.set("console", cons).unwrap();
 
             Module::declare_def::<js_aici_mod, _>(ctx.clone(), "_aici").unwrap();
