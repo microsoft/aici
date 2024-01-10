@@ -4,24 +4,21 @@ import {
   TokenSet,
   tokenize,
   detokenize,
-  RegexConstraint,
-  CfgConstraint,
-  SubStrConstraint,
+  regex_constraint,
+  cfg_constraint,
+  substr_constraint,
   Constraint,
   get_var,
   set_var,
   append_var,
   eos_token,
+  panic,
 } from "_aici";
 
 export {
   TokenSet,
   tokenize,
   detokenize,
-  RegexConstraint,
-  CfgConstraint,
-  SubStrConstraint,
-  Constraint,
   get_var,
   set_var,
   append_var,
@@ -30,8 +27,9 @@ export {
 
 import * as _aici from "_aici";
 
-type Token = number;
-type SeqId = number;
+export type Token = number;
+export type SeqId = number;
+
 type int = number;
 type Buffer = Uint8Array;
 
@@ -43,6 +41,7 @@ function dbgarg(arg: any, depth: number): string {
   if (arg === null) return "null";
   if (arg === undefined) return "undefined";
   if (typeof arg === "object") {
+    if (arg instanceof RegExp) return arg.toString();
     if (Array.isArray(arg)) {
       if (depth >= maxDepth && arg.length > 0) return "[...]";
       let suff = "]";
@@ -94,7 +93,7 @@ console.trace = log;
 export class AssertionError extends Error {}
 
 function assert(cond: boolean, msg = "Assertion failed"): asserts cond {
-  if (!cond) throw new AssertionError("Assertion failed");
+  if (!cond) throw new AssertionError(msg);
 }
 
 /**
@@ -278,14 +277,22 @@ export class NextToken {
  */
 export async function fixed(text: string) {
   await new FixedTokens(text).run();
-  console.log("RUN done");
+}
+
+export async function $(strings: TemplateStringsArray, ...values: any[]) {
+  let result = "";
+  strings.forEach((s, i) => {
+    result += s;
+    if (i < values.length) result += inspect(values[i]);
+  });
+  await fixed(result);
 }
 
 /**
  * Forces next tokens to be exactly the given text.
  * If following is given, the text replaces everything that follows the label.
  */
-export class FixedTokens extends NextToken {
+class FixedTokens extends NextToken {
   fixed_tokens: Token[];
   following: Label | null;
 
@@ -316,7 +323,7 @@ export class FixedTokens extends NextToken {
 /**
  * Indicates that the generation should stop.
  */
-export class StopToken extends NextToken {
+class StopToken extends NextToken {
   constructor() {
     super();
   }
@@ -488,12 +495,20 @@ export class AiciAsync implements AiciCallbacks {
     this.mid_process = this.mid_process.bind(this);
     this.post_process = this.post_process.bind(this);
 
-    f().then(async () => {
-      console.log("JSVM: done");
-      while (true) {
-        await new StopToken().run();
-      }
-    });
+    f()
+      .then(async () => {
+        console.log("JSVM: done");
+        while (true) {
+          await new StopToken().run();
+        }
+      })
+      .then(
+        () => {},
+        (e) => {
+          // make sure we catch errors from promises, otherwise they silently stop a thread
+          panic(e);
+        }
+      );
 
     if (this._getPrompt) {
       assert(this._getPrompt instanceof GetPrompt);
@@ -532,14 +547,14 @@ export class AiciAsync implements AiciCallbacks {
     if (this._getPrompt) {
       this._getPrompt._resolve!(prompt);
       this._getPrompt = undefined;
+    } else {
+      assert(this._token instanceof NextToken);
     }
-
-    assert(this._token instanceof NextToken);
   }
 
   pre_process(): PreProcessResult {
     // console.log("tok", this._token);
-    assert(this._token instanceof NextToken);
+    assert(this._token instanceof NextToken, "pre_process - jobs finished");
     if (this._token.finished) {
       this._token = new StopToken();
     }
@@ -676,27 +691,28 @@ export class ChooseConstraint extends Constraint {
 }
 
 export type GenOptions = {
-  regex?: string;
+  regex?: string | RegExp;
   yacc?: string;
   substring?: string;
-  substring_end?: string;
+  substringEnd?: string;
   options?: string[];
-  store_var?: string;
-  stop_at?: string;
-  max_tokens?: number;
+  storeVar?: string;
+  stopAt?: string;
+  maxTokens?: number;
 };
 
 export async function gen_tokens(options: GenOptions): Promise<Token[]> {
+  console.log("GEN", options);
   const res: Token[] = [];
   const {
     regex,
     yacc,
     substring,
-    substring_end = '"',
+    substringEnd = '"',
     options: optionList,
-    store_var,
-    stop_at,
-    max_tokens = 20,
+    storeVar,
+    stopAt,
+    maxTokens = 20,
   } = options;
 
   let constraint: Constraint;
@@ -705,11 +721,12 @@ export async function gen_tokens(options: GenOptions): Promise<Token[]> {
       .length <= 1
   );
   if (regex !== undefined) {
-    constraint = new RegexConstraint(regex);
+    const rx = typeof regex === "string" ? regex : regex.source;
+    constraint = regex_constraint(rx);
   } else if (substring !== undefined) {
-    constraint = new SubStrConstraint(substring, substring_end);
+    constraint = substr_constraint(substring, substringEnd);
   } else if (yacc !== undefined) {
-    constraint = new CfgConstraint(yacc);
+    constraint = cfg_constraint(yacc);
   } else if (optionList !== undefined) {
     constraint = new ChooseConstraint(optionList);
   } else {
@@ -718,30 +735,34 @@ export async function gen_tokens(options: GenOptions): Promise<Token[]> {
 
   const next_token = new ConstrainedToken(() => constraint!);
 
-  for (let i = 0; i < max_tokens; i++) {
+  for (let i = 0; i < maxTokens; i++) {
     const tokens = await next_token.run();
     res.push(...tokens);
 
     const text = detokenize(res).toString();
 
-    if (stop_at !== undefined && text.includes(stop_at)) {
+    if (stopAt !== undefined && text.includes(stopAt)) {
       break;
     }
+
+    console.log(`GEN-${i}`, next_token);
 
     if (next_token.finished) {
       break;
     }
   }
 
-  if (store_var !== undefined) {
-    set_var(store_var, detokenize(res));
+  if (storeVar !== undefined) {
+    const a = detokenize(res);
+    console.log("ARR", Array.isArray(a));
+    set_var(storeVar, detokenize(res));
   }
 
   console.log("GEN", res, detokenize(res).toString());
   return res;
 }
 
-export async function gen_text(options: GenOptions): Promise<string> {
+export async function gen(options: GenOptions): Promise<string> {
   const tokens = await gen_tokens(options);
   return detokenize(tokens).toString();
 }
@@ -762,3 +783,13 @@ export function check_vars(d: Record<string, string>): void {
     check_var(k, v);
   }
 }
+
+// stuff we don't want to export top-level
+export const helpers = {
+  regex_constraint,
+  cfg_constraint,
+  substr_constraint,
+  FixedTokens,
+  StopToken,
+  panic,
+};

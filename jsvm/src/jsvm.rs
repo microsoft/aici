@@ -28,6 +28,7 @@ lazy_static::lazy_static! {
 }
 
 trait CtxExt<'js> {
+    fn error_value_to_string(&self, v: Value<'js>) -> String;
     fn error_to_string(&self, e: rquickjs::Error) -> String;
     fn unwrap_js<T>(&self, result: Result<T>) -> T;
     fn eval2<V: FromJs<'js>, S: Into<Vec<u8>>>(&self, source: S) -> V;
@@ -62,19 +63,20 @@ impl<'js> ObjectExt<'js> for Object<'js> {
 }
 
 impl<'js> CtxExt<'js> for Ctx<'js> {
+    fn error_value_to_string(&self, v: Value<'js>) -> String {
+        match v.as_exception() {
+            Some(e) if e.message().is_some() => format!(
+                "Exception: {}\n{}",
+                e.message().unwrap(),
+                e.stack().unwrap_or(String::new())
+            ),
+            _ => format!("{v:?}"),
+        }
+    }
+
     fn error_to_string(&self, e: rquickjs::Error) -> String {
         match e {
-            rquickjs::Error::Exception => {
-                let v = self.catch();
-                match v.as_exception() {
-                    Some(e) if e.message().is_some() => format!(
-                        "Exception: {}\n{}",
-                        e.message().unwrap(),
-                        e.stack().unwrap_or(String::new())
-                    ),
-                    _ => format!("{v:?}"),
-                }
-            }
+            rquickjs::Error::Exception => self.error_value_to_string(self.catch()),
             _ => format!("{e}"),
         }
     }
@@ -195,15 +197,17 @@ impl Constraint {
 }
 
 #[rquickjs::module]
-#[allow(non_snake_case)]
 mod aici_mod {
+    use crate::CtxExt;
+
     pub use super::{Constraint, TokenSet};
 
     use super::GLOBAL_STATE;
     use aici_abi::{
-        cfg::CfgParser, rx::RecRx, substring::SubStrMatcher, toktree::SpecialToken, TokenId,
+        aici_stop, cfg::CfgParser, rx::RecRx, substring::SubStrMatcher, toktree::SpecialToken,
+        TokenId,
     };
-    use rquickjs::{Ctx, Exception, Result};
+    use rquickjs::{Ctx, Exception, Result, Value};
 
     type StrOrBuffer = String; // TODO
 
@@ -215,6 +219,12 @@ mod aici_mod {
     #[rquickjs::function]
     pub fn tokenize(text: StrOrBuffer) -> Vec<TokenId> {
         aici_abi::tokenize_bytes(&text.as_bytes())
+    }
+
+    #[rquickjs::function]
+    pub fn panic<'js>(ctx: Ctx<'js>, err: Value<'js>) {
+        println!("panic:\n{}", ctx.error_value_to_string(err));
+        aici_stop();
     }
 
     #[rquickjs::function]
@@ -255,13 +265,14 @@ mod aici_mod {
     }
 
     #[rquickjs::function]
-    pub fn RegexConstraint(regex: String) -> Constraint {
+    pub fn regex_constraint(regex: String) -> Constraint {
+        println!("regex constraint: {:?}", regex);
         let rx = RecRx::from_rx(regex.as_str()).to_stack_recognizer();
         Constraint::new(Box::new(rx))
     }
 
     #[rquickjs::function]
-    pub fn CfgConstraint<'js>(ctx: Ctx<'js>, cfg: String) -> Result<Constraint> {
+    pub fn cfg_constraint<'js>(ctx: Ctx<'js>, cfg: String) -> Result<Constraint> {
         match CfgParser::from_yacc(cfg.as_str()) {
             Ok(cfg) => Ok(Constraint::new(Box::new(cfg))),
             Err(e) => Err(Exception::throw_type(&ctx, &format!("{}", e))),
@@ -269,7 +280,7 @@ mod aici_mod {
     }
 
     #[rquickjs::function]
-    pub fn SubStrConstraint(templ: String, end_str: String) -> Constraint {
+    pub fn substr_constraint(templ: String, end_str: String) -> Constraint {
         let rx = SubStrMatcher::new(templ.as_str(), end_str.as_str()).to_stack_recognizer();
         Constraint::new(Box::new(rx))
     }
@@ -330,7 +341,7 @@ impl Runner {
 
         let aici_js = include_str!("../ts/aici.js");
 
-        s.with_cb(|ctx| {
+        s.with_cb("_new", |ctx| {
             let global = ctx.globals();
             let cons = Object::new(ctx.clone()).unwrap();
             let f = Function::new(ctx.clone(), _print).unwrap();
@@ -346,25 +357,36 @@ impl Runner {
         s
     }
 
-    pub fn with_cb<F, R>(&self, f: F) -> R
+    pub fn with_cb<F, R>(&self, lbl: &str, f: F) -> R
     where
         F: FnOnce(Ctx) -> R,
     {
+        let logging = false;
+        if logging {
+            println!("running {}", lbl);
+        }
         let res = self.context.with(f);
+        let mut job_cnt = 0;
         loop {
-            let r = self.context.runtime().execute_pending_job();
-            if r.is_err() {
-                self.context.with(|ctx| {
+            match self.context.runtime().execute_pending_job() {
+                Err(e) => e.0.with(|ctx| {
                     println!(
                         "exception in deferred job:\n{}",
                         ctx.error_to_string(rquickjs::Error::Exception)
                     );
                     aici_stop();
-                })
+                }),
+                Ok(false) => break,
+                Ok(true) => {
+                    // self.context.with(|ctx| {
+                    //     println!("job {} done; {:?}", job_cnt, ctx.catch());
+                    // });
+                    job_cnt += 1;
+                }
             }
-            if r.unwrap() == false {
-                break;
-            }
+        }
+        if logging {
+            println!("done {lbl}; +{job_cnt} jobs");
         }
         res
     }
@@ -381,7 +403,7 @@ export interface AiciCallbacks {
 
 impl AiciVm for Runner {
     fn init_prompt(&mut self, arg: InitPromptArg) -> InitPromptResult {
-        self.with_cb(|ctx| {
+        self.with_cb("init_prompt", |ctx| {
             let cb: Function = ctx.eval2("globalThis._aici_cb.init_prompt");
             let _: Value = cb.call2((&arg.prompt,));
             InitPromptResult::default()
@@ -389,7 +411,7 @@ impl AiciVm for Runner {
     }
 
     fn pre_process(&mut self, _arg: PreProcessArg) -> PreProcessResult {
-        self.with_cb(|ctx| {
+        self.with_cb("pre_process", |ctx| {
             let cb: Function = ctx.eval2("globalThis._aici_cb.pre_process");
             let r: Object = cb.call2(());
             PreProcessResult {
@@ -401,7 +423,7 @@ impl AiciVm for Runner {
     }
 
     fn mid_process(&mut self, arg: MidProcessArg) -> MidProcessResult {
-        self.with_cb(|ctx| {
+        self.with_cb("mid_process", |ctx| {
             let cb: Function = ctx.eval2("globalThis._aici_cb.mid_process");
             let fg: Vec<u32> = arg.fork_group.iter().map(|v| v.0.clone()).collect();
             let r: Object = cb.call2((&fg,));
@@ -430,7 +452,7 @@ impl AiciVm for Runner {
     }
 
     fn post_process(&mut self, arg: PostProcessArg) -> PostProcessResult {
-        self.with_cb(|ctx| {
+        self.with_cb("post_process", |ctx| {
             let cb: Function = ctx.eval2("globalThis._aici_cb.post_process");
             let r: Object = cb.call2((arg.backtrack, &arg.tokens));
             let stop: bool = r.get2("_n_stop_seq");

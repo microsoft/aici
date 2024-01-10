@@ -1,6 +1,6 @@
 /// <reference path="./native.d.ts" />
-import { TokenSet, tokenize, detokenize, RegexConstraint, CfgConstraint, SubStrConstraint, Constraint, get_var, set_var, append_var, eos_token, } from "_aici";
-export { TokenSet, tokenize, detokenize, RegexConstraint, CfgConstraint, SubStrConstraint, Constraint, get_var, set_var, append_var, eos_token, };
+import { TokenSet, tokenize, detokenize, regex_constraint, cfg_constraint, substr_constraint, Constraint, get_var, set_var, append_var, eos_token, panic, } from "_aici";
+export { TokenSet, tokenize, detokenize, get_var, set_var, append_var, eos_token, };
 import * as _aici from "_aici";
 function dbgarg(arg, depth) {
     const maxElts = 20;
@@ -11,6 +11,8 @@ function dbgarg(arg, depth) {
     if (arg === undefined)
         return "undefined";
     if (typeof arg === "object") {
+        if (arg instanceof RegExp)
+            return arg.toString();
         if (Array.isArray(arg)) {
             if (depth >= maxDepth && arg.length > 0)
                 return "[...]";
@@ -64,7 +66,7 @@ export class AssertionError extends Error {
 }
 function assert(cond, msg = "Assertion failed") {
     if (!cond)
-        throw new AssertionError("Assertion failed");
+        throw new AssertionError(msg);
 }
 /**
  * Get list of tokens in the current sequence, including the prompt.
@@ -217,13 +219,21 @@ export class NextToken {
  */
 export async function fixed(text) {
     await new FixedTokens(text).run();
-    console.log("RUN done");
+}
+export async function $(strings, ...values) {
+    let result = "";
+    strings.forEach((s, i) => {
+        result += s;
+        if (i < values.length)
+            result += inspect(values[i]);
+    });
+    await fixed(result);
 }
 /**
  * Forces next tokens to be exactly the given text.
  * If following is given, the text replaces everything that follows the label.
  */
-export class FixedTokens extends NextToken {
+class FixedTokens extends NextToken {
     constructor(text, following = null) {
         super();
         this.fixed_tokens = tokenize(text);
@@ -248,7 +258,7 @@ export class FixedTokens extends NextToken {
 /**
  * Indicates that the generation should stop.
  */
-export class StopToken extends NextToken {
+class StopToken extends NextToken {
     constructor() {
         super();
     }
@@ -378,11 +388,16 @@ export class AiciAsync {
         this.pre_process = this.pre_process.bind(this);
         this.mid_process = this.mid_process.bind(this);
         this.post_process = this.post_process.bind(this);
-        f().then(async () => {
+        f()
+            .then(async () => {
             console.log("JSVM: done");
             while (true) {
                 await new StopToken().run();
             }
+        })
+            .then(() => { }, (e) => {
+            // make sure we catch errors from promises, otherwise they silently stop a thread
+            panic(e);
         });
         if (this._getPrompt) {
             assert(this._getPrompt instanceof GetPrompt);
@@ -419,11 +434,13 @@ export class AiciAsync {
             this._getPrompt._resolve(prompt);
             this._getPrompt = undefined;
         }
-        assert(this._token instanceof NextToken);
+        else {
+            assert(this._token instanceof NextToken);
+        }
     }
     pre_process() {
         // console.log("tok", this._token);
-        assert(this._token instanceof NextToken);
+        assert(this._token instanceof NextToken, "pre_process - jobs finished");
         if (this._token.finished) {
             this._token = new StopToken();
         }
@@ -534,19 +551,21 @@ export class ChooseConstraint extends Constraint {
     }
 }
 export async function gen_tokens(options) {
+    console.log("GEN", options);
     const res = [];
-    const { regex, yacc, substring, substring_end = '"', options: optionList, store_var, stop_at, max_tokens = 20, } = options;
+    const { regex, yacc, substring, substringEnd = '"', options: optionList, storeVar, stopAt, maxTokens = 20, } = options;
     let constraint;
     assert([regex, substring, yacc, optionList].filter((x) => x !== undefined)
         .length <= 1);
     if (regex !== undefined) {
-        constraint = new RegexConstraint(regex);
+        const rx = typeof regex === "string" ? regex : regex.source;
+        constraint = regex_constraint(rx);
     }
     else if (substring !== undefined) {
-        constraint = new SubStrConstraint(substring, substring_end);
+        constraint = substr_constraint(substring, substringEnd);
     }
     else if (yacc !== undefined) {
-        constraint = new CfgConstraint(yacc);
+        constraint = cfg_constraint(yacc);
     }
     else if (optionList !== undefined) {
         constraint = new ChooseConstraint(optionList);
@@ -555,24 +574,27 @@ export async function gen_tokens(options) {
         constraint = new Constraint();
     }
     const next_token = new ConstrainedToken(() => constraint);
-    for (let i = 0; i < max_tokens; i++) {
+    for (let i = 0; i < maxTokens; i++) {
         const tokens = await next_token.run();
         res.push(...tokens);
         const text = detokenize(res).toString();
-        if (stop_at !== undefined && text.includes(stop_at)) {
+        if (stopAt !== undefined && text.includes(stopAt)) {
             break;
         }
+        console.log(`GEN-${i}`, next_token);
         if (next_token.finished) {
             break;
         }
     }
-    if (store_var !== undefined) {
-        set_var(store_var, detokenize(res));
+    if (storeVar !== undefined) {
+        const a = detokenize(res);
+        console.log("ARR", Array.isArray(a));
+        set_var(storeVar, detokenize(res));
     }
     console.log("GEN", res, detokenize(res).toString());
     return res;
 }
-export async function gen_text(options) {
+export async function gen(options) {
     const tokens = await gen_tokens(options);
     return detokenize(tokens).toString();
 }
@@ -591,3 +613,12 @@ export function check_vars(d) {
         check_var(k, v);
     }
 }
+// stuff we don't want to export top-level
+export const helpers = {
+    regex_constraint,
+    cfg_constraint,
+    substr_constraint,
+    FixedTokens,
+    StopToken,
+    panic,
+};

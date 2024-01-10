@@ -19,6 +19,11 @@ declare module "_aici" {
   function self_seq_id(): number;
 
   /**
+   * Print out a message of the error and stop the program.
+   */
+  function panic(error: any): never;
+
+  /**
    * Get the value of a shared variable.
    */
   function get_var(name: string): Buffer | null;
@@ -100,21 +105,15 @@ declare module "_aici" {
    * A constraint that allows only tokens that match the regex.
    * The regex is implicitly anchored at the start and end of the generation.
    */
-  class RegexConstraint extends Constraint {
-    constructor(pattern: string);
-  }
+  function regex_constraint(pattern: string): Constraint;
 
   /**
    * A constraint that allows only tokens that match the specified yacc-like grammar.
    */
-  class CfgConstraint extends Constraint {
-    constructor(yacc_grammar: string);
-  }
+  function cfg_constraint(yacc_grammar: string): Constraint;
 
   /**
    * A constraint that allows only word-substrings of given string.
    */
-  class SubStrConstraint extends Constraint {
-    constructor(template: string, stop_at: string);
-  }
+  function substr_constraint(template: string, stop_at: string): Constraint;
 }
