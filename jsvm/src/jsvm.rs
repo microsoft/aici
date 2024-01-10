@@ -503,32 +503,42 @@ impl AiciVm for Runner {
     }
 
     fn mid_process(&mut self, arg: MidProcessArg) -> MidProcessResult {
-        self.with_cb("mid_process", |ctx| {
-            let cb: Function = ctx.eval2("globalThis._aici_cb.mid_process");
-            let fg: Vec<u32> = arg.fork_group.iter().map(|v| v.0.clone()).collect();
-            let r: Object = cb.call2((&fg,));
-            let stop: bool = r.get2("_n_stop");
-            if stop {
-                MidProcessResult::Stop
-            } else {
-                let backtrack: u32 = r.get2("_n_backtrack");
-                let ff_tokens: Vec<TokenId> = r.get2("_n_ff_tokens");
+        loop {
+            let res = self.with_cb("mid_process", |ctx| {
+                let cb: Function = ctx.eval2("globalThis._aici_cb.mid_process");
+                let fg: Vec<u32> = arg.fork_group.iter().map(|v| v.0.clone()).collect();
 
-                if backtrack > 0 || ff_tokens.len() > 0 {
-                    MidProcessResult::Splice {
-                        backtrack,
-                        ff_tokens,
-                    }
+                let r: Object = cb.call2((&fg,));
+                let skip_me: bool = r.get2("_n_skip_me");
+                let stop: bool = r.get2("_n_stop");
+                if skip_me {
+                    None
+                } else if stop {
+                    Some(MidProcessResult::Stop)
                 } else {
-                    // TODO perf - clone on TokenSet
-                    let logit_bias: TokenSet = r.get2("_n_logit_bias");
-                    aici_abi::return_logit_bias(&logit_bias.inner);
-                    MidProcessResult::SampleWithBias {
-                        allowed_tokens: SimpleVob::new(),
+                    let backtrack: u32 = r.get2("_n_backtrack");
+                    let ff_tokens: Vec<TokenId> = r.get2("_n_ff_tokens");
+
+                    if backtrack > 0 || ff_tokens.len() > 0 {
+                        Some(MidProcessResult::Splice {
+                            backtrack,
+                            ff_tokens,
+                        })
+                    } else {
+                        // TODO perf - clone on TokenSet
+                        let logit_bias: TokenSet = r.get2("_n_logit_bias");
+                        aici_abi::return_logit_bias(&logit_bias.inner);
+                        Some(MidProcessResult::SampleWithBias {
+                            allowed_tokens: SimpleVob::new(),
+                        })
                     }
                 }
+            });
+            match res {
+                Some(r) => return r,
+                None => {}
             }
-        })
+        }
     }
 
     fn post_process(&mut self, arg: PostProcessArg) -> PostProcessResult {

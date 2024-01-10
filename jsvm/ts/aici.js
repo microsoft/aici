@@ -86,7 +86,7 @@ export function getPromptLen() {
 }
 export class MidProcessResult {
     constructor() {
-        this._skipMe = false;
+        this._n_skip_me = false;
         this._n_stop = false;
         this._n_logit_bias = null;
         this._n_backtrack = 0;
@@ -99,7 +99,7 @@ export class MidProcessResult {
     }
     static skipMe() {
         const res = new MidProcessResult();
-        res._skipMe = true;
+        res._n_skip_me = true;
         return res;
     }
     static bias(bias) {
@@ -385,6 +385,7 @@ export class AiciAsync {
     constructor(f) {
         this._tokens = [];
         this._prompt_len = 0;
+        this.midProcessReEntry = false;
         assert(!AiciAsync.instance);
         AiciAsync.instance = this;
         globalThis._aici_cb = this;
@@ -453,12 +454,8 @@ export class AiciAsync {
         return r;
     }
     mid_process(fork_group) {
-        assert(this._token instanceof NextToken);
-        let r = this._token._mid_process(fork_group);
-        assert(r instanceof MidProcessResult);
-        while (r._skipMe) {
-            this.step([]); // TODO
-            assert(this._token instanceof NextToken);
+        assert(this._token instanceof NextToken, "mid_process - no token");
+        if (this.midProcessReEntry) {
             const r2 = this._token._pre_process();
             assert(r2 instanceof PreProcessResult);
             assert(r2._n_attention_masks.length === 1, "nested fork not allowed");
@@ -469,11 +466,19 @@ export class AiciAsync {
                 assert(f.fixedTokens.length === 1);
                 this._token = f;
             }
-            r = this._token._mid_process(fork_group);
-            assert(r instanceof MidProcessResult);
+            this.midProcessReEntry = false;
         }
-        assert(Array.isArray(r._n_ff_tokens));
-        return r;
+        const r = this._token._mid_process(fork_group);
+        assert(r instanceof MidProcessResult);
+        if (r._n_skip_me) {
+            this.step([]);
+            this.midProcessReEntry = true;
+            return r;
+        }
+        else {
+            assert(Array.isArray(r._n_ff_tokens));
+            return r;
+        }
     }
     post_process(backtrack, tokens) {
         if (backtrack > 0) {
@@ -613,7 +618,7 @@ export function checkVar(name, value) {
     }
     const vStr = v.decode();
     if (vStr !== value) {
-        throw new AssertionError(`Variable ${name}: ${vStr} != ${value}`);
+        throw new AssertionError(`Variable ${name}: ${JSON.stringify(vStr)} != ${JSON.stringify(value)}`);
     }
 }
 export function checkVars(d) {

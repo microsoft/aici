@@ -106,8 +106,7 @@ export function getPromptLen(): number {
 }
 
 export class MidProcessResult {
-  _skipMe = false;
-
+  _n_skip_me = false;
   _n_stop = false;
   _n_logit_bias: TokenSet | null = null;
   _n_backtrack: number = 0;
@@ -123,7 +122,7 @@ export class MidProcessResult {
 
   static skipMe(): MidProcessResult {
     const res = new MidProcessResult();
-    res._skipMe = true;
+    res._n_skip_me = true;
     return res;
   }
 
@@ -462,6 +461,7 @@ export class AiciAsync implements AiciCallbacks {
   private _pendingCb: CbType | undefined;
   private _token: CbType | undefined;
   private _getPrompt: GetPrompt | undefined;
+  private midProcessReEntry = false;
 
   _setGetPrompt(g: GetPrompt) {
     assert(!this._getPrompt);
@@ -556,14 +556,9 @@ export class AiciAsync implements AiciCallbacks {
   }
 
   mid_process(fork_group: SeqId[]): MidProcessResult {
-    assert(this._token instanceof NextToken);
+    assert(this._token instanceof NextToken, "mid_process - no token");
 
-    let r = this._token._mid_process(fork_group);
-    assert(r instanceof MidProcessResult);
-
-    while (r._skipMe) {
-      this.step([]); // TODO
-      assert(this._token instanceof NextToken);
+    if (this.midProcessReEntry) {
       const r2 = this._token._pre_process();
       assert(r2 instanceof PreProcessResult);
       assert(r2._n_attention_masks.length === 1, "nested fork not allowed");
@@ -574,12 +569,20 @@ export class AiciAsync implements AiciCallbacks {
         assert(f.fixedTokens.length === 1);
         this._token = f;
       }
-      r = this._token._mid_process(fork_group);
-      assert(r instanceof MidProcessResult);
+      this.midProcessReEntry = false;
     }
 
-    assert(Array.isArray(r._n_ff_tokens));
-    return r;
+    const r = this._token._mid_process(fork_group);
+    assert(r instanceof MidProcessResult);
+
+    if (r._n_skip_me) {
+      this.step([]);
+      this.midProcessReEntry = true;
+      return r;
+    } else {
+      assert(Array.isArray(r._n_ff_tokens));
+      return r;
+    }
   }
 
   post_process(backtrack: number, tokens: Token[]): PostProcessResult {
@@ -771,7 +774,7 @@ export function checkVar(name: string, value: string): void {
   }
   const vStr = v.decode();
   if (vStr !== value) {
-    throw new AssertionError(`Variable ${name}: ${vStr} != ${value}`);
+    throw new AssertionError(`Variable ${name}: ${JSON.stringify(vStr)} != ${JSON.stringify(value)}`);
   }
 }
 

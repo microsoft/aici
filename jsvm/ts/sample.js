@@ -118,11 +118,11 @@ async function test_drugs() {
             break;
         }
     }
-    setVar("times", pos.textSince());
+    setVar("times", "<drug>" + pos.textSince());
     checkVars({
         times: "<drug>Tylenol</drug> in the evening.\n" +
             "Take <drug>Aspirin</drug> in the morning.\n" +
             "Exercise is highly recommended.\nGet lots of sleep.",
     });
 }
-test(test_sample);
+test(test_fork);

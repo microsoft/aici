@@ -153,7 +153,7 @@ async function test_drugs() {
     }
   }
 
-  setVar("times", pos.textSince());
+  setVar("times", "<drug>" + pos.textSince());
 
   checkVars({
     times:
@@ -163,4 +163,4 @@ async function test_drugs() {
   });
 }
 
-test(test_sample);
+test(test_fork);
