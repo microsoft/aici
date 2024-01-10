@@ -50,22 +50,35 @@ class Tester:
 
 def main():
     os.makedirs("tmp", exist_ok=True)
+    js_mode = False
+    cmt = "#"
 
     files = sys.argv[1:]
     if not files:
         print("need some python files as input")
         return
 
+    if files[0].endswith(".js"):
+        js_mode = True
+        cmt = "//"
+
     tester = Tester()
 
     for f in files:
         arg = open(f).read()
         # remove direct calls to tests
-        arg = re.subn(r"^aici.(start|test)\(.*", r"# \g<0>", arg, flags=re.MULTILINE)[0]
+        arg = re.subn(r"^aici.(start|test)\(.*", cmt + r" \g<0>", arg, flags=re.MULTILINE)[0]
+        arg = re.subn(r"^(start|test)\(.*", cmt + r" \g<0>", arg, flags=re.MULTILINE)[0]
         # find tests
-        tests = re.findall(r"^async def (test_\w+)\(.*", arg, flags=re.MULTILINE)
+        if js_mode:
+            tests = re.findall(r"^async function (test[A-Z_]\w*)\(.*", arg, flags=re.MULTILINE)
+        else:
+            tests = re.findall(r"^async def (test_\w+)\(.*", arg, flags=re.MULTILINE)
         for t in tests:
-            arg_t = arg + f"{arg}\naici.test({t}())\n"
+            if js_mode:
+                arg_t = f"{arg}\ntest({t});\n"
+            else:
+                arg_t = f"{arg}\naici.test({t}())\n"
             tester.test_one(f + "::" + t, arg_t)
             if tester.failures:
                 break

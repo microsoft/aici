@@ -1,4 +1,3 @@
-import { getVar, setVar } from "_aici";
 import {
   $,
   Label,
@@ -7,8 +6,10 @@ import {
   fork,
   gen,
   getPrompt,
-  start,
+  test,
   waitVars,
+  getVar,
+  setVar,
 } from "./aici";
 
 async function main() {
@@ -162,4 +163,4 @@ async function test_drugs() {
   });
 }
 
-start(test_sample);
+test(test_sample);

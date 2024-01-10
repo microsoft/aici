@@ -1,5 +1,4 @@
-import { getVar, setVar } from "_aici";
-import { $, Label, assert, checkVars, fork, gen, getPrompt, start, waitVars, } from "./aici";
+import { $, Label, assert, checkVars, fork, gen, getPrompt, test, waitVars, getVar, setVar, } from "./aici";
 async function main() {
     await $ `2 + 2 =`;
     await gen({ maxTokens: 5 });
@@ -126,4 +125,4 @@ async function test_drugs() {
             "Exercise is highly recommended.\nGet lots of sleep.",
     });
 }
-start(test_sample);
+test(test_sample);
