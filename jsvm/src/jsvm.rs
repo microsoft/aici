@@ -110,6 +110,7 @@ impl<'js> Trace<'js> for TokenSet {
 }
 
 #[rquickjs::methods]
+#[allow(non_snake_case)]
 impl TokenSet {
     #[qjs(constructor)]
     pub fn new() -> TokenSet {
@@ -140,7 +141,7 @@ impl TokenSet {
         self.inner.set_all(false);
     }
 
-    pub fn set_all(&mut self, val: bool) {
+    pub fn setAll(&mut self, val: bool) {
         self.inner.set_all(val);
     }
 }
@@ -169,29 +170,30 @@ impl Constraint {
 }
 
 #[rquickjs::methods]
+#[allow(non_snake_case)]
 impl Constraint {
     #[qjs(constructor)]
     pub fn ctor() -> Self {
         Self::new(Box::new(StackRecognizer::from(AnythingGoes {})))
     }
 
-    pub fn eos_allowed(&mut self) -> bool {
+    pub fn eosAllowed(&mut self) -> bool {
         self.inner.eos_allowed()
     }
 
-    pub fn eos_forced(&mut self) -> bool {
+    pub fn eosForced(&mut self) -> bool {
         self.inner.eos_forced()
     }
 
-    pub fn token_allowed(&mut self, t: TokenId) -> bool {
+    pub fn tokenAllowed(&mut self, t: TokenId) -> bool {
         self.inner.token_allowed(t)
     }
 
-    pub fn append_token(&mut self, t: TokenId) {
+    pub fn appendToken(&mut self, t: TokenId) {
         self.inner.append_token(t)
     }
 
-    pub fn allow_tokens(&mut self, ts: &mut TokenSet) {
+    pub fn allowTokens(&mut self, ts: &mut TokenSet) {
         self.inner.allow_tokens(&mut ts.inner);
     }
 }
@@ -220,6 +222,7 @@ impl<'js> IntoJs<'js> for Buffer {
 }
 
 #[rquickjs::module]
+#[allow(non_snake_case)]
 mod aici_mod {
     use crate::{Buffer, CtxExt};
 
@@ -233,7 +236,7 @@ mod aici_mod {
     use rquickjs::{Ctx, Exception, Result, Value};
 
     #[rquickjs::function]
-    pub fn self_seq_id() -> u32 {
+    pub fn selfSeqId() -> u32 {
         aici_abi::self_seq_id().0
     }
 
@@ -259,35 +262,35 @@ mod aici_mod {
     }
 
     #[rquickjs::function]
-    pub fn get_var(name: String) -> Option<Buffer> {
+    pub fn getVar(name: String) -> Option<Buffer> {
         let name = name.as_str();
         let v = GLOBAL_STATE.lock().unwrap().vars.get(name);
         v.map(Buffer)
     }
 
     #[rquickjs::function]
-    pub fn set_var(name: String, value: Buffer) {
+    pub fn setVar(name: String, value: Buffer) {
         let name = name.as_str();
         let vars = &GLOBAL_STATE.lock().unwrap().vars;
         vars.set(name, value.0);
     }
 
     #[rquickjs::function]
-    pub fn append_var(name: String, value: Buffer) {
+    pub fn appendVar(name: String, value: Buffer) {
         let name = name.as_str();
         let vars = &GLOBAL_STATE.lock().unwrap().vars;
         vars.append(name, value.0);
     }
 
     #[rquickjs::function]
-    pub fn buffer_to_string(ctx: Ctx<'_>, value: Buffer) -> Value<'_> {
+    pub fn bufferToString(ctx: Ctx<'_>, value: Buffer) -> Value<'_> {
         rquickjs::String::from_str(ctx, &String::from_utf8_lossy(&value.0))
             .unwrap()
             .into()
     }
 
     #[rquickjs::function]
-    pub fn buffer_repr(value: Buffer) -> String {
+    pub fn bufferRepr(value: Buffer) -> String {
         match String::from_utf8(value.0) {
             Ok(s) => format!("b{:?}", s),
             Err(err) => {
@@ -330,26 +333,26 @@ mod aici_mod {
     }
 
     #[rquickjs::function]
-    pub fn string_to_buffer(value: Buffer) -> Buffer {
+    pub fn stringToBuffer(value: Buffer) -> Buffer {
         // Buffer has an implicit conversion from a string, so we can make this just identity
         value
     }
 
     #[rquickjs::function]
-    pub fn eos_token() -> TokenId {
+    pub fn eosToken() -> TokenId {
         let trie = &GLOBAL_STATE.lock().unwrap().trie;
         trie.special_token(SpecialToken::EndOfSentence)
     }
 
     #[rquickjs::function]
-    pub fn regex_constraint(regex: String) -> Constraint {
+    pub fn regexConstraint(regex: String) -> Constraint {
         println!("regex constraint: {:?}", regex);
         let rx = RecRx::from_rx(regex.as_str()).to_stack_recognizer();
         Constraint::new(Box::new(rx))
     }
 
     #[rquickjs::function]
-    pub fn cfg_constraint<'js>(ctx: Ctx<'js>, cfg: String) -> Result<Constraint> {
+    pub fn cfgConstraint<'js>(ctx: Ctx<'js>, cfg: String) -> Result<Constraint> {
         match CfgParser::from_yacc(cfg.as_str()) {
             Ok(cfg) => Ok(Constraint::new(Box::new(cfg))),
             Err(e) => Err(Exception::throw_type(&ctx, &format!("{}", e))),
@@ -357,7 +360,7 @@ mod aici_mod {
     }
 
     #[rquickjs::function]
-    pub fn substr_constraint(templ: String, end_str: String) -> Constraint {
+    pub fn substrConstraint(templ: String, end_str: String) -> Constraint {
         let rx = SubStrMatcher::new(templ.as_str(), end_str.as_str()).to_stack_recognizer();
         Constraint::new(Box::new(rx))
     }

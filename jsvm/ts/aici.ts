@@ -4,26 +4,18 @@ import {
   TokenSet,
   tokenize,
   detokenize,
-  regex_constraint,
-  cfg_constraint,
-  substr_constraint,
+  regexConstraint,
+  cfgConstraint,
+  substrConstraint,
   Constraint,
-  get_var,
-  set_var,
-  append_var,
-  eos_token,
+  getVar,
+  setVar,
+  appendVar,
+  eosToken,
   panic,
 } from "_aici";
 
-export {
-  TokenSet,
-  tokenize,
-  detokenize,
-  get_var,
-  set_var,
-  append_var,
-  eos_token,
-};
+export { TokenSet, tokenize, detokenize, getVar, setVar, appendVar, eosToken };
 
 import * as _aici from "_aici";
 
@@ -42,7 +34,7 @@ function dbgarg(arg: any, depth: number): string {
   if (arg === undefined) return "undefined";
   if (typeof arg === "object") {
     if (arg instanceof RegExp) return arg.toString();
-    if (arg instanceof Uint8Array) return _aici.buffer_repr(arg);
+    if (arg instanceof Uint8Array) return _aici.bufferRepr(arg);
     if (Array.isArray(arg)) {
       if (depth >= maxDepth && arg.length > 0) return "[...]";
       let suff = "]";
@@ -100,7 +92,7 @@ function assert(cond: boolean, msg = "Assertion failed"): asserts cond {
 /**
  * Get list of tokens in the current sequence, including the prompt.
  */
-export function get_tokens(): Token[] {
+export function getTokens(): Token[] {
   assert(!!AiciAsync.instance);
   return AiciAsync.instance._tokens;
 }
@@ -108,7 +100,7 @@ export function get_tokens(): Token[] {
 /**
  * Get the length of the prompt in the current sequence.
  */
-export function get_prompt_len(): number {
+export function getPromptLen(): number {
   assert(!!AiciAsync.instance);
   return AiciAsync.instance._prompt_len;
 }
@@ -168,13 +160,13 @@ export class PreProcessResult {
     return res;
   }
 
-  static fork(num_forks: number): PreProcessResult {
+  static fork(numForks: number): PreProcessResult {
     const res = new PreProcessResult();
-    res._n_attention_masks = Array.from({ length: num_forks }, () => []);
+    res._n_attention_masks = Array.from({ length: numForks }, () => []);
     return res;
   }
 
-  static ff_tokens_pre(toks: Token[]): PreProcessResult {
+  static ffTokens(toks: Token[]): PreProcessResult {
     const res = new PreProcessResult();
     res._n_ff_tokens = toks;
     return res;
@@ -196,15 +188,15 @@ export class PostProcessResult {
     return new PostProcessResult(true);
   }
 
-  static from_tokens(tokens: Token[]): PostProcessResult {
-    return new PostProcessResult(tokens.includes(eos_token()));
+  static fromTokens(tokens: Token[]): PostProcessResult {
+    return new PostProcessResult(tokens.includes(eosToken()));
   }
 }
 
 export class NextToken {
   finished = false;
-  curr_tokens: Token[] | null = null;
-  fork_group: SeqId[] = [];
+  currTokens: Token[] | null = null;
+  forkGroup: SeqId[] = [];
   _resolve?: (value: Token[]) => void;
 
   constructor() {}
@@ -226,7 +218,7 @@ export class NextToken {
    * now (for example, not all variables are available to compute bias).
    * ~1ms time limit.
    */
-  pre_process(): PreProcessResult {
+  preProcess(): PreProcessResult {
     return PreProcessResult.continue_();
   }
 
@@ -234,7 +226,7 @@ export class NextToken {
    * This can be overridden to return a bias, fast-forward tokens, backtrack etc.
    * ~20ms time limit.
    */
-  mid_process(): MidProcessResult {
+  midProcess(): MidProcessResult {
     return MidProcessResult.bias(new TokenSet());
   }
 
@@ -243,7 +235,7 @@ export class NextToken {
    * ~1ms time limit.
    * @param tokens tokens generated in the last step
    */
-  post_process(tokens: Token[]): PostProcessResult {
+  postProcess(tokens: Token[]): PostProcessResult {
     return PostProcessResult.continue_();
   }
 
@@ -253,23 +245,23 @@ export class NextToken {
 
   _pre_process(): PreProcessResult {
     this.reset();
-    return this.pre_process();
+    return this.preProcess();
   }
 
   _mid_process(fork_group: SeqId[]): MidProcessResult {
-    this.fork_group = fork_group;
-    return this.mid_process();
+    this.forkGroup = fork_group;
+    return this.midProcess();
   }
 
   _post_process(_backtrack: int, tokens: Token[]): PostProcessResult {
-    this.curr_tokens = tokens;
-    this.finished = tokens.includes(eos_token());
-    return this.post_process(tokens);
+    this.currTokens = tokens;
+    this.finished = tokens.includes(eosToken());
+    return this.postProcess(tokens);
   }
 
   private reset(): void {
-    this.curr_tokens = null;
-    this.fork_group = [];
+    this.currTokens = null;
+    this.forkGroup = [];
   }
 }
 
@@ -280,6 +272,9 @@ export async function fixed(text: string) {
   await new FixedTokens(text).run();
 }
 
+/**
+ * Same as fixed(); usage: await $`Some text`
+ */
 export async function $(strings: TemplateStringsArray, ...values: any[]) {
   let result = "";
   strings.forEach((s, i) => {
@@ -294,30 +289,30 @@ export async function $(strings: TemplateStringsArray, ...values: any[]) {
  * If following is given, the text replaces everything that follows the label.
  */
 class FixedTokens extends NextToken {
-  fixed_tokens: Token[];
+  fixedTokens: Token[];
   following: Label | null;
 
   constructor(text: string | Buffer, following: Label | null = null) {
     super();
-    this.fixed_tokens = tokenize(text);
+    this.fixedTokens = tokenize(text);
     this.following = following;
   }
 
-  pre_process(): PreProcessResult {
+  preProcess(): PreProcessResult {
     if (this.following === null) {
-      return PreProcessResult.ff_tokens_pre(this.fixed_tokens);
+      return PreProcessResult.ffTokens(this.fixedTokens);
     }
     return PreProcessResult.continue_();
   }
 
-  mid_process(): MidProcessResult {
+  midProcess(): MidProcessResult {
     let backtrack = 0;
     if (this.following !== null) {
-      backtrack = get_tokens().length - this.following.ptr;
+      backtrack = getTokens().length - this.following.ptr;
       assert(backtrack >= 0);
       console.log("backtrack", backtrack);
     }
-    return MidProcessResult.splice(backtrack, this.fixed_tokens);
+    return MidProcessResult.splice(backtrack, this.fixedTokens);
   }
 }
 
@@ -329,11 +324,11 @@ class StopToken extends NextToken {
     super();
   }
 
-  mid_process(): MidProcessResult {
+  midProcess(): MidProcessResult {
     return MidProcessResult.stop();
   }
 
-  post_process(_tokens: Token[]): PostProcessResult {
+  postProcess(_tokens: Token[]): PostProcessResult {
     this.finished = false; // we're never finished, just keep yelling STOP!
     return PostProcessResult.stop();
   }
@@ -346,24 +341,24 @@ class StopToken extends NextToken {
 export class ConstrainedToken extends NextToken {
   _constraint: Constraint | null = null;
 
-  constructor(public mk_constraint: () => Constraint) {
+  constructor(public mkConstraint: () => Constraint) {
     super();
   }
 
-  mid_process(): MidProcessResult {
+  midProcess(): MidProcessResult {
     const bias = new TokenSet();
     if (this._constraint === null) {
-      this._constraint = this.mk_constraint();
+      this._constraint = this.mkConstraint();
     }
-    this._constraint.allow_tokens(bias);
+    this._constraint.allowTokens(bias);
     return MidProcessResult.bias(bias);
   }
 
-  post_process(tokens: Token[]): PostProcessResult {
+  postProcess(tokens: Token[]): PostProcessResult {
     const c = this._constraint;
     assert(!!c);
-    tokens.forEach((t) => c.append_token(t));
-    if (c.eos_forced()) {
+    tokens.forEach((t) => c.appendToken(t));
+    if (c.eosForced()) {
       this.finished = true;
     }
     return PostProcessResult.continue_();
@@ -371,36 +366,33 @@ export class ConstrainedToken extends NextToken {
 }
 
 export class PreToken extends NextToken {
-  mid_process(): MidProcessResult {
+  midProcess(): MidProcessResult {
     return MidProcessResult.skipMe();
   }
 }
 
-class _Fork extends PreToken {
-  num_forks: number;
-
-  constructor(num_forks: number) {
+class Fork extends PreToken {
+  constructor(public numForks: number) {
     super();
-    this.num_forks = num_forks;
   }
 
-  pre_process(): PreProcessResult {
-    return PreProcessResult.fork(this.num_forks);
+  preProcess(): PreProcessResult {
+    return PreProcessResult.fork(this.numForks);
   }
 }
 
 /**
- * Forks the execution into `num_forks` branches.
- * @param num_forks how many branches
- * @returns a number from 0 to `num_forks`-1, indicating the branch
+ * Forks the execution into `numForks` branches.
+ * @param numForks how many branches
+ * @returns a number from 0 to `numForks`-1, indicating the branch
  */
-export async function fork(num_forks: number): Promise<number> {
-  const f = new _Fork(num_forks);
+export async function fork(numForks: number): Promise<number> {
+  const f = new Fork(numForks);
   await f.run();
-  return f.fork_group.indexOf(_aici.self_seq_id());
+  return f.forkGroup.indexOf(_aici.selfSeqId());
 }
 
-class _WaitVars extends PreToken {
+class WaitVars extends PreToken {
   vars: string[];
   values: Buffer[];
 
@@ -410,8 +402,8 @@ class _WaitVars extends PreToken {
     this.values = [];
   }
 
-  pre_process(): PreProcessResult {
-    const values = this.vars.map((v) => get_var(v));
+  preProcess(): PreProcessResult {
+    const values = this.vars.map((v) => getVar(v));
     if (values.includes(null)) {
       return PreProcessResult.suspend();
     }
@@ -426,7 +418,7 @@ class _WaitVars extends PreToken {
  * @returns values of the variables
  */
 export async function waitVars(...vars: string[]): Promise<Buffer[]> {
-  const w = new _WaitVars(vars);
+  const w = new WaitVars(vars);
   await w.run();
   return w.values;
 }
@@ -467,8 +459,7 @@ export class AiciAsync implements AiciCallbacks {
 
   _tokens: Token[] = [];
   _prompt_len = 0;
-  private _pending_cb: CbType | undefined;
-  private _fork_group: SeqId[] = [];
+  private _pendingCb: CbType | undefined;
   private _token: CbType | undefined;
   private _getPrompt: GetPrompt | undefined;
 
@@ -520,10 +511,10 @@ export class AiciAsync implements AiciCallbacks {
   }
 
   step(tokens: Token[]): void {
-    if (this._pending_cb != null) {
+    if (this._pendingCb != null) {
       // TODO
-      this._token = this._pending_cb;
-      this._pending_cb = undefined;
+      this._token = this._pendingCb;
+      this._pendingCb = undefined;
       return;
     }
 
@@ -578,9 +569,9 @@ export class AiciAsync implements AiciCallbacks {
       assert(r2._n_attention_masks.length === 1, "nested fork not allowed");
       if (r2._n_suspended) {
         // Need to generate one fake token...
-        this._pending_cb = this._token;
+        this._pendingCb = this._token;
         const f = new FixedTokens("░");
-        assert(f.fixed_tokens.length === 1);
+        assert(f.fixedTokens.length === 1);
         this._token = f;
       }
       r = this._token._mid_process(fork_group);
@@ -633,21 +624,21 @@ export class Label {
    * Can be passed as `following=` argument to `FixedTokens()`.
    */
   constructor() {
-    this.ptr = get_tokens().length;
+    this.ptr = getTokens().length;
   }
 
   /**
    * Return tokens generated since the label.
    */
-  tokens_since(): Token[] {
-    return get_tokens().slice(this.ptr);
+  tokensSince(): Token[] {
+    return getTokens().slice(this.ptr);
   }
 
   /**
    * Return text generated since the label.
    */
-  text_since(): string {
-    return detokenize(this.tokens_since()).toString();
+  textSince(): string {
+    return detokenize(this.tokensSince()).decode();
   }
 }
 
@@ -661,31 +652,31 @@ export class ChooseConstraint extends Constraint {
     this.options = options.map((o) => tokenize(o));
   }
 
-  eos_allowed(): boolean {
+  eosAllowed(): boolean {
     return this.options.some((o) => o.length === this.ptr);
   }
 
-  eos_forced(): boolean {
+  eosForced(): boolean {
     return this.options.length === 1 && this.options[0].length === this.ptr;
   }
 
-  token_allowed(t: Token): boolean {
+  tokenAllowed(t: Token): boolean {
     return this.options.some((o) => this.ptr < o.length && o[this.ptr] === t);
   }
 
-  append_token(t: Token): void {
+  appendToken(t: Token): void {
     this.options = this.options.filter(
       (o) => this.ptr < o.length && o[this.ptr] === t
     );
     this.ptr += 1;
   }
 
-  allow_tokens(ts: TokenSet): void {
+  allowTokens(ts: TokenSet): void {
     for (const o of this.options) {
       if (this.ptr < o.length) {
         ts.add(o[this.ptr]);
       } else if (this.ptr === o.length) {
-        ts.add(eos_token());
+        ts.add(eosToken());
       }
     }
   }
@@ -723,11 +714,11 @@ export async function gen_tokens(options: GenOptions): Promise<Token[]> {
   );
   if (regex !== undefined) {
     const rx = typeof regex === "string" ? regex : regex.source;
-    constraint = regex_constraint(rx);
+    constraint = regexConstraint(rx);
   } else if (substring !== undefined) {
-    constraint = substr_constraint(substring, substringEnd);
+    constraint = substrConstraint(substring, substringEnd);
   } else if (yacc !== undefined) {
-    constraint = cfg_constraint(yacc);
+    constraint = cfgConstraint(yacc);
   } else if (optionList !== undefined) {
     constraint = new ChooseConstraint(optionList);
   } else {
@@ -740,7 +731,7 @@ export async function gen_tokens(options: GenOptions): Promise<Token[]> {
     const tokens = await next_token.run();
     res.push(...tokens);
 
-    const text = detokenize(res).toString();
+    const text = detokenize(res).decode();
 
     if (stopAt !== undefined && text.includes(stopAt)) {
       break;
@@ -754,24 +745,24 @@ export async function gen_tokens(options: GenOptions): Promise<Token[]> {
   }
 
   if (storeVar !== undefined) {
-    set_var(storeVar, detokenize(res));
+    setVar(storeVar, detokenize(res));
   }
 
-  console.log("GEN", res, detokenize(res).toString());
+  console.log("GEN", res, detokenize(res));
   return res;
 }
 
 export async function gen(options: GenOptions): Promise<string> {
   const tokens = await gen_tokens(options);
-  return detokenize(tokens).toString();
+  return detokenize(tokens).decode();
 }
 
 export function check_var(name: string, value: string): void {
-  const v = get_var(name);
+  const v = getVar(name);
   if (v == null) {
     throw new AssertionError(`Variable ${name} is unset`);
   }
-  const vStr = v.toString();
+  const vStr = v.decode();
   if (vStr !== value) {
     throw new AssertionError(`Variable ${name}: ${vStr} != ${value}`);
   }
@@ -785,19 +776,23 @@ export function check_vars(d: Record<string, string>): void {
 
 // stuff we don't want to export top-level
 export const helpers = {
-  regex_constraint,
-  cfg_constraint,
-  substr_constraint,
+  regex_constraint: regexConstraint,
+  cfg_constraint: cfgConstraint,
+  substr_constraint: substrConstraint,
   FixedTokens,
   StopToken,
   panic,
 };
 
 String.prototype.toBuffer = function (this: string) {
-  return _aici.string_to_buffer(this);
+  return _aici.stringToBuffer(this);
 };
 
-String.fromBuffer = _aici.buffer_to_string;
+String.fromBuffer = _aici.bufferToString;
 Uint8Array.prototype.toString = function (this: Uint8Array) {
-  return _aici.buffer_repr(this);
+  return _aici.bufferRepr(this);
+};
+
+Uint8Array.prototype.decode = function (this: Uint8Array) {
+  return _aici.bufferToString(this);
 };

@@ -12,6 +12,13 @@ interface StringConstructor {
   fromBuffer(buffer: Uint8Array): string;
 }
 
+interface Uint8Array {
+  /**
+   * UTF-8 decode the current buffer.
+   */
+  decode(): string;
+}
+
 declare module "_aici" {
   type Buffer = Uint8Array;
 
@@ -30,7 +37,7 @@ declare module "_aici" {
    * Most useful with fork_group parameter in mid_process() callback.
    * Best use aici.fork() instead.
    */
-  function self_seq_id(): number;
+  function selfSeqId(): number;
 
   /**
    * Print out a message of the error and stop the program.
@@ -40,37 +47,37 @@ declare module "_aici" {
   /**
    * Get the value of a shared variable.
    */
-  function get_var(name: string): Buffer | null;
+  function getVar(name: string): Buffer | null;
 
   /**
    * Set the value of a shared variable.
    */
-  function set_var(name: string, value: string | Buffer): void;
+  function setVar(name: string, value: string | Buffer): void;
 
   /**
    * Append to the value of a shared variable.
    */
-  function append_var(name: string, value: string | Buffer): void;
+  function appendVar(name: string, value: string | Buffer): void;
 
   /**
    * Index of the end of sequence token.
    */
-  function eos_token(): number;
+  function eosToken(): number;
 
   /**
    * UTF-8 encode
    */
-  function string_to_buffer(s: string): Buffer;
+  function stringToBuffer(s: string): Buffer;
 
   /**
    * UTF-8 decode (with replacement cheracter for invalid sequences)
    */
-  function buffer_to_string(b: Buffer): string;
+  function bufferToString(b: Buffer): string;
 
   /**
    * Return a string like `b"..."` that represents the given buffer.
    */
-  function buffer_repr(b: Buffer): string;
+  function bufferRepr(b: Buffer): string;
 
   /**
    * Represents a set of tokens.
@@ -95,7 +102,7 @@ declare module "_aici" {
     /**
      * Include or exclude all tokens from the set.
      */
-    set_all(value: boolean): void;
+    setAll(value: boolean): void;
   }
 
   /**
@@ -107,42 +114,42 @@ declare module "_aici" {
     /**
      * Check if the constraint allows the generation to end at the current point.
      */
-    eos_allowed(): boolean;
+    eosAllowed(): boolean;
 
     /**
      * Check if the constraint forces the generation to end at the current point.
      */
-    eos_forced(): boolean;
+    eosForced(): boolean;
 
     /**
      * Check if token `t` is allowed by the constraint.
      */
-    token_allowed(t: number): boolean;
+    tokenAllowed(t: number): boolean;
 
     /**
      * Update the internal state of the constraint to reflect that token `t` was appended.
      */
-    append_token(t: number): void;
+    appendToken(t: number): void;
 
     /**
      * Set ts[] to True at all tokens that are allowed by the constraint.
      */
-    allow_tokens(ts: TokenSet): void;
+    allowTokens(ts: TokenSet): void;
   }
 
   /**
    * A constraint that allows only tokens that match the regex.
    * The regex is implicitly anchored at the start and end of the generation.
    */
-  function regex_constraint(pattern: string): Constraint;
+  function regexConstraint(pattern: string): Constraint;
 
   /**
    * A constraint that allows only tokens that match the specified yacc-like grammar.
    */
-  function cfg_constraint(yacc_grammar: string): Constraint;
+  function cfgConstraint(yacc_grammar: string): Constraint;
 
   /**
    * A constraint that allows only word-substrings of given string.
    */
-  function substr_constraint(template: string, stop_at: string): Constraint;
+  function substrConstraint(template: string, stop_at: string): Constraint;
 }

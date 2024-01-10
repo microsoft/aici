@@ -1,4 +1,4 @@
-import { set_var } from "_aici";
+import { setVar } from "_aici";
 import { $, gen, getPrompt, start } from "./aici";
 async function main() {
     await $ `2 + 2 =`;
@@ -15,7 +15,7 @@ async function test_sample() {
     // generate text (tokens) matching the regex
     const french = await gen({ regex: / "[^"]+"/, maxTokens: 5 });
     // set a shared variable (they are returned as JSON and are useful with aici.fork())
-    set_var("french", french);
+    setVar("french", french);
     await $ ` and in German`;
     // shorthand for the above
     await gen({ regex: / "[^"]+"/, storeVar: "german" });
