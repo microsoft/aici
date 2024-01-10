@@ -217,6 +217,7 @@ export class NextToken {
  */
 export async function fixed(text) {
     await new FixedTokens(text).run();
+    console.log("RUN done");
 }
 /**
  * Forces next tokens to be exactly the given text.
@@ -377,7 +378,12 @@ export class AiciAsync {
         this.pre_process = this.pre_process.bind(this);
         this.mid_process = this.mid_process.bind(this);
         this.post_process = this.post_process.bind(this);
-        f();
+        f().then(async () => {
+            console.log("JSVM: done");
+            while (true) {
+                await new StopToken().run();
+            }
+        });
         if (this._getPrompt) {
             assert(this._getPrompt instanceof GetPrompt);
             assert(!this._token);
@@ -387,7 +393,7 @@ export class AiciAsync {
         }
     }
     step(tokens) {
-        if (this._pending_cb !== null) {
+        if (this._pending_cb != null) {
             // TODO
             this._token = this._pending_cb;
             this._pending_cb = undefined;
@@ -397,10 +403,13 @@ export class AiciAsync {
         assert(nextToken instanceof NextToken);
         const resolve = nextToken._resolve;
         assert(!!resolve);
+        // console.log("reset");
         this._token = undefined;
         nextToken._resolve = undefined;
         resolve(tokens);
-        assert(this._token instanceof NextToken);
+        // console.log("t2", this._token, resolve);
+        // this happens only in the deferred jobs...
+        // assert((this._token as any) instanceof NextToken);
     }
     init_prompt(prompt) {
         assert(!this._tokens.length);
@@ -413,7 +422,7 @@ export class AiciAsync {
         assert(this._token instanceof NextToken);
     }
     pre_process() {
-        console.log("tok", this._token);
+        // console.log("tok", this._token);
         assert(this._token instanceof NextToken);
         if (this._token.finished) {
             this._token = new StopToken();
@@ -427,7 +436,7 @@ export class AiciAsync {
         let r = this._token._mid_process(fork_group);
         assert(r instanceof MidProcessResult);
         while (r._skipMe) {
-            this.step([]);
+            this.step([]); // TODO
             assert(this._token instanceof NextToken);
             const r2 = this._token._pre_process();
             assert(r2 instanceof PreProcessResult);
