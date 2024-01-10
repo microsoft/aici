@@ -2,5 +2,6 @@
 
 TIMESTAMP=`date --utc '+%+4Y-%m-%d-%H%M'`
 
-./scripts/aici.sh build declvm -T declvm-latest -T declvm-$TIMESTAMP
-./scripts/aici.sh build pyvm -T pyvm-latest -T pyvm-$TIMESTAMP
+for vm in declvm pyvm jsvm ; do
+    ./scripts/aici.sh build $vm -T $vm-latest -T $vm-$TIMESTAMP
+done
