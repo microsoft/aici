@@ -17,3 +17,6 @@ rllm/report*.sqlite
 *.nsys-rep
 rllm/logs
 .DS_Store
+build/
+dist/
+*.egg-info
