@@ -13,6 +13,8 @@ function dbgarg(arg, depth) {
     if (typeof arg === "object") {
         if (arg instanceof RegExp)
             return arg.toString();
+        if (arg instanceof Uint8Array)
+            return _aici.buffer_repr(arg);
         if (Array.isArray(arg)) {
             if (depth >= maxDepth && arg.length > 0)
                 return "[...]";
@@ -581,14 +583,12 @@ export async function gen_tokens(options) {
         if (stopAt !== undefined && text.includes(stopAt)) {
             break;
         }
-        console.log(`GEN-${i}`, next_token);
+        // console.log(`GEN-${i}`, next_token);
         if (next_token.finished) {
             break;
         }
     }
     if (storeVar !== undefined) {
-        const a = detokenize(res);
-        console.log("ARR", Array.isArray(a));
         set_var(storeVar, detokenize(res));
     }
     console.log("GEN", res, detokenize(res).toString());
@@ -621,4 +621,11 @@ export const helpers = {
     FixedTokens,
     StopToken,
     panic,
+};
+String.prototype.toBuffer = function () {
+    return _aici.string_to_buffer(this);
+};
+String.fromBuffer = _aici.buffer_to_string;
+Uint8Array.prototype.toString = function () {
+    return _aici.buffer_repr(this);
 };

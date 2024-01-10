@@ -9,8 +9,8 @@ use aici_abi::{
     PostProcessResult, PreProcessArg, PreProcessResult, TokenId, VariableStorage,
 };
 use rquickjs::{
-    class::Trace, function::IntoArgs, Context, Ctx, FromJs, Function, IntoAtom, Module, Object,
-    Result, Runtime, Value,
+    class::Trace, function::IntoArgs, ArrayBuffer, Context, Ctx, FromJs, Function, IntoAtom,
+    IntoJs, Module, Object, Result, Runtime, TypedArray, Value,
 };
 
 struct ModuleState {
@@ -196,9 +196,32 @@ impl Constraint {
     }
 }
 
+struct Buffer(Vec<u8>);
+
+impl<'js> FromJs<'js> for Buffer {
+    fn from_js(ctx: &Ctx<'js>, v: Value<'js>) -> Result<Self> {
+        match TypedArray::<'js, u8>::from_value(v.clone()) {
+            Ok(r) => Ok(Buffer(r.as_bytes().unwrap().to_vec())),
+            Err(_) => match ArrayBuffer::from_value(v.clone()) {
+                Some(r) => Ok(Buffer(r.as_bytes().unwrap().to_vec())),
+                None => match String::from_js(ctx, v) {
+                    Ok(r) => Ok(Buffer(r.into_bytes())),
+                    Err(e) => Err(e),
+                },
+            },
+        }
+    }
+}
+
+impl<'js> IntoJs<'js> for Buffer {
+    fn into_js(self, ctx: &Ctx<'js>) -> Result<Value<'js>> {
+        TypedArray::<'js, u8>::new(ctx.clone(), self.0).into_js(ctx)
+    }
+}
+
 #[rquickjs::module]
 mod aici_mod {
-    use crate::CtxExt;
+    use crate::{Buffer, CtxExt};
 
     pub use super::{Constraint, TokenSet};
 
@@ -209,16 +232,14 @@ mod aici_mod {
     };
     use rquickjs::{Ctx, Exception, Result, Value};
 
-    type StrOrBuffer = String; // TODO
-
     #[rquickjs::function]
     pub fn self_seq_id() -> u32 {
         aici_abi::self_seq_id().0
     }
 
     #[rquickjs::function]
-    pub fn tokenize(text: StrOrBuffer) -> Vec<TokenId> {
-        aici_abi::tokenize_bytes(&text.as_bytes())
+    pub fn tokenize(text: Buffer) -> Vec<TokenId> {
+        aici_abi::tokenize_bytes(&text.0)
     }
 
     #[rquickjs::function]
@@ -228,34 +249,90 @@ mod aici_mod {
     }
 
     #[rquickjs::function]
-    pub fn detokenize(tokens: Vec<TokenId>) -> Vec<u8> {
+    pub fn detokenize(tokens: Vec<TokenId>) -> Buffer {
         let trie = &mut GLOBAL_STATE.lock().unwrap().trie;
         let bytes = tokens
             .iter()
             .flat_map(|t| trie.token(*t).to_vec())
             .collect();
-        bytes
+        Buffer(bytes)
     }
 
     #[rquickjs::function]
-    pub fn get_var(name: String) -> Option<Vec<u8>> {
+    pub fn get_var(name: String) -> Option<Buffer> {
         let name = name.as_str();
         let v = GLOBAL_STATE.lock().unwrap().vars.get(name);
-        v
+        v.map(Buffer)
     }
 
     #[rquickjs::function]
-    pub fn set_var(name: String, value: StrOrBuffer) {
+    pub fn set_var(name: String, value: Buffer) {
         let name = name.as_str();
         let vars = &GLOBAL_STATE.lock().unwrap().vars;
-        vars.set(name, (&value.as_bytes()).to_vec());
+        vars.set(name, value.0);
     }
 
     #[rquickjs::function]
-    pub fn append_var(name: String, value: StrOrBuffer) {
+    pub fn append_var(name: String, value: Buffer) {
         let name = name.as_str();
         let vars = &GLOBAL_STATE.lock().unwrap().vars;
-        vars.append(name, (&value.as_bytes()).to_vec());
+        vars.append(name, value.0);
+    }
+
+    #[rquickjs::function]
+    pub fn buffer_to_string(ctx: Ctx<'_>, value: Buffer) -> Value<'_> {
+        rquickjs::String::from_str(ctx, &String::from_utf8_lossy(&value.0))
+            .unwrap()
+            .into()
+    }
+
+    #[rquickjs::function]
+    pub fn buffer_repr(value: Buffer) -> String {
+        match String::from_utf8(value.0) {
+            Ok(s) => format!("b{:?}", s),
+            Err(err) => {
+                let mut res = Vec::new();
+                let mut i = 0;
+                let buf = err.as_bytes();
+                while i < buf.len() {
+                    match buf[i] {
+                        b'\\' | b'"' => {
+                            res.push(b'\\');
+                            res.push(buf[i]);
+                        }
+                        (32..=127) => res.push(buf[i]),
+                        _ => {
+                            let mut ok = false;
+                            for len in 2..=4 {
+                                match String::from_utf8(buf[i..i + len].to_vec()) {
+                                    Ok(s) => {
+                                        res.extend_from_slice(s.as_bytes());
+                                        i += len - 1;
+                                        ok = true;
+                                        break;
+                                    }
+                                    Err(_) => {}
+                                }
+                            }
+                            if !ok {
+                                res.push(b'\\');
+                                res.push(b'x');
+                                res.push(b'0' + (buf[i] >> 4));
+                                res.push(b'0' + (buf[i] & 0xf));
+                            }
+                        }
+                    }
+                    i += 1;
+                }
+                format!("b\"{}\"", String::from_utf8_lossy(&res))
+            }
+        }
+    }
+
+    #[rquickjs::function]
+    pub fn string_to_buffer(value: Buffer) -> Buffer {
+        // Buffer has an implicit conversion from a string, so we can make this just identity
+        value
     }
 
     #[rquickjs::function]

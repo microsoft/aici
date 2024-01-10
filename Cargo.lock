@@ -2829,7 +2829,7 @@ dependencies = [
 [[package]]
 name = "rquickjs"
 version = "0.4.0"
-source = "git+https://github.com/mmoskal/rquickjs?rev=d67a104f5d89b5532c5#d67a104f5d89b5532c5c5c4ec190cbca74cdf6c4"
+source = "git+https://github.com/mmoskal/rquickjs?rev=073f0fe1e85bfb204c6c0cff3e023d3ac2b25380#073f0fe1e85bfb204c6c0cff3e023d3ac2b25380"
 dependencies = [
  "rquickjs-core",
  "rquickjs-macro",
@@ -2838,7 +2838,7 @@ dependencies = [
 [[package]]
 name = "rquickjs-core"
 version = "0.4.0"
-source = "git+https://github.com/mmoskal/rquickjs?rev=d67a104f5d89b5532c5#d67a104f5d89b5532c5c5c4ec190cbca74cdf6c4"
+source = "git+https://github.com/mmoskal/rquickjs?rev=073f0fe1e85bfb204c6c0cff3e023d3ac2b25380#073f0fe1e85bfb204c6c0cff3e023d3ac2b25380"
 dependencies = [
  "relative-path",
  "rquickjs-sys",
@@ -2847,7 +2847,7 @@ dependencies = [
 [[package]]
 name = "rquickjs-macro"
 version = "0.4.0"
-source = "git+https://github.com/mmoskal/rquickjs?rev=d67a104f5d89b5532c5#d67a104f5d89b5532c5c5c4ec190cbca74cdf6c4"
+source = "git+https://github.com/mmoskal/rquickjs?rev=073f0fe1e85bfb204c6c0cff3e023d3ac2b25380#073f0fe1e85bfb204c6c0cff3e023d3ac2b25380"
 dependencies = [
  "convert_case 0.6.0",
  "fnv",
@@ -2864,7 +2864,7 @@ dependencies = [
 [[package]]
 name = "rquickjs-sys"
 version = "0.4.0"
-source = "git+https://github.com/mmoskal/rquickjs?rev=d67a104f5d89b5532c5#d67a104f5d89b5532c5c5c4ec190cbca74cdf6c4"
+source = "git+https://github.com/mmoskal/rquickjs?rev=073f0fe1e85bfb204c6c0cff3e023d3ac2b25380#073f0fe1e85bfb204c6c0cff3e023d3ac2b25380"
 dependencies = [
  "anyhow",
  "cc",

@@ -19,7 +19,6 @@ async function test_sample() {
     await $ ` and in German`;
     // shorthand for the above
     await gen({ regex: / "[^"]+"/, storeVar: "german" });
-    console.log("A2");
     await $ `\nFive`;
     // generates one of the strings
     await gen({ options: [" pounds", " euros", " dollars"] });

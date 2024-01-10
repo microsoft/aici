@@ -1,3 +1,17 @@
+interface String {
+  /**
+   * UTF-8 encode the current string.
+   */
+  toBuffer(): Uint8Array;
+}
+
+interface StringConstructor {
+  /**
+   * Create a string from UTF-8 buffer (with replacement cheracter for invalid sequences)
+   */
+  fromBuffer(buffer: Uint8Array): string;
+}
+
 declare module "_aici" {
   type Buffer = Uint8Array;
 
@@ -42,6 +56,21 @@ declare module "_aici" {
    * Index of the end of sequence token.
    */
   function eos_token(): number;
+
+  /**
+   * UTF-8 encode
+   */
+  function string_to_buffer(s: string): Buffer;
+
+  /**
+   * UTF-8 decode (with replacement cheracter for invalid sequences)
+   */
+  function buffer_to_string(b: Buffer): string;
+
+  /**
+   * Return a string like `b"..."` that represents the given buffer.
+   */
+  function buffer_repr(b: Buffer): string;
 
   /**
    * Represents a set of tokens.
