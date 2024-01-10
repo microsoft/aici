@@ -3,33 +3,36 @@ import { TokenSet, tokenize, detokenize, RegexConstraint, CfgConstraint, SubStrC
 export { TokenSet, tokenize, detokenize, RegexConstraint, CfgConstraint, SubStrConstraint, Constraint, get_var, set_var, append_var, eos_token, };
 import * as _aici from "_aici";
 function dbgarg(arg, depth) {
+    const maxElts = 20;
+    const maxDepth = 2;
+    const maxStr = 200;
     if (arg === null)
         return "null";
     if (arg === undefined)
         return "undefined";
     if (typeof arg === "object") {
         if (Array.isArray(arg)) {
-            if (depth > 2 && arg.length > 0)
+            if (depth >= maxDepth && arg.length > 0)
                 return "[...]";
             let suff = "]";
-            if (arg.length > 20) {
-                arg = arg.slice(0, 20);
+            if (arg.length > maxElts) {
+                arg = arg.slice(0, maxElts);
                 suff = ", ...]";
             }
-            return `[${arg.map((x) => dbgarg(x, depth + 1)).join(", ")}${suff}`;
+            return "[" + arg.map((x) => dbgarg(x, depth + 1)).join(", ") + suff;
         }
         else {
             let keys = Object.keys(arg);
-            if (depth > 2 && keys.length > 0)
+            if (depth >= maxDepth && keys.length > 0)
                 return "{...}";
             let suff = "}";
-            if (keys.length > 20) {
+            if (keys.length > maxElts) {
                 suff = ", ...}";
-                keys = keys.slice(0, 20);
+                keys = keys.slice(0, maxElts);
             }
-            return `{${keys
-                .map((k) => `${k}: ${dbgarg(arg[k], depth + 1)}`)
-                .join(", ")}${suff}`;
+            return ("{" +
+                keys.map((k) => `${k}: ${dbgarg(arg[k], depth + 1)}`).join(", ") +
+                suff);
         }
     }
     else {
@@ -38,8 +41,8 @@ function dbgarg(arg, depth) {
         }
         else {
             const r = arg.toString();
-            if (r.length > 100) {
-                return r.substring(0, 100) + "...";
+            if (r.length > maxStr) {
+                return r.substring(0, maxStr) + "...";
             }
             else
                 return r;

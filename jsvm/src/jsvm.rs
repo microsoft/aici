@@ -9,7 +9,8 @@ use aici_abi::{
     PostProcessResult, PreProcessArg, PreProcessResult, TokenId, VariableStorage,
 };
 use rquickjs::{
-    class::Trace, Context, Ctx, FromJs, Function, IntoAtom, Module, Object, Result, Runtime, Value,
+    class::Trace, function::IntoArgs, Context, Ctx, FromJs, Function, IntoAtom, Module, Object,
+    Result, Runtime, Value,
 };
 
 struct ModuleState {
@@ -34,6 +35,24 @@ trait CtxExt<'js> {
 
 trait ObjectExt<'js> {
     fn get2<K: IntoAtom<'js>, V: FromJs<'js>>(&self, k: K) -> V;
+}
+
+trait FunctionExt<'js> {
+    fn call2<A, R>(&self, args: A) -> R
+    where
+        A: IntoArgs<'js>,
+        R: FromJs<'js>;
+}
+
+impl<'js> FunctionExt<'js> for Function<'js> {
+    fn call2<A, R>(&self, args: A) -> R
+    where
+        A: IntoArgs<'js>,
+        R: FromJs<'js>,
+    {
+        let r = self.ctx().unwrap_js(self.call(args));
+        r
+    }
 }
 
 impl<'js> ObjectExt<'js> for Object<'js> {
@@ -293,7 +312,7 @@ impl<T: Recognizer> PyConstraint for T {
 }
 
 pub struct Runner {
-    interpreter: Context,
+    context: Context,
 }
 
 fn _print(msg: String) {
@@ -305,11 +324,13 @@ impl Runner {
         let source = String::from_utf8(arg).unwrap();
 
         let rt = Runtime::new().unwrap();
-        let ctx = Context::full(&rt).unwrap();
+        let s = Self {
+            context: Context::full(&rt).unwrap(),
+        };
 
         let aici_js = include_str!("../ts/aici.js");
 
-        ctx.with(|ctx| {
+        s.with_cb(|ctx| {
             let global = ctx.globals();
             let cons = Object::new(ctx.clone()).unwrap();
             let f = Function::new(ctx.clone(), _print).unwrap();
@@ -322,14 +343,30 @@ impl Runner {
             let _ = ctx.unwrap_js(ctx.clone().compile("main", source));
         });
 
-        Self { interpreter: ctx }
+        s
     }
 
     pub fn with_cb<F, R>(&self, f: F) -> R
     where
         F: FnOnce(Ctx) -> R,
     {
-        self.interpreter.with(f)
+        let res = self.context.with(f);
+        loop {
+            let r = self.context.runtime().execute_pending_job();
+            if r.is_err() {
+                self.context.with(|ctx| {
+                    println!(
+                        "exception in deferred job:\n{}",
+                        ctx.error_to_string(rquickjs::Error::Exception)
+                    );
+                    aici_stop();
+                })
+            }
+            if r.unwrap() == false {
+                break;
+            }
+        }
+        res
     }
 }
 
@@ -346,7 +383,7 @@ impl AiciVm for Runner {
     fn init_prompt(&mut self, arg: InitPromptArg) -> InitPromptResult {
         self.with_cb(|ctx| {
             let cb: Function = ctx.eval2("globalThis._aici_cb.init_prompt");
-            let _: Value = ctx.unwrap_js(cb.call((&arg.prompt,)));
+            let _: Value = cb.call2((&arg.prompt,));
             InitPromptResult::default()
         })
     }
@@ -354,7 +391,7 @@ impl AiciVm for Runner {
     fn pre_process(&mut self, _arg: PreProcessArg) -> PreProcessResult {
         self.with_cb(|ctx| {
             let cb: Function = ctx.eval2("globalThis._aici_cb.pre_process");
-            let r: Object = ctx.unwrap_js(cb.call(()));
+            let r: Object = cb.call2(());
             PreProcessResult {
                 attention_masks: r.get2("_n_attention_masks"),
                 suspend: r.get2("_n_suspended"),
@@ -367,7 +404,7 @@ impl AiciVm for Runner {
         self.with_cb(|ctx| {
             let cb: Function = ctx.eval2("globalThis._aici_cb.mid_process");
             let fg: Vec<u32> = arg.fork_group.iter().map(|v| v.0.clone()).collect();
-            let r: Object = ctx.unwrap_js(cb.call((&fg,)));
+            let r: Object = cb.call2((&fg,));
             let stop: bool = r.get2("_n_stop");
             if stop {
                 MidProcessResult::Stop
@@ -395,7 +432,7 @@ impl AiciVm for Runner {
     fn post_process(&mut self, arg: PostProcessArg) -> PostProcessResult {
         self.with_cb(|ctx| {
             let cb: Function = ctx.eval2("globalThis._aici_cb.post_process");
-            let r: Object = ctx.unwrap_js(cb.call((arg.backtrack, &arg.tokens)));
+            let r: Object = cb.call2((arg.backtrack, &arg.tokens));
             let stop: bool = r.get2("_n_stop_seq");
             PostProcessResult { stop }
         })
