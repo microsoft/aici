@@ -66,7 +66,7 @@ console.debug = log;
 console.trace = log;
 export class AssertionError extends Error {
 }
-function assert(cond, msg = "Assertion failed") {
+export function assert(cond, msg = "Assertion failed") {
     if (!cond)
         throw new AssertionError(msg);
 }
@@ -523,6 +523,12 @@ export class Label {
     textSince() {
         return detokenize(this.tokensSince()).decode();
     }
+    /**
+     * Generate given prompt text, replacing all text after the current label.
+     */
+    async fixedAfter(text) {
+        await new FixedTokens(text, this).run();
+    }
 }
 export class ChooseConstraint extends Constraint {
     constructor(options) {
@@ -600,7 +606,7 @@ export async function gen(options) {
     const tokens = await gen_tokens(options);
     return detokenize(tokens).decode();
 }
-export function check_var(name, value) {
+export function checkVar(name, value) {
     const v = getVar(name);
     if (v == null) {
         throw new AssertionError(`Variable ${name} is unset`);
@@ -610,9 +616,9 @@ export function check_var(name, value) {
         throw new AssertionError(`Variable ${name}: ${vStr} != ${value}`);
     }
 }
-export function check_vars(d) {
+export function checkVars(d) {
     for (const [k, v] of Object.entries(d)) {
-        check_var(k, v);
+        checkVar(k, v);
     }
 }
 // stuff we don't want to export top-level

@@ -85,7 +85,7 @@ console.trace = log;
 
 export class AssertionError extends Error {}
 
-function assert(cond: boolean, msg = "Assertion failed"): asserts cond {
+export function assert(cond: boolean, msg = "Assertion failed"): asserts cond {
   if (!cond) throw new AssertionError(msg);
 }
 
@@ -640,6 +640,13 @@ export class Label {
   textSince(): string {
     return detokenize(this.tokensSince()).decode();
   }
+
+  /**
+   * Generate given prompt text, replacing all text after the current label.
+   */
+  async fixedAfter(text: string) {
+    await new FixedTokens(text, this).run();
+  }
 }
 
 export class ChooseConstraint extends Constraint {
@@ -757,7 +764,7 @@ export async function gen(options: GenOptions): Promise<string> {
   return detokenize(tokens).decode();
 }
 
-export function check_var(name: string, value: string): void {
+export function checkVar(name: string, value: string): void {
   const v = getVar(name);
   if (v == null) {
     throw new AssertionError(`Variable ${name} is unset`);
@@ -768,9 +775,9 @@ export function check_var(name: string, value: string): void {
   }
 }
 
-export function check_vars(d: Record<string, string>): void {
+export function checkVars(d: Record<string, string>): void {
   for (const [k, v] of Object.entries(d)) {
-    check_var(k, v);
+    checkVar(k, v);
   }
 }
 
