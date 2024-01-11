@@ -2,10 +2,10 @@
 exclude = ["tch-rs"]
 members = [
     "aici_abi",
-    "declvm",
+    "declctrl",
     "aicirt",
-    "pyvm",
-    "jsvm",
+    "pyctrl",
+    "jsctrl",
     "rllm",
     "tch-cuda",
 ]

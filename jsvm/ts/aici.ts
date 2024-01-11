@@ -489,7 +489,7 @@ export class AiciAsync implements AiciCallbacks {
 
     f()
       .then(async () => {
-        console.log("JSVM: done");
+        console.log("JsCtrl: done");
         while (true) {
           await new StopToken().run();
         }

@@ -25,11 +25,11 @@ This repository contains:
 And a number of sample/reference controllers:
 
 - [yes/no](aici_abi/src/yesno.rs) and [uppercase](aici_abi/src/uppercase.rs) - small samples for aici_abi
-- [PyCtrl](pyvm) - an embedded Python 3 interpreter (using [RustPython](https://github.com/RustPython/RustPython)),
+- [PyCtrl](pyctrl) - an embedded Python 3 interpreter (using [RustPython](https://github.com/RustPython/RustPython)),
   which lets you write controllers in Python
-- [JsCtrl](jsvm) - an embedded JavaScript interpreter (using [QuickJS](https://bellard.org/quickjs/)),
+- [JsCtrl](jsctrl) - an embedded JavaScript interpreter (using [QuickJS](https://bellard.org/quickjs/)),
   which lets you write controllers in JavaScript
-- [DeclCtrl](declvm) - a controller that interprets a simple JSON AST (Abstract Syntax Tree) to specify constraints
+- [DeclCtrl](declctrl) - a controller that interprets a simple JSON AST (Abstract Syntax Tree) to specify constraints
 
 Everything above implemented in Rust, unless otherwise stated.
 
@@ -67,15 +67,15 @@ Now, use query the model with or without AICI VM:
 
 ```bash
 ./scripts/aici.sh infer --prompt "The answer to the ultimate question of life"
-./scripts/aici.sh run pyvm/samples/test.py
-./scripts/aici.sh run declvm/arg2.json
+./scripts/aici.sh run pyctrl/samples/test.py
+./scripts/aici.sh run declctrl/arg2.json
 ./scripts/aici.sh run --build aici_abi::uppercase
 ```
 
 Run `./scripts/aici.sh -h` to see usage info.
 
 If the server is running with Orca-2 13B model,
-you can also run tests with `pytest` for the DeclCtrl, or with `./scripts/test-pyvm.sh` for PyCtrl.
+you can also run tests with `pytest` for the DeclCtrl, or with `./scripts/test-pyctrl.sh` for PyCtrl.
 
 ### Running local server
 
@@ -109,11 +109,11 @@ upload module... 191kB -> 668kB id:255ce305
 Yes
 ```
 
-Note that the same effect can be achieved with PyCtrl and [10x less lines of code](pyvm/samples/yesno.py).
+Note that the same effect can be achieved with PyCtrl and [10x less lines of code](pyctrl/samples/yesno.py).
 This is just for demonstration purposes.
 
 ```
-$ ./scripts/aici.sh run pyvm/samples/yesno.py --prompt "Are dolphins fish?"
+$ ./scripts/aici.sh run pyctrl/samples/yesno.py --prompt "Are dolphins fish?"
 ...
 No
 ```
@@ -144,34 +144,34 @@ Again, this could be done with PyCtrl and a simple regex.
 
 ### PyCtrl
 
-The [PyCtrl](pyvm) embeds [RustPython](https://github.com/RustPython/RustPython)
+The [PyCtrl](pyctrl) embeds [RustPython](https://github.com/RustPython/RustPython)
 (a Python 3 language implementation) in the Wasm module together with native
 primitives for specific kinds of output constraints:
 fixed token output, regexps, LR(1) grammars, substring constrains etc.
 Python code is typically only used lightly, for gluing the primitives together,
 and thus is not performance critical.
 
-There are [several samples](pyvm/samples/) available.
+There are [several samples](pyctrl/samples/) available.
 The scripts use the [pyaici.server module](pyaici/server.py) to communicate with the AICI runtime
 and use the native constraints.
 
-To run a PyCtrl sample (using VM tagged with `pyvm-latest`) use:
+To run a PyCtrl sample (using VM tagged with `pyctrl-latest`) use:
 
 ```bash
-./scripts/aici.sh run pyvm/samples/test.py
+./scripts/aici.sh run pyctrl/samples/test.py
 ```
 
 If you want to build it yourself, use:
 
 ```bash
-./scripts/aici.sh run --build pyvm pyvm/samples/test.py
+./scripts/aici.sh run --build pyctrl pyctrl/samples/test.py
 ```
 
 You will see the console output of the program.
 
 ### DeclCtrl
 
-The [DeclCtrl](declvm/src/declvm.rs) exposes similar constraints
+The [DeclCtrl](declctrl/src/declctrl.rs) exposes similar constraints
 to PyCtrl, but the glueing is done via a JSON AST (Abstract Syntax Tree) and thus is
 more restrictive.
 

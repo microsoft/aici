@@ -4,7 +4,7 @@ TIMESTAMP=`date --utc '+%+4Y-%m-%d-%H%M'`
 
 VMS="$*"
 if [ X"$VMS" = X ]; then
-    VMS="declvm pyvm jsvm"
+    VMS="declctrl pyctrl jsctrl"
 fi
 
 for vm in $VMS ; do

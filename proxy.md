@@ -16,7 +16,7 @@ export AICI_API_BASE="https://something.com/v1/#key=wht_..."
 pyaici infer --max-tokens=10 --prompt="Answer to the Ultimate Question of Life, the Universe, and Everything is"
 ```
 
-To test out the `pyvm`, create `answer.py` file with:
+To test out the `pyctrl`, create `answer.py` file with:
 
 ```python
 import pyaici.server as aici

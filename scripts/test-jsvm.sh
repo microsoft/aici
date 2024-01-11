@@ -3,7 +3,7 @@
 set -x
 cd `dirname $0`
 HERE=`pwd`
-cd $HERE/../jsvm
+cd $HERE/../jsctrl
 tsc -p ts
 PYTHONPATH=$HERE/.. \
-python ../pyvm/driver.py ts/sample.js
+python ../pyctrl/driver.py ts/sample.js

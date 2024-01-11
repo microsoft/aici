@@ -18,4 +18,4 @@ rustc-hash = "1.1.0"
 
 [[bin]]
 name = "aici_declvm"
-path = "src/declvm.rs"
+path = "src/declctrl.rs"

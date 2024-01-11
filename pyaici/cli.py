@@ -122,7 +122,7 @@ def main_inner():
         help="run model inference controlled by a VM",
         description="Run model inference controlled by a VM.",
         epilog="""
-        If FILE ends with .py, --vm defaults to 'pyvm'. For .json file it defaults to 'declvm'.
+        If FILE ends with .py, --vm defaults to 'pyctrl'. For .json file it defaults to 'declctrl'.
         """,
     )
     run_cmd.add_argument(
@@ -251,9 +251,9 @@ def main_inner():
             aici_arg = open(fn).read()
             if not aici_module:
                 if fn.endswith(".py"):
-                    aici_module = "pyvm-latest"
+                    aici_module = "pyctrl-latest"
                 elif fn.endswith(".json"):
-                    aici_module = "declvm-latest"
+                    aici_module = "declctrl-latest"
                 else:
                     cli_error("Can't determine VM type from file name: " + fn)
                 print(f"Running with tagged vm: {aici_module}")

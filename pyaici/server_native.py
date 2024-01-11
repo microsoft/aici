@@ -168,7 +168,7 @@ def is_server_side():
     return False
 
 #
-# Note, that this file is not embedded in pyvm - it's only type stubs for a native module
+# Note, that this file is not embedded in pyctrl - it's only type stubs for a native module
 #
 
 print(f"""

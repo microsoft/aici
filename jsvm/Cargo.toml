@@ -20,7 +20,7 @@ rquickjs = { git = "https://github.com/mmoskal/rquickjs", rev = "5b0e3b24d5021d3
 
 [[bin]]
 name = "aici_jsvm"
-path = "src/jsvm.rs"
+path = "src/jsctrl.rs"
 
 [build-dependencies]
 glob = "0.3.1"
