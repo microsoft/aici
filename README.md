@@ -35,7 +35,8 @@ And a number of sample/reference controllers:
 Everything above implemented in Rust, unless otherwise stated.
 
 AICI abstract LLM inference engine from the controller and vice-versa, as in the picture below.
-Additional layers can be built on top - we provide [promptlib](promptlib), 
+The rounded nodes are asiprational.
+Additional layers can be built on top - we provide [promptlib](promptlib),
 but we strongly believe [Guidance](https://github.com/guidance-ai/guidance) and
 [LMQL](https://lmql.ai/) can also run on top of AICI (either with custom controllers or utilizing PyCtrl or JsCtrl).
 
@@ -43,11 +44,21 @@ but we strongly believe [Guidance](https://github.com/guidance-ai/guidance) and
 graph TD
     PyCtrl -- AICI --> aicirt[AICI-runtime]
     JsCtrl -- AICI --> aicirt
-    DeclCtrl -- AICI --> aicirt
-    aicirt -- POSIX SHM --> vLLM
+    guidance([GuidanceCtrl]) -- AICI --> aicirt
+    lmql([LMQL Ctrl]) -- AICI --> aicirt
     aicirt -- POSIX SHM --> rLLM
-    aicirt -- POSIX SHM --> llama.cpp
+    aicirt -- POSIX SHM --> llama([llama.cpp])
+    aicirt -- POSIX SHM --> pyaici
+    pyaici -- Python --> vLLM(vLLM)
+    pyaici -- Python --> hf(HF Transformers)
 ```
+
+The [pyaici](pyaici) package makes it easier to integrate AICI with Python-based LLM inference engines.
+The support for [HuggingFace Transformers](harness/run_hf.py)
+and [vLLM REST server](harness/vllm_server.py) is currently out of date
+and llama.cpp is in plans.
+Please use the [rLLM](rllm) for now.
+
 
 ## Getting started
 
@@ -110,27 +121,6 @@ You can also try other models, see [rllm/README.md](rllm/README.md) for details.
 
 In particular, Wasm modules cannot access the filesystem, network, or any other resources.
 They also cannot spin threads or access any timers (this is relevant for Spectre/Meltdown attacks).
-
-## Architecture
-
-This AICI runtime is implemented in the [aicirt](aicirt) crate, while the binary AICI interface
-is specified in the [aici_abi](aici_abi) crate.
-
-The LLM engines are often implemented in Python, and thus the [pyaici](pyaici) Python packages provides
-a class to spin up and communicate with `aicirt` process via POSIX shared memory and semaphores.
-Using shared memory ensures there is very little work to be done on the Python side
-(other than wrapping that memory as a tensor).
-
-The [rllm](rllm) crate implements a reference LLM engine, which can be used for testing.
-**The text below is outdated.**
-
-The (harness)[harness] folder contains samples for using aicirt with different LLM engines:
-
-- [HuggingFace Transformers](harness/run_hf.py), run with `./scripts/hf.sh`
-- [vLLM script](harness/run_vllm.py), run with `./scripts/vllm.sh`
-- [vLLM REST server](harness/vllm_server.py), run with `./scripts/server.sh`;
-  the REST server is compatible with OpenAI and adds an endpoint for uploading Wasm modules;
-  see [pyaici.rest](pyaici/rest.py) for an example on how it can be used
 
 ## Contributing
 
