@@ -66,13 +66,13 @@ export AICI_API_BASE="https://aici.azurewebsites.net/v1/#key=wht_..."
 Now, use query the model with or without AICI Controller:
 
 ```bash
-./scripts/aici.sh infer --prompt "The answer to the ultimate question of life"
-./scripts/aici.sh run pyctrl/samples/test.py
-./scripts/aici.sh run declctrl/arg2.json
-./scripts/aici.sh run --build aici_abi::uppercase
+./aici.sh infer --prompt "The answer to the ultimate question of life"
+./aici.sh run pyctrl/samples/test.py
+./aici.sh run declctrl/arg2.json
+./aici.sh run --build aici_abi::uppercase
 ```
 
-Run `./scripts/aici.sh -h` to see usage info.
+Run `./aici.sh -h` to see usage info.
 
 If the server is running with Orca-2 13B model,
 you can also run tests with `pytest` for the DeclCtrl, or with `./scripts/test-pyctrl.sh` for PyCtrl.

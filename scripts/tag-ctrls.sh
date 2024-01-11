@@ -8,5 +8,5 @@ if [ X"$CTRLS" = X ]; then
 fi
 
 for ctrl in $CTRLS ; do
-    ./scripts/aici.sh build $ctrl -T $ctrl-latest -T $ctrl-$TIMESTAMP
+    ./aici.sh build $ctrl -T $ctrl-latest -T $ctrl-$TIMESTAMP
 done

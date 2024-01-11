@@ -56,7 +56,7 @@ but it illustrates the raw token APIs.
 
 
 ```
-$ ./scripts/aici.sh run pyctrl/samples/yesno.py --prompt "Are dolphins fish?"
+$ ./aici.sh run pyctrl/samples/yesno.py --prompt "Are dolphins fish?"
 ...
 No
 ```

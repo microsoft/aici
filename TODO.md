@@ -1,7 +1,7 @@
 - [x] separate folder for uppercase sample
-- [ ] delete gdl.sh
+- [x] delete gdl.sh
 - [ ] pyaici cli -> aici
-- [ ] ./scripts/aici.sh -> ./aici.sh
+- [x] ./scripts/aici.sh -> ./aici.sh
 - [ ] describe vLLM/hf situation
 - [ ] rename vLLM -> LLM in drawings
 - [ ] add hour-glass drawing
