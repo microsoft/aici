@@ -34,6 +34,21 @@ And a number of sample/reference controllers:
 
 Everything above implemented in Rust, unless otherwise stated.
 
+AICI abstract LLM inference engine from the controller and vice-versa, as in the picture below.
+Additional layers can be built on top - we provide [promptlib](promptlib), 
+but we strongly believe [Guidance](https://github.com/guidance-ai/guidance) and
+[LMQL](https://lmql.ai/) can also run on top of AICI (either with custom controllers or utilizing PyCtrl or JsCtrl).
+
+```mermaid
+graph TD
+    PyCtrl -- AICI --> aicirt[AICI-runtime]
+    JsCtrl -- AICI --> aicirt
+    DeclCtrl -- AICI --> aicirt
+    aicirt -- POSIX SHM --> vLLM
+    aicirt -- POSIX SHM --> rLLM
+    aicirt -- POSIX SHM --> llama.cpp
+```
+
 ## Getting started
 
 There are several levels at which you can use AICI.

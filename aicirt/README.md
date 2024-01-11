@@ -4,11 +4,11 @@ Multi-threaded wasmtime-based runner.
 
 ```mermaid
 graph TD
-    User1 <-- HTTP --> vLLM
-    User2 <-- HTTP --> vLLM
-    UserN <-- HTTP --> vLLM["vLLM Server<br>(batching)"]
-    vLLM <-- CUDA/pytorch --> GPU
-    vLLM <-- POSIX SHM --> aicirt[AICI-runtime]
+    User1 <-- HTTP --> LLM
+    User2 <-- HTTP --> LLM
+    UserN <-- HTTP --> LLM["LLM Server<br>(batching)"]
+    LLM <-- CUDA/pytorch --> GPU
+    LLM <-- POSIX SHM --> aicirt[AICI-runtime]
     aicirt <-- Sockets+SHM --> Worker1[Worker1<br>Running Wasm]
     aicirt <-- Sockets+SHM --> Worker2[Worker2<br>Running Wasm]
     aicirt <-- Sockets+SHM --> WorkerM[WorkerM<br>Running Wasm]
@@ -18,21 +18,21 @@ graph TD
 sequenceDiagram
     actor User
     participant GPU
-    participant vLLM
+    participant LLM
     participant aicirt as AICI-runtime
-    vLLM -->> GPU: Model
-    User -->> vLLM: Request (Prompt + Wasm)
-    vLLM -->>+ aicirt: Prompt + Wasm
-    aicirt -->>- vLLM: logit bias 1
-    vLLM -->>+ GPU: Prompt
-    vLLM -->> GPU: logit bias 1
-    GPU -->> vLLM: token 1
-    vLLM -->>+ aicirt: token 1
-    vLLM -->> User: token 1
-    aicirt -->>- vLLM: logit bias 2
-    vLLM -->> GPU: logit bias 2
-    GPU -->>- vLLM: token 2
-    vLLM -->> User: token 2
+    LLM -->> GPU: Model
+    User -->> LLM: Request (Prompt + Wasm)
+    LLM -->>+ aicirt: Prompt + Wasm
+    aicirt -->>- LLM: logit bias 1
+    LLM -->>+ GPU: Prompt
+    LLM -->> GPU: logit bias 1
+    GPU -->> LLM: token 1
+    LLM -->>+ aicirt: token 1
+    LLM -->> User: token 1
+    aicirt -->>- LLM: logit bias 2
+    LLM -->> GPU: logit bias 2
+    GPU -->>- LLM: token 2
+    LLM -->> User: token 2
 ```
 
 Below is process structure.
@@ -48,8 +48,8 @@ Below is process structure.
 
 ```mermaid
 graph TD
-    vLLM ---> aicirt[AICI-runtime]
-    vLLM -..-> aicirt
+    LLM ---> aicirt[AICI-runtime]
+    LLM -..-> aicirt
     aicirt -..-> spawner
     aicirt -..-> A0((A0))
     aicirt -..-> A1((A1))
