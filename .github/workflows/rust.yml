@@ -16,9 +16,7 @@ jobs:
 
     steps:
     - uses: actions/checkout@v3
-    - name: Build aicirt
-      run: cargo build --verbose --release
-      working-directory: aicirt
+    - run: rustup target add wasm32-wasi
     - name: Build aici_abi
       run: cargo build --verbose --release
       working-directory: aici_abi
@@ -34,3 +32,6 @@ jobs:
     - name: Build declctrl
       run: cargo build --verbose --release
       working-directory: declctrl
+    - name: Build aicirt
+      run: cargo build --verbose --release
+      working-directory: aicirt

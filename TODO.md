@@ -2,7 +2,7 @@
 - [x] delete gdl.sh
 - [x] pyaici cli -> aici
 - [x] ./scripts/aici.sh -> ./aici.sh
-- [ ] describe vLLM/hf situation
+- [x] describe vLLM/hf situation
 - [x] rename vLLM -> LLM in drawings
 - [x] add hour-glass drawing
 - [ ] setup cloud build for Wasm
