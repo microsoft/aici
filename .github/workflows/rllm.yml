@@ -8,6 +8,10 @@ on:
 
 env:
   CARGO_TERM_COLOR: always
+  TORCH_CUDA_ARCH_LIST: 8.0
+  CUDA_COMPUTE_CAP: 80
+  LIBTORCH_USE_PYTORCH: 1
+  LIBTORCH_BYPASS_VERSION_CHECK: 1
 
 jobs:
   build:
@@ -16,6 +20,9 @@ jobs:
 
     steps:
       - uses: actions/checkout@v3
+
+      - run: pip install torch==2.1.0
+
       - uses: Jimver/cuda-toolkit@v0.2.13
         id: cuda-toolkit
         with:
