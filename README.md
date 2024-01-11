@@ -1,29 +1,29 @@
 # Artificial Intelligence Controller Interface (AICI)
 
-The Artificial Intelligence Controller Interface (AICI) can be used to constrain output of an LLM in real time.
-While the GPU is working on the next token of the output, the AICI VM can use the CPU to
-compute a user-provided constraint on the next token.
-This adds minimal latency to the LLM generation.
+The Artificial Intelligence Controller Interface (AICI)
+lets you build Controllers that constrain and direct output of an LLM in real time.
+Controllers are light-weight [WebAssembly](https://webassembly.org/) (WASM) modules
+which run in on the same machine as the LLM inference engine, utilizing the CPU while the GPU is busy
+with token generation. AICI is:
 
-The AICI VM itself is built on top of [Wasmtime](https://wasmtime.dev/).
-It takes [WebAssembly](https://webassembly.org/) (WASM) modules with a specific interface
-(see below) and executes them in parallel while the LLM inference engine is working on the next token.
+- **secure**: WASM modules are sandboxed and cannot access the filesystem, network, or any other resources
+- **fast**: WASM modules are compiled to native code and run in parallel with the LLM inference engine
+- **flexible**: WASM modules can be generated in any language that can compile to WASM
 
-The WASM module can be generated in any language that can compile to WASM, but this project focuses on 
-Rust for constraints (plus a Python package for interfacing with LLM runtime).
+The AICI runtime is built on top of [Wasmtime](https://wasmtime.dev/).
 
 ## Getting started
 
 There are several levels at which you can use AICI.
 
-* you can use the provided PyVM or SimpleVM on a remote server;
-  no devcontainer is required in that case
-* you can modify one of the provided VMs or build a new one;
+- you can use the provided PyVM or SimpleVM on a remote server;
+  no devcontainer is required in that case; [more info](proxy.md)
+- you can modify one of the provided VMs or build a new one;
   this typically requires rust, and the preferred way to work with it is to use the
   provided **AICI Client-side** devcontainer - it should work on any machine with Docker and VSCode
-* if you want to run the inference server (rllm) locally, use the **AICI with CUDA** container;
+- if you want to run the inference server (rllm) locally, use the **AICI with CUDA** container;
   this requires a CUDA-capable GPU (currently only 8.0 (A100) is supported)
-* finally, if you want to try the AICI integration with vLLM, use the 
+- finally, if you want to try the AICI integration with vLLM, use the
   **AICI with CUDA and vLLM (experimental)** container
 
 Each of the above containers takes longer than the previous one to build.
@@ -56,7 +56,6 @@ Run `./scripts/aici.sh -h` to see usage info.
 If the server is running with Orca-2 13B model,
 you can also run tests with `pytest` for the DeclVM, or with `./scripts/test-pyvm.sh` for PyVM.
 
-
 ### Running local server
 
 To run rLLM server, go to `rllm/` and run `./server.sh orca`.
@@ -85,7 +84,7 @@ upload module... 191kB -> 668kB id:255ce305
 
 [Prompt] Can orcas sing?
 
-[Response] 
+[Response]
 Yes
 ```
 
@@ -104,7 +103,7 @@ The [uppercase VM](aici_abi/src/uppercase.rs) shows usage of the `FunctionalReco
 It forces every 4th letter of the model output to be uppercase.
 
 ```
-$ ./scripts/sample-uppercase.sh 
+$ ./scripts/sample-uppercase.sh
 will build uppercase from /workspaces/aici/aici_abi/Cargo.toml
     Finished release [optimized + debuginfo] target(s) in 0.09s
 built: /workspaces/aici/target/wasm32-wasi/release/uppercase.wasm, 0.193 MiB
@@ -114,7 +113,7 @@ upload module... 197kB -> 687kB id:4d3b70bf
 [0]: tokenize: "Here's a tweet:\n" -> [10605, 29915, 29879, 263, 7780, 300, 29901, 13]
 [DONE]
 
-[Prompt] 
+[Prompt]
 
 [Response] Here's a tweet:
 I'm SO EXCITED! I'm GoinG toBe aMom!I'm GoinG toHaVeA BaBy!
@@ -157,10 +156,9 @@ more restrictive.
 
 There is no reason to use it as is, but it can be used as a base for other VMs.
 
-
 ## Architecture
 
-This AICI runtime is implemented in the [aicirt](aicirt) crate, while the binary AICI interface 
+This AICI runtime is implemented in the [aicirt](aicirt) crate, while the binary AICI interface
 is specified in the [aici_abi](aici_abi) crate.
 
 The LLM engines are often implemented in Python, and thus the [pyaici](pyaici) Python packages provides
@@ -169,12 +167,12 @@ Using shared memory ensures there is very little work to be done on the Python s
 (other than wrapping that memory as a tensor).
 
 The (harness)[harness] folder contains samples for using aicirt with different LLM engines:
+
 - [HuggingFace Transformers](harness/run_hf.py), run with `./scripts/hf.sh`
 - [vLLM script](harness/run_vllm.py), run with `./scripts/vllm.sh`
 - [vLLM REST server](harness/vllm_server.py), run with `./scripts/server.sh`;
   the REST server is compatible with OpenAI and adds an endpoint for uploading WASM modules;
   see [pyaici.rest](pyaici/rest.py) for an example on how it can be used
-
 
 ```mermaid
 graph TD
@@ -210,12 +208,13 @@ sequenceDiagram
 ```
 
 Below is process structure.
-* dotted arrow from A to B indicates that A sends requests to B (and gets responses)
-* solid arrow from A to B indicates that A spawns (forks) B
-* `spawner` is a special process, forked from `aicirt` at the beginning;
+
+- dotted arrow from A to B indicates that A sends requests to B (and gets responses)
+- solid arrow from A to B indicates that A spawns (forks) B
+- `spawner` is a special process, forked from `aicirt` at the beginning;
   for every user requests it spawns a top-level constraint VM and a `common state` process for handling shared state between
   all VMs for that request (all VMs for that user request can talk to the `common state` process)
-* the top-level constraint can spawn more constraints, which can spawn yet more;
+- the top-level constraint can spawn more constraints, which can spawn yet more;
   `aicirt` has a direct connection to all these constraints though
 
 ```mermaid
@@ -323,7 +322,7 @@ impl TokTrie {
     fn vocab_size() -> usize;
     /// Convert token Id to bytes (often UTF-8 string).
     fn token(token: TokenId) -> Vec<u8>;
-    /// Given a Recognizer, compute the set of allowed tokens. 
+    /// Given a Recognizer, compute the set of allowed tokens.
     fn compute_bias(rec: impl Recognizer) -> Vec<bool>;
 }
 ```
@@ -413,7 +412,6 @@ pub trait StringRecognizer<S: Copy> {
 }
 ```
 
-
 ### Regular expressions
 
 The `FunctionalRecognizer` interface is implemented for regular expressions.
@@ -427,9 +425,10 @@ while `special_allowed()` is only implemented for end-of-sequence token
 The `Recognizer` interface is implemented for LR(1) grammars and DFA-based lexers.
 
 The grammar uses inline syntax for the lexer:
+
 - `"keyword"` or `'keyword'` for keywords; any string works, eg. `"+="`, `"while"`, ...
 - `"/.../"` or `'/.../'` for regular expressions; you cannot have both `'` and `"` in the regex
-Special `SKIP` rule is used to indicate tokens that need to be skipped by the LR(1) parser (eg., whitespace and comments)
+  Special `SKIP` rule is used to indicate tokens that need to be skipped by the LR(1) parser (eg., whitespace and comments)
 
 The lexer has a DFA which recognizes all regexps and keywords
 (a big disjunction, but with additional machinery to disambiguate between different branches).
@@ -486,7 +485,7 @@ translation_unit
 
 ## Contributing
 
-This project welcomes contributions and suggestions.  Most contributions require you to agree to a
+This project welcomes contributions and suggestions. Most contributions require you to agree to a
 Contributor License Agreement (CLA) declaring that you have the right to, and actually do, grant us
 the rights to use your contribution. For details, visit https://cla.opensource.microsoft.com.
 
@@ -500,8 +499,8 @@ contact [opencode@microsoft.com](mailto:opencode@microsoft.com) with any additio
 
 ## Trademarks
 
-This project may contain trademarks or logos for projects, products, or services. Authorized use of Microsoft 
-trademarks or logos is subject to and must follow 
+This project may contain trademarks or logos for projects, products, or services. Authorized use of Microsoft
+trademarks or logos is subject to and must follow
 [Microsoft's Trademark & Brand Guidelines](https://www.microsoft.com/en-us/legal/intellectualproperty/trademarks/usage/general).
 Use of Microsoft trademarks or logos in modified versions of this project must not cause confusion or imply Microsoft sponsorship.
 Any use of third-party trademarks or logos are subject to those third-party's policies.
