@@ -97,7 +97,7 @@ int fib(int n) {
         [
             ast.fixed("```\n"),
             ast.gen(
-                yacc=open("grammars/c.y").read(),
+                yacc=open("aici_abi/grammars/c.y").read(),
                 # rx="#include(.|\n)*",
                 stop_at="\n}",
                 max_tokens=100,
