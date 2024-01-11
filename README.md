@@ -6,32 +6,32 @@ Controllers are light-weight [WebAssembly](https://webassembly.org/) (Wasm) modu
 which run in on the same machine as the LLM inference engine, utilizing the CPU while the GPU is busy
 with token generation. AICI is:
 
-- **secure**: Wasm modules are sandboxed and cannot access the filesystem, network, or any other resources
+- **secure**: Wasm modules are [sandboxed](#security) and cannot access the filesystem, network, or any other resources
 - **fast**: Wasm modules are compiled to native code and run in parallel with the LLM inference engine, inducing only a minimal overhead to the generation process
 - **flexible**: Wasm modules can be generated in any language that can compile to Wasm
 
 This repository contains:
 
-- the definition of the AICI binary interface (see below)
+- the [definition](aici_abi/README.md#low-level-interface) of the AICI binary interface
 - [aici_abi](aici_abi) - a Rust crate for easily implementing controllers (Wasm modules adhering to AICI)
 - [aicirt](aicirt) - an implementation of a runtime for controllers,
   built on top [Wasmtime](https://wasmtime.dev/);
-  LLM inference engines talk to `aicirt` via POSIX shared memory and semaphores
+  LLM inference engines talk to aicirt via shared memory and semaphores
 - [rLLM](rllm) - a reference implementation of an LLM inference engine
-- [pyaici](pyaici) - a Python package for interacting with `aicirt` and running controllers
-- [promptlib](promptlib) - a Python package that exposes API for easily creating and running `DeclCtrl` ASTs
-  (will change to generate `PyCtrl` programs in the future)
+- [pyaici](pyaici) - a Python package for interacting with aicirt and running controllers
+- [promptlib](promptlib) - a Python package that exposes API for easily creating and running DeclCtrl ASTs
+  (will change to generate PyCtrl programs in the future)
 
 And a number of sample/reference controllers:
 
-- [yes/no](aici_abi/src/yesno.rs) and [uppercase](aici_abi/src/uppercase.rs) - small samples for `aici_abi` usage
+- [yes/no](aici_abi/src/yesno.rs) and [uppercase](aici_abi/src/uppercase.rs) - small samples for aici_abi
 - [PyCtrl](pyvm) - an embedded Python 3 interpreter (using [RustPython](https://github.com/RustPython/RustPython)),
   which lets you write controllers in Python
 - [JsCtrl](jsvm) - an embedded JavaScript interpreter (using [QuickJS](https://bellard.org/quickjs/)),
   which lets you write controllers in JavaScript
 - [DeclCtrl](declvm) - a controller that interprets a simple JSON AST (Abstract Syntax Tree) to specify constraints
 
-Everything is implemented in Rust, unless otherwise stated.
+Everything above implemented in Rust, unless otherwise stated.
 
 ## Getting started
 
@@ -177,102 +177,6 @@ more restrictive.
 
 There is no reason to use it as is, but it can be used as a base for other VMs.
 
-## Architecture
-
-This AICI runtime is implemented in the [aicirt](aicirt) crate, while the binary AICI interface
-is specified in the [aici_abi](aici_abi) crate.
-
-The LLM engines are often implemented in Python, and thus the [pyaici](pyaici) Python packages provides
-a class to spin up and communicate with `aicirt` process via POSIX shared memory and semaphores.
-Using shared memory ensures there is very little work to be done on the Python side
-(other than wrapping that memory as a tensor).
-
-The (harness)[harness] folder contains samples for using aicirt with different LLM engines:
-
-- [HuggingFace Transformers](harness/run_hf.py), run with `./scripts/hf.sh`
-- [vLLM script](harness/run_vllm.py), run with `./scripts/vllm.sh`
-- [vLLM REST server](harness/vllm_server.py), run with `./scripts/server.sh`;
-  the REST server is compatible with OpenAI and adds an endpoint for uploading Wasm modules;
-  see [pyaici.rest](pyaici/rest.py) for an example on how it can be used
-
-```mermaid
-graph TD
-    User1 <-- HTTP --> vLLM
-    User2 <-- HTTP --> vLLM
-    UserN <-- HTTP --> vLLM["vLLM Server<br>(batching)"]
-    vLLM <-- CUDA/pytorch --> GPU
-    vLLM <-- POSIX SHM --> aicirt[AICI-runtime]
-    aicirt <-- Sockets+SHM --> Worker1[Worker1<br>Running Wasm]
-    aicirt <-- Sockets+SHM --> Worker2[Worker2<br>Running Wasm]
-    aicirt <-- Sockets+SHM --> WorkerM[WorkerM<br>Running Wasm]
-```
-
-```mermaid
-sequenceDiagram
-    actor User
-    participant GPU
-    participant vLLM
-    participant aicirt as AICI-runtime
-    vLLM -->> GPU: Model
-    User -->> vLLM: Request (Prompt + Wasm)
-    vLLM -->>+ aicirt: Prompt + Wasm
-    aicirt -->>- vLLM: logit bias 1
-    vLLM -->>+ GPU: Prompt
-    vLLM -->> GPU: logit bias 1
-    GPU -->> vLLM: token 1
-    vLLM -->>+ aicirt: token 1
-    vLLM -->> User: token 1
-    aicirt -->>- vLLM: logit bias 2
-    vLLM -->> GPU: logit bias 2
-    GPU -->>- vLLM: token 2
-    vLLM -->> User: token 2
-```
-
-Below is process structure.
-
-- dotted arrow from A to B indicates that A sends requests to B (and gets responses)
-- solid arrow from A to B indicates that A spawns (forks) B
-- `spawner` is a special process, forked from `aicirt` at the beginning;
-  for every user requests it spawns a top-level constraint VM and a `common state` process for handling shared state between
-  all VMs for that request (all VMs for that user request can talk to the `common state` process)
-- the top-level constraint can spawn more constraints, which can spawn yet more;
-  `aicirt` has a direct connection to all these constraints though
-
-```mermaid
-graph TD
-    vLLM ---> aicirt[AICI-runtime]
-    vLLM -..-> aicirt
-    aicirt -..-> spawner
-    aicirt -..-> A0((A0))
-    aicirt -..-> A1((A1))
-    aicirt -..-> A2((A2))
-    aicirt -..-> A3((A3))
-    aicirt -..-> A4((A4))
-    aicirt ---> spawner
-    spawner --> A0
-    spawner --> CommsA[Common state for A]
-    subgraph User Request A
-      A0 --> A1
-      A0 --> A2
-      A2 --> A3
-      A2 --> A4
-      A0 -..-> CommsA
-      A1 -..-> CommsA
-      A2 -..-> CommsA
-      A3 -..-> CommsA
-      A4 -..-> CommsA
-    end
-    aicirt -..-> B0((B0))
-    aicirt -..-> B1((B1))
-    spawner --> B0
-    spawner --> CommsB[Common state for B]
-    subgraph User Request B
-      B0 -..-> CommsB
-      B1 -..-> CommsB
-      B0 --> B1
-    end
-```
-
 ## Security
 
 - `aicirt` runs in a separate process, and can run under a different user than the LLM engine
@@ -285,224 +189,26 @@ graph TD
 In particular, Wasm modules cannot access the filesystem, network, or any other resources.
 They also cannot spin threads or access any timers (this is relevant for Spectre/Meltdown attacks).
 
-## Interfaces
+## Architecture
 
-### Low-level interface
+This AICI runtime is implemented in the [aicirt](aicirt) crate, while the binary AICI interface
+is specified in the [aici_abi](aici_abi) crate.
 
-Conceptually, the lowest level interface to AICI constraint is this:
+The LLM engines are often implemented in Python, and thus the [pyaici](pyaici) Python packages provides
+a class to spin up and communicate with `aicirt` process via POSIX shared memory and semaphores.
+Using shared memory ensures there is very little work to be done on the Python side
+(other than wrapping that memory as a tensor).
 
-```rust
-type TokenId = u32;
-type SeqId = u32;
+The [rllm](rllm) crate implements a reference LLM engine, which can be used for testing.
+**The text below is outdated.**
 
-trait AiciVm {
-    /// Called with the initial prompt. ~1000ms time limit.
-    fn init_prompt(prompt: Vec<TokenId>);
+The (harness)[harness] folder contains samples for using aicirt with different LLM engines:
 
-    /// Called before mid_process(), can fork or suspend. ~1ms.
-    fn pre_process() -> enum {
-        Stop,
-        Continue, // Same as Fork { num_forks: 1 }
-        Suspend,  // skip this generation round
-        Fork { num_forks: u32 },
-    }
-
-    /// This is the main entry point for the module. ~20ms.
-    fn mid_process(fork_group: Vec<SeqId>) -> enum {
-        Stop,
-        SampleWithBias { bias: Vec<f32> },
-        Splice { backtrack: u32, ff_tokens: Vec<TokenId> }
-    };
-
-    /// Called after tokens are appended. ~1ms.
-    fn post_process(tokens: Vec<TokenId>) -> enum { Stop, Continue };
-}
-```
-
-Tokens depend on the tokenizer used (eg., for Llama there 32000 tokens, and for GPT-4 there is ~100k).
-
-The actual binary interface is a bit more complicated, due
-to limitations in passing values to and from Wasm.
-A Wasm module instance is created for each token sequence.
-Also, when the sequence forks (as in beam search), the module instance is cloned.
-See the [AiciVm Rust trait](aici_abi/src/lib.rs) for details.
-
-A number of functions are exposed to the Wasm module.
-
-First, there are functions for accessing the current tokenizer:
-
-```rust
-/// Given a byte sequence, return a sequence of token Ids.
-fn tokenize_bytes(s: Vec<u8>) -> Vec<TokenId>;
-
-/// Represents trie of all tokens in the current tokenizer.
-impl TokTrie {
-    /// Get Id for EOS token etc.
-    fn special_token(tok: SpecialToken) -> TokenId;
-    /// Number of tokens.
-    fn vocab_size() -> usize;
-    /// Convert token Id to bytes (often UTF-8 string).
-    fn token(token: TokenId) -> Vec<u8>;
-    /// Given a Recognizer, compute the set of allowed tokens.
-    fn compute_bias(rec: impl Recognizer) -> Vec<bool>;
-}
-```
-
-Different forks in a sequence can communicate via shared variables:
-
-```rust
-/// This can be looked up in fork_group.
-fn self_seq_id() -> SeqId;
-
-trait VariableStorage {
-    fn get(name: str) -> Option<Vec<u8>>;
-    fn set(name: str, value: Vec<u8>);
-    fn append(name: str, value: Vec<u8>);
-}
-```
-
-Additionally, the `stdout` and `stderr` file descriptors are captured by the runtime
-and returned to user when streaming results.
-
-This interface may need to be extended in the future.
-
-### Byte stack interface
-
-The constraints are typically expressed on strings or bytes, not tokens.
-To compute the set of tokens that match a string constraint, one needs go through all the possible tokens
-and apply the constraint.
-An efficient way to do this is walk a prefix tree (trie) of all tokens.
-The `aici_abi` library implements this trie and exposes a way of filtering when provided with a constraints
-implementing the [following interface](aici_abi/src/toktree.rs):
-
-```rust
-pub trait Recognizer {
-    /// If `stack.top()` transitions via `byte` to `X`, execute `stack.push(X)`.
-    fn push_byte(&mut self, byte: u8);
-    /// for _ in 0..num { stack.pop() }
-    fn pop_bytes(&mut self, num: usize);
-    /// X = stack.top(); stack.empty(); stack.push(X)
-    fn collapse(&mut self);
-    /// check if stack.top() transitions via byte to a viable state
-    fn byte_allowed(&mut self, byte: u8) -> bool;
-    /// check if stack.top() transitions via tok to a viable state
-    fn special_allowed(&mut self, tok: SpecialToken) -> bool;
-    /// Called when iteration over the trie is finished
-    /// Stack has exactly one element then.
-    fn trie_finished(&mut self);
-    /// This combines `push_byte` and `byte_allowed` into one function for performance.
-    fn try_push_byte(&mut self, byte: u8) -> bool;
-}
-```
-
-The `AiciRecognizer` struct converts `Recognizer` to `AiciVm`.
-
-### Functional byte interface
-
-The following interface can be transformed into `Recognizer` using `StackRecognizer` struct.
-
-```rust
-pub trait FunctionalRecognizer<S: Copy> {
-    /// Initial state
-    fn initial(&self) -> S;
-    /// Extend the recognizer with given byte.
-    fn append(&self, state: S, byte: u8) -> S;
-    /// Check if given byte is allowed in given state.
-    fn byte_allowed(&self, state: S, byte: u8) -> bool;
-    /// Check if given special token is allowed in given state.
-    fn special_allowed(&self, state: S, tok: SpecialToken) -> bool;
-}
-```
-
-These three layers add up to about 40k of compiled code (Wasm).
-
-### Functional string interface
-
-This is not implemented yet, but it could look like this:
-
-```rust
-pub trait StringRecognizer<S: Copy> {
-    /// Initial state
-    fn initial(&self) -> S;
-    /// Extend the recognizer with given string.
-    fn append(&self, state: S, suffix: &String) -> S;
-    /// Return a set of allowed strings in given state.
-    fn allowed(&self, state: S) -> Vec<String>;
-    /// Check if given special token is allowed in given state.
-    fn special_allowed(&self, state: S) -> Vec<SpecialToken>;
-}
-```
-
-### Regular expressions
-
-The `FunctionalRecognizer` interface is implemented for regular expressions.
-The `S` type is the state of the DFA (Deterministic Finite Automaton) that recognizes the regular expression,
-then `append()` and `byte_allowed()` are the standard DFA operations,
-while `special_allowed()` is only implemented for end-of-sequence token
-(which is allowed when the current state is accepting).
-
-### LR(1) grammars
-
-The `Recognizer` interface is implemented for LR(1) grammars and DFA-based lexers.
-
-The grammar uses inline syntax for the lexer:
-
-- `"keyword"` or `'keyword'` for keywords; any string works, eg. `"+="`, `"while"`, ...
-- `"/.../"` or `'/.../'` for regular expressions; you cannot have both `'` and `"` in the regex
-  Special `SKIP` rule is used to indicate tokens that need to be skipped by the LR(1) parser (eg., whitespace and comments)
-
-The lexer has a DFA which recognizes all regexps and keywords
-(a big disjunction, but with additional machinery to disambiguate between different branches).
-It goes byte by byte, until the DFA gets to a dead state (from which no match is possible).
-Then it goes back one byte and checks for match.
-It prefers keywords over regexps.
-If no match is found, an error is reported, which requires careful design of the lexical part of the grammar
-(eg., see how the `white-space` rule below is prefix of the `pre-processor` rule).
-
-For example, this is fragment of [grammar for C](./grammars/c.y):
-
-```yacc
-%start translation_unit
-%%
-
-SKIP
-    : "//\*[^*]*\*+([^/*][^*]*\*+)*//"  // block comment
-    | "///.*/"                          // line comment
-    | "/\n[ \t\v\f]*#(.*\\\n)*.*/"      // pre-processor
-    | "/\n?[ \t\v\f]*/"                 // white-space
-    ;
-
-IDENTIFIER: "/[a-zA-Z_][0-9a-zA-Z_]*/" ;
-
-CONSTANT
-        : "/0[xX][0-9a-fA-F]+[uUlL]*?/"
-        | "/0[0-9]+[uUlL]*?/"
-        ;
-
-STRING_LITERAL: '/"(\\.|[^\\"])*"/' ;
-
-primary_expression
-    : IDENTIFIER
-    | CONSTANT
-    | STRING_LITERAL
-    | "(" expression ")"
-    ;
-
-// ...
-
-enum_specifier
-    : "enum" "{" enumerator_list "}"
-    | "enum" IDENTIFIER "{" enumerator_list "}"
-    | "enum" IDENTIFIER
-    ;
-
-// ...
-
-translation_unit
-    : external_declaration
-    | translation_unit external_declaration
-    ;
-```
+- [HuggingFace Transformers](harness/run_hf.py), run with `./scripts/hf.sh`
+- [vLLM script](harness/run_vllm.py), run with `./scripts/vllm.sh`
+- [vLLM REST server](harness/vllm_server.py), run with `./scripts/server.sh`;
+  the REST server is compatible with OpenAI and adds an endpoint for uploading Wasm modules;
+  see [pyaici.rest](pyaici/rest.py) for an example on how it can be used
 
 ## Contributing
 
