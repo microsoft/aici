@@ -102,27 +102,6 @@ def infer_args(cmd: argparse.ArgumentParser):
     )
 
 
-def upload_main():
-    import __main__
-
-    main_script_file = __main__.__file__
-    print("Pretending you wanted to say:")
-    print(f"pyaici run {main_script_file}\n")
-
-    rest.require_explicit_base_url()
-
-    aici_arg = open(main_script_file).read()
-    rest.log_level = 3
-    ask_completion(
-        None,
-        prompt="",
-        aici_module="pyvm-latest",
-        aici_arg=aici_arg,
-        ignore_eos=True,
-        max_tokens=2000,
-    )
-
-
 def main_inner():
     parser = argparse.ArgumentParser(
         description="Upload an AICI VM and completion request to rllm or vllm",

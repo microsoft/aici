@@ -29,8 +29,6 @@ aici.start(main())
 ```
 
 You can run it with `pyaici run answer.py`. Try `pyaici run --help` for available options.
-You can also run `python answer.py` which will detect you're not running on the server
-and upload the file to run it there.
 
 You can use `pyaici --log-level=5 run answer.py` to see arguments to the REST requests,
 if you want to do them yourself.

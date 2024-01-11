@@ -424,13 +424,7 @@ def start(f: Coroutine[CbType, None, None]):
     The coroutine may first `await getPrompt()` and then can `await gen_*()` or
     `await FixedTokens()` multiple times.
     """
-    if _aici.is_server_side():
-        return AiciAsync(f)
-
-    import pyaici.cli
-
-    f.close()
-    pyaici.cli.upload_main()
+    return AiciAsync(f)
 
 
 def test(f: Coroutine[CbType, None, None]):
@@ -442,13 +436,7 @@ def test(f: Coroutine[CbType, None, None]):
         await f
         print("TEST OK")
 
-    if _aici.is_server_side():
-        return AiciAsync(wrap())
-
-    import pyaici.cli
-
-    f.close()
-    pyaici.cli.upload_main()
+    return AiciAsync(wrap())
 
 
 class Label:

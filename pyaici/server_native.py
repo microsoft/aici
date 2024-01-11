@@ -166,3 +166,27 @@ def is_server_side():
     """
     # on server it's implemented natively, just like everything else is here
     return False
+
+#
+# Note, that this file is not embedded in pyvm - it's only type stubs for a native module
+#
+
+print(f"""
+This module is provided as part of the pyaici package to help with auto-completion in IDEs
+while editing Python files to be uploaded to AICI server.
+
+It will not work with the standard Python interpreter.
+
+To upload and run a Python file on the server, use the following command:
+
+    pyaici run myfile.py
+
+Try 'pyaici run --help' for more info.
+    
+If it doesn't work, you may try:
+
+    python -m pyaici.cli run myfile.py
+
+""")
+import sys
+sys.exit(1)
