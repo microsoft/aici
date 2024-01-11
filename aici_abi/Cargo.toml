@@ -24,10 +24,5 @@ cfg = ["dep:cfgrammar", "dep:lrlex", "dep:lrpar", "dep:lrtable", "dep:vob", "dep
 rx = ["dep:regex-automata"]
 
 [[bin]]
-name = "uppercase"
-path = "src/uppercase.rs"
-
-
-[[bin]]
 name = "yesno"
 path = "src/yesno.rs"

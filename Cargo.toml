@@ -6,6 +6,7 @@ members = [
     "aicirt",
     "pyctrl",
     "jsctrl",
+    "uppercase",
     "rllm",
     "tch-cuda",
 ]

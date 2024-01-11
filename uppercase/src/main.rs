@@ -37,7 +37,7 @@ impl FunctionalRecognizer<usize> for QuadUpper {
 pub struct Runner {
     toktrie: TokTrie,
     tokens: Vec<u32>,
-    rec: StackRecognizer<usize, QuadUpper>,
+    recognizer: StackRecognizer<usize, QuadUpper>,
 }
 
 impl Runner {
@@ -46,7 +46,7 @@ impl Runner {
         Runner {
             toktrie: TokTrie::from_host(),
             tokens: Vec::new(),
-            rec: StackRecognizer::from(QuadUpper {}),
+            recognizer: StackRecognizer::from(QuadUpper {}),
         }
     }
 }
@@ -82,7 +82,7 @@ impl AiciCtrl for Runner {
 
         // otherwise, compute bias according to our recognizer
         let mut set = self.toktrie.alloc_token_set();
-        self.toktrie.compute_bias(&mut self.rec, &mut set);
+        self.toktrie.compute_bias(&mut self.recognizer, &mut set);
         MidProcessResult::SampleWithBias {
             allowed_tokens: set,
         }
@@ -92,7 +92,7 @@ impl AiciCtrl for Runner {
         // save our tokens
         self.tokens.extend_from_slice(&arg.tokens);
         // and update the state of our recognizer
-        self.toktrie.append_tokens(&mut self.rec, &arg.tokens);
+        self.toktrie.append_tokens(&mut self.recognizer, &arg.tokens);
         // ::from_arg() will translate generation of EOS token into Stop instruction
         PostProcessResult::from_arg(&arg)
     }

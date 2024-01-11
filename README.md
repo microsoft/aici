@@ -12,7 +12,7 @@ with token generation. AICI is:
 
 This repository contains:
 
-- the [definition](aici_abi/README.md#low-level-interface) of the AICI binary interface
+- [definition](aici_abi/README.md#low-level-interface) of the AICI binary interface
 - [aici_abi](aici_abi) - a Rust crate for easily implementing controllers (Wasm modules adhering to AICI)
 - [aicirt](aicirt) - an implementation of a runtime for controllers,
   built on top [Wasmtime](https://wasmtime.dev/);
@@ -24,7 +24,7 @@ This repository contains:
 
 And a number of sample/reference controllers:
 
-- [yes/no](aici_abi/src/yesno.rs) and [uppercase](aici_abi/src/uppercase.rs) - small samples for aici_abi
+- [uppercase](uppercase) - a sample/starter project for aici_abi
 - [PyCtrl](pyctrl) - an embedded Python 3 interpreter (using [RustPython](https://github.com/RustPython/RustPython)),
   which lets you write controllers in Python
 - [JsCtrl](jsctrl) - an embedded JavaScript interpreter (using [QuickJS](https://bellard.org/quickjs/)),
@@ -82,100 +82,6 @@ you can also run tests with `pytest` for the DeclCtrl, or with `./scripts/test-p
 To run rLLM server, go to `rllm/` and run `./server.sh orca`.
 This will run the inference server with Orca-2 13B model (which is expected by testcases).
 You can also try other models, see [rllm/README.md](rllm/README.md) for details.
-
-## Provided Controllers
-
-We provide several controllers that you can use directly or as base for your own controller.
-
-### Yes/no
-
-The [yes/no controller](aici_abi/src/yesno.rs)
-only allows the model to say "Yes" or "No" in answer to the question in the prompt.
-
-```
-$ ./scripts/sample-yesno.sh "Can orcas sing?"
-will build yesno from /workspaces/aici/aici_abi/Cargo.toml
-    Finished release [optimized + debuginfo] target(s) in 0.09s
-built: /workspaces/aici/target/wasm32-wasi/release/yesno.wasm, 0.187 MiB
-upload module... 191kB -> 668kB id:255ce305
-[0]: tokenize: "Yes" -> [8241]
-[0]: tokenize: "No" -> [3782]
-[0]: tokenize: "\n" -> [13]
-[DONE]
-
-[Prompt] Can orcas sing?
-
-[Response]
-Yes
-```
-
-Note that the same effect can be achieved with PyCtrl and [10x less lines of code](pyctrl/samples/yesno.py).
-This is just for demonstration purposes.
-
-```
-$ ./scripts/aici.sh run pyctrl/samples/yesno.py --prompt "Are dolphins fish?"
-...
-No
-```
-
-### Uppercase
-
-The [uppercase controller](aici_abi/src/uppercase.rs) shows usage of the `FunctionalRecognizer` interface.
-It forces every 4th letter of the model output to be uppercase.
-
-```
-$ ./scripts/sample-uppercase.sh
-will build uppercase from /workspaces/aici/aici_abi/Cargo.toml
-    Finished release [optimized + debuginfo] target(s) in 0.09s
-built: /workspaces/aici/target/wasm32-wasi/release/uppercase.wasm, 0.193 MiB
-upload module... 197kB -> 687kB id:4d3b70bf
-[0]: user passed in 0 bytes
-[0]: init_prompt: [1] ""
-[0]: tokenize: "Here's a tweet:\n" -> [10605, 29915, 29879, 263, 7780, 300, 29901, 13]
-[DONE]
-
-[Prompt]
-
-[Response] Here's a tweet:
-I'm SO EXCITED! I'm GoinG toBe aMom!I'm GoinG toHaVeA BaBy!
-```
-
-Again, this could be done with PyCtrl and a simple regex.
-
-### PyCtrl
-
-The [PyCtrl](pyctrl) embeds [RustPython](https://github.com/RustPython/RustPython)
-(a Python 3 language implementation) in the Wasm module together with native
-primitives for specific kinds of output constraints:
-fixed token output, regexps, LR(1) grammars, substring constrains etc.
-Python code is typically only used lightly, for gluing the primitives together,
-and thus is not performance critical.
-
-There are [several samples](pyctrl/samples/) available.
-The scripts use the [pyaici.server module](pyaici/server.py) to communicate with the AICI runtime
-and use the native constraints.
-
-To run a PyCtrl sample (using controller tagged with `pyctrl-latest`) use:
-
-```bash
-./scripts/aici.sh run pyctrl/samples/test.py
-```
-
-If you want to build it yourself, use:
-
-```bash
-./scripts/aici.sh run --build pyctrl pyctrl/samples/test.py
-```
-
-You will see the console output of the program.
-
-### DeclCtrl
-
-The [DeclCtrl](declctrl/src/declctrl.rs) exposes similar constraints
-to PyCtrl, but the glueing is done via a JSON AST (Abstract Syntax Tree) and thus is
-more restrictive.
-
-There is no reason to use it as is, but it can be used as a base for other controller.
 
 ## Security
 

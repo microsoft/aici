@@ -1,0 +1,8 @@
+[package]
+name = "aici_uppercase"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+aici_abi = { path = "../aici_abi" }
+anyhow = "1.0.75"

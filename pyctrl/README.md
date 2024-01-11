@@ -1,7 +1,31 @@
-# AiciPython
+# PyCtrl
 
-This crate implements AI Controller Interface via an embedded Python interpreter
-([RustPython](https://github.com/RustPython/RustPython)).
+This crate implements AI Controller Interface by embedding [RustPython](https://github.com/RustPython/RustPython)
+(a Python 3 language implementation) in the Wasm module together with native
+primitives for specific kinds of output constraints:
+fixed token output, regexps, LR(1) grammars, substring constrains etc.
+Python code is typically only used lightly, for gluing the primitives together,
+and thus is not performance critical.
+
+There are [several sample scripts](samples/) available.
+The scripts use the [pyaici.server module](pyaici/server.py) to communicate with the AICI runtime
+and use the native constraints.
+
+## Usage
+
+To run a PyCtrl sample (using controller tagged with `pyctrl-latest`) use:
+
+```bash
+../aici.sh run samples/test.py
+```
+
+If you want to build it yourself, use:
+
+```bash
+../aici.sh run --build . samples/test.py
+```
+
+You will see the console output of the program.
 
 The Python interpreter does not include the full Python standard library, however
 [parts are bundled](./Lib).

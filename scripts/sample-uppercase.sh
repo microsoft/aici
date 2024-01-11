@@ -1,2 +1,2 @@
 #!/bin/sh
-./scripts/aici.sh run --build aici_abi::uppercase
+./scripts/aici.sh run --build uppercase

@@ -306,6 +306,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "aici_uppercase"
+version = "0.1.0"
+dependencies = [
+ "aici_abi",
+ "anyhow",
+]
+
+[[package]]
 name = "aicirt"
 version = "0.1.0"
 dependencies = [

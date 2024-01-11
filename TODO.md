@@ -1,0 +1,11 @@
+- [x] separate folder for uppercase sample
+- [ ] delete gdl.sh
+- [ ] pyaici cli -> aici
+- [ ] ./scripts/aici.sh -> ./aici.sh
+- [ ] describe vLLM/hf situation
+- [ ] rename vLLM -> LLM in drawings
+- [ ] add hour-glass drawing
+- [ ] setup cloud build for Wasm
+- [ ] setup cloud build for aicirt
+- [ ] setup cloud build for rllm
+- [ ] remove azurewebites.net refs
