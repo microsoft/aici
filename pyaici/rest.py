@@ -6,9 +6,17 @@ import sys
 import time
 from typing import Optional
 
-base_url = os.environ.get("AICI_API_BASE", "http://127.0.0.1:8080/v1/")
+BASE_URL_ENV = "AICI_API_BASE"
+
+base_url = os.environ.get(BASE_URL_ENV, "http://127.0.0.1:8080/v1/")
 log_level = 1
 ast_module = ""
+
+
+def require_explicit_base_url():
+    if not os.environ.get(BASE_URL_ENV, ""):
+        print(f"Please set the {BASE_URL_ENV} environment variable")
+        sys.exit(1)
 
 
 def _parse_base_url(base_url: str):

@@ -426,7 +426,10 @@ def start(f: Coroutine[CbType, None, None]):
     """
     if _aici.is_server_side():
         return AiciAsync(f)
+
     import pyaici.cli
+
+    f.close()
     pyaici.cli.upload_main()
 
 
@@ -443,6 +446,8 @@ def test(f: Coroutine[CbType, None, None]):
         return AiciAsync(wrap())
 
     import pyaici.cli
+
+    f.close()
     pyaici.cli.upload_main()
 
 

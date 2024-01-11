@@ -106,8 +106,13 @@ def upload_main():
     import __main__
 
     main_script_file = __main__.__file__
-    print(f"Uploading {main_script_file}...")
+    print("Pretending you wanted to say:")
+    print(f"pyaici run {main_script_file}\n")
+
+    rest.require_explicit_base_url()
+
     aici_arg = open(main_script_file).read()
+    rest.log_level = 3
     ask_completion(
         None,
         prompt="",
