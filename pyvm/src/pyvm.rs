@@ -304,7 +304,7 @@ impl Runner {
     pub fn new(arg: Vec<u8>) -> Self {
         let source = String::from_utf8(arg).unwrap();
         let interpreter = rustpython_vm::Interpreter::with_init(Default::default(), |vm| {
-            vm.add_native_module("_aici".to_owned(), Box::new(_aici::make_module));
+            vm.add_native_module("aici.native".to_owned(), Box::new(_aici::make_module));
             vm.add_frozen(rustpython_vm::py_freeze!(dir = "Lib"));
             vm.add_frozen(rustpython_vm::py_freeze!(dir = "aici-pylib"));
         });

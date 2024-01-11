@@ -1,7 +1,7 @@
 from typing import Any, Optional, Coroutine, Union, Callable
 
 # these are to provide re-exports
-from _aici import (
+from .native import (
     TokenSet,
     tokenize,
     detokenize,
@@ -14,7 +14,7 @@ from _aici import (
     append_var,
     eos_token,
 )
-import _aici
+from . import native as _aici
 
 Token = int
 SeqId = int
