@@ -1,4 +1,4 @@
-import aici
+import pyaici.server as aici
 
 # note that VSCode syntax highlighting is not perfect r""" ... """ (it assumes regexp)
 c_yacc = r"""

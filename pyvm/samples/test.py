@@ -1,4 +1,4 @@
-import aici
+import pyaici.server as aici
 import re
 
 # asserts for microsoft/Orca-2-13b

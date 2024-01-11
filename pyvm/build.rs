@@ -3,8 +3,8 @@ fn main() {
         let display = entry.display();
         println!("cargo:rerun-if-changed={display}");
     }
-    for entry in glob::glob("aici-pylib/**/*.py")
-        .expect("aici-pylib/ exists?")
+    for entry in glob::glob("../pyaici/server*.py")
+        .expect("exists?")
         .flatten()
     {
         let display = entry.display();

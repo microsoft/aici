@@ -46,8 +46,7 @@
         "chrono": "cpp"
     },
     "python.analysis.extraPaths": [
-        "./vllm",
-        "./pyvm/aici-pylib"
+        "./vllm"
     ],
     "spellright.language": [
         "en"

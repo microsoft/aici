@@ -304,12 +304,29 @@ impl Runner {
     pub fn new(arg: Vec<u8>) -> Self {
         let source = String::from_utf8(arg).unwrap();
         let interpreter = rustpython_vm::Interpreter::with_init(Default::default(), |vm| {
-            vm.add_native_module("aici.native".to_owned(), Box::new(_aici::make_module));
+            vm.add_native_module(
+                "pyaici.server_native".to_owned(),
+                Box::new(_aici::make_module),
+            );
             vm.add_frozen(rustpython_vm::py_freeze!(dir = "Lib"));
-            vm.add_frozen(rustpython_vm::py_freeze!(dir = "aici-pylib"));
+
+            let code = rustpython_vm::py_compile!(
+                file = "../pyaici/server.py",
+                module_name = "pyaici.server",
+                mode = "exec"
+            );
+            let frozen_vec = vec![(
+                "pyaici.server",
+                rustpython_vm::frozen::FrozenModule {
+                    code,
+                    package: true,
+                },
+            )];
+            vm.add_frozen(frozen_vec.into_iter());
         });
         interpreter.enter(|vm| {
             let scope = vm.new_scope_with_builtins();
+
             let r = vm
                 .compile(
                     &source,

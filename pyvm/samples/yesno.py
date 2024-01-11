@@ -1,4 +1,4 @@
-import aici
+import pyaici.server as aici
 
 async def main():
     tokens = await aici.GetPrompt()

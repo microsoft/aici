@@ -1,7 +1,12 @@
-# type stubs
+# This module is provided as part of the pyaici package to help with auto-completion in IDEs
+# while editing Python files to be uploaded to AICI server.
+#
+# It will not work with the standard Python interpreter.
+#
+
 from __future__ import annotations
 from typing import Any, Sequence
-import aici
+import pyaici.server as aici
 
 
 def register(cb: aici.AiciCallbacks):

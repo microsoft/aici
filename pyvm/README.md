@@ -5,13 +5,13 @@ This crate implements AI Controller Interface via an embedded Python interpreter
 
 The Python interpreter does not include the full Python standard library, however
 [parts are bundled](./Lib).
-In addition to regular Python modules, the `aici` module is also [bundled](./aici-pylib).
+In addition to regular Python modules, the `pyaici.server` module is also [bundled](../pyaici/server.py).
 It defines `AiciCallbacks` interface, which closely reflects the structure of native AICI interface.
 `AiciAsync`, takes a async method and turns it into `AiciCallbacks` implementation;
 this is typically invoked via `aici.start()`.
 
 ```python
-import aici
+import pyaici.server as aici
 
 async def sample():
     # initialization code
@@ -50,7 +50,7 @@ and the `following=` argument to `FixedTokens()` is used to backtrack.
 For example:
 
 ```python
-import aici
+import pyaici.server as aici
 
 async def backtracking():
     await aici.FixedTokens("The word 'hello' in")
@@ -77,7 +77,7 @@ The generation process can be forked into multiple branches (possibly more than 
 The branches can communicate through shared variables (`aici.set_var()` and `aici.get_var()`).
 
 ```python
-import aici
+import pyaici.server as aici
 
 async def forking():
     await aici.FixedTokens("The word 'hello' in")

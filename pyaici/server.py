@@ -1,7 +1,13 @@
+# This module is provided as part of the pyaici package to help with auto-completion in IDEs
+# while editing Python files to be uploaded to AICI server.
+#
+# It will not work with the standard Python interpreter.
+#
+
 from typing import Any, Optional, Coroutine, Union, Callable
 
 # these are to provide re-exports
-from .native import (
+from pyaici.server_native import (
     TokenSet,
     tokenize,
     detokenize,
@@ -14,7 +20,7 @@ from .native import (
     append_var,
     eos_token,
 )
-from . import native as _aici
+import pyaici.server_native as _aici
 
 Token = int
 SeqId = int
@@ -283,7 +289,7 @@ async def wait_vars(*vars: str) -> list[bytes]:
 class AiciCallbacks:
     """
     Low-level interface for AICI.
-    Use aici.start() to wrap a coroutine.
+    Use pyaici.server.start() to wrap a coroutine.
     """
 
     def init_prompt(self, prompt: list[Token]):
@@ -415,8 +421,8 @@ class AiciAsync(AiciCallbacks):
 def start(f: Coroutine[CbType, None, None]):
     """
     Starts the AICI loop.
-    The coroutine may first `await aici.GetPrompt()` and then can `await aici.gen_*()` or
-    `await aici.FixedTokens()` multiple times.
+    The coroutine may first `await getPrompt()` and then can `await gen_*()` or
+    `await FixedTokens()` multiple times.
     """
     return AiciAsync(f)
 
@@ -487,7 +493,7 @@ async def gen_tokens(
     regex: str | None = None,
     yacc: str | None = None,
     substring: str | None = None,
-    substring_end: str = "\"",
+    substring_end: str = '"',
     options: list[str] | None = None,
     store_var: str | None = None,
     stop_at: str | None = None,
@@ -504,7 +510,9 @@ async def gen_tokens(
     if regex is not None:
         next_token = ConstrainedToken(lambda: RegexConstraint(regex))
     elif substring is not None:
-        next_token = ConstrainedToken(lambda: SubStrConstraint(substring, substring_end))
+        next_token = ConstrainedToken(
+            lambda: SubStrConstraint(substring, substring_end)
+        )
     elif yacc is not None:
         next_token = ConstrainedToken(lambda: CfgConstraint(yacc))
     elif options is not None:

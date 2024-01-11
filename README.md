@@ -132,7 +132,7 @@ Python code is typically only used lightly, for gluing the primitives together,
 and thus is not performance critical.
 
 There are [several samples](pyvm/samples/) available.
-The scripts use the [aici module](pyvm/aici-pylib/aici.py) to communicate with the AICI runtime
+The scripts use the [pyaici.server module](pyaici/server.py) to communicate with the AICI runtime
 and use the native constraints.
 
 To run a PyVM sample (using VM tagged with `pyvm-latest`) use:

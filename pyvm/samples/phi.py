@@ -1,4 +1,4 @@
-import aici
+import pyaici.server as aici
 
 
 async def test_42():
