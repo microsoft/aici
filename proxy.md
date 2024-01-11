@@ -13,7 +13,7 @@ Install the `pyaici` package, export credentials, and see if the connection is w
 ```bash
 pip install git+https://github.com/microsoft/aici
 export AICI_API_BASE="https://something.com/v1/#key=wht_..."
-pyaici infer --max-tokens=10 --prompt="Answer to the Ultimate Question of Life, the Universe, and Everything is"
+aici infer --max-tokens=10 --prompt="Answer to the Ultimate Question of Life, the Universe, and Everything is"
 ```
 
 To test out the `pyctrl`, create `answer.py` file with:
@@ -28,7 +28,7 @@ async def main():
 aici.start(main())
 ```
 
-You can run it with `pyaici run answer.py`. Try `pyaici run --help` for available options.
+You can run it with `aici run answer.py`. Try `aici run --help` for available options.
 
-You can use `pyaici --log-level=5 run answer.py` to see arguments to the REST requests,
+You can use `aici --log-level=5 run answer.py` to see arguments to the REST requests,
 if you want to do them yourself.

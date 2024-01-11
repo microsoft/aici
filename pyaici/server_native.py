@@ -179,14 +179,11 @@ It will not work with the standard Python interpreter.
 
 To upload and run a Python file on the server, use the following command:
 
-    pyaici run myfile.py
+    aici run myfile.py
 
-Try 'pyaici run --help' for more info.
-    
-If it doesn't work, you may try:
+Try 'aici run --help' for more info.
 
-    python -m pyaici.cli run myfile.py
-
+The 'aici' command can be replaced by 'python -m pyaici.cli' if needed.
 """)
 import sys
 sys.exit(1)

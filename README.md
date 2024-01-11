@@ -18,7 +18,8 @@ This repository contains:
   built on top [Wasmtime](https://wasmtime.dev/);
   LLM inference engines talk to aicirt via shared memory and semaphores
 - [rLLM](rllm) - a reference implementation of an LLM inference engine
-- [pyaici](pyaici) - a Python package for interacting with aicirt and running controllers
+- [pyaici](pyaici) - a Python package for interacting with aicirt and running controllers;
+  includes `aici` command-line tool
 - [promptlib](promptlib) - a Python package that exposes API for easily creating and running DeclCtrl ASTs
   (will change to generate PyCtrl programs in the future)
 

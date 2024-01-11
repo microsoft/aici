@@ -1,6 +1,6 @@
 - [x] separate folder for uppercase sample
 - [x] delete gdl.sh
-- [ ] pyaici cli -> aici
+- [x] pyaici cli -> aici
 - [x] ./scripts/aici.sh -> ./aici.sh
 - [ ] describe vLLM/hf situation
 - [ ] rename vLLM -> LLM in drawings

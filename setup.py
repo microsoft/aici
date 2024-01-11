@@ -6,7 +6,7 @@ setup(
     packages=['pyaici'],
     entry_points={
         'console_scripts': [
-            'pyaici = pyaici.cli:main'
+            'aici = pyaici.cli:main'
         ]
     },
 )

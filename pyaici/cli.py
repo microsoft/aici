@@ -105,7 +105,7 @@ def infer_args(cmd: argparse.ArgumentParser):
 def main_inner():
     parser = argparse.ArgumentParser(
         description="Upload an AICI Controller and completion request to rllm or vllm",
-        prog="pyaici",
+        prog="aici",
     )
 
     parser.add_argument(
@@ -142,14 +142,14 @@ def main_inner():
         "-u",
         metavar="WASM_FILE",
         type=str,
-        help="path to .wasm file to upload; shorthand for 'pyaici upload WASM_FILE'",
+        help="path to .wasm file to upload; shorthand for 'aici upload WASM_FILE'",
     )
     run_cmd.add_argument(
         "--build",
         "-b",
         metavar="FOLDER",
         type=str,
-        help="path to rust project to build and upload; shorthand for 'pyaici build FOLDER'",
+        help="path to rust project to build and upload; shorthand for 'aici build FOLDER'",
     )
 
     infer_cmd = subparsers.add_parser(
