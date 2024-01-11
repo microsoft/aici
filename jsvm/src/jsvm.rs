@@ -5,7 +5,7 @@ use aici_abi::{
     recognizer::{AnythingGoes, StackRecognizer},
     svob::SimpleVob,
     toktree::{Recognizer, SpecialToken, TokTrie},
-    AiciVm, InitPromptArg, InitPromptResult, MidProcessArg, MidProcessResult, PostProcessArg,
+    AiciCtrl, InitPromptArg, InitPromptResult, MidProcessArg, MidProcessResult, PostProcessArg,
     PostProcessResult, PreProcessArg, PreProcessResult, TokenId, VariableStorage,
 };
 use rquickjs::{
@@ -481,7 +481,7 @@ export interface AiciCallbacks {
 }
 */
 
-impl AiciVm for Runner {
+impl AiciCtrl for Runner {
     fn init_prompt(&mut self, arg: InitPromptArg) -> InitPromptResult {
         self.with_cb("init_prompt", |ctx| {
             let cb: Function = ctx.eval2("globalThis._aici_cb.init_prompt");

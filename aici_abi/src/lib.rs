@@ -147,7 +147,7 @@ impl PreProcessResult {
     }
 }
 
-pub trait AiciVm {
+pub trait AiciCtrl {
     /// Called with the initial prompt. ~1000ms time limit.
     /// By default ignore prompt.
     fn init_prompt(&mut self, _arg: InitPromptArg) -> InitPromptResult {

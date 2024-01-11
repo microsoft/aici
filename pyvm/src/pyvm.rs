@@ -2,7 +2,7 @@ use aici_abi::{
     aici_stop,
     svob::SimpleVob,
     toktree::{Recognizer, SpecialToken, TokTrie},
-    AiciVm, InitPromptArg, InitPromptResult, MidProcessArg, MidProcessResult, PostProcessArg,
+    AiciCtrl, InitPromptArg, InitPromptResult, MidProcessArg, MidProcessResult, PostProcessArg,
     PostProcessResult, PreProcessArg, PreProcessResult, TokenId, VariableStorage,
 };
 use anyhow::Result;
@@ -485,7 +485,7 @@ impl VmExt for VirtualMachine {
     }
 }
 
-impl AiciVm for Runner {
+impl AiciCtrl for Runner {
     fn init_prompt(&mut self, arg: InitPromptArg) -> InitPromptResult {
         let obj = get_cb_obj();
         self.interpreter.enter(|vm| {

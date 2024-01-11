@@ -18,7 +18,7 @@ use aici_abi::{
     svob::SimpleVob,
     tokenize, tokenize_bytes,
     toktree::{Recognizer, SpecialToken, TokTrie},
-    AiciVm, InitPromptArg, InitPromptResult, MidProcessArg, MidProcessResult,
+    AiciCtrl, InitPromptArg, InitPromptResult, MidProcessArg, MidProcessResult,
     PostProcessArg, PostProcessResult, PreProcessArg, PreProcessResult, TokenId, VariableStorage,
 };
 use core::panic;
@@ -1157,7 +1157,7 @@ impl Runner {
     }
 }
 
-impl AiciVm for Runner {
+impl AiciCtrl for Runner {
     fn init_prompt(&mut self, arg: InitPromptArg) -> InitPromptResult {
         println!("prompt: {:?}", arg.prompt);
         for t in arg.prompt {

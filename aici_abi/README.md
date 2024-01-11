@@ -11,7 +11,7 @@ Conceptually, the lowest level interface to AICI constraint is this:
 type TokenId = u32;
 type SeqId = u32;
 
-trait AiciVm {
+trait AiciCtrl {
     /// Called with the initial prompt. ~1000ms time limit.
     fn init_prompt(prompt: Vec<TokenId>);
 
@@ -41,7 +41,7 @@ The actual binary interface is a bit more complicated, due
 to limitations in passing values to and from Wasm.
 A Wasm module instance is created for each token sequence.
 Also, when the sequence forks (as in beam search), the module instance is cloned.
-See the [AiciVm Rust trait](aici_abi/src/lib.rs) for details.
+See the [AiciCtrl Rust trait](aici_abi/src/lib.rs) for details.
 
 A number of functions are exposed to the Wasm module.
 
@@ -111,7 +111,7 @@ pub trait Recognizer {
 }
 ```
 
-The `AiciRecognizer` struct converts `Recognizer` to `AiciVm`.
+The `AiciRecognizer` struct converts `Recognizer` to `AiciCtrl`.
 
 ## Functional byte interface
 

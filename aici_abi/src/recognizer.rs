@@ -1,6 +1,6 @@
 use crate::{
     toktree::{Recognizer, SpecialToken, TokTrie},
-    AiciVm, MidProcessArg, MidProcessResult, PostProcessArg, PostProcessResult,
+    AiciCtrl, MidProcessArg, MidProcessResult, PostProcessArg, PostProcessResult,
 };
 use std::fmt::Debug;
 
@@ -18,7 +18,7 @@ impl<R: Recognizer> AiciRecognizer<R> {
     }
 }
 
-impl<R: Recognizer + Clone> AiciVm for AiciRecognizer<R> {
+impl<R: Recognizer + Clone> AiciCtrl for AiciRecognizer<R> {
     fn mid_process(&mut self, _arg: MidProcessArg) -> MidProcessResult {
         let mut set = self.trie.alloc_token_set();
         self.trie.compute_bias(&mut self.rec, &mut set);

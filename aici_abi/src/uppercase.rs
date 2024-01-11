@@ -2,7 +2,7 @@ use aici_abi::{
     recognizer::{FunctionalRecognizer, StackRecognizer},
     tokenize,
     toktree::{SpecialToken, TokTrie},
-    AiciVm, InitPromptArg, InitPromptResult, MidProcessArg, MidProcessResult, PostProcessArg,
+    AiciCtrl, InitPromptArg, InitPromptResult, MidProcessArg, MidProcessResult, PostProcessArg,
     PostProcessResult, PreProcessArg, PreProcessResult,
 };
 
@@ -51,7 +51,7 @@ impl Runner {
     }
 }
 
-impl AiciVm for Runner {
+impl AiciCtrl for Runner {
     fn init_prompt(&mut self, arg: InitPromptArg) -> InitPromptResult {
         // with VMs, the prompt is often empty, but let's print it
         println!(

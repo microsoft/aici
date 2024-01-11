@@ -1,5 +1,5 @@
 use aici_abi::{
-    tokenize, toktree::TokTrie, AiciVm, InitPromptArg, InitPromptResult, MidProcessArg,
+    tokenize, toktree::TokTrie, AiciCtrl, InitPromptArg, InitPromptResult, MidProcessArg,
     MidProcessResult, PostProcessArg, PostProcessResult, PreProcessArg, PreProcessResult, TokenId,
 };
 
@@ -24,7 +24,7 @@ impl Runner {
     }
 }
 
-impl AiciVm for Runner {
+impl AiciCtrl for Runner {
     fn init_prompt(&mut self, arg: InitPromptArg) -> InitPromptResult {
         if arg.prompt.len() < 2 {
             // we'll be forcing answer; require a question
