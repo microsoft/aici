@@ -32,18 +32,5 @@ You can run it with `pyaici run answer.py`. Try `pyaici run --help` for availabl
 You can also run `python answer.py` which will detect you're not running on the server
 and upload the file to run it there.
 
-
-## Testing
-
-You can test the model by running the following command (where you replace `wht_...` with your API key):
-
-```
-curl -X POST https://aici.azurewebsites.net/v1/completions \
-    -H 'content-type: application/json' \
-    -H 'api-key: wht_...' \
-    -d '{"model":"","prompt":"Hello world","max_tokens":5,
-    "n":1,"temperature":0.0,"stream":true,"aici_module":null,
-    "aici_arg":null,"ignore_eos":true}'
-```
-
-TODO: add more info
+You can use `pyaici --log-level=5 run answer.py` to see arguments to the REST requests,
+if you want to do them yourself.
