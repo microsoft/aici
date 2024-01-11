@@ -1,22 +1,43 @@
 # Artificial Intelligence Controller Interface (AICI)
 
 The Artificial Intelligence Controller Interface (AICI)
-lets you build Controllers that constrain and direct output of an LLM in real time.
-Controllers are light-weight [WebAssembly](https://webassembly.org/) (WASM) modules
+lets you build Controllers that constrain and direct output of a Large Language Model (LLM) in real time.
+Controllers are light-weight [WebAssembly](https://webassembly.org/) (Wasm) modules
 which run in on the same machine as the LLM inference engine, utilizing the CPU while the GPU is busy
 with token generation. AICI is:
 
-- **secure**: WASM modules are sandboxed and cannot access the filesystem, network, or any other resources
-- **fast**: WASM modules are compiled to native code and run in parallel with the LLM inference engine
-- **flexible**: WASM modules can be generated in any language that can compile to WASM
+- **secure**: Wasm modules are sandboxed and cannot access the filesystem, network, or any other resources
+- **fast**: Wasm modules are compiled to native code and run in parallel with the LLM inference engine, inducing only a minimal overhead to the generation process
+- **flexible**: Wasm modules can be generated in any language that can compile to Wasm
 
-The AICI runtime is built on top of [Wasmtime](https://wasmtime.dev/).
+This repository contains:
+
+- the definition of the AICI binary interface (see below)
+- [aici_abi](aici_abi) - a Rust crate for easily implementing controllers (Wasm modules adhering to AICI)
+- [aicirt](aicirt) - an implementation of a runtime for controllers,
+  built on top [Wasmtime](https://wasmtime.dev/);
+  LLM inference engines talk to `aicirt` via POSIX shared memory and semaphores
+- [rLLM](rllm) - a reference implementation of an LLM inference engine
+- [pyaici](pyaici) - a Python package for interacting with `aicirt` and running controllers
+- [promptlib](promptlib) - a Python package that exposes API for easily creating and running `DeclCtrl` ASTs
+  (will change to generate `PyCtrl` programs in the future)
+
+And a number of sample/reference controllers:
+
+- [yes/no](aici_abi/src/yesno.rs) and [uppercase](aici_abi/src/uppercase.rs) - small samples for `aici_abi` usage
+- [PyCtrl](pyvm) - an embedded Python 3 interpreter (using [RustPython](https://github.com/RustPython/RustPython)),
+  which lets you write controllers in Python
+- [JsCtrl](jsvm) - an embedded JavaScript interpreter (using [QuickJS](https://bellard.org/quickjs/)),
+  which lets you write controllers in JavaScript
+- [DeclCtrl](declvm) - a controller that interprets a simple JSON AST (Abstract Syntax Tree) to specify constraints
+
+Everything is implemented in Rust, unless otherwise stated.
 
 ## Getting started
 
 There are several levels at which you can use AICI.
 
-- you can use the provided PyVM or SimpleVM on a remote server;
+- you can use the provided PyCtrl, JsCtrl or DeclCtrl on a remote server;
   no devcontainer is required in that case; [more info](proxy.md)
 - you can modify one of the provided VMs or build a new one;
   this typically requires rust, and the preferred way to work with it is to use the
@@ -54,7 +75,7 @@ Now, use query the model with or without AICI VM:
 Run `./scripts/aici.sh -h` to see usage info.
 
 If the server is running with Orca-2 13B model,
-you can also run tests with `pytest` for the DeclVM, or with `./scripts/test-pyvm.sh` for PyVM.
+you can also run tests with `pytest` for the DeclCtrl, or with `./scripts/test-pyvm.sh` for PyCtrl.
 
 ### Running local server
 
@@ -88,7 +109,7 @@ upload module... 191kB -> 668kB id:255ce305
 Yes
 ```
 
-Note that the same effect can be achieved with PyVM and [10x less lines of code](pyvm/samples/yesno.py).
+Note that the same effect can be achieved with PyCtrl and [10x less lines of code](pyvm/samples/yesno.py).
 This is just for demonstration purposes.
 
 ```
@@ -119,12 +140,12 @@ upload module... 197kB -> 687kB id:4d3b70bf
 I'm SO EXCITED! I'm GoinG toBe aMom!I'm GoinG toHaVeA BaBy!
 ```
 
-Again, this could be done with PyVM and a simple regex.
+Again, this could be done with PyCtrl and a simple regex.
 
-### PyVM
+### PyCtrl
 
-The [PyVM](pyvm) embeds [RustPython](https://github.com/RustPython/RustPython)
-(a Python 3 language implementation) in the WASM module together with native
+The [PyCtrl](pyvm) embeds [RustPython](https://github.com/RustPython/RustPython)
+(a Python 3 language implementation) in the Wasm module together with native
 primitives for specific kinds of output constraints:
 fixed token output, regexps, LR(1) grammars, substring constrains etc.
 Python code is typically only used lightly, for gluing the primitives together,
@@ -134,7 +155,7 @@ There are [several samples](pyvm/samples/) available.
 The scripts use the [pyaici.server module](pyaici/server.py) to communicate with the AICI runtime
 and use the native constraints.
 
-To run a PyVM sample (using VM tagged with `pyvm-latest`) use:
+To run a PyCtrl sample (using VM tagged with `pyvm-latest`) use:
 
 ```bash
 ./scripts/aici.sh run pyvm/samples/test.py
@@ -148,10 +169,10 @@ If you want to build it yourself, use:
 
 You will see the console output of the program.
 
-### DeclVM
+### DeclCtrl
 
-The [DeclVM](declvm/src/declvm.rs) exposes similar constraints
-to PyVM, but the glueing is done via a JSON AST (Abstract Syntax Tree) and thus is
+The [DeclCtrl](declvm/src/declvm.rs) exposes similar constraints
+to PyCtrl, but the glueing is done via a JSON AST (Abstract Syntax Tree) and thus is
 more restrictive.
 
 There is no reason to use it as is, but it can be used as a base for other VMs.
@@ -171,7 +192,7 @@ The (harness)[harness] folder contains samples for using aicirt with different L
 - [HuggingFace Transformers](harness/run_hf.py), run with `./scripts/hf.sh`
 - [vLLM script](harness/run_vllm.py), run with `./scripts/vllm.sh`
 - [vLLM REST server](harness/vllm_server.py), run with `./scripts/server.sh`;
-  the REST server is compatible with OpenAI and adds an endpoint for uploading WASM modules;
+  the REST server is compatible with OpenAI and adds an endpoint for uploading Wasm modules;
   see [pyaici.rest](pyaici/rest.py) for an example on how it can be used
 
 ```mermaid
@@ -181,9 +202,9 @@ graph TD
     UserN <-- HTTP --> vLLM["vLLM Server<br>(batching)"]
     vLLM <-- CUDA/pytorch --> GPU
     vLLM <-- POSIX SHM --> aicirt[AICI-runtime]
-    aicirt <-- Sockets+SHM --> Worker1[Worker1<br>Running WASM]
-    aicirt <-- Sockets+SHM --> Worker2[Worker2<br>Running WASM]
-    aicirt <-- Sockets+SHM --> WorkerM[WorkerM<br>Running WASM]
+    aicirt <-- Sockets+SHM --> Worker1[Worker1<br>Running Wasm]
+    aicirt <-- Sockets+SHM --> Worker2[Worker2<br>Running Wasm]
+    aicirt <-- Sockets+SHM --> WorkerM[WorkerM<br>Running Wasm]
 ```
 
 ```mermaid
@@ -193,8 +214,8 @@ sequenceDiagram
     participant vLLM
     participant aicirt as AICI-runtime
     vLLM -->> GPU: Model
-    User -->> vLLM: Request (Prompt + WASM)
-    vLLM -->>+ aicirt: Prompt + WASM
+    User -->> vLLM: Request (Prompt + Wasm)
+    vLLM -->>+ aicirt: Prompt + Wasm
     aicirt -->>- vLLM: logit bias 1
     vLLM -->>+ GPU: Prompt
     vLLM -->> GPU: logit bias 1
@@ -255,13 +276,13 @@ graph TD
 ## Security
 
 - `aicirt` runs in a separate process, and can run under a different user than the LLM engine
-- WASM modules are [sandboxed by Wasmtime](https://docs.wasmtime.dev/security.html)
-- WASM only have access to [`aici_host_*` functions](aici_abi/src/host.rs),
+- Wasm modules are [sandboxed by Wasmtime](https://docs.wasmtime.dev/security.html)
+- Wasm only have access to [`aici_host_*` functions](aici_abi/src/host.rs),
   implemented in [hostimpl.rs](aicirt/src/hostimpl.rs)
 - `aicirt` also exposes a partial WASI interface; however almost all the functions are no-op, except
   for `fd_write` which shims file descriptors 1 and 2 (stdout and stderr) to print debug messages
 
-In particular, WASM modules cannot access the filesystem, network, or any other resources.
+In particular, Wasm modules cannot access the filesystem, network, or any other resources.
 They also cannot spin threads or access any timers (this is relevant for Spectre/Meltdown attacks).
 
 ## Interfaces
@@ -301,12 +322,12 @@ trait AiciVm {
 Tokens depend on the tokenizer used (eg., for Llama there 32000 tokens, and for GPT-4 there is ~100k).
 
 The actual binary interface is a bit more complicated, due
-to limitations in passing values to and from WASM.
-A WASM module instance is created for each token sequence.
+to limitations in passing values to and from Wasm.
+A Wasm module instance is created for each token sequence.
 Also, when the sequence forks (as in beam search), the module instance is cloned.
 See the [AiciVm Rust trait](aici_abi/src/lib.rs) for details.
 
-A number of functions are exposed to the WASM module.
+A number of functions are exposed to the Wasm module.
 
 First, there are functions for accessing the current tokenizer:
 
@@ -393,7 +414,7 @@ pub trait FunctionalRecognizer<S: Copy> {
 }
 ```
 
-These three layers add up to about 40k of compiled code (WASM).
+These three layers add up to about 40k of compiled code (Wasm).
 
 ### Functional string interface
 
