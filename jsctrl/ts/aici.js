@@ -395,7 +395,7 @@ export class AiciAsync {
         this.post_process = this.post_process.bind(this);
         f()
             .then(async () => {
-            console.log("JSVM: done");
+            console.log("JsCtrl: done");
             while (true) {
                 await new StopToken().run();
             }

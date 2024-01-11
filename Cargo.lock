@@ -252,7 +252,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "aici_declvm"
+name = "aici_declctrl"
 version = "0.1.0"
 dependencies = [
  "aici_abi",
@@ -269,7 +269,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "aici_jsvm"
+name = "aici_jsctrl"
 version = "0.1.0"
 dependencies = [
  "aici_abi",
@@ -287,7 +287,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "aici_pyvm"
+name = "aici_pyctrl"
 version = "0.1.0"
 dependencies = [
  "aici_abi",

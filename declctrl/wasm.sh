@@ -4,7 +4,7 @@ set -x
 set -e
 cargo build --release
 BIN=$(cd ../target; pwd)
-cp $BIN/wasm32-wasi/release/aici_declvm.wasm $BIN/opt.wasm
+cp $BIN/wasm32-wasi/release/aici_declctrl.wasm $BIN/opt.wasm
 ls -l $BIN/opt.wasm
 if [ "X$1" = "Xbuild" ] ; then
   exit

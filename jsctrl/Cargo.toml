@@ -1,5 +1,5 @@
 [package]
-name = "aici_jsvm"
+name = "aici_jsctrl"
 version = "0.1.0"
 edition = "2021"
 
@@ -19,7 +19,7 @@ rquickjs = { git = "https://github.com/mmoskal/rquickjs", rev = "5b0e3b24d5021d3
 # rquickjs = { path = "../tmp/rquickjs", features = ["array-buffer", "macro"] }
 
 [[bin]]
-name = "aici_jsvm"
+name = "aici_jsctrl"
 path = "src/jsctrl.rs"
 
 [build-dependencies]

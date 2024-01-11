@@ -1,5 +1,5 @@
 [package]
-name = "aici_pyvm"
+name = "aici_pyctrl"
 version = "0.1.0"
 edition = "2021"
 
@@ -18,7 +18,7 @@ once_cell = "1.18.0"
 indexmap = { version = "2.1.0", features = ["std"] }
 
 [[bin]]
-name = "aici_pyvm"
+name = "aici_pyctrl"
 path = "src/pyctrl.rs"
 
 [build-dependencies]
