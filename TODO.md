@@ -8,4 +8,4 @@
 - [ ] setup cloud build for Wasm
 - [ ] setup cloud build for aicirt
 - [ ] setup cloud build for rllm
-- [ ] remove azurewebites.net refs
+- [x] remove azurewebites.net refs

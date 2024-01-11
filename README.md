@@ -61,7 +61,7 @@ To get started interacting with a cloud AICI server first export the API key.
 If running local server, leave `AICI_API_BASE` unset.
 
 ```bash
-export AICI_API_BASE="https://aici.azurewebsites.net/v1/#key=wht_..."
+export AICI_API_BASE="https://inference.example.com/v1/#key=wht_..."
 ```
 
 Now, use query the model with or without AICI Controller:
