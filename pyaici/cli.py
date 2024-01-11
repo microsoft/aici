@@ -104,7 +104,7 @@ def infer_args(cmd: argparse.ArgumentParser):
 
 def main_inner():
     parser = argparse.ArgumentParser(
-        description="Upload an AICI VM and completion request to rllm or vllm",
+        description="Upload an AICI Controller and completion request to rllm or vllm",
         prog="pyaici",
     )
 
@@ -119,19 +119,20 @@ def main_inner():
 
     run_cmd = subparsers.add_parser(
         "run",
-        help="run model inference controlled by a VM",
-        description="Run model inference controlled by a VM.",
+        help="run model inference via an AICI Controller",
+        description="Run model inference via an AICI Controller.",
         epilog="""
-        If FILE ends with .py, --vm defaults to 'pyctrl'. For .json file it defaults to 'declctrl'.
+        If FILE ends with .py, --ctrl defaults to 'pyctrl-latest'.
+        Similarly, it's 'jsctrl-latest' for .js and 'declctrl-latest' for .json.
         """,
     )
     run_cmd.add_argument(
-        "aici_arg", metavar="FILE", nargs="?", help="file to pass to the VM"
+        "aici_arg", metavar="FILE", nargs="?", help="file to pass to the AICI Controller"
     )
     infer_args(run_cmd)
     run_cmd.add_argument(
-        "--vm",
-        "-v",
+        "--ctrl",
+        "-c",
         metavar="MODULE_ID",
         type=str,
         help="tag name or hex module id",
@@ -153,8 +154,8 @@ def main_inner():
 
     infer_cmd = subparsers.add_parser(
         "infer",
-        help="run model inference without any VM",
-        description="Run model inference without any VM.",
+        help="run model inference without any AICI Controller",
+        description="Run model inference without any AICI Controller.",
     )
     infer_args(infer_cmd)
     infer_cmd.add_argument(
@@ -169,8 +170,8 @@ def main_inner():
 
     upload_cmd = subparsers.add_parser(
         "upload",
-        help="upload a VM to the server",
-        description="Upload a VM to the server.",
+        help="upload a AICI Controller to the server",
+        description="Upload a AICI Controller to the server.",
     )
     upload_cmd.add_argument(
         "upload", metavar="WASM_FILE", help="path to .wasm file to upload"
@@ -178,8 +179,8 @@ def main_inner():
 
     build_cmd = subparsers.add_parser(
         "build",
-        help="build and upload a VM to the server",
-        description="Build and upload a VM to the server.",
+        help="build and upload a AICI Controller to the server",
+        description="Build and upload a AICI Controller to the server.",
     )
     build_cmd.add_argument(
         "build", metavar="FOLDER", help="path to rust project (folder with Cargo.toml)"
@@ -192,7 +193,7 @@ def main_inner():
             type=str,
             default=[],
             action="append",
-            help="tag the VM after uploading; can be used multiple times to set multiple tags",
+            help="tag the AICI Controller after uploading; can be used multiple times to set multiple tags",
         )
 
     args = parser.parse_args()
@@ -223,7 +224,7 @@ def main_inner():
 
     aici_module = ""
 
-    for k in ["build", "upload", "vm", "tag", "ignore_eos"]:
+    for k in ["build", "upload", "ctrl", "tag", "ignore_eos"]:
         if k not in args:
             setattr(args, k, None)
 
@@ -235,13 +236,13 @@ def main_inner():
         assert not aici_module
         aici_module = rest.upload_module(args.upload)
 
-    if args.vm:
+    if args.ctrl:
         assert not aici_module
-        aici_module = args.vm
+        aici_module = args.ctrl
 
     if args.tag:
         if len(aici_module) != 64:
-            cli_error("no VM to tag")
+            cli_error("no AICI Controller to tag")
         rest.tag_module(aici_module, args.tag)
 
     if args.subcommand == "run":
@@ -255,10 +256,10 @@ def main_inner():
                 elif fn.endswith(".json"):
                     aici_module = "declctrl-latest"
                 else:
-                    cli_error("Can't determine VM type from file name: " + fn)
-                print(f"Running with tagged vm: {aici_module}")
+                    cli_error("Can't determine AICI Controller type from file name: " + fn)
+                print(f"Running with tagged AICI Controller: {aici_module}")
         if not aici_module:
-            cli_error("no VM specified to run")
+            cli_error("no AICI Controller specified to run")
 
         ask_completion(
             args,

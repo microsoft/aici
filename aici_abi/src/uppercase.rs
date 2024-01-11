@@ -53,7 +53,7 @@ impl Runner {
 
 impl AiciCtrl for Runner {
     fn init_prompt(&mut self, arg: InitPromptArg) -> InitPromptResult {
-        // with VMs, the prompt is often empty, but let's print it
+        // when using AICI Controllers, the prompt is often empty, but let's print it
         println!(
             "init_prompt: {:?} {:?}",
             arg.prompt,

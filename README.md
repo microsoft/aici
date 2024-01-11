@@ -39,7 +39,7 @@ There are several levels at which you can use AICI.
 
 - you can use the provided PyCtrl, JsCtrl or DeclCtrl on a remote server;
   no devcontainer is required in that case; [more info](proxy.md)
-- you can modify one of the provided VMs or build a new one;
+- you can modify one of the provided controllers or build a new one;
   this typically requires rust, and the preferred way to work with it is to use the
   provided **AICI Client-side** devcontainer - it should work on any machine with Docker and VSCode
 - if you want to run the inference server (rllm) locally, use the **AICI with CUDA** container;
@@ -63,7 +63,7 @@ If running local server, leave `AICI_API_BASE` unset.
 export AICI_API_BASE="https://aici.azurewebsites.net/v1/#key=wht_..."
 ```
 
-Now, use query the model with or without AICI VM:
+Now, use query the model with or without AICI Controller:
 
 ```bash
 ./scripts/aici.sh infer --prompt "The answer to the ultimate question of life"
@@ -83,13 +83,13 @@ To run rLLM server, go to `rllm/` and run `./server.sh orca`.
 This will run the inference server with Orca-2 13B model (which is expected by testcases).
 You can also try other models, see [rllm/README.md](rllm/README.md) for details.
 
-## Provided VMs
+## Provided Controllers
 
-We provide several VMs that you can use directly or as base for your own VMs.
+We provide several controllers that you can use directly or as base for your own controller.
 
 ### Yes/no
 
-The [yes/no VM](aici_abi/src/yesno.rs)
+The [yes/no controller](aici_abi/src/yesno.rs)
 only allows the model to say "Yes" or "No" in answer to the question in the prompt.
 
 ```
@@ -120,7 +120,7 @@ No
 
 ### Uppercase
 
-The [uppercase VM](aici_abi/src/uppercase.rs) shows usage of the `FunctionalRecognizer` interface.
+The [uppercase controller](aici_abi/src/uppercase.rs) shows usage of the `FunctionalRecognizer` interface.
 It forces every 4th letter of the model output to be uppercase.
 
 ```
@@ -155,7 +155,7 @@ There are [several samples](pyctrl/samples/) available.
 The scripts use the [pyaici.server module](pyaici/server.py) to communicate with the AICI runtime
 and use the native constraints.
 
-To run a PyCtrl sample (using VM tagged with `pyctrl-latest`) use:
+To run a PyCtrl sample (using controller tagged with `pyctrl-latest`) use:
 
 ```bash
 ./scripts/aici.sh run pyctrl/samples/test.py
@@ -175,7 +175,7 @@ The [DeclCtrl](declctrl/src/declctrl.rs) exposes similar constraints
 to PyCtrl, but the glueing is done via a JSON AST (Abstract Syntax Tree) and thus is
 more restrictive.
 
-There is no reason to use it as is, but it can be used as a base for other VMs.
+There is no reason to use it as is, but it can be used as a base for other controller.
 
 ## Security
 

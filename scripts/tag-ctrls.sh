@@ -2,11 +2,11 @@
 
 TIMESTAMP=`date --utc '+%+4Y-%m-%d-%H%M'`
 
-VMS="$*"
-if [ X"$VMS" = X ]; then
-    VMS="declctrl pyctrl jsctrl"
+CTRLS="$*"
+if [ X"$CTRLS" = X ]; then
+    CTRLS="declctrl pyctrl jsctrl"
 fi
 
-for vm in $VMS ; do
-    ./scripts/aici.sh build $vm -T $vm-latest -T $vm-$TIMESTAMP
+for ctrl in $CTRLS ; do
+    ./scripts/aici.sh build $ctrl -T $ctrl-latest -T $ctrl-$TIMESTAMP
 done
