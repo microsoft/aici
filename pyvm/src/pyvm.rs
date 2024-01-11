@@ -76,6 +76,11 @@ mod _aici {
     }
 
     #[pyfunction]
+    fn is_server_side() -> bool {
+        true
+    }
+
+    #[pyfunction]
     fn tokenize(text: ArgStrOrBytesLike, vm: &VirtualMachine) -> PyResult {
         let tokens = aici_abi::tokenize_bytes(&text.borrow_bytes());
         Ok(vm.new_int_list(&tokens).into())
@@ -315,13 +320,27 @@ impl Runner {
                 module_name = "pyaici.server",
                 mode = "exec"
             );
-            let frozen_vec = vec![(
-                "pyaici.server",
-                rustpython_vm::frozen::FrozenModule {
-                    code,
-                    package: true,
-                },
-            )];
+            let empty = rustpython_vm::py_compile!(
+                source = "# nothing",
+                module_name = "pyaici",
+                mode = "exec"
+            );
+            let frozen_vec = vec![
+                (
+                    "pyaici",
+                    rustpython_vm::frozen::FrozenModule {
+                        code: empty,
+                        package: true,
+                    },
+                ),
+                (
+                    "pyaici.server",
+                    rustpython_vm::frozen::FrozenModule {
+                        code,
+                        package: true,
+                    },
+                ),
+            ];
             vm.add_frozen(frozen_vec.into_iter());
         });
         interpreter.enter(|vm| {

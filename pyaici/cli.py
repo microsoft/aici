@@ -77,10 +77,11 @@ def build_rust(folder: str):
 
 
 def ask_completion(cmd_args, *args, **kwargs):
-    for k in ["max_tokens", "prompt", "ignore_eos"]:
-        v = getattr(cmd_args, k)
-        if v is not None:
-            kwargs[k] = v
+    if cmd_args is not None:
+        for k in ["max_tokens", "prompt", "ignore_eos"]:
+            v = getattr(cmd_args, k)
+            if v is not None:
+                kwargs[k] = v
     res = rest.completion(*args, **kwargs)
     print("\n[Prompt] " + res["request"]["prompt"] + "\n")
     for text in res["text"]:
@@ -98,6 +99,22 @@ def infer_args(cmd: argparse.ArgumentParser):
     cmd.add_argument("--prompt", "-p", default="", type=str, help="specify prompt")
     cmd.add_argument(
         "--max-tokens", "-t", type=int, help="maximum number of tokens to generate"
+    )
+
+
+def upload_main():
+    import __main__
+
+    main_script_file = __main__.__file__
+    print(f"Uploading {main_script_file}...")
+    aici_arg = open(main_script_file).read()
+    ask_completion(
+        None,
+        prompt="",
+        aici_module="pyvm-latest",
+        aici_arg=aici_arg,
+        ignore_eos=True,
+        max_tokens=2000,
     )
 
 
@@ -273,6 +290,7 @@ def main():
         main_inner()
     except RuntimeError as e:
         cli_error(str(e))
+
 
 if __name__ == "__main__":
     main()

@@ -1,8 +1,4 @@
-# This module is provided as part of the pyaici package to help with auto-completion in IDEs
-# while editing Python files to be uploaded to AICI server.
-#
-# It will not work with the standard Python interpreter.
-#
+# Type stubs
 
 from __future__ import annotations
 from typing import Any, Sequence
@@ -164,3 +160,9 @@ class SubStrConstraint(Constraint):
         ...
 
 
+def is_server_side():
+    """
+    Return True if the code is running on the server.
+    """
+    # on server it's implemented natively, just like everything else is here
+    return False
