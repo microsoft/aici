@@ -11,6 +11,7 @@ This adds minimal latency to the LLM generation.
 Install the `pyaici` package, export credentials, and see if the connection is working:
 
 ```bash
+pip uninstall pyaici
 pip install git+https://github.com/microsoft/aici
 export AICI_API_BASE="https://inference.example.com/v1/#key=wht_..."
 aici infer --max-tokens=10 --prompt="Answer to the Ultimate Question of Life, the Universe, and Everything is"
