@@ -16,6 +16,23 @@ export AICI_API_BASE="https://something.com/v1/#key=wht_..."
 pyaici infer --max-tokens=10 --prompt="Answer to the Ultimate Question of Life, the Universe, and Everything is"
 ```
 
+To test out the `pyvm`, create `answer.py` file with:
+
+```python
+import pyaici.server as aici
+
+async def main():
+    await aici.FixedTokens("The ultimate answer to the universe is ")
+    await aici.gen_text(regex=r'\d\d', max_tokens=2)
+
+aici.start(main())
+```
+
+You can run it with `pyaici run answer.py`. Try `pyaici run --help` for available options.
+You can also run `python answer.py` which will detect you're not running on the server
+and upload the file to run it there.
+
+
 ## Testing
 
 You can test the model by running the following command (where you replace `wht_...` with your API key):
