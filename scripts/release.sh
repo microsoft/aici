@@ -1,4 +1,4 @@
-#!/bin/sh
+#!/bin/bash
 
 FOLDERS="aici_abi uppercase pyctrl jsctrl declctrl aicirt"
 NATIVE="$(uname -s | tr 'A-Z' 'a-z')-$(uname -m)"
