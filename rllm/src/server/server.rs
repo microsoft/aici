@@ -166,13 +166,7 @@ async fn upload_aici_module(
     let binary = base64::engine::general_purpose::STANDARD.encode(body);
     let r = data
         .side_cmd_ch
-        .mk_module(
-            MkModuleReq {
-                binary,
-                meta: serde_json::Value::Null,
-            },
-            auth_info(&req),
-        )
+        .mk_module(MkModuleReq { binary }, auth_info(&req))
         .await
         .map_err(APIError::just_msg)?;
     Ok(web::Json(r))

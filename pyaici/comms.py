@@ -369,10 +369,10 @@ class AiciRunner:
                 ch.send(obj["cmd"])
                 ch.expect("replay")
 
-    async def upload_module_async(self, wasm: bytes, meta={}):
+    async def upload_module_async(self, wasm: bytes):
         b64 = base64.b64encode(wasm).decode("utf-8")
         return await self.side_cmd.exec_async(
-            "mk_module", {"binary": b64, "meta": meta}
+            "mk_module", {"binary": b64}
         )
 
     async def instantiate_async(

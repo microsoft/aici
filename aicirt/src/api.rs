@@ -113,15 +113,12 @@ impl<T> SequenceResult<T> {
 #[derive(Serialize, Deserialize)]
 pub struct MkModuleReq {
     pub binary: String,
-    #[serde(default)]
-    pub meta: Value,
 }
 
 #[derive(Serialize, Deserialize)]
 pub struct MkModuleResp {
     pub module_id: String,
     pub wasm_size: usize,
-    pub meta_size: usize,
     pub compiled_size: usize,
     pub time: u64,
 }
@@ -139,7 +136,6 @@ pub struct TagInfo {
     pub updated_at: u64, // unix time
     pub updated_by: String,
     pub wasm_size: u64,
-    pub meta_size: u64,
     pub compiled_size: u64,
 }
 

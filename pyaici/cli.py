@@ -135,7 +135,7 @@ def main_inner():
         "-c",
         metavar="MODULE_ID",
         type=str,
-        help="tag name or hex module id",
+        help="tag name or hex module id (sha256 of .wasm file)",
     )
     run_cmd.add_argument(
         "--upload",

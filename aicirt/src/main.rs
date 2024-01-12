@@ -51,10 +51,6 @@ struct Cli {
     #[arg(short, long)]
     module: Option<String>,
 
-    /// Path to .json metadata for module to install
-    #[arg(short = 'j', long)]
-    module_meta: Option<String>,
-
     /// Tokenizer to use; try --tokenizer list to see options
     #[arg(short, long, default_value = "llama")]
     tokenizer: String,
@@ -184,10 +180,6 @@ impl ModuleRegistry {
         }
     }
 
-    fn meta_path(&self, module_id: &str) -> PathBuf {
-        self.cache_path.join(format!("{}.json", module_id))
-    }
-
     fn sys_meta_path(&self, module_id: &str) -> PathBuf {
         self.cache_path.join(format!("{}-sys.json", module_id))
     }
@@ -244,26 +236,17 @@ impl ModuleRegistry {
         Ok(self.elf_path(module_id))
     }
 
-    fn create_module(
-        &self,
-        wasm_bytes: Vec<u8>,
-        meta_bytes: Vec<u8>,
-        auth: AuthInfo,
-    ) -> Result<Value> {
+    fn create_module(&self, wasm_bytes: Vec<u8>, auth: AuthInfo) -> Result<Value> {
         let timer = Instant::now();
 
-        // make sure meta_bytes is valid JSON
-        let _: Value = serde_json::from_slice(&meta_bytes)?;
-
-        let mut hasher = Sha256::new();
-        hasher.update(&meta_bytes);
+        let mut hasher = <Sha256 as Digest>::new();
         hasher.update(&wasm_bytes);
 
         let module_id = hex::encode(hasher.finalize());
         let module_id = &module_id;
 
         if self.module_needs_check(module_id) {
-            match self.write_and_compile(module_id, &meta_bytes, &wasm_bytes, &auth) {
+            match self.write_and_compile(module_id, &wasm_bytes, &auth) {
                 Err(e) => {
                     let mut lck = self.modules.lock().unwrap();
                     lck.remove(module_id);
@@ -287,7 +270,6 @@ impl ModuleRegistry {
         Ok(serde_json::to_value(MkModuleResp {
             module_id: module_id.to_string(),
             wasm_size: wasm_bytes.len(),
-            meta_size: meta_bytes.len(),
             compiled_size,
             time,
         })?)
@@ -296,13 +278,11 @@ impl ModuleRegistry {
     fn write_and_compile(
         &self,
         module_id: &String,
-        meta_bytes: &Vec<u8>,
         wasm_bytes: &Vec<u8>,
         auth: &AuthInfo,
     ) -> Result<()> {
         fs::create_dir_all(&self.cache_path)?;
         Ok(if !self.wasm_path(module_id).exists() {
-            fs::write(self.meta_path(module_id), meta_bytes)?;
             fs::write(self.wasm_path(module_id), wasm_bytes)?;
             fs::write(
                 self.sys_meta_path(module_id),
@@ -319,8 +299,7 @@ impl ModuleRegistry {
 
     fn mk_module(&self, req: MkModuleReq, auth: AuthInfo) -> Result<Value> {
         let wasm_bytes = base64::engine::general_purpose::STANDARD.decode(req.binary)?;
-        let meta_bytes = serde_json::to_vec(&req.meta)?;
-        self.create_module(wasm_bytes, meta_bytes, auth)
+        self.create_module(wasm_bytes, auth)
     }
 
     fn set_tags(&self, req: SetTagsReq, auth: AuthInfo) -> Result<Value> {
@@ -358,7 +337,6 @@ impl ModuleRegistry {
             updated_at: get_unix_time(),
             updated_by: auth.user.clone(),
             wasm_size: self.wasm_path(&req.module_id).metadata()?.len(),
-            meta_size: self.meta_path(&req.module_id).metadata()?.len(),
             compiled_size: self.elf_path(&req.module_id).metadata()?.len(),
         };
 
@@ -1063,13 +1041,9 @@ fn install_from_cmdline(cli: &Cli, wasm_ctx: WasmContext, shm: Shm) {
         name.to_string()
     } else {
         let wasm_bytes = fs::read(name).unwrap();
-        let meta_bytes = match cli.module_meta.as_deref() {
-            Some(name) => fs::read(name).unwrap(),
-            None => serde_json::to_vec(&Value::Null).unwrap(),
-        };
 
         let json = reg
-            .create_module(wasm_bytes, meta_bytes, AuthInfo::local_user())
+            .create_module(wasm_bytes, AuthInfo::local_user())
             .unwrap();
         json["module_id"].as_str().unwrap().to_string()
     };
