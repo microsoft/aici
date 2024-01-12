@@ -3,6 +3,8 @@ name: AICIrt
 on:
   push:
     branches: [ "main" ]
+    tags:
+      - "v*.*.*"
   pull_request:
     branches: [ "main" ]
 
@@ -35,3 +37,13 @@ jobs:
     - name: Build aicirt
       run: cargo build --verbose --release
       working-directory: aicirt
+    - name: Release script
+      run: ./scripts/release.sh --xz
+    - name: Release
+      uses: softprops/action-gh-release@v1
+      if: startsWith(github.ref, 'refs/tags/')
+      with:
+        body_path: target/dist/README.md
+        files: |
+          target/dist/*.tar.gz
+          target/dist/*.tar.xz
