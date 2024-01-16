@@ -164,6 +164,22 @@ enum SeqCmd {
     },
 }
 
+impl SeqCmd {
+    pub fn tag(&self) -> &'static str {
+        match self {
+            SeqCmd::Instantiate { .. } => "instantiate",
+            SeqCmd::SetGroupChannel { .. } => "set_group_channel",
+            SeqCmd::Fork { .. } => "fork",
+            SeqCmd::SetId { .. } => "set_id",
+            SeqCmd::PreProcess { .. } => "pre_process",
+            SeqCmd::MidProcess { .. } => "process",
+            SeqCmd::PostProcess { .. } => "post_process",
+            SeqCmd::RunMain {} => "run_main",
+            SeqCmd::Compile { .. } => "compile",
+        }
+    }
+}
+
 #[derive(Serialize, Deserialize, Debug)]
 pub struct RtPreProcessResult {
     pub json: SequenceResult,
@@ -244,14 +260,17 @@ where
         unsafe { libc::kill(self.pid, libc::SIGKILL) }
     }
 
-    fn recv_with_timeout(&self, timeout: Duration) -> Result<Resp> {
+    fn recv_with_timeout(&self, lbl: &str, timeout: Duration) -> Result<Resp> {
+        let t0 = Instant::now();
         match self.recv_with_timeout_inner(timeout) {
             Ok(r) => Ok(r),
             Err(e) => {
                 let second_try = Duration::from_millis(200);
                 if timeout < second_try && e.to_string().starts_with("timeout ") {
-                    log::warn!("{e:?}");
-                    self.recv_with_timeout_inner(second_try)
+                    let r = self.recv_with_timeout_inner(second_try);
+                    let dur = t0.elapsed();
+                    log::warn!("{lbl}: timeout {dur:?} (allowed: {timeout:?})");
+                    r
                 } else {
                     Err(e)
                 }
@@ -278,21 +297,22 @@ where
 
 impl SeqHandle {
     fn send_cmd_expect_ok(&self, cmd: SeqCmd, timeout: Duration) -> Result<()> {
+        let tag = cmd.tag();
         self.just_send(cmd)?;
-        match self.seq_recv_with_timeout(timeout) {
+        match self.seq_recv_with_timeout(tag, timeout) {
             Ok(SeqResp::Ok {}) => Ok(()),
             Ok(r) => Err(anyhow!("unexpected response (not OK) {r:?}")),
             Err(e) => Err(e.into()),
         }
     }
 
-    fn seq_recv_with_timeout(&self, timeout: Duration) -> Result<SeqResp> {
-        match self.recv_with_timeout(timeout) {
+    fn seq_recv_with_timeout(&self, lbl: &str, timeout: Duration) -> Result<SeqResp> {
+        match self.recv_with_timeout(lbl, timeout) {
             Ok(SeqResp::Error { msg, is_user_error }) => {
                 if is_user_error {
-                    Err(user_error!("{}", msg))
+                    Err(user_error!("{lbl}: {msg}"))
                 } else {
-                    Err(anyhow!("{}", msg))
+                    Err(anyhow!("{lbl}: {msg}"))
                 }
             }
             r => r,
@@ -300,8 +320,9 @@ impl SeqHandle {
     }
 
     fn send_cmd_with_timeout(&self, cmd: SeqCmd, timeout: Duration) -> Result<SeqResp> {
+        let tag = cmd.tag();
         self.just_send(cmd)?;
-        self.seq_recv_with_timeout(timeout)
+        self.seq_recv_with_timeout(tag, timeout)
     }
 }
 
@@ -513,7 +534,7 @@ impl SeqWorkerHandle {
                 };
                 match res
                     .handle
-                    .recv_with_timeout(Duration::from_millis(QUICK_OP_MS))?
+                    .recv_with_timeout("r-fork", Duration::from_millis(QUICK_OP_MS))?
                 {
                     SeqResp::Ok {} => Ok(res),
                     r => Err(anyhow!("unexpected response (fork, child) {r:?}")),
@@ -543,7 +564,7 @@ impl SeqWorkerHandle {
         timeout: Duration,
         timer: &TimerRef,
     ) -> Result<RtPreProcessResult> {
-        let r = timer.with(|| self.handle.seq_recv_with_timeout(timeout));
+        let r = timer.with(|| self.handle.seq_recv_with_timeout("r-pre_process", timeout));
         match r {
             Ok(SeqResp::PreProcess {
                 json,
@@ -565,7 +586,7 @@ impl SeqWorkerHandle {
         &self,
         timeout: Duration,
     ) -> Result<SequenceResult<AiciMidProcessResultInner>> {
-        match self.handle.seq_recv_with_timeout(timeout) {
+        match self.handle.seq_recv_with_timeout("r-process", timeout) {
             Ok(SeqResp::MidProcess { json }) => Ok(serde_json::from_str(&json)?),
             Ok(r) => Err(anyhow!("unexpected response (process) {r:?}")),
             Err(e) => Err(e.into()),
@@ -576,7 +597,7 @@ impl SeqWorkerHandle {
         &self,
         timeout: Duration,
     ) -> Result<SequenceResult<AiciPostProcessResultInner>> {
-        match self.handle.seq_recv_with_timeout(timeout) {
+        match self.handle.seq_recv_with_timeout("r-post", timeout) {
             Ok(SeqResp::PostProcess { json }) => Ok(serde_json::from_str(&json)?),
             Ok(r) => Err(anyhow!("unexpected response (post_process) {r:?}")),
             Err(e) => Err(e.into()),
