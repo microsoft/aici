@@ -169,7 +169,10 @@ impl ModuleRegistry {
         loop {
             let mut lck = self.modules.lock().unwrap();
             match *lck.get(module_id).unwrap_or(&ModuleStatus::Missing) {
-                ModuleStatus::Locked => std::thread::sleep(std::time::Duration::from_millis(50)),
+                ModuleStatus::Locked => {
+                    drop(lck);
+                    std::thread::sleep(std::time::Duration::from_millis(50))
+                }
                 ModuleStatus::Ready => return false,
                 ModuleStatus::Missing => {
                     // we lock it
@@ -713,6 +716,8 @@ impl Stepper {
     }
 
     fn aici_post_process(&mut self, req: AiciPostProcessReq) -> Result<AiciPostProcessResp> {
+        let t0 = Instant::now();
+
         // this if forking due to n= parameter in sampling
         // in general, we want to avoid that and instead use forking in the program,
         // as it is executed with a long time limit
@@ -755,6 +760,8 @@ impl Stepper {
                 Err(e) => self.worker_error(id, &mut outputs, e),
             }
         }
+
+        log::debug!("post_process: {:?}", t0.elapsed());
 
         Ok(AiciPostProcessResp { seqs: outputs })
     }
