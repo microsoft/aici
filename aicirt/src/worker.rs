@@ -875,11 +875,11 @@ impl WorkerForker {
                 Some(
                     req.prompt
                         .as_array()
-                        .ok_or(anyhow!("expecting string or int array as prompt"))?
+                        .ok_or_else(|| anyhow!("expecting string or int array as prompt"))?
                         .iter()
                         .map(|x| -> Result<u32> {
                             x.as_u64()
-                                .ok_or(anyhow!("expecting number as token"))?
+                                .ok_or_else(|| anyhow!("expecting number as token"))?
                                 .try_into()
                                 .map_err(|e: std::num::TryFromIntError| anyhow!(e))
                         })

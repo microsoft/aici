@@ -93,10 +93,12 @@ impl CmdChannel {
             .as_object_mut()
             .unwrap()
             .remove("data")
-            .ok_or(anyhow::anyhow!(
-                "Bad response ({ctx}) - no 'data': {}",
-                limit_bytes(&bytes, 500)
-            ))?;
+            .ok_or_else(|| {
+                anyhow::anyhow!(
+                    "Bad response ({ctx}) - no 'data': {}",
+                    limit_bytes(&bytes, 500)
+                )
+            })?;
         let resp = serde_json::from_value(data).map_err(|e| {
             anyhow::anyhow!("Bad response ({ctx}): {e} {}", limit_bytes(&bytes, 500))
         })?;
@@ -305,14 +307,14 @@ impl AsyncCmdChannel {
 
         match resp["type"].as_str() {
             Some("ok") => {
-                let data = resp
-                    .as_object_mut()
-                    .unwrap()
-                    .remove("data")
-                    .ok_or(anyhow::anyhow!(
+                let data = resp.as_object_mut().unwrap().remove("data");
+                if data.is_none() {
+                    anyhow::bail!(
                         "Bad response ({op}) - no 'data': {}",
                         limit_bytes(&serde_json::to_vec(&resp)?, 500)
-                    ))?;
+                    );
+                }
+                let data = data.unwrap();
                 let data_copy = limit_bytes(&serde_json::to_vec(&data).unwrap(), 500);
                 let resp = serde_json::from_value(data)
                     .map_err(|e| anyhow::anyhow!("Bad response ({op}): {e} {}", data_copy))?;

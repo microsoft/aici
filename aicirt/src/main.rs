@@ -398,7 +398,7 @@ impl ModuleRegistry {
 
     fn run_main(&self, req_id: &String) -> Result<()> {
         let req_instances = self.req_instances.lock().unwrap();
-        let inst = req_instances.get(req_id).ok_or(anyhow!("invalid req_id"))?;
+        let inst = req_instances.get(req_id).ok_or_else(|| anyhow!("invalid req_id"))?;
         inst.run_main()
     }
 
@@ -442,7 +442,7 @@ impl Stepper {
         Ok(self
             .instances
             .get(&id)
-            .ok_or(anyhow!("invalid id {}", id))?)
+            .ok_or_else(|| anyhow!("invalid id {}", id))?)
     }
 
     fn token_name(&self, idx: usize) -> String {
@@ -727,7 +727,12 @@ impl Stepper {
         let mut used_ids = Vec::new();
         let mut outputs = HashMap::default();
 
-        log::debug!("post_process0: {:?}", t0.elapsed());
+        log::warn!(
+            "post_process0: {:?} {} {}",
+            t0.elapsed(),
+            self.instances.len(),
+            req.ops.len()
+        );
 
         for op in req.ops.into_iter() {
             let instid = op.id;
@@ -768,7 +773,7 @@ impl Stepper {
             prev = Instant::now();
         }
 
-        log::debug!("post_process: {:?}", all_dur);
+        log::warn!("post_process: {:?}", all_dur);
 
         Ok(AiciPostProcessResp { seqs: outputs })
     }
@@ -949,6 +954,22 @@ impl CmdRespChannel {
     }
 }
 
+fn bench_hashmap() {
+    let mut h =  HashMap::<u64, u64>::default();
+    for x in 10..50 {
+        h.insert(x, x * x);
+    }
+    for _ in 0..10 {
+        let t0 = Instant::now();
+        let mut sum = 0;
+        for x in 10..50 {
+            let v = h.get(&x).unwrap();
+            sum += v;
+        }
+        println!("hashmap: {:?} {}", t0.elapsed(), sum);
+    }
+}
+
 fn bench_cmd_resp_busy(cli: &Cli, limits: &AiciLimits) {
     match fork_child::<u8, u8>(limits).unwrap() {
         worker::ForkResult::Parent { handle } => {
@@ -1105,9 +1126,12 @@ fn main() -> () {
     };
 
     if cli.bench {
-        bench_ipc(&limits);
-        bench_cmd_resp_busy(&cli, &limits);
-        bench_cmd_resp(&cli, &limits);
+        bench_hashmap();
+        if false {
+            bench_ipc(&limits);
+            bench_cmd_resp_busy(&cli, &limits);
+            bench_cmd_resp(&cli, &limits);
+        }
         return ();
     }
 

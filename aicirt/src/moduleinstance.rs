@@ -206,7 +206,7 @@ impl ModuleInstance {
         let instance = ctx.linker.instantiate(&mut store, &module)?;
         let memory = instance
             .get_memory(&mut store, "memory")
-            .ok_or(anyhow!("memory missing"))?;
+            .ok_or_else(|| anyhow!("memory missing"))?;
         store.data_mut().instance = Some(instance);
         store.data_mut().memory = Some(memory);
 
