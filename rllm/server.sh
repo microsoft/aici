@@ -20,6 +20,11 @@ if [ "$1" = loop ] ; then
     shift
 fi
 
+if [ "$1" = bench ] ; then
+    REL=--release
+    shift
+fi
+
 if [ "$1" = warm ] ; then
     REL=--release
     ADD_ARGS="--warmup-only"
