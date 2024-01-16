@@ -48,13 +48,8 @@ One night (the first missile then could scarcely have been 10,000,000 miles away
 
 concurrent_reqs = 40
 num_reqs = concurrent_reqs
-min_tokens = 50
-max_tokens = 65
-
-if False:
-    num_reqs = 2
-    min_tokens = 20
-    max_tokens = 50
+min_tokens = 200
+max_tokens = 250
 
 curr_req = 0
 
@@ -78,7 +73,7 @@ class XorShiftRng:
         return self.urandom() * 2.0 - 1.0
 
     def between(self, low, high):
-        return self.next() % (high - low) + high
+        return self.next() % (high - low) + low
 
 
 rnd = XorShiftRng()
@@ -91,11 +86,9 @@ class Req:
         curr_req += 1
         self.tps = 0
         self.tokens = rnd.between(min_tokens, max_tokens)
-        self.prompt = (
-            f"Hello, {self.req_no}, "
-            + wow[rnd.between(0, len(wow) // 3) :]
-            + "\nSummary:"
-        )
+        plen = rnd.between(3000, 4000)
+        pbeg = rnd.between(0, len(wow) - plen)
+        self.prompt = f"Hello, {self.req_no}, " + wow[pbeg : pbeg + plen] + "\nSummary:"
         self.r = None
 
     def send(self):
@@ -123,8 +116,8 @@ def main():
     global num_reqs, concurrent_reqs, min_tokens, max_tokens
     if args.short:
         num_reqs = concurrent_reqs
-        min_tokens = 30
-        max_tokens = 35
+        min_tokens = 42
+        max_tokens = 44
 
     pyaici.rest.log_level = 0
     requests = [Req() for _ in range(num_reqs)]
