@@ -5,6 +5,7 @@ import os
 import argparse
 
 from . import rest
+from . import add_cli_args, AiciRunner
 
 
 def cli_error(msg: str):
@@ -168,6 +169,13 @@ def main_inner():
         description="List module tags available on the server.",
     )
 
+    # don't give help= -> it's quite internal
+    bench_cmd = subparsers.add_parser(
+        "benchrt",
+        description="benchmark the aicirt communication mechanisms",
+    )
+    add_cli_args(bench_cmd, single=False)
+
     upload_cmd = subparsers.add_parser(
         "upload",
         help="upload a AICI Controller to the server",
@@ -202,6 +210,10 @@ def main_inner():
         rest.log_level = args.log_level
     else:
         rest.log_level = 3
+
+    if args.subcommand == "benchrt":
+        AiciRunner.from_cli(args).bench()
+        sys.exit(0)
 
     if args.subcommand == "tags":
         for tag in rest.list_tags():

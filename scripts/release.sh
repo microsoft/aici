@@ -1,4 +1,7 @@
 #!/bin/bash
+#
+# This is run from the GitHub Action, but can be also run locally to see if everything builds correctly.
+#
 
 FOLDERS="aici_abi uppercase pyctrl jsctrl declctrl aicirt"
 NATIVE="$(uname -s | tr 'A-Z' 'a-z')-$(uname -m)"

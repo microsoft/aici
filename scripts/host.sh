@@ -1,5 +1,9 @@
 #!/bin/bash
 
+#
+# This is for running an inference server, including a tunnel.
+#
+
 set -e
 
 MODEL=orca
