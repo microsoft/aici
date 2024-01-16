@@ -169,8 +169,9 @@ impl Scheduler {
     }
 
     pub fn add_seq_group(&mut self, seq_group: SequenceGroup) {
+        let len = seq_group.seqs[0].prompt_len;
         log::debug!(
-            "add_seq_group: {} {:?}",
+            "add_seq_group: {}; {len} tokens; {:?}",
             seq_group.request_id,
             limit_str(&seq_group.prompt, 200)
         );
