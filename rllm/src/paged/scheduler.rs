@@ -254,7 +254,7 @@ impl Scheduler {
             .sum()
     }
 
-    fn step_start_waiting(&mut self, outputs: &mut SchedulerOutputs) {
+    fn step_prompts(&mut self, outputs: &mut SchedulerOutputs) {
         log::trace!("step_start_waiting ({} seqs)", self.q_len(Queue::Waiting));
         self.sort_by_priority(Queue::Waiting);
 
@@ -295,7 +295,9 @@ impl Scheduler {
         });
     }
 
-    fn step_preempt(&mut self, outputs: &mut SchedulerOutputs) -> bool {
+    /// Move sequences from OnGpu queue to outputs.next_seq_groups or
+    /// to Swapped/Waiting queues (preemption).
+    fn step_generation(&mut self, outputs: &mut SchedulerOutputs) -> bool {
         let mut did_preempt = false;
         self.sort_by_priority(Queue::OnGpu);
 
@@ -398,12 +400,11 @@ impl Scheduler {
         self.step_drop_finished(&mut outputs);
 
         if self.q_len(Queue::Swapped) == 0 {
-            self.step_start_waiting(&mut outputs);
+            self.step_prompts(&mut outputs);
         }
 
         if outputs.next_seq_groups.is_empty() {
-            // Preemption logic
-            let did_preempt = self.step_preempt(&mut outputs);
+            let did_preempt = self.step_generation(&mut outputs);
 
             // Swap in logic for swapped sequences
             if !did_preempt {
