@@ -72,6 +72,7 @@ def install(runner: AiciRunner):
         fork_map, suspend_ids = runner.step_finish_pre(max_context_len)
         if fork_map is None:
             return
+        assert suspend_ids is not None
         used = [False for _ in steps]
 
         for _op_idx, parent_idx in enumerate(fork_map):
@@ -183,4 +184,4 @@ def install(runner: AiciRunner):
     SamplingParams.initiate_step = initiate_step
     SamplingParams.finish_sampling = finish_sampling
     SamplingParams.append_ff_tokens = append_ff_tokens
-    SamplingParams.recv_attention_mask = recv_attention_mask
+    SamplingParams.recv_attention_mask = recv_attention_mask # type: ignore

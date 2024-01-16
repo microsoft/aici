@@ -82,13 +82,13 @@ class Req:
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Demo on using HF Transformers with aicirt"
+        description="Benchmark the Aici server by sending many requests"
     )
     parser.add_argument(
         "--short",
         "-s",
         action="store_true",
-        help="path to JSONL trace file (generated with --aici-trace)",
+        help="run short version of benchmark",
     )
     args = parser.parse_args()
     global num_reqs, concurrent_reqs, min_tokens, max_tokens

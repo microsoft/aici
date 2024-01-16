@@ -137,7 +137,7 @@ M = 1024 * 1024
 class PendingRequest:
     def __init__(self, *, cmd: Dict[str, Any]) -> None:
         self.cmd = cmd
-        self.resp = None
+        self.resp: dict | None = None
         self.ev = asyncio.Event()
 
 
@@ -190,6 +190,7 @@ class CmdChannel:
         await loop.run_in_executor(self.executor, inner)
         await req.ev.wait()
         resp = req.resp
+        assert resp
 
         if resp["type"] != "ok":
             info = ""
@@ -238,7 +239,7 @@ class AiciRunner:
     instance = None
 
     @staticmethod
-    def from_cli(args: argparse.ArgumentParser):
+    def from_cli(args):
         aici = AiciRunner(
             rtpath=args.aici_rt,
             tokenizer=args.aici_tokenizer,
@@ -433,7 +434,7 @@ class AiciRunner:
         """
         self.gen_q = []
 
-    def step_add_pre(self, id: int, req_id: str = None):
+    def step_add_pre(self, id: int, req_id: str | None = None):
         """
         Adds a generated token to the step.
 
@@ -442,19 +443,19 @@ class AiciRunner:
             tokens (list[int]): The tokens to add.
             clone_id (int, optional): The ID of the batch entry to clone if any.
         """
-        obj = {"id": id}
+        obj: dict = {"id": id}
         if req_id:
             obj["req_id"] = req_id
         self.gen_q.append(obj)
 
-    def step_add_mid(self, id: int, clone_id: int = None):
+    def step_add_mid(self, id: int, clone_id: int | None = None):
         obj = {"id": id}
         if clone_id is not None:
             obj["clone_id"] = clone_id
         self.gen_q.append(obj)
 
     def step_add_post(
-        self, id: int, backtrack: int, tokens: list[int], clone_id: int = None
+        self, id: int, backtrack: int, tokens: list[int], clone_id: int | None = None
     ):
         obj = {"id": id, "tokens": tokens, "backtrack": backtrack}
         if clone_id is not None:
