@@ -23,7 +23,6 @@ use hostimpl::GlobalInfo;
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 use std::{
-    collections::HashMap,
     fs,
     path::PathBuf,
     sync::{Arc, Mutex},
@@ -160,8 +159,8 @@ impl ModuleRegistry {
             forker: Arc::new(Mutex::new(forker)),
             cache_path: PathBuf::from("./cache"),
             wasm_ctx: Arc::new(wasm_ctx),
-            modules: Arc::new(Mutex::new(HashMap::new())),
-            req_instances: Arc::new(Mutex::new(HashMap::new())),
+            modules: Arc::new(Mutex::new(HashMap::default())),
+            req_instances: Arc::new(Mutex::new(HashMap::default())),
         })
     }
 
@@ -429,7 +428,7 @@ impl Stepper {
     ) -> Result<Self> {
         Ok(Self {
             req_instances: reg.req_instances.clone(),
-            instances: HashMap::new(),
+            instances: HashMap::default(),
             limits,
             globals: reg.wasm_ctx.globals.clone(),
             shm,
@@ -525,7 +524,7 @@ impl Stepper {
         };
 
         let mut used_ids = Vec::new();
-        let mut outputs = HashMap::new();
+        let mut outputs = HashMap::default();
         let block_elts = req.max_context_len;
         let mut idx = 0;
 
@@ -613,11 +612,11 @@ impl Stepper {
 
     fn aici_mid_process(&mut self, req: AiciMidProcessReq) -> Result<AiciMidProcessResp> {
         let block_elts = self.globals.tokrx_info.vocab_size as usize;
-        let mut outputs = HashMap::new();
+        let mut outputs = HashMap::default();
 
         // first, execute forks
-        let mut parents = HashMap::new();
-        let mut child_lists = HashMap::new();
+        let mut parents = HashMap::default();
+        let mut child_lists = HashMap::default();
 
         for op in req.ops.iter() {
             let id = op.id;
@@ -726,7 +725,9 @@ impl Stepper {
         }
 
         let mut used_ids = Vec::new();
-        let mut outputs = HashMap::new();
+        let mut outputs = HashMap::default();
+
+        log::debug!("post_process0: {:?}", t0.elapsed());
 
         for op in req.ops.into_iter() {
             let instid = op.id;
@@ -750,6 +751,10 @@ impl Stepper {
         let deadline =
             Instant::now() + std::time::Duration::from_millis(self.limits.max_pre_step_ms);
 
+        let mut all_dur = Vec::new();
+        all_dur.push(t0.elapsed());
+
+        let mut prev = Instant::now();
         for id in used_ids {
             let h = self.get_worker(id).unwrap();
             let timeout = deadline.saturating_duration_since(Instant::now());
@@ -759,9 +764,11 @@ impl Stepper {
                 }
                 Err(e) => self.worker_error(id, &mut outputs, e),
             }
+            all_dur.push(prev.elapsed());
+            prev = Instant::now();
         }
 
-        log::debug!("post_process: {:?}", t0.elapsed());
+        log::debug!("post_process: {:?}", all_dur);
 
         Ok(AiciPostProcessResp { seqs: outputs })
     }

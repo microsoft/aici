@@ -10,7 +10,7 @@ wow = open(script_dir + "/hgwells.txt").read()
 bench_py = """
 import pyaici.server as aici
 async def main():
-    await aici.gen_tokens(max_tokens=45)
+    await aici.gen_tokens(max_tokens=5)
 aici.start(main())
 """
 

@@ -1,3 +1,4 @@
+use crate::HashMap;
 use aici_abi::{
     bytes::{limit_bytes, limit_str},
     toktree::TokTrie,
@@ -18,7 +19,6 @@ use futures::future::select_all;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::{
-    collections::HashMap,
     process::{Child, Command},
     sync::{Arc, Mutex},
     thread,
@@ -242,7 +242,9 @@ pub struct AsyncCmdChannel {
 impl AsyncCmdChannel {
     pub fn new(json_size: usize, pref: &str, suff: &str) -> Result<Self> {
         let cmd = CmdChannel::new(json_size, pref, suff, Duration::ZERO)?;
-        let pending_reqs = Arc::new(Mutex::new(HashMap::<String, oneshot::Sender<Value>>::new()));
+        let pending_reqs = Arc::new(Mutex::new(
+            HashMap::<String, oneshot::Sender<Value>>::default(),
+        ));
         {
             let resp_ch = cmd.resp_ch;
             let pending_reqs = pending_reqs.clone();

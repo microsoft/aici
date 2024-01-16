@@ -1,13 +1,13 @@
-use std::{collections::HashMap, fmt::Display};
-
+use std::fmt::Display;
 use tch::{Kind, Tensor};
 use torch_sys::C_tensor;
+use fxhash::FxHashMap as HashMap;
 
-mod stream;
 mod event;
+mod stream;
 
-pub use stream::*;
 pub use event::*;
+pub use stream::*;
 
 unsafe fn ptr_to_string(ptr: *mut libc::c_char) -> Option<String> {
     if !ptr.is_null() {

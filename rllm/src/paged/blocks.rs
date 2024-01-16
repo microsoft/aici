@@ -3,9 +3,9 @@ use crate::{
     config::RllmConfig,
     paged::{cache_engine::CacheEngine, scheduler::SchedulerOutputs},
     seq::{SchedulingPhase, Sequence, SequenceGroup},
+    HashMap,
 };
 use std::{
-    collections::HashMap,
     sync::{Arc, Mutex},
     vec::Vec,
 };
@@ -278,7 +278,7 @@ impl BlockSpaceManager {
     }
 
     pub fn swap_in(&mut self, seq_group: &mut SequenceGroup) -> HashMap<usize, usize> {
-        let mut mapping = HashMap::new();
+        let mut mapping = HashMap::default();
 
         for seq in &mut seq_group.seqs {
             if seq.sched_phase == SchedulingPhase::Swapped {
@@ -293,7 +293,7 @@ impl BlockSpaceManager {
     }
 
     pub fn swap_out(&mut self, seq_group: &mut SequenceGroup) -> HashMap<usize, usize> {
-        let mut mapping = HashMap::new();
+        let mut mapping = HashMap::default();
 
         for seq in &mut seq_group.seqs {
             if seq.sched_phase == SchedulingPhase::Running {

@@ -1,6 +1,7 @@
+use crate::HashMap;
 use crate::Tensor;
 use anyhow::{bail, Result};
-use std::{collections::HashMap, time::Instant};
+use std::time::Instant;
 use tch::{kind::Element, Device, IndexOp as _};
 #[cfg(feature = "cuda")]
 use tch_cuda::{

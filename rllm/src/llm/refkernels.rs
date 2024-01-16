@@ -1,5 +1,5 @@
 use crate::util::{check_all_close_attn, to_vec1};
-use std::collections::HashMap;
+use crate::HashMap;
 use tch::{IndexOp, Kind, Tensor};
 
 pub fn reshape_and_cache(

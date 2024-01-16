@@ -14,6 +14,9 @@ pub use llm::logits::LogitsProcessor;
 use std::sync::atomic::AtomicBool;
 pub use tch::{Device, IndexOp, Kind as DType, Shape, Tensor};
 
+pub use fxhash::FxHashMap as HashMap;
+pub use fxhash::FxHashSet as HashSet;
+
 pub struct LoaderArgs {
     pub tokenizer: String, // one of aici_tokenizer; eg "llama"
     pub model_id: String,

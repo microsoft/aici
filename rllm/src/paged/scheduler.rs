@@ -4,11 +4,11 @@ use crate::{
     paged::blocks::BlockSpaceManager,
     seq::{FinishReason, SchedulingPhase, SeqId, Sequence, SequenceGroup},
     util::limit_str,
+    HashMap,
 };
 use aicirt::api::SequenceResult;
 use std::{
     cell::RefCell,
-    collections::HashMap,
     sync::{Arc, Mutex},
     vec::Vec,
 };
@@ -43,9 +43,9 @@ impl SchedulerOutputs {
         SchedulerOutputs {
             prompt_run: false,
             num_batched_tokens: 0,
-            blocks_to_swap_in: HashMap::new(),
-            blocks_to_swap_out: HashMap::new(),
-            blocks_to_copy: HashMap::new(),
+            blocks_to_swap_in: HashMap::default(),
+            blocks_to_swap_out: HashMap::default(),
+            blocks_to_copy: HashMap::default(),
             dropped_seq_groups: Vec::new(),
             next_seq_groups: Vec::new(),
         }

@@ -14,7 +14,7 @@ use crate::{
         get_setting, gpu_memory_size, gpu_peak_allocated_bytes, log_mem_stats, reset_mem_stats,
         scalar_tensor, synchronize, to_vec1, to_vec2,
     },
-    DType, Device, IndexOp, LoaderArgs, LogitsProcessor, Tensor,
+    DType, Device, HashMap, HashSet, IndexOp, LoaderArgs, LogitsProcessor, Tensor,
 };
 use aici_abi::toktree::TokTrie;
 use aicirt::{
@@ -31,14 +31,7 @@ use hf_hub::{
 };
 use safetensors::Dtype;
 use serde::{Deserialize, Serialize};
-use std::{
-    collections::{HashMap, HashSet},
-    fmt::Display,
-    path::PathBuf,
-    rc::Rc,
-    sync::Arc,
-    time::Instant,
-};
+use std::{fmt::Display, path::PathBuf, rc::Rc, sync::Arc, time::Instant};
 use tch::{nn::VarStore, Kind};
 use tokenizers::Tokenizer;
 
@@ -824,7 +817,7 @@ impl RllmEngine {
 
         let mut post_ops = Vec::new();
 
-        let mut pre_sample = HashMap::new();
+        let mut pre_sample = HashMap::default();
 
         for sg in sched_out.next_seq_groups.iter_mut() {
             for seq in sg.seqs.iter_mut() {

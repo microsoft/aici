@@ -12,14 +12,13 @@ use aici_abi::{
 };
 use aicirt::{
     api::{AiciMidProcessResultInner, AiciPostProcessResultInner, SequenceResult},
-    user_error,
+    user_error, HashMap,
 };
 use anyhow::{anyhow, Result};
 use ipc_channel::ipc::{self, IpcOneShotServer, IpcReceiver, IpcReceiverSet, IpcSender};
 use libc::pid_t;
 use serde::{Deserialize, Serialize};
 use std::{
-    collections::HashMap,
     fmt::Debug,
     path::PathBuf,
     rc::Rc,
@@ -765,8 +764,8 @@ fn forker_dispatcher(
                     }
                     ForkResult::Child { cmd, cmd_resp } => {
                         let mut grp_ctx = GroupCtx {
-                            variables: HashMap::new(),
-                            workers: HashMap::new(),
+                            variables: HashMap::default(),
+                            workers: HashMap::default(),
                             cb_set: IpcReceiverSet::new().unwrap(),
                             limits: w_ctx.wasm_ctx.limits,
                         };

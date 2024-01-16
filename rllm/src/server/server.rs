@@ -10,10 +10,9 @@ use rllm::{
     iface::{kill_self, AiciRtIface, AsyncCmdChannel},
     seq::RequestOutput,
     util::apply_settings,
-    AddRequest, DType, ExpectedGeneration, LoaderArgs, RllmEngine,
+    AddRequest, DType, ExpectedGeneration, HashMap, LoaderArgs, RllmEngine,
 };
 use std::{
-    collections::HashMap,
     fmt::Display,
     path::PathBuf,
     sync::{Arc, Mutex},
@@ -246,7 +245,7 @@ impl InferenceWorker {
         let (tx, rx) = channel(128);
         let r = Self {
             req_sender: tx,
-            running: HashMap::new(),
+            running: HashMap::default(),
         };
         (r, rx)
     }

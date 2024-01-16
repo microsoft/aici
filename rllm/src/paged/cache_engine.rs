@@ -5,8 +5,8 @@ use super::cuda_stub::{CudaEvent, CudaStream};
 #[cfg(feature = "cuda")]
 use tch_cuda::{CudaEvent, CudaStream};
 
-use crate::{config::RllmConfig, llm::kernels, Device, Tensor};
-use std::{collections::HashMap, sync::Arc};
+use crate::{config::RllmConfig, llm::kernels, Device, HashMap, Tensor};
+use std::sync::Arc;
 
 use super::CacheIface;
 

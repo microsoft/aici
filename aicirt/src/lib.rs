@@ -10,6 +10,9 @@ pub use bench::*;
 use flexi_logger::{DeferredNow, Logger, WriteMode};
 use log::Record;
 
+pub use fxhash::FxHashMap as HashMap;
+pub use fxhash::FxHashSet as HashSet;
+
 pub enum LogMode {
     Normal,
     Test,

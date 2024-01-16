@@ -323,6 +323,7 @@ dependencies = [
  "cap",
  "clap",
  "flexi_logger",
+ "fxhash",
  "hex",
  "ipc-channel",
  "libc",
@@ -1372,6 +1373,15 @@ dependencies = [
  "pin-project-lite",
  "pin-utils",
  "slab",
+]
+
+[[package]]
+name = "fxhash"
+version = "0.2.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c31b6d751ae2c7f11320402d34e41349dd1016f8d5d45e48c4312bc8625af50c"
+dependencies = [
+ "byteorder",
 ]
 
 [[package]]
@@ -2813,6 +2823,7 @@ dependencies = [
  "cudarc",
  "derive_more",
  "futures",
+ "fxhash",
  "half 2.3.1",
  "hf-hub",
  "indicatif",
@@ -3562,6 +3573,7 @@ name = "tch-cuda"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "fxhash",
  "glob",
  "half 2.3.1",
  "libc",

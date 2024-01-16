@@ -4,10 +4,10 @@ use crate::{
     llm::kernels::to_offsets,
     seq::{SchedulingPhase, SeqId},
     util::pad_to_multiple,
+    HashMap,
 };
 use aicirt::api::Token;
 use std::{
-    collections::HashMap,
     fmt::Debug,
     sync::{Arc, Mutex},
 };
@@ -197,7 +197,7 @@ impl BatchInfoBuilder {
         let mut seqlens_k: Vec<usize> = Vec::new();
         let mut gather_mapping: Vec<i32> = Vec::new();
         let mut slot_mapping: Vec<i32> = Vec::new();
-        let mut seq_id_to_idx: HashMap<SeqId, usize> = HashMap::new();
+        let mut seq_id_to_idx: HashMap<SeqId, usize> = HashMap::default();
 
         let mut paged_block_tables: Vec<Vec<i32>> = Vec::new();
         let mut paged_context_lens: Vec<i32> = Vec::new();
