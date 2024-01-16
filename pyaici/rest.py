@@ -122,8 +122,10 @@ def completion(
     temperature=0.0,
     max_tokens=200,
     n=1,
-    ignore_eos=False,
+    ignore_eos: bool | None = None,
 ):
+    if ignore_eos is None:
+        ignore_eos = not not ast_module
     json = {
         "model": "",
         "prompt": prompt,
