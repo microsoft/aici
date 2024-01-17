@@ -3,12 +3,46 @@ use std::{ffi::CString, io, ptr};
 
 pub struct Shm {
     addr: *mut u8,
-    size: usize,
+    pub size: usize,
 }
 
 unsafe impl Send for Shm {}
 
 impl Shm {
+    pub fn anon(size: usize) -> Result<Self> {
+        ensure!(size > 1024);
+        log::trace!("shm_open anon: size={}k", size / 1024);
+        Self::from_fd(-1, size)
+    }
+
+    fn from_fd(fd: i32, size: usize) -> Result<Self> {
+        let mut flag = libc::MAP_SHARED;
+        if fd == -1 {
+            flag |= libc::MAP_ANONYMOUS;
+        }
+        let addr = unsafe {
+            libc::mmap(
+                ptr::null_mut(),
+                size,
+                libc::PROT_WRITE | libc::PROT_READ,
+                flag,
+                fd,
+                0,
+            )
+        };
+        let err = io::Error::last_os_error();
+        unsafe { libc::close(fd) };
+
+        if addr == libc::MAP_FAILED {
+            return Err(err.into());
+        }
+
+        Ok(Self {
+            addr: addr as *mut u8,
+            size,
+        })
+    }
+
     pub fn new(name: &str, size: usize, unlink: bool) -> Result<Self> {
         ensure!(size > 1024);
 
@@ -28,27 +62,7 @@ impl Shm {
             let _ = libc::ftruncate(fd, size.try_into().unwrap());
         };
 
-        let addr = unsafe {
-            libc::mmap(
-                ptr::null_mut(),
-                size,
-                libc::PROT_WRITE | libc::PROT_READ,
-                libc::MAP_SHARED,
-                fd,
-                0,
-            )
-        };
-        let err = io::Error::last_os_error();
-        unsafe { libc::close(fd) };
-
-        if addr == libc::MAP_FAILED {
-            return Err(err.into());
-        }
-
-        Ok(Self {
-            addr: addr as *mut u8,
-            size,
-        })
+        Self::from_fd(fd, size)
     }
 
     #[allow(dead_code)]

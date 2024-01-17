@@ -1,100 +1,94 @@
-use aici_abi::svob::SimpleVob;
-use anyhow::{anyhow, ensure, Result};
+use crate::shm::Shm;
+use anyhow::{anyhow, Result};
 use linux_futex::AsFutex;
-use std::{io, ptr, sync::atomic::AtomicU32};
+use std::{
+    ptr,
+    sync::atomic::{AtomicU32, Ordering},
+    time::{Duration, Instant},
+};
 
 type Futex = linux_futex::Futex<linux_futex::Shared>;
 
-pub struct FutexShm {
-    addr: *mut u8,
-    common_offset: usize,
-    element_size: usize,
-    used: SimpleVob,
-    free: Vec<usize>,
-    size: usize,
+fn futex_at(shm: &Shm, off: usize) -> &'static Futex {
+    assert!(shm.size >= off + 4);
+    unsafe { AtomicU32::from_ptr(shm.ptr_at(off) as *mut u32).as_futex() }
 }
 
-pub struct FutexChannel {
+pub struct WrMsgCounter {
     futex: &'static Futex,
-    size: usize,
-    idx: usize,
-    addr: *mut u8,
+    #[allow(dead_code)]
+    shm: Shm,
 }
 
-unsafe impl Send for FutexShm {}
-
-const PAGE_SIZE: usize = 4096;
-
-impl FutexShm {
-    pub fn new(num_elts: usize, element_size: usize) -> Result<Self> {
-        ensure!(num_elts > 0);
-        ensure!(element_size > 0);
-        ensure!(element_size % PAGE_SIZE == 0);
-
-        let common_offset = PAGE_SIZE;
-        let size = common_offset + num_elts * element_size;
-
-        log::trace!("futex_open: size={}k", size / 1024);
-
-        let addr = unsafe {
-            libc::mmap(
-                ptr::null_mut(),
-                size,
-                libc::PROT_WRITE | libc::PROT_READ,
-                libc::MAP_SHARED | libc::MAP_ANONYMOUS,
-                -1,
-                0,
-            )
-        };
-
-        if addr == libc::MAP_FAILED {
-            return Err(io::Error::last_os_error().into());
-        }
-
-        Ok(Self {
-            addr: addr as *mut u8,
-            element_size,
-            common_offset,
-            used: SimpleVob::alloc(num_elts),
-            free: (0..num_elts).collect(),
-            size,
-        })
-    }
-
-    pub fn alloc(&mut self) -> Result<FutexChannel> {
-        let idx = self.free.pop().ok_or_else(|| anyhow!("no free channels"))?;
-        assert!(!self.used[idx]);
-        self.used.set(idx as u32, true);
-        let addr = unsafe { self.addr.add(self.common_offset + idx * self.element_size) };
-        let futex = unsafe { AtomicU32::from_ptr(self.addr as *mut u32).as_futex() };
-        Ok(FutexChannel {
-            futex,
-            addr,
-            idx,
-            size: self.element_size,
-        })
-    }
-
-    pub fn free(&mut self, channel: FutexChannel) {
-        let idx = channel.idx;
-        assert!(self.used[idx]);
-        self.used.set(idx as u32, false);
-        self.free.push(idx);
-    }
-}
-
-impl Drop for FutexShm {
-    fn drop(&mut self) {
-        unsafe {
-            libc::munmap(self.addr as *mut libc::c_void, self.size);
+impl WrMsgCounter {
+    pub fn new(shm: Shm) -> Self {
+        Self {
+            futex: futex_at(&shm, 0),
+            shm,
         }
     }
+
+    pub fn get(&self) -> u32 {
+        self.futex.value.load(Ordering::Acquire)
+    }
+
+    pub fn inc(&self) {
+        let _ = self.futex.value.fetch_add(1, Ordering::AcqRel);
+        let _ = self.futex.wake(i32::MAX);
+    }
 }
 
-impl FutexChannel {
+pub struct RdMsgCounter {
+    futex: &'static Futex,
+    #[allow(dead_code)]
+    shm: Shm,
+}
+
+impl RdMsgCounter {
+    pub fn new(shm: Shm) -> Self {
+        Self {
+            futex: futex_at(&shm, 0),
+            shm,
+        }
+    }
+
+    pub fn read(&self) -> u32 {
+        self.futex.value.load(Ordering::Acquire)
+    }
+
+    pub fn wait(&self, val: u32) {
+        let _ = self.futex.wait(val);
+    }
+}
+
+struct Channel {
+    wr_len: &'static Futex,
+    rd_len: &'static Futex,
+    shm: Shm,
+}
+
+const MSG_OFF: usize = 8;
+
+impl Channel {
+    fn new(shm: Shm, swap: bool) -> Self {
+        assert!(shm.size > MSG_OFF);
+        let len0 = futex_at(&shm, 0);
+        let len1 = futex_at(&shm, 4);
+        let (wr_len, rd_len) = if swap { (len1, len0) } else { (len0, len1) };
+        Self {
+            wr_len,
+            rd_len,
+            shm,
+        }
+    }
+
     pub fn fits_msg(&self, msg: &[u8]) -> Result<()> {
-        if msg.len() + 4 > self.size {
-            return Err(anyhow!("msg too large; {} + 4 > {}", msg.len(), self.size));
+        if msg.len() + MSG_OFF > self.shm.size {
+            return Err(anyhow!(
+                "msg too large; {} + {MSG_OFF} > {}",
+                msg.len(),
+                self.shm.size
+            ));
         }
         Ok(())
     }
@@ -105,33 +99,122 @@ impl FutexChannel {
         let msg_len = msg.len() as u32;
 
         unsafe {
-            ptr::copy_nonoverlapping(msg.as_ptr(), (self.addr as *mut u8).add(4), msg.len());
-            std::sync::atomic::fence(std::sync::atomic::Ordering::SeqCst);
-            ptr::write_volatile(self.addr as *mut u32, msg_len);
+            ptr::copy_nonoverlapping(msg.as_ptr(), self.shm.ptr_at(MSG_OFF), msg.len());
         }
+
+        while self.wr_len.value.load(Ordering::Acquire) != 0 {
+            std::hint::spin_loop();
+        }
+
+        self.wr_len.value.store(msg_len, Ordering::Release);
 
         Ok(())
     }
 
-    pub fn read_len(&self) -> Result<usize> {
-        Ok(unsafe { ptr::read_volatile(self.addr as *const u32) } as usize)
+    pub fn read_len(&self) -> usize {
+        return self.rd_len.value.load(Ordering::Acquire) as usize;
     }
 
-    pub fn read_msg(&self) -> Result<Vec<u8>> {
-        std::sync::atomic::fence(std::sync::atomic::Ordering::SeqCst);
-        let msg_len = self.read_len()?;
+    pub fn wait_for_len(
+        &self,
+        spin_duration: Duration,
+        futex_duration: Option<Duration>,
+    ) -> Option<usize> {
+        let mut len = self.read_len();
+        if len != 0 {
+            return Some(len);
+        }
+        let deadline = Instant::now() + spin_duration;
+        while Instant::now() < deadline {
+            len = self.read_len();
+            if len != 0 {
+                return Some(len);
+            }
+            std::hint::spin_loop();
+        }
+        if let Some(futex_duration) = futex_duration {
+            if futex_duration == Duration::MAX {
+                let _ = self.rd_len.wait(len as u32);
+            } else {
+                let _ = self.rd_len.wait_for(len as u32, futex_duration);
+            };
+            len = self.read_len();
+        }
+        if len != 0 {
+            Some(len)
+        } else {
+            None
+        }
+    }
 
-        if msg_len > self.size - 4 {
-            anyhow::bail!("read: shm too small {} + 4 < {}", msg_len, self.size);
+    pub fn read_msg(
+        &self,
+        spin_duration: Duration,
+        futex_duration: Option<Duration>,
+    ) -> Option<Vec<u8>> {
+        let msg_len = self.wait_for_len(spin_duration, futex_duration)?;
+
+        if msg_len > self.shm.size - MSG_OFF {
+            panic!("read: shm too small {} + 4 < {}", msg_len, self.shm.size);
         }
 
         let mut res = vec![0u8; msg_len];
-        unsafe {
-            ptr::copy_nonoverlapping((self.addr as *const u8).add(4), res.as_mut_ptr(), msg_len);
-            std::sync::atomic::fence(std::sync::atomic::Ordering::SeqCst);
-            ptr::write_volatile(self.addr as *mut u32, 0);
-        };
+        unsafe { ptr::copy_nonoverlapping(self.shm.ptr_at(MSG_OFF), res.as_mut_ptr(), msg_len) };
+        self.rd_len.value.store(0, Ordering::Release);
 
-        Ok(res)
+        Some(res)
+    }
+}
+
+pub struct ClientChannel {
+    channel: Channel,
+}
+
+impl ClientChannel {
+    pub fn new(shm: Shm) -> Self {
+        Self {
+            channel: Channel::new(shm, false),
+        }
+    }
+
+    pub fn send_req(&self, msg: &[u8]) -> Result<()> {
+        self.channel.write_msg(msg)
+    }
+
+    pub fn recv_resp(&self, timeout: Duration) -> Option<Vec<u8>> {
+        self.channel.read_msg(timeout, None)
+    }
+}
+
+pub struct ServerChannel {
+    channel: Channel,
+    msg_cnt: RdMsgCounter,
+}
+
+impl ServerChannel {
+    pub fn new(shm: Shm, cnt_shm: Shm) -> Self {
+        Self {
+            channel: Channel::new(shm, true),
+            msg_cnt: RdMsgCounter::new(cnt_shm),
+        }
+    }
+
+    pub fn recv_req(&self, busy_spin: Duration) -> Vec<u8> {
+        if self.channel.wait_for_len(busy_spin, None).is_none() {
+            loop {
+                let val = self.msg_cnt.read();
+                let len = self.channel.read_len();
+                if len == 0 {
+                    self.msg_cnt.wait(val);
+                } else {
+                    break;
+                }
+            }
+        }
+        self.channel.read_msg(busy_spin, None).unwrap()
+    }
+
+    pub fn send_resp(&self, msg: &[u8]) -> Result<()> {
+        self.channel.write_msg(msg)
     }
 }
