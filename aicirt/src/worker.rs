@@ -4,7 +4,7 @@ use crate::{
     moduleinstance::{ModuleInstance, WasmContext},
     setup_bg_worker_pool,
     shm::Shm,
-    with_timer, InstantiateReq, TimerRef, TimerSet, UserError,
+    with_timer, InstantiateReq, TimerRef, UserError,
 };
 use aici_abi::{
     InitPromptResult, MidProcessArg, PostProcessArg, PreProcessArg, StorageCmd, StorageOp,
@@ -12,10 +12,10 @@ use aici_abi::{
 };
 use aicirt::{
     api::{AiciMidProcessResultInner, AiciPostProcessResultInner, SequenceResult},
+    futexshm::{TypedClient, TypedClientHandle, TypedServer},
     user_error, HashMap,
 };
 use anyhow::{anyhow, Result};
-use ipc_channel::ipc::{self, IpcOneShotServer, IpcReceiver, IpcReceiverSet, IpcSender};
 use libc::pid_t;
 use serde::{Deserialize, Serialize};
 use std::{
@@ -29,31 +29,44 @@ const QUICK_OP_MS: u64 = 10;
 
 #[derive(Serialize, Deserialize, Debug)]
 pub enum GroupCmd {
-    NewChannel {},
     StorageCmd { cmd: StorageCmd },
 }
 
 #[derive(Serialize, Deserialize, Debug)]
 pub enum GroupResp {
-    NewChannel { channel: GroupHandle },
     StorageResp { resp: StorageResp },
 }
 
 #[derive(Serialize, Deserialize, Debug)]
+pub struct WireProcessHandle<Cmd, Resp> {
+    pid: pid_t,
+    cmd: TypedClientHandle<Cmd, Resp>,
+}
+
 pub struct ProcessHandle<Cmd, Resp> {
     pid: pid_t,
-    cmd: IpcSender<Cmd>,
-    cmd_resp: IpcReceiver<Resp>,
-    busy_wait_duration: Duration,
+    cmd: TypedClient<Cmd, Resp>,
+}
+
+impl<Cmd, Resp> WireProcessHandle<Cmd, Resp>
+where
+    Cmd: for<'d> Deserialize<'d> + Serialize,
+    Resp: for<'d> Deserialize<'d> + Serialize,
+{
+    pub fn to_client(self) -> ProcessHandle<Cmd, Resp> {
+        ProcessHandle {
+            pid: self.pid,
+            cmd: self.cmd.to_client(),
+        }
+    }
 }
 
 pub enum ForkResult<Cmd, Resp> {
     Parent {
-        handle: ProcessHandle<Cmd, Resp>,
+        handle: WireProcessHandle<Cmd, Resp>,
     },
     Child {
-        cmd: IpcReceiver<Cmd>,
-        cmd_resp: IpcSender<Resp>,
+        server: TypedServer<Cmd, Resp>,
     },
 }
 
@@ -62,10 +75,7 @@ where
     Cmd: for<'d> Deserialize<'d> + Serialize,
     Resp: for<'d> Deserialize<'d> + Serialize,
 {
-    // see https://github.com/servo/ipc-channel/issues/248#issuecomment-559617730
-    // specifically cross_process_embedded_senders_fork() in https://github.com/servo/ipc-channel/blob/master/src/test.rs#L259
-
-    let (server, server_name) = IpcOneShotServer::new()?;
+    let shm_name = format!("/aici-{}", uuid::Uuid::new_v4());
 
     let pid = unsafe { libc::fork() };
 
@@ -74,32 +84,20 @@ where
     }
 
     if pid == 0 {
-        let (other_cmd, cmd) = ipc::channel().unwrap();
-        let (cmd_resp, other_resp) = ipc::channel().unwrap();
-
-        let tmp = IpcSender::connect(server_name).unwrap();
-        tmp.send((other_cmd, other_resp)).unwrap();
-
-        // don't try to free it in the child
-        std::mem::forget(server);
-
-        Ok(ForkResult::Child { cmd, cmd_resp })
+        let shm = Shm::new(&shm_name, limits.ipc_shm_bytes, false)?;
+        let server = TypedServer::<Cmd, Resp>::new(shm, limits.msg_cnt.clone());
+        Ok(ForkResult::Child { server })
     } else {
-        let (_, (cmd, cmd_resp)) = server.accept().unwrap();
-
+        let cmd = TypedClientHandle::<Cmd, Resp>::new(shm_name, limits.ipc_shm_bytes);
         Ok(ForkResult::Parent {
-            handle: ProcessHandle {
-                pid,
-                cmd,
-                cmd_resp,
-                busy_wait_duration: limits.busy_wait_duration,
-            },
+            handle: WireProcessHandle { pid, cmd },
         })
     }
 }
 
 type ForkerHandle = ProcessHandle<ForkerCmd, ForkerResp>;
 type SeqHandle = ProcessHandle<SeqCmd, SeqResp>;
+type WireSeqHandle = WireProcessHandle<SeqCmd, SeqResp>;
 pub type GroupHandle = ProcessHandle<GroupCmd, GroupResp>;
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -128,7 +126,7 @@ pub struct RtPostProcessArg {
 }
 
 #[derive(Serialize, Deserialize, Debug)]
-struct ForkerResp(SeqHandle);
+struct ForkerResp(WireSeqHandle);
 
 #[derive(Serialize, Deserialize, Debug)]
 enum SeqCmd {
@@ -138,9 +136,6 @@ enum SeqCmd {
         module_arg: String,
         prompt_str: Option<String>,
         prompt_toks: Option<Vec<TokenId>>,
-    },
-    SetGroupChannel {
-        handle: GroupHandle,
     },
     Fork {
         inst_id: ModuleInstId,
@@ -167,7 +162,6 @@ impl SeqCmd {
     pub fn tag(&self) -> &'static str {
         match self {
             SeqCmd::Instantiate { .. } => "instantiate",
-            SeqCmd::SetGroupChannel { .. } => "set_group_channel",
             SeqCmd::Fork { .. } => "fork",
             SeqCmd::SetId { .. } => "set_id",
             SeqCmd::PreProcess { .. } => "pre_process",
@@ -201,7 +195,7 @@ impl RtPreProcessResult {
 #[derive(Serialize, Deserialize, Debug)]
 enum SeqResp {
     Fork {
-        handle: SeqHandle,
+        handle: WireSeqHandle,
     },
     Ok {},
     InitPrompt {
@@ -235,17 +229,17 @@ where
 {
     pub fn just_send(&self, cmd: Cmd) -> Result<()> {
         log::trace!("send {cmd:?}");
-        self.cmd.send(cmd)?;
+        self.cmd.send_req(cmd)?;
         Ok(())
     }
 
     pub fn recv(&self) -> Result<Resp> {
-        match self.cmd_resp.recv() {
-            Ok(r) => {
+        match self.cmd.recv_resp(Duration::MAX) {
+            Some(r) => {
                 log::trace!("recv {r:?}");
                 Ok(r)
             }
-            Err(e) => Err(e.into()),
+            None => Err(anyhow!("timeout")),
         }
     }
 
@@ -262,34 +256,36 @@ where
     fn recv_with_timeout(&self, lbl: &str, timeout: Duration) -> Result<Resp> {
         let t0 = Instant::now();
         match self.recv_with_timeout_inner(timeout) {
-            Ok(r) => Ok(r),
-            Err(e) => {
+            Some(r) => Ok(r),
+            None => {
                 let second_try = Duration::from_millis(200);
-                if timeout < second_try && e.to_string().starts_with("timeout ") {
+                let r = if timeout < second_try {
                     let r = self.recv_with_timeout_inner(second_try);
                     let dur = t0.elapsed();
                     log::warn!("{lbl}: timeout {dur:?} (allowed: {timeout:?})");
                     r
                 } else {
-                    Err(e)
+                    None
+                };
+                match r {
+                    Some(r) => Ok(r),
+                    None => {
+                        let dur = t0.elapsed();
+                        log::error!("{lbl}: timeout {dur:?} (allowed: {timeout:?})");
+                        Err(anyhow!("timeout"))
+                    }
                 }
             }
         }
     }
 
-    fn recv_with_timeout_inner(&self, timeout: Duration) -> Result<Resp> {
-        match self.cmd_resp.try_recv_timeout(timeout) {
-            Ok(r) => {
+    fn recv_with_timeout_inner(&self, timeout: Duration) -> Option<Resp> {
+        match self.cmd.recv_resp(timeout) {
+            Some(r) => {
                 log::trace!("recv t/o {r:?}");
-                Ok(r)
+                Some(r)
             }
-            Err(ipc_channel::ipc::TryRecvError::Empty) => {
-                Err(anyhow!("timeout ({timeout:?}); pid={}", self.pid))
-            }
-            Err(e) => {
-                // panic!("unexpected error {e:?}");
-                Err(e.into())
-            }
+            None => None,
         }
     }
 }
@@ -346,22 +342,9 @@ impl SeqCtx {
             }
             SeqCmd::Fork { inst_id } => {
                 match fork_child(&self.wasm_ctx.limits)? {
-                    ForkResult::Parent { handle } => {
-                        let group_ch = match self.group_cmd(GroupCmd::NewChannel {}) {
-                            GroupResp::NewChannel { channel } => channel,
-                            r => {
-                                return Err(anyhow!("unexpected response (SeqCtx.dispatch) {r:?}"))
-                            }
-                        };
-                        handle.send_cmd_expect_ok(
-                            SeqCmd::SetGroupChannel { handle: group_ch },
-                            Duration::from_millis(QUICK_OP_MS),
-                        )?;
-                        Ok(SeqResp::Fork { handle })
-                    }
-                    ForkResult::Child { cmd, cmd_resp } => {
-                        self.cmd = cmd;
-                        self.cmd_resp = cmd_resp;
+                    ForkResult::Parent { handle } => Ok(SeqResp::Fork { handle }),
+                    ForkResult::Child { server } => {
+                        self.server = server;
                         self.inst_id = inst_id;
                         self.mutinst().set_id(inst_id);
                         // note that this is sent over the child channel
@@ -437,10 +420,6 @@ impl SeqCtx {
                 self.mutinst().run_main()?;
                 ok()
             }
-            SeqCmd::SetGroupChannel { handle } => {
-                self.mutinst().set_group_channel(handle);
-                ok()
-            }
         }
     }
 
@@ -448,6 +427,8 @@ impl SeqCtx {
         self.modinst.as_mut().unwrap()
     }
 
+    // we may want to do this in future, but for now only groupcmd is storage
+    #[allow(dead_code)]
     fn group_cmd(&self, query: GroupCmd) -> GroupResp {
         if let Some(q) = &self.query {
             q.send_cmd(query).unwrap()
@@ -463,7 +444,9 @@ impl SeqCtx {
 
     fn dispatch_loop(&mut self) -> ! {
         loop {
-            let cmd = busy_recv(&self.cmd, &self.wasm_ctx.limits.busy_wait_duration).unwrap();
+            let cmd = self
+                .server
+                .recv_req(self.wasm_ctx.limits.busy_wait_duration);
             log::trace!("seq recv {cmd:?}");
             let resp = match self.dispatch_one(cmd) {
                 Ok(v) => v,
@@ -472,23 +455,21 @@ impl SeqCtx {
                     is_user_error: UserError::is_self(&e),
                 },
             };
-            self.cmd_resp.send(resp).unwrap();
+            self.server.send_resp(resp);
         }
     }
 }
 
 struct GroupCtx {
     variables: HashMap<String, (u64, Vec<u8>)>,
-    workers: HashMap<u64, IpcSender<GroupResp>>,
-    cb_set: IpcReceiverSet,
+    server: TypedServer<GroupCmd, GroupResp>,
     limits: AiciLimits,
 }
 
 struct SeqCtx {
     #[allow(dead_code)]
     id: String,
-    cmd: IpcReceiver<SeqCmd>,
-    cmd_resp: IpcSender<SeqResp>,
+    server: TypedServer<SeqCmd, SeqResp>,
     wasm_ctx: WasmContext,
     query: Option<GroupHandle>,
     inst_id: ModuleInstId,
@@ -529,7 +510,7 @@ impl SeqWorkerHandle {
             SeqResp::Fork { handle } => {
                 let res = SeqWorkerHandle {
                     req_id: self.req_id.clone(),
-                    handle,
+                    handle: handle.to_client(),
                 };
                 match res
                     .handle
@@ -605,11 +586,6 @@ impl SeqWorkerHandle {
 }
 
 impl GroupCtx {
-    fn add_worker(&mut self, query: IpcReceiver<GroupCmd>, query_resp: IpcSender<GroupResp>) {
-        let id = self.cb_set.add(query).unwrap();
-        self.workers.insert(id, query_resp);
-    }
-
     fn dispatch_storage_cmd(&mut self, cmd: StorageCmd) -> StorageResp {
         match cmd {
             StorageCmd::ReadVar { name } => match self.variables.get(&name).map(|x| x.clone()) {
@@ -658,19 +634,6 @@ impl GroupCtx {
 
     fn dispatch_cmd(&mut self, cmd: GroupCmd) -> GroupResp {
         match cmd {
-            GroupCmd::NewChannel {} => {
-                let (query0, query1) = ipc::channel().unwrap();
-                let (query_resp0, query_resp1) = ipc::channel().unwrap();
-                self.add_worker(query1, query_resp0);
-                GroupResp::NewChannel {
-                    channel: ProcessHandle {
-                        pid: 0,
-                        cmd: query0,
-                        cmd_resp: query_resp1,
-                        busy_wait_duration: self.limits.busy_wait_duration,
-                    },
-                }
-            }
             GroupCmd::StorageCmd { cmd } => GroupResp::StorageResp {
                 resp: self.dispatch_storage_cmd(cmd),
             },
@@ -679,20 +642,9 @@ impl GroupCtx {
 
     fn dispatch_loop(&mut self) -> ! {
         loop {
-            for ent in self.cb_set.select().unwrap() {
-                match ent {
-                    ipc::IpcSelectionResult::MessageReceived(id, msg) => {
-                        let resp = self.dispatch_cmd(msg.to().unwrap());
-                        self.workers.get(&id).unwrap().send(resp).unwrap()
-                    }
-                    ipc::IpcSelectionResult::ChannelClosed(id) => {
-                        self.workers.remove(&id);
-                        if self.workers.len() == 0 {
-                            std::process::exit(0);
-                        }
-                    }
-                }
-            }
+            let msg = self.server.recv_req(self.limits.busy_wait_duration);
+            let resp = self.dispatch_cmd(msg);
+            self.server.send_resp(resp);
         }
     }
 }
@@ -703,8 +655,7 @@ pub struct WorkerForker {
 }
 
 fn forker_dispatcher(
-    cmdch: IpcReceiver<ForkerCmd>,
-    cmd_resp: IpcSender<ForkerResp>,
+    server: TypedServer<ForkerCmd, ForkerResp>,
     wasm_ctx: WasmContext,
     shm: Shm,
 ) -> ! {
@@ -726,21 +677,20 @@ fn forker_dispatcher(
             }
         }
 
-        let cmd = busy_recv(&cmdch, &wasm_ctx.limits.busy_wait_duration).unwrap();
+        let cmd = server.recv_req(wasm_ctx.limits.busy_wait_duration);
         let cmd_id = cmd.id;
         let for_compile = cmd.for_compile;
 
         // fork the seq worker first
         match fork_child(&wasm_ctx.limits).unwrap() {
             ForkResult::Parent { handle } => {
-                cmd_resp.send(ForkerResp(handle)).unwrap();
+                server.send_resp(ForkerResp(handle));
             }
-            ForkResult::Child { cmd, cmd_resp } => {
+            ForkResult::Child { server } => {
                 let pre_timer = wasm_ctx.timers.new_timer("pre_outer");
                 let mut w_ctx = SeqCtx {
                     id: cmd_id,
-                    cmd,
-                    cmd_resp,
+                    server,
                     wasm_ctx,
                     shm: Rc::new(shm),
                     query: None,
@@ -759,17 +709,15 @@ fn forker_dispatcher(
                 // (inheriting it from fork doesn't work on macOS)
                 match fork_child(&w_ctx.wasm_ctx.limits).unwrap() {
                     ForkResult::Parent { handle } => {
-                        w_ctx.query = Some(handle);
+                        w_ctx.query = Some(handle.to_client());
                         w_ctx.dispatch_loop()
                     }
-                    ForkResult::Child { cmd, cmd_resp } => {
+                    ForkResult::Child { server } => {
                         let mut grp_ctx = GroupCtx {
                             variables: HashMap::default(),
-                            workers: HashMap::default(),
-                            cb_set: IpcReceiverSet::new().unwrap(),
+                            server,
                             limits: w_ctx.wasm_ctx.limits,
                         };
-                        grp_ctx.add_worker(cmd, cmd_resp);
                         grp_ctx.dispatch_loop()
                     }
                 }
@@ -789,50 +737,28 @@ pub fn stop_process() -> ! {
     panic!("didn't die");
 }
 
-fn busy_recv<T>(cmd: &IpcReceiver<T>, wait_duration: &Duration) -> Result<T>
-where
-    T: for<'de> Deserialize<'de> + Serialize,
-{
-    let deadline = Instant::now() + *wait_duration;
-    loop {
-        match cmd.try_recv() {
-            Ok(r) => return Ok(r),
-            Err(ipc_channel::ipc::TryRecvError::Empty) => {
-                if Instant::now() > deadline {
-                    return match cmd.recv() {
-                        Ok(v) => Ok(v),
-                        Err(e) => Err(e.into()),
-                    };
-                }
-                std::hint::spin_loop()
-            }
-            Err(e) => return Err(e.into()),
-        }
-    }
-}
-
-pub fn bench_ipc(limits: &AiciLimits) {
-    let dur = Duration::from_millis(200);
-    let timers = TimerSet::new();
-    match fork_child(limits).unwrap() {
-        ForkResult::Parent { handle } => {
-            let cnt = 100;
-            let timer = timers.new_timer("ipc");
-            for idx in 0..cnt {
-                let r = timer.with(|| handle.send_cmd(idx).unwrap());
-                assert!(r == 2 * idx);
-                std::thread::sleep(Duration::from_millis(5));
-            }
-            println!("ipc_channel {}", timers);
-            handle.kill();
-        }
-        ForkResult::Child { cmd, cmd_resp } => loop {
-            let r = busy_recv(&cmd, &dur).unwrap();
-            // let r = cmd.recv().unwrap();
-            cmd_resp.send(2 * r).unwrap();
-        },
-    }
-}
+// pub fn bench_ipc(limits: &AiciLimits) {
+//     let dur = Duration::from_millis(200);
+//     let timers = TimerSet::new();
+//     match fork_child(limits).unwrap() {
+//         ForkResult::Parent { handle } => {
+//             let cnt = 100;
+//             let timer = timers.new_timer("ipc");
+//             for idx in 0..cnt {
+//                 let r = timer.with(|| handle.send_cmd(idx).unwrap());
+//                 assert!(r == 2 * idx);
+//                 std::thread::sleep(Duration::from_millis(5));
+//             }
+//             println!("ipc_channel {}", timers);
+//             handle.kill();
+//         }
+//         ForkResult::Child { cmd, cmd_resp } => loop {
+//             let r = busy_recv(&cmd, &dur).unwrap();
+//             // let r = cmd.recv().unwrap();
+//             cmd_resp.send(2 * r).unwrap();
+//         },
+//     }
+// }
 
 impl WorkerForker {
     pub fn new(wasm_ctx: WasmContext, shm: Shm) -> Self {
@@ -849,11 +775,11 @@ impl WorkerForker {
             ForkResult::Parent { handle } => {
                 unsafe { libc::signal(libc::SIGUSR1, clean_exit as usize) };
                 WorkerForker {
-                    fork_worker: handle,
+                    fork_worker: handle.to_client(),
                     limits,
                 }
             }
-            ForkResult::Child { cmd, cmd_resp } => forker_dispatcher(cmd, cmd_resp, wasm_ctx, shm),
+            ForkResult::Child { server } => forker_dispatcher(server, wasm_ctx, shm),
         }
     }
 
@@ -894,7 +820,7 @@ impl WorkerForker {
         })?;
         let res = SeqWorkerHandle {
             req_id: req.req_id.clone(),
-            handle: resp.0,
+            handle: resp.0.to_client(),
         };
         match res.handle.send_cmd_with_timeout(
             SeqCmd::Instantiate {
@@ -924,7 +850,7 @@ impl WorkerForker {
         // res.drop() kills handle
         let res = SeqWorkerHandle {
             req_id: id.clone(),
-            handle: resp.0,
+            handle: resp.0.to_client(),
         };
         match res.handle.send_cmd_with_timeout(
             SeqCmd::Compile { wasm },

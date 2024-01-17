@@ -1,9 +1,10 @@
 use crate::shm::Shm;
 use anyhow::{anyhow, Result};
 use linux_futex::AsFutex;
+use serde::{Deserialize, Serialize};
 use std::{
     ptr,
-    sync::atomic::{AtomicU32, Ordering},
+    sync::{atomic::{AtomicU32, Ordering}, Arc},
     time::{Duration, Instant},
 };
 
@@ -41,11 +42,11 @@ impl WrMsgCounter {
 pub struct RdMsgCounter {
     futex: &'static Futex,
     #[allow(dead_code)]
-    shm: Shm,
+    shm: Arc<Shm>,
 }
 
 impl RdMsgCounter {
-    pub fn new(shm: Shm) -> Self {
+    pub fn new(shm: Arc<Shm>) -> Self {
         Self {
             futex: futex_at(&shm, 0),
             shm,
@@ -192,7 +193,7 @@ pub struct ServerChannel {
 }
 
 impl ServerChannel {
-    pub fn new(shm: Shm, cnt_shm: Shm) -> Self {
+    pub fn new(shm: Shm, cnt_shm: Arc<Shm>) -> Self {
         Self {
             channel: Channel::new(shm, true),
             msg_cnt: RdMsgCounter::new(cnt_shm),
@@ -216,5 +217,93 @@ impl ServerChannel {
 
     pub fn send_resp(&self, msg: &[u8]) -> Result<()> {
         self.channel.write_msg(msg)
+    }
+}
+
+pub struct TypedServer<Cmd, Resp> {
+    channel: ServerChannel,
+    _cmd: std::marker::PhantomData<Cmd>,
+    _resp: std::marker::PhantomData<Resp>,
+}
+
+impl<Cmd, Resp> TypedServer<Cmd, Resp>
+where
+    Cmd: for<'d> Deserialize<'d> + Serialize,
+    Resp: for<'d> Deserialize<'d> + Serialize,
+{
+    pub fn new(shm: Shm, cnt_shm: Arc<Shm>) -> Self {
+        Self {
+            channel: ServerChannel::new(shm, cnt_shm),
+            _cmd: std::marker::PhantomData,
+            _resp: std::marker::PhantomData,
+        }
+    }
+
+    pub fn recv_req(&self, busy_spin: Duration) -> Cmd {
+        let msg = self.channel.recv_req(busy_spin);
+        bincode::deserialize(&msg).unwrap()
+    }
+
+    pub fn send_resp(&self, resp: Resp) {
+        let msg = bincode::serialize(&resp).unwrap();
+        self.channel.send_resp(&msg).unwrap();
+    }
+}
+
+pub struct TypedClient<Cmd, Resp> {
+    channel: ClientChannel,
+    _cmd: std::marker::PhantomData<Cmd>,
+    _resp: std::marker::PhantomData<Resp>,
+}
+
+impl<Cmd, Resp> TypedClient<Cmd, Resp>
+where
+    Cmd: for<'d> Deserialize<'d> + Serialize,
+    Resp: for<'d> Deserialize<'d> + Serialize,
+{
+    pub fn new(shm: Shm) -> Self {
+        Self {
+            channel: ClientChannel::new(shm),
+            _cmd: std::marker::PhantomData,
+            _resp: std::marker::PhantomData,
+        }
+    }
+
+    pub fn send_req(&self, cmd: Cmd) -> Result<()> {
+        let msg = bincode::serialize(&cmd).unwrap();
+        self.channel.send_req(&msg)
+    }
+
+    pub fn recv_resp(&self, timeout: Duration) -> Option<Resp> {
+        let msg = self.channel.recv_resp(timeout)?;
+        Some(bincode::deserialize(&msg).unwrap())
+    }
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct TypedClientHandle<Cmd, Resp> {
+    shm_name: String,
+    shm_size: usize,
+    _cmd: std::marker::PhantomData<Cmd>,
+    _resp: std::marker::PhantomData<Resp>,
+}
+
+impl<Cmd, Resp> TypedClientHandle<Cmd, Resp>
+where
+    Cmd: for<'d> Deserialize<'d> + Serialize,
+    Resp: for<'d> Deserialize<'d> + Serialize,
+{
+    pub fn new(shm_name: String, shm_size: usize) -> Self {
+        Self {
+            shm_name,
+            shm_size,
+            _cmd: std::marker::PhantomData,
+            _resp: std::marker::PhantomData,
+        }
+    }
+
+    pub fn to_client(self) -> TypedClient<Cmd, Resp> {
+        let shm = Shm::new(&self.shm_name, self.shm_size, true).unwrap();
+        TypedClient::new(shm)
     }
 }

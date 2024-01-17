@@ -11,8 +11,11 @@ use anyhow::{anyhow, Result};
 use std::{rc::Rc, sync::Arc, time::Duration};
 use tokenizers::Tokenizer;
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct AiciLimits {
+    pub ipc_shm_bytes: usize,
+    pub msg_cnt: Arc<Shm>,
+
     pub max_memory_bytes: usize,
     pub max_pre_step_ms: u64,
     pub max_step_ms: u64,
@@ -223,7 +226,7 @@ impl ModuleData {
                         let res_bytes = serde_json::to_vec(&resp).unwrap();
                         self.set_blob(BlobId::STORAGE_RESULT, res_bytes);
                     }
-                    Ok(r) => self.fatal(&format!("storage_cmd invalid resp: {r:?}")),
+                    // Ok(r) => self.fatal(&format!("storage_cmd invalid resp: {r:?}")),
                     Err(msg) => self.fatal(&format!("storage_cmd send error: {msg:?}")),
                 }
             }

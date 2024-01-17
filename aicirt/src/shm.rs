@@ -7,6 +7,7 @@ pub struct Shm {
 }
 
 unsafe impl Send for Shm {}
+unsafe impl Sync for Shm {}
 
 impl Shm {
     pub fn anon(size: usize) -> Result<Self> {

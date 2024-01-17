@@ -8,7 +8,7 @@ use crate::{
     moduleinstance::*,
     msgchannel::MessageChannel,
     shm::Shm,
-    worker::{bench_ipc, RtMidProcessArg, WorkerForker},
+    worker::{RtMidProcessArg, WorkerForker},
     TimerRef, TimerSet,
 };
 use aici_abi::{
@@ -1000,7 +1000,7 @@ fn bench_cmd_resp_busy(cli: &Cli, limits: &AiciLimits) {
                 std::thread::sleep(Duration::from_millis(10));
             }
             println!("MessageChannel {}", timers);
-            handle.kill();
+            handle.to_client().kill();
         }
         worker::ForkResult::Child { .. } => {
             let ch = CmdRespChannel::new("", cli).unwrap();
@@ -1037,7 +1037,7 @@ fn bench_cmd_resp(cli: &Cli, limits: &AiciLimits) {
                 std::thread::sleep(Duration::from_millis(10));
             }
             println!("MessageChannel {}", timers);
-            handle.kill();
+            handle.to_client().kill();
         }
         worker::ForkResult::Child { .. } => {
             let ch = CmdRespChannel::new("", cli).unwrap();
@@ -1124,7 +1124,11 @@ fn main() -> () {
         std::process::exit(1);
     }
 
+    let msg_cnt = Shm::anon(4096).unwrap();
+
     let limits = AiciLimits {
+        msg_cnt: Arc::new(msg_cnt),
+        ipc_shm_bytes: cli.json_size * MEGABYTE,
         max_memory_bytes: cli.wasm_max_memory * MEGABYTE,
         max_init_ms: cli.wasm_max_init_time,
         max_step_ms: cli.wasm_max_step_time,
@@ -1138,7 +1142,6 @@ fn main() -> () {
     if cli.bench {
         bench_hashmap();
         if false {
-            bench_ipc(&limits);
             bench_cmd_resp_busy(&cli, &limits);
             bench_cmd_resp(&cli, &limits);
         }

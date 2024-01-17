@@ -320,6 +320,7 @@ dependencies = [
  "aici_abi",
  "anyhow",
  "base64 0.21.5",
+ "bincode",
  "cap",
  "clap",
  "flexi_logger",
@@ -335,6 +336,7 @@ dependencies = [
  "sha2",
  "thread-priority",
  "tokenizers",
+ "uuid",
  "wasmtime",
 ]
 
