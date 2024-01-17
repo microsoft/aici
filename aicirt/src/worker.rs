@@ -411,10 +411,14 @@ impl SeqCtx {
                 })
             }
             SeqCmd::PostProcess { data } => {
+                let t0 = Instant::now();
                 let res = self.mutinst().post_process(data);
-                Ok(SeqResp::PostProcess {
-                    json: serde_json::to_string(&res)?,
-                })
+                let json = serde_json::to_string(&res)?;
+                let e = t0.elapsed();
+                if e.as_micros() > 100 {
+                    log::warn!("post_process took {:?}", e);
+                }
+                Ok(SeqResp::PostProcess { json })
             }
             SeqCmd::RunMain {} => {
                 self.mutinst().run_main()?;

@@ -4,7 +4,10 @@ use linux_futex::AsFutex;
 use serde::{Deserialize, Serialize};
 use std::{
     ptr,
-    sync::{atomic::{AtomicU32, Ordering}, Arc},
+    sync::{
+        atomic::{AtomicU32, Ordering},
+        Arc,
+    },
     time::{Duration, Instant},
 };
 
@@ -108,6 +111,10 @@ impl Channel {
         }
 
         self.wr_len.value.store(msg_len, Ordering::Release);
+        let _n = self.wr_len.wake(i32::MAX);
+        // if n > 0 {
+        //     log::warn!("wake up {} threads", n);
+        // }
 
         Ok(())
     }
@@ -118,26 +125,30 @@ impl Channel {
 
     pub fn wait_for_len(
         &self,
-        spin_duration: Duration,
+        mut spin_duration: Duration,
         futex_duration: Option<Duration>,
     ) -> Option<usize> {
         let mut len = self.read_len();
         if len != 0 {
             return Some(len);
         }
+        spin_duration = std::cmp::min(spin_duration, Duration::from_secs(365 * 24 * 3600));
         let deadline = Instant::now() + spin_duration;
         while Instant::now() < deadline {
             len = self.read_len();
             if len != 0 {
-                return Some(len);
+                break;
             }
             std::hint::spin_loop();
         }
+        if len != 0 {
+            return Some(len);
+        }
         if let Some(futex_duration) = futex_duration {
             if futex_duration == Duration::MAX {
-                let _ = self.rd_len.wait(len as u32);
+                let _ = self.rd_len.wait(0);
             } else {
-                let _ = self.rd_len.wait_for(len as u32, futex_duration);
+                let _ = self.rd_len.wait_for(0, futex_duration);
             };
             len = self.read_len();
         }
@@ -189,6 +200,7 @@ impl ClientChannel {
 
 pub struct ServerChannel {
     channel: Channel,
+    #[allow(dead_code)]
     msg_cnt: RdMsgCounter,
 }
 
@@ -201,18 +213,19 @@ impl ServerChannel {
     }
 
     pub fn recv_req(&self, busy_spin: Duration) -> Vec<u8> {
-        if self.channel.wait_for_len(busy_spin, None).is_none() {
-            loop {
-                let val = self.msg_cnt.read();
-                let len = self.channel.read_len();
-                if len == 0 {
-                    self.msg_cnt.wait(val);
-                } else {
-                    break;
-                }
-            }
-        }
-        self.channel.read_msg(busy_spin, None).unwrap()
+        self.channel.read_msg(busy_spin, Some(Duration::MAX)).unwrap()
+        // if self.channel.wait_for_len(busy_spin, None).is_none() {
+        //     loop {
+        //         let val = self.msg_cnt.read();
+        //         let len = self.channel.read_len();
+        //         if len == 0 {
+        //             self.msg_cnt.wait(val);
+        //         } else {
+        //             break;
+        //         }
+        //     }
+        // }
+        // self.channel.read_msg(busy_spin, None).unwrap()
     }
 
     pub fn send_resp(&self, msg: &[u8]) -> Result<()> {

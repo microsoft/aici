@@ -777,6 +777,11 @@ impl Stepper {
             }
         }
 
+        let e = t0.elapsed();
+        if e.as_micros() > 200 {
+            log::warn!("post_process time: {:?}", e);
+        }
+
         if timing {
             log::warn!(
                 "post_process time: {:?} {:?}",
