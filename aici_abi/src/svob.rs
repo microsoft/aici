@@ -1,5 +1,5 @@
 use crate::TokenId;
-use std::fmt::Debug;
+use std::{fmt::Debug, ops::Index};
 
 #[derive(Clone)]
 pub struct SimpleVob {
@@ -27,6 +27,12 @@ impl SimpleVob {
         Self { data: Vec::new() }
     }
 
+    pub fn alloc(size: usize) -> Self {
+        let mut r = Self::new();
+        r.resize(size);
+        r
+    }
+
     pub fn len(&self) -> usize {
         self.data.len() * BITS
     }
@@ -49,6 +55,14 @@ impl SimpleVob {
         let byte_idx = idx / BITS;
         let bit_idx = idx % BITS;
         self.data[byte_idx] &= !(1 << bit_idx);
+    }
+
+    pub fn set(&mut self, tok: TokenId, val: bool) {
+        if val {
+            self.allow_token(tok);
+        } else {
+            self.disallow_token(tok);
+        }
     }
 
     pub fn resize(&mut self, size: usize) {
@@ -81,6 +95,18 @@ impl SimpleVob {
                     logits[idx + bit_idx] = 0.0;
                 }
             }
+        }
+    }
+}
+
+impl Index<usize> for SimpleVob {
+    type Output = bool;
+
+    fn index(&self, index: usize) -> &Self::Output {
+        if self.is_allowed(index as TokenId) {
+            &true
+        } else {
+            &false
         }
     }
 }
