@@ -4,6 +4,7 @@ pub mod bintokens;
 pub mod msgchannel;
 pub mod semaphore;
 pub mod shm;
+pub mod futexshm;
 
 use anyhow::Result;
 pub use bench::*;

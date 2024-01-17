@@ -327,6 +327,7 @@ dependencies = [
  "hex",
  "ipc-channel",
  "libc",
+ "linux-futex",
  "log",
  "rayon",
  "serde",
@@ -1836,6 +1837,15 @@ dependencies = [
  "bitflags 2.4.1",
  "libc",
  "redox_syscall",
+]
+
+[[package]]
+name = "linux-futex"
+version = "0.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "222e5374b2d82313ab4d592bf28d075bd31db6593eab2f714bf13d23c4f0bc9d"
+dependencies = [
+ "libc",
 ]
 
 [[package]]
