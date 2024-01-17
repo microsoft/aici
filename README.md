@@ -8,9 +8,10 @@ with token generation.
 
 AICI is:
 
-- **Secure**: Controllers are [sandboxed](#security) and cannot access the filesystem, network, or any other resources
-- **Fast**: Wasm modules are compiled to native code and run in parallel with the LLM inference engine, inducing only a minimal overhead to the generation process
-- **Flexible**: Controllers can be written in any language that can compile to Wasm (Rust, C/C++), or be interpreted inside Wasm (Python, JavaScript)
+- [Secure](#security): Controllers are sandboxed and cannot access the filesystem, network, or any other resources
+- [Fast](#performance): Wasm modules are compiled to native code and run in parallel with the LLM inference engine, inducing only a 
+minimal overhead to the generation process
+- [Flexible](#flexibility): Controllers can be written in any language that can compile to Wasm (Rust, C/C++), or be interpreted inside Wasm (Python, JavaScript)
 
 This repository contains:
 
@@ -39,8 +40,14 @@ Everything above implemented in Rust, unless otherwise stated.
 AICI abstract LLM inference engine from the controller and vice-versa, as in the picture below.
 The rounded nodes are asiprational.
 Additional layers can be built on top - we provide [promptlib](promptlib),
-but we strongly believe [Guidance](https://github.com/guidance-ai/guidance) and
-[LMQL](https://lmql.ai/) can also run on top of AICI (either with custom controllers or utilizing PyCtrl or JsCtrl).
+but we strongly believe that
+[Guidance](https://github.com/guidance-ai/guidance),
+[LMQL](https://lmql.ai/),
+[Outlines](https://github.com/outlines-dev/outlines), 
+[jsonformer](https://github.com/1rgs/jsonformer),
+[LMFE](https://github.com/noamgat/lm-format-enforcer),
+etc.
+can also run on top of AICI (either with custom controllers or utilizing PyCtrl or JsCtrl).
 
 ```mermaid
 graph TD
@@ -120,9 +127,54 @@ You can also try other models, see [rllm/README.md](rllm/README.md) for details.
   implemented in [hostimpl.rs](aicirt/src/hostimpl.rs)
 - `aicirt` also exposes a partial WASI interface; however almost all the functions are no-op, except
   for `fd_write` which shims file descriptors 1 and 2 (stdout and stderr) to print debug messages
+- each Wasm module runs in a separate process, helping with Spectre/Meltdown mitigation
+  and allowing limits on CPU usage
 
 In particular, Wasm modules cannot access the filesystem, network, or any other resources.
 They also cannot spin threads or access any timers (this is relevant for Spectre/Meltdown attacks).
+
+## Performance
+
+TODO: measure!
+
+Most of computation in AICI Controllers occurs on the CPU, in parallel with the logit generation on the GPU.
+This allows for 20-50ms of CPU time for typical models and GPUs.
+With careful engineering,
+this is more than enough to compute the set of allowed tokens in Rust compiled to Wasm.
+The JavaScript or Python code is then used to glue together such constraints.
+For example, computing allowed token set in the 32000-strong vocabulary of Llama model takes:
+- about XXms for Yacc grammar of the C programming language
+- about Xms for a complex regular expression
+- about Xms for a substring contraint, from 4kB string
+The above numbers are for a single sequeance, however each sequence is processed in separate process,
+and thus if there is more cores than sequances (which is typical), they are generally applicable.
+
+There is also some overhead in the critical path of sampling. It comes down to about XXXus per token.
+
+All measurements done on AMD EPYC 7V13 with nVidia A100 GPU with 80GB of VRAM.
+
+## Flexibility
+
+The low-level interface that AICI runtime provides allows for:
+- interaction with the LLM inference engine before, during, and after every generated token
+- constraining decoding to a set of tokens
+- backtracking KV-cache to a previous state
+- fast-forwarding several tokens at a time (if they are known)
+- forking generation into multiple branches
+- communication between forks via shared variables
+- utility functions for converting between tokens and byte strings
+
+It can be utilized from any language that compiles to Wasm.
+
+This repository provides a Rust library that makes it easy to implement controllers in Rust,
+and provides [efficient implementations](aici_abi/implementation.md) 
+of specific constraints ([regular expressions](aici_abi/README.md#regular-expressions), 
+[yacc grammars](aici_abi/README.md#lr1-grammars), substrings).
+We also provide [Python](pyctrl) and [JavaScript](jsctrl) interpreters
+that allow to glue these constraints together.
+All of these can be easily extended.
+
+
 
 ## Contributing
 
