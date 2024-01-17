@@ -85,7 +85,7 @@ pub struct Args {
     aicirt: String,
 
     /// Size of JSON comm buffer in megabytes
-    #[arg(long, default_value = "32")]
+    #[arg(long, default_value = "128")]
     json_size: usize,
 
     /// Size of binary comm buffer in megabytes
