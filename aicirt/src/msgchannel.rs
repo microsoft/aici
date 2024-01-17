@@ -1,4 +1,4 @@
-use crate::{semaphore::Semaphore, shm::Shm};
+use crate::{semaphore::Semaphore, shm::{Shm, Unlink}};
 use anyhow::Result;
 use std::time::Duration;
 
@@ -26,7 +26,11 @@ impl MessageChannel {
     fn new_ex(name: &str, size: usize, unlink: bool) -> Result<Self> {
         log::debug!("msg ch: {} size={}k", name, size / 1024);
 
-        let shm = Shm::new(&Self::shm_name(name), size, unlink)?;
+        let shm = Shm::new(
+            &Self::shm_name(name),
+            size,
+            if unlink { Unlink::Pre } else { Unlink::None },
+        )?;
         let write_sem = Semaphore::new(&format!("{0}-wr", name), 1, unlink)?;
         let read_sem = Semaphore::new(&format!("{0}-rd", name), 0, unlink)?;
 

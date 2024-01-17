@@ -11,7 +11,7 @@ use aicirt::{
         MkModuleResp, SetTagsReq, TokensResp,
     },
     msgchannel::MessageChannel,
-    shm::Shm,
+    shm::{Shm, Unlink},
     user_error,
 };
 use anyhow::Result;
@@ -136,7 +136,7 @@ impl AiciRtIface {
         let shm_name = MessageChannel::shm_name(&(args.shm_prefix.clone() + "bin"));
         let cmd = CmdChannel::new(args.json_size, &args.shm_prefix, "", busy_wait_time)?;
         let side_cmd = AsyncCmdChannel::new(args.json_size, &args.shm_prefix, "-side")?;
-        let bin_shm = Shm::new(&shm_name, args.bin_size * M, true)?;
+        let bin_shm = Shm::new(&shm_name, args.bin_size * M, Unlink::Pre)?;
 
         let child = Command::new(&args.aicirt)
             .arg("--tokenizer")

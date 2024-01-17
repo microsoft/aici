@@ -9,6 +9,13 @@ pub struct Shm {
 unsafe impl Send for Shm {}
 unsafe impl Sync for Shm {}
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Unlink {
+    None,
+    Pre,
+    Post,
+}
+
 impl Shm {
     pub fn anon(size: usize) -> Result<Self> {
         ensure!(size > 1024);
@@ -44,16 +51,19 @@ impl Shm {
         })
     }
 
-    pub fn new(name: &str, size: usize, unlink: bool) -> Result<Self> {
+    pub fn new(name: &str, size: usize, unlink: Unlink) -> Result<Self> {
         ensure!(size > 1024);
 
         log::trace!("shm_open: {} size={}k", name, size / 1024);
 
         let shm_name = CString::new(name).unwrap();
-        if unlink {
+        if unlink == Unlink::Pre {
             unsafe { libc::shm_unlink(shm_name.as_ptr()) };
         }
         let fd = unsafe { libc::shm_open(shm_name.as_ptr(), libc::O_RDWR | libc::O_CREAT, 0o666) };
+        if unlink == Unlink::Post {
+            unsafe { libc::shm_unlink(shm_name.as_ptr()) };
+        }
         if fd < 0 {
             return Err(io::Error::last_os_error().into());
         }

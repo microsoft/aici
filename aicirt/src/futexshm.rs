@@ -1,4 +1,4 @@
-use crate::shm::Shm;
+use crate::shm::{Shm, Unlink};
 use anyhow::{anyhow, Result};
 use linux_futex::AsFutex;
 use serde::{Deserialize, Serialize};
@@ -213,7 +213,9 @@ impl ServerChannel {
     }
 
     pub fn recv_req(&self, busy_spin: Duration) -> Vec<u8> {
-        self.channel.read_msg(busy_spin, Some(Duration::MAX)).unwrap()
+        self.channel
+            .read_msg(busy_spin, Some(Duration::MAX))
+            .unwrap()
         // if self.channel.wait_for_len(busy_spin, None).is_none() {
         //     loop {
         //         let val = self.msg_cnt.read();
@@ -316,7 +318,7 @@ where
     }
 
     pub fn to_client(self) -> TypedClient<Cmd, Resp> {
-        let shm = Shm::new(&self.shm_name, self.shm_size, true).unwrap();
+        let shm = Shm::new(&self.shm_name, self.shm_size, Unlink::Post).unwrap();
         TypedClient::new(shm)
     }
 }

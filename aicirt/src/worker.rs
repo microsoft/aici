@@ -13,7 +13,7 @@ use aici_abi::{
 use aicirt::{
     api::{AiciMidProcessResultInner, AiciPostProcessResultInner, SequenceResult},
     futexshm::{TypedClient, TypedClientHandle, TypedServer},
-    user_error, HashMap,
+    user_error, HashMap, shm::Unlink,
 };
 use anyhow::{anyhow, Result};
 use libc::pid_t;
@@ -76,6 +76,7 @@ where
     Resp: for<'d> Deserialize<'d> + Serialize,
 {
     let shm_name = format!("/aici-{}", uuid::Uuid::new_v4());
+    let shm = Shm::new(&shm_name, limits.ipc_shm_bytes, Unlink::Pre)?;
 
     let pid = unsafe { libc::fork() };
 
@@ -84,10 +85,13 @@ where
     }
 
     if pid == 0 {
-        let shm = Shm::new(&shm_name, limits.ipc_shm_bytes, false)?;
         let server = TypedServer::<Cmd, Resp>::new(shm, limits.msg_cnt.clone());
         Ok(ForkResult::Child { server })
     } else {
+        // we drop shm, so it's unmapped
+        drop(shm);
+        // cmd.to_client() will unlink the shm - thus we need it constructed before
+        // so there is no race between creation in the child and unlinking
         let cmd = TypedClientHandle::<Cmd, Resp>::new(shm_name, limits.ipc_shm_bytes);
         Ok(ForkResult::Parent {
             handle: WireProcessHandle { pid, cmd },
