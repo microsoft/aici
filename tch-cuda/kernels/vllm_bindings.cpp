@@ -1,6 +1,6 @@
-#include "cache.h"
-#include "cuda_utils.h"
-#include "ops.h"
+#include "vllm/cache.h"
+#include "vllm/cuda_utils.h"
+#include "vllm/ops.h"
 
 typedef torch::Tensor *tensor;
 
