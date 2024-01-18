@@ -440,6 +440,7 @@ impl ModuleInstance {
     ) -> SequenceResult<AiciMidProcessResultInner> {
         let t0 = Instant::now();
         let res = self.do_mid_process(op, shm);
+        // log::info!("mid_process: {:?}", t0.elapsed());
         self.json_result("mid", t0, res)
     }
 

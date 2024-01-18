@@ -135,21 +135,24 @@ They also cannot spin threads or access any timers (this is relevant for Spectre
 
 ## Performance
 
-TODO: measure!
-
 Most of computation in AICI Controllers occurs on the CPU, in parallel with the logit generation on the GPU.
 This allows for 20-50ms of CPU time for typical models and GPUs.
 With careful engineering,
 this is more than enough to compute the set of allowed tokens in Rust compiled to Wasm.
 The JavaScript or Python code is then used to glue together such constraints.
+
 For example, computing allowed token set in the 32000-strong vocabulary of Llama model takes:
-- about XXms for Yacc grammar of the C programming language
-- about Xms for a complex regular expression
-- about Xms for a substring contraint, from 4kB string
+- about 2.0ms for Yacc grammar of the C programming language
+- about 0.3ms for a regular expression
+- about 0.2ms for a substring contraint, from 4kB string
 The above numbers are for a single sequeance, however each sequence is processed in separate process,
 and thus if there is more cores than sequances (which is typical), they are generally applicable.
+They also include overhead of calling into Python interpreter implemented in Wasm, and then back into 
+Rust-generated Wasm code for the constraint itself.
 
-There is also some overhead in the critical path of sampling. It comes down to about XXXus per token.
+There is also some overhead in the critical path of sampling. It comes down to about 0.3ms per token
+when executing 10 sequences in parallel.
+The overhead goes up to around 0.7ms for 40 sequences (though it has not been fully optimized yet).
 
 All measurements done on AMD EPYC 7V13 with nVidia A100 GPU with 80GB of VRAM.
 
