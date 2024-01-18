@@ -7,6 +7,7 @@ import os
 
 script_dir = os.path.dirname(os.path.abspath(__file__))
 wow = open(script_dir + "/hgwells.txt").read()
+
 bench_py = """
 import pyaici.server as aici
 async def main():
@@ -14,7 +15,15 @@ async def main():
 aici.start(main())
 """
 
-concurrent_reqs = 40
+bench_js = """
+import * as aici from "./aici"
+async function main() {
+  await aici.gen_tokens({ maxTokens: 45 });
+}
+aici.start(main);
+"""
+
+concurrent_reqs = 10
 num_reqs = concurrent_reqs
 min_tokens = 200
 max_tokens = 250
@@ -70,6 +79,13 @@ class Req:
                 aici_module="pyctrl-latest",
                 aici_arg=bench_py,
             )
+        elif bench_js:
+            self.r = pyaici.rest.completion(
+                self.prompt,
+                max_tokens=self.tokens,
+                aici_module="jsctrl-latest",
+                aici_arg=bench_js,
+            )
         else:
             self.r = pyaici.rest.completion(
                 self.prompt, ignore_eos=True, max_tokens=self.tokens
@@ -94,6 +110,12 @@ def main():
         action="store_true",
         help="benchmark a simple pyctrl program",
     )
+    parser.add_argument(
+        "--jsctrl",
+        "-j",
+        action="store_true",
+        help="benchmark a simple jsctrl program",
+    )
     args = parser.parse_args()
     global num_reqs, concurrent_reqs, min_tokens, max_tokens
     if args.short:
@@ -104,6 +126,9 @@ def main():
     if not args.pyctrl:
         global bench_py
         bench_py = None
+    if not args.jsctrl:
+        global bench_js
+        bench_js = None
 
     pyaici.rest.log_level = 0
     requests = [Req() for _ in range(num_reqs)]
