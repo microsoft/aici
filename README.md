@@ -136,7 +136,13 @@ They also cannot spin threads or access any timers (this is relevant for Spectre
 ## Performance
 
 Most of computation in AICI Controllers occurs on the CPU, in parallel with the logit generation on the GPU.
-This allows for 20-50ms of CPU time for typical models and GPUs.
+The generation occurs in steps, where logits are generated in parallel for a new token for each sequence in a batch
+(typically between 1 and 50).
+This involves reading the whole model and KV caches for sequences in the batch from the GPU memory.
+For optimal batch throughput, the model and KV caches should utilize a major fraction of the GPU memory,
+and reading the whole memory takes about 40ms on A100 GPU (80GB).
+
+Thus, each step of generation takes on the order of 20-50ms.
 With careful engineering,
 this is more than enough to compute the set of allowed tokens in Rust compiled to Wasm.
 These can be combined either nativelly in Rust, or via Python or JavaScript interpreters
@@ -149,12 +155,12 @@ For example, computing allowed token set in the 32000-strong vocabulary of Llama
 - about 0.2ms for a substring contraint, from 4kB string
 
 The above numbers are for a single sequeance, however each sequence is processed in separate process,
-and thus if there is more cores than sequances (which is typical), they are generally applicable.
+and thus if there is more cores than sequances (which is typical), they do not change.
 They also include overhead of calling into Python interpreter implemented in Wasm, and then back into 
 Rust-generated Wasm code for the constraint itself.
 They are all well within the 20-50ms budget, so do not affect the generation time at all.
 
-There is also some overhead in the critical path of sampling. It comes down to about 0.3ms per token
+There is also some overhead in the critical path of sampling. It comes down to about 0.3ms per generation step
 when executing 10 sequences in parallel (this is irrespective of the constraint used).
 The overhead goes up to around 0.7ms for 40 sequences (though it has not been fully optimized yet).
 
