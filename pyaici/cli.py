@@ -265,6 +265,8 @@ def main_inner():
             if not aici_module:
                 if fn.endswith(".py"):
                     aici_module = "pyctrl-latest"
+                elif fn.endswith(".js"):
+                    aici_module = "jsctrl-latest"
                 elif fn.endswith(".json"):
                     aici_module = "declctrl-latest"
                 else:
