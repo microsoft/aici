@@ -204,6 +204,9 @@ fn main() -> Result<()> {
         let mut inner = out_dir.clone();
         inner.push("vllm/attention");
         std::fs::create_dir_all(inner).unwrap();
+        inner = out_dir.clone();
+        inner.push("flash_attn");
+        std::fs::create_dir_all(inner).unwrap();
     }
 
     let ccbin_env = std::env::var("CANDLE_NVCC_CCBIN");
