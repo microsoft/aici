@@ -102,12 +102,12 @@ impl Channel {
 
         let msg_len = msg.len() as u32;
 
-        unsafe {
-            ptr::copy_nonoverlapping(msg.as_ptr(), self.shm.ptr_at(MSG_OFF), msg.len());
-        }
-
         while self.wr_len.value.load(Ordering::Acquire) != 0 {
             std::hint::spin_loop();
+        }
+
+        unsafe {
+            ptr::copy_nonoverlapping(msg.as_ptr(), self.shm.ptr_at(MSG_OFF), msg.len());
         }
 
         self.wr_len.value.store(msg_len, Ordering::Release);
@@ -195,6 +195,10 @@ impl ClientChannel {
 
     pub fn recv_resp(&mut self, timeout: Duration) -> Option<Vec<u8>> {
         self.channel.read_msg(timeout, None)
+    }
+
+    pub fn recv_resp2(&mut self, busy_timeout: Duration, futex_timeout: Duration) -> Option<Vec<u8>> {
+        self.channel.read_msg(busy_timeout, Some(futex_timeout))
     }
 }
 

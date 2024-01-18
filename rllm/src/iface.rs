@@ -10,6 +10,7 @@ use aicirt::{
         AiciPreProcessReq, AiciPreProcessResp, AuthInfo, GetTagsResp, InstantiateReq, MkModuleReq,
         MkModuleResp, SetTagsReq, TokensResp,
     },
+    futexshm::ClientChannel,
     msgchannel::MessageChannel,
     shm::{Shm, Unlink},
     user_error,
@@ -28,8 +29,9 @@ use tokio::{signal::unix::SignalKind, sync::oneshot};
 
 pub struct CmdChannel {
     cmd_pending: bool,
-    cmd_ch: MessageChannel,
-    resp_ch: MessageChannel,
+    cmd_ch: ClientChannel,
+    resp_ch: ClientChannel,
+    #[allow(dead_code)]
     busy_wait_duration: Duration,
 }
 
@@ -37,6 +39,11 @@ pub struct CmdChannel {
 pub struct Empty {}
 
 const M: usize = 1 << 20;
+
+fn build_ch(name: &str, json_size: usize) -> Result<ClientChannel> {
+    let shm = Shm::new(name, json_size * M, Unlink::Pre)?;
+    Ok(ClientChannel::new(shm))
+}
 
 impl CmdChannel {
     pub fn new(
@@ -47,8 +54,8 @@ impl CmdChannel {
     ) -> Result<Self> {
         Ok(Self {
             cmd_pending: false,
-            cmd_ch: MessageChannel::new_cmd(&format!("{}cmd{}", pref, suff), json_size * M)?,
-            resp_ch: MessageChannel::new_cmd(&format!("{}resp{}", pref, suff), json_size * M)?,
+            cmd_ch: build_ch(&format!("{}cmd{}", pref, suff), json_size)?,
+            resp_ch: build_ch(&format!("{}resp{}", pref, suff), json_size)?,
             busy_wait_duration,
         })
     }
@@ -56,7 +63,7 @@ impl CmdChannel {
     pub fn send_bytes(&mut self, data: &[u8]) -> Result<()> {
         assert!(!self.cmd_pending);
         self.cmd_pending = true;
-        self.cmd_ch.send(data)?;
+        self.cmd_ch.send_req(data)?;
         Ok(())
     }
 
@@ -80,7 +87,7 @@ impl CmdChannel {
         R: for<'d> Deserialize<'d>,
     {
         assert!(self.cmd_pending);
-        let bytes = self.resp_ch.recv(&self.busy_wait_duration)?;
+        let bytes = self.resp_ch.recv_resp(Duration::MAX).unwrap();
         self.cmd_pending = false;
         let mut resp: Value = serde_json::from_slice(&bytes)?;
         if resp["type"] != "ok" {
@@ -147,6 +154,7 @@ impl AiciRtIface {
             .arg(&args.bin_size.to_string())
             .arg("--name")
             .arg(&args.shm_prefix)
+            .arg("--futex")
             .arg("--server")
             .spawn()?;
 
@@ -238,7 +246,7 @@ impl AiciRtIface {
 #[derive(Clone)]
 pub struct AsyncCmdChannel {
     pending_reqs: Arc<Mutex<HashMap<String, oneshot::Sender<Value>>>>,
-    cmd_ch: Arc<Mutex<MessageChannel>>,
+    cmd_ch: Arc<Mutex<ClientChannel>>,
 }
 
 impl AsyncCmdChannel {
@@ -248,10 +256,10 @@ impl AsyncCmdChannel {
             HashMap::<String, oneshot::Sender<Value>>::default(),
         ));
         {
-            let resp_ch = cmd.resp_ch;
+            let mut resp_ch = cmd.resp_ch;
             let pending_reqs = pending_reqs.clone();
             thread::spawn(move || loop {
-                let resp = resp_ch.recv(&Duration::ZERO).unwrap();
+                let resp = resp_ch.recv_resp2(Duration::ZERO, Duration::MAX).unwrap();
                 let resp: Value = serde_json::from_slice(&resp).unwrap();
                 let rid = resp["$rid"].as_str().unwrap().to_string();
                 let tx = pending_reqs.lock().unwrap().remove(&rid).unwrap();
@@ -301,7 +309,7 @@ impl AsyncCmdChannel {
         self.cmd_ch
             .lock()
             .unwrap()
-            .send(&serde_json::to_vec(&data)?)?;
+            .send_req(&serde_json::to_vec(&data)?)?;
 
         let mut resp = rx.await?;
 
