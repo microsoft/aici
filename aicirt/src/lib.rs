@@ -1,15 +1,19 @@
 pub mod api;
 mod bench;
 pub mod bintokens;
+pub mod futexshm;
 pub mod msgchannel;
 pub mod semaphore;
 pub mod shm;
-pub mod futexshm;
 
 use anyhow::Result;
 pub use bench::*;
 use flexi_logger::{DeferredNow, Logger, WriteMode};
 use log::Record;
+use thread_priority::{
+    set_thread_priority_and_policy, thread_native_id, RealtimeThreadSchedulePolicy, ThreadPriority,
+    ThreadSchedulePolicy,
+};
 
 pub use fxhash::FxHashMap as HashMap;
 pub use fxhash::FxHashSet as HashSet;
@@ -133,4 +137,21 @@ pub fn valid_tagname(s: &str) -> bool {
         }
         _ => false,
     }
+}
+
+fn set_priority(pri: ThreadPriority) {
+    set_thread_priority_and_policy(
+        thread_native_id(),
+        pri,
+        ThreadSchedulePolicy::Realtime(RealtimeThreadSchedulePolicy::Fifo),
+    )
+    .unwrap();
+}
+
+pub fn set_max_priority() {
+    set_priority(ThreadPriority::Max);
+}
+
+pub fn set_min_priority() {
+    set_priority(ThreadPriority::Min);
 }

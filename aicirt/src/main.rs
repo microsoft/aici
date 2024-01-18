@@ -28,7 +28,6 @@ use std::{
     sync::{Arc, Mutex},
     time::{Duration, Instant},
 };
-use thread_priority::*;
 use worker::{RtPostProcessArg, RtPreProcessArg, SeqWorkerHandle};
 
 // percentage of available cores
@@ -1054,16 +1053,6 @@ fn bench_hashmap() {
     }
 }
 
-
-fn set_priority(pri: ThreadPriority) {
-    set_thread_priority_and_policy(
-        thread_native_id(),
-        pri,
-        ThreadSchedulePolicy::Realtime(RealtimeThreadSchedulePolicy::Fifo),
-    )
-    .unwrap();
-}
-
 fn save_tokenizer(cli: &Cli) {
     let filename = cli.save_tokenizer.as_deref().unwrap();
     let tokenizer = find_tokenizer(&cli.tokenizer).unwrap();
@@ -1176,6 +1165,8 @@ fn main() -> () {
 
     ALLOCATOR.set_limit(MAX_MALLOC).expect("set memory limit");
 
+    set_max_priority();
+
     let reg = ModuleRegistry::new(wasm_ctx, bin_shm).unwrap();
 
     // needs to be done after WorkerForker is spawned
@@ -1194,7 +1185,6 @@ fn main() -> () {
         reg.dispatch_loop(reg_disp);
     });
 
-    set_priority(ThreadPriority::Max);
     let mut exec_disp = CmdRespChannel::new("", &cli).unwrap();
     exec_disp.dispatch_loop(exec);
 }
@@ -1209,7 +1199,7 @@ pub fn setup_bg_worker_pool() {
     );
     rayon::ThreadPoolBuilder::new()
         .num_threads(num_bg_threads)
-        .start_handler(|_| set_priority(ThreadPriority::Min))
+        .start_handler(|_| set_min_priority())
         .build_global()
         .unwrap();
 }

@@ -1,6 +1,6 @@
 use actix_web::{middleware::Logger, web, App, HttpServer};
 use aici_abi::toktree::TokTrie;
-use aicirt::api::{AuthInfo, GetTagsResp, MkModuleReq, MkModuleResp, SetTagsReq};
+use aicirt::{api::{AuthInfo, GetTagsResp, MkModuleReq, MkModuleResp, SetTagsReq}, set_max_priority};
 use anyhow::Result;
 use base64::Engine;
 use clap::Parser;
@@ -386,6 +386,7 @@ fn spawn_inference_loop(
     let warmup_only = args.warmup_only.clone();
 
     std::thread::spawn(move || {
+        set_max_priority();
         let mut engine = RllmEngine::load(loader_args).expect("failed to load model");
         engine.profile_step_no = profile_step;
         engine.set_aicirt(iface);

@@ -1018,7 +1018,12 @@ impl RllmEngine {
             return Ok(());
         }
 
+        let t0 = Instant::now();
         let post_res = self.aicirt.as_mut().unwrap().post_process(req)?;
+        let e = t0.elapsed();
+        if e.as_micros() > 500 {
+            log::warn!("aici post_process {:?}", e);
+        }
 
         for sg in sched_out.next_seq_groups.iter_mut() {
             if sg.sampling_params.aici_module.is_none() {

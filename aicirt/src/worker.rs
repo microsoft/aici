@@ -14,7 +14,7 @@ use aicirt::{
     api::{AiciMidProcessResultInner, AiciPostProcessResultInner, SequenceResult},
     futexshm::{TypedClient, TypedClientHandle, TypedServer},
     shm::Unlink,
-    user_error, HashMap,
+    user_error, HashMap, set_max_priority,
 };
 use anyhow::{anyhow, Result};
 use libc::pid_t;
@@ -351,6 +351,7 @@ impl SeqCtx {
                 match fork_child(&self.wasm_ctx.limits)? {
                     ForkResult::Parent { handle } => Ok(SeqResp::Fork { handle }),
                     ForkResult::Child { server } => {
+                        set_max_priority();
                         self.server = server;
                         self.inst_id = inst_id;
                         self.mutinst().set_id(inst_id);
@@ -720,10 +721,12 @@ fn forker_dispatcher(
                 // (inheriting it from fork doesn't work on macOS)
                 match fork_child(&w_ctx.wasm_ctx.limits).unwrap() {
                     ForkResult::Parent { handle } => {
+                        set_max_priority();
                         w_ctx.query = Some(handle.to_client());
                         w_ctx.dispatch_loop()
                     }
                     ForkResult::Child { server } => {
+                        set_max_priority();
                         let mut grp_ctx = GroupCtx {
                             variables: HashMap::default(),
                             server,
