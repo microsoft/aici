@@ -6,6 +6,8 @@ Controllers are light-weight [WebAssembly](https://webassembly.org/) (Wasm) modu
 which run in on the same machine as the LLM inference engine, utilizing the CPU while the GPU is busy
 with token generation. 
 
+AICI is a protytype, designed and built at [Microsoft Research](https://www.microsoft.com/en-us/research/).
+
 AICI is:
 
 - [Secure](#security): Controllers are sandboxed and cannot access the filesystem, network, or any other resources
