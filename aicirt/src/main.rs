@@ -14,7 +14,7 @@ use crate::{
 use aici_abi::{
     bytes::limit_str, toktree::TokTrie, MidProcessArg, PostProcessArg, PreProcessArg, SeqId,
 };
-use aicirt::{bintokens::find_tokenizer, *};
+use aicirt::{bintokens::find_tokenizer, futexshm::ServerChannel, *};
 use anyhow::{anyhow, ensure, Result};
 use base64::{self, Engine as _};
 use clap::Parser;
@@ -29,7 +29,7 @@ use std::{
     time::{Duration, Instant},
 };
 use thread_priority::*;
-use worker::{fork_child, RtPostProcessArg, RtPreProcessArg, SeqWorkerHandle};
+use worker::{RtPostProcessArg, RtPreProcessArg, SeqWorkerHandle};
 
 // percentage of available cores
 const BG_THREADS_FRACTION: usize = 50;
@@ -77,6 +77,10 @@ struct Cli {
     /// Fork test
     #[arg(long)]
     fork: bool,
+
+    /// Enable futex comms
+    #[arg(long, default_value_t = false)]
+    futex: bool,
 
     /// Size of JSON comm buffer in megabytes
     #[arg(long, default_value = "8")]
@@ -404,19 +408,35 @@ impl ModuleRegistry {
         inst.run_main()
     }
 
-    pub fn dispatch_loop(&self, ch: CmdRespChannel) -> ! {
+    pub fn dispatch_loop(&self, mut ch: CmdRespChannel) -> ! {
         loop {
             let msg = ch.recv();
             let mut s2 = self.clone();
-            let resp_lck = ch.resp_ch.clone();
-            rayon::spawn(move || {
-                let r = s2.exec_wrapped(&msg);
-                resp_lck
-                    .lock()
-                    .unwrap()
-                    .send(serde_json::to_vec(&r).unwrap().as_slice())
-                    .unwrap();
-            });
+
+            match &ch {
+                CmdRespChannel::Futex { resp_ch, .. } => {
+                    let resp_ch = resp_ch.clone();
+                    rayon::spawn(move || {
+                        let r = s2.exec_wrapped(&msg);
+                        resp_ch
+                            .lock()
+                            .unwrap()
+                            .send_resp(serde_json::to_vec(&r).unwrap().as_slice())
+                            .unwrap();
+                    });
+                }
+                CmdRespChannel::Sem { resp_ch, .. } => {
+                    let resp_ch = resp_ch.clone();
+                    rayon::spawn(move || {
+                        let r = s2.exec_wrapped(&msg);
+                        resp_ch
+                            .lock()
+                            .unwrap()
+                            .send(serde_json::to_vec(&r).unwrap().as_slice())
+                            .unwrap();
+                    });
+                }
+            }
         }
     }
 }
@@ -920,47 +940,96 @@ trait Exec {
     }
 }
 
-struct CmdRespChannel {
-    cmd_ch: MessageChannel,
-    resp_ch: Arc<Mutex<MessageChannel>>,
-    busy_wait_duration: Duration,
+enum CmdRespChannel {
+    Sem {
+        cmd_ch: MessageChannel,
+        resp_ch: Arc<Mutex<MessageChannel>>,
+        busy_wait_duration: Duration,
+    },
+    Futex {
+        cmd_ch: ServerChannel,
+        resp_ch: Arc<Mutex<ServerChannel>>,
+        busy_wait_duration: Duration,
+    },
 }
 
 impl CmdRespChannel {
     pub fn new(suff: &str, cli: &Cli) -> Result<Self> {
-        let cmd_ch =
-            MessageChannel::new(&cli.prefixed_name("cmd", suff), cli.json_size * MEGABYTE)?;
-        let resp_ch = Arc::new(Mutex::new(MessageChannel::new(
-            &cli.prefixed_name("resp", suff),
-            cli.json_size * MEGABYTE,
-        )?));
+        let busy_wait_duration = Duration::from_millis(cli.busy_wait_time);
+        if cli.futex {
+            let cmd_shm = Shm::new(
+                &cli.prefixed_name("cmd", suff),
+                cli.json_size * MEGABYTE,
+                shm::Unlink::Post,
+            )?;
+            let resp_shm = Shm::new(
+                &cli.prefixed_name("resp", suff),
+                cli.json_size * MEGABYTE,
+                shm::Unlink::Post,
+            )?;
+            let cnt_shm = Arc::new(Shm::anon(4096)?); // unused at the moment
+            Ok(Self::Futex {
+                cmd_ch: ServerChannel::new(cmd_shm, cnt_shm.clone()),
+                resp_ch: Arc::new(Mutex::new(ServerChannel::new(resp_shm, cnt_shm))),
+                busy_wait_duration,
+            })
+        } else {
+            let cmd_ch =
+                MessageChannel::new(&cli.prefixed_name("cmd", suff), cli.json_size * MEGABYTE)?;
+            let resp_ch = Arc::new(Mutex::new(MessageChannel::new(
+                &cli.prefixed_name("resp", suff),
+                cli.json_size * MEGABYTE,
+            )?));
 
-        Ok(Self {
-            cmd_ch,
-            resp_ch,
-            busy_wait_duration: Duration::from_millis(cli.busy_wait_time),
-        })
+            Ok(Self::Sem {
+                cmd_ch,
+                resp_ch,
+                busy_wait_duration,
+            })
+        }
     }
 
     #[allow(dead_code)]
     pub fn busy_reset(&self) {
-        self.cmd_ch.busy_reset();
-        self.resp_ch.lock().unwrap().busy_reset();
+        match self {
+            Self::Sem {
+                cmd_ch, resp_ch, ..
+            } => {
+                cmd_ch.busy_reset();
+                resp_ch.lock().unwrap().busy_reset();
+            }
+            Self::Futex { .. } => {}
+        }
     }
 
     pub fn respond(&self, json: Value) {
-        self.resp_ch
-            .lock()
-            .unwrap()
-            .send(serde_json::to_vec(&json).unwrap().as_slice())
-            .unwrap();
+        let slice = serde_json::to_vec(&json).unwrap();
+        match self {
+            Self::Sem { resp_ch, .. } => {
+                resp_ch.lock().unwrap().send(&slice).unwrap();
+            }
+            Self::Futex { resp_ch, .. } => {
+                resp_ch.lock().unwrap().send_resp(&slice).unwrap();
+            }
+        }
     }
 
-    pub fn recv(&self) -> Vec<u8> {
-        self.cmd_ch.recv(&self.busy_wait_duration).unwrap()
+    pub fn recv(&mut self) -> Vec<u8> {
+        match self {
+            Self::Sem {
+                cmd_ch,
+                busy_wait_duration,
+                ..
+            } => cmd_ch.recv(busy_wait_duration).unwrap(),
+            Self::Futex {
+                cmd_ch,
+                busy_wait_duration,
+                ..
+            } => cmd_ch.recv_req(busy_wait_duration.clone()),
+        }
     }
 
-    pub fn dispatch_loop(&self, mut exec: impl Exec) -> ! {
+    pub fn dispatch_loop(&mut self, mut exec: impl Exec) -> ! {
         loop {
             let msg = self.recv();
             let val = exec.exec_wrapped(&msg);
@@ -985,76 +1054,6 @@ fn bench_hashmap() {
     }
 }
 
-fn bench_cmd_resp_busy(cli: &Cli, limits: &AiciLimits) {
-    match fork_child::<u8, u8>(limits).unwrap() {
-        worker::ForkResult::Parent { handle } => {
-            let ch = CmdRespChannel::new("", cli).unwrap();
-            ch.busy_reset();
-            let resp_ch = ch.resp_ch.lock().unwrap();
-            let timers = TimerSet::new();
-            let timer = timers.new_timer("cmd_resp_busy");
-            let cnt = 100;
-            for idx in 0..cnt {
-                let q = (idx & 0xf0) as u8;
-                let v = vec![q];
-                let resp = timer.with(|| {
-                    ch.cmd_ch.busy_send(&v).unwrap();
-                    resp_ch.busy_recv().unwrap()
-                });
-                assert!(resp[0] == v[0] + 1, "failed at idx={} {}", idx, resp[0]);
-                std::thread::sleep(Duration::from_millis(10));
-            }
-            println!("MessageChannel {}", timers);
-            handle.to_client().kill();
-        }
-        worker::ForkResult::Child { .. } => {
-            let ch = CmdRespChannel::new("", cli).unwrap();
-            let resp_ch = ch.resp_ch.lock().unwrap();
-            loop {
-                let msg = ch.cmd_ch.busy_recv().unwrap();
-                let resp = vec![msg[0] + 1, 12];
-                for _ in 0..20 {
-                    std::hint::black_box(());
-                }
-                resp_ch.busy_send(&resp).unwrap();
-            }
-        }
-    }
-}
-
-fn bench_cmd_resp(cli: &Cli, limits: &AiciLimits) {
-    let wait_time = limits.busy_wait_duration;
-    match fork_child::<u8, u8>(limits).unwrap() {
-        worker::ForkResult::Parent { handle } => {
-            let ch = CmdRespChannel::new("", cli).unwrap();
-            let resp_ch = ch.resp_ch.lock().unwrap();
-            let timers = TimerSet::new();
-            let timer = timers.new_timer("cmd_resp_sem");
-            let cnt = 100;
-            for idx in 0..cnt {
-                let q = (idx & 0xf0) as u8;
-                let v = vec![q];
-                let resp = timer.with(|| {
-                    ch.cmd_ch.send(&v).unwrap();
-                    resp_ch.recv(&wait_time).unwrap()
-                });
-                assert!(resp[0] == v[0] + 1, "failed at idx={} {}", idx, resp[0]);
-                std::thread::sleep(Duration::from_millis(10));
-            }
-            println!("MessageChannel {}", timers);
-            handle.to_client().kill();
-        }
-        worker::ForkResult::Child { .. } => {
-            let ch = CmdRespChannel::new("", cli).unwrap();
-            let resp_ch = ch.resp_ch.lock().unwrap();
-            loop {
-                let msg = ch.cmd_ch.recv(&wait_time).unwrap();
-                let resp = vec![msg[0] + 1, 12];
-                resp_ch.send(&resp).unwrap();
-            }
-        }
-    }
-}
 
 fn set_priority(pri: ThreadPriority) {
     set_thread_priority_and_policy(
@@ -1146,10 +1145,6 @@ fn main() -> () {
 
     if cli.bench {
         bench_hashmap();
-        if false {
-            bench_cmd_resp_busy(&cli, &limits);
-            bench_cmd_resp(&cli, &limits);
-        }
         return ();
     }
 
@@ -1200,7 +1195,7 @@ fn main() -> () {
     });
 
     set_priority(ThreadPriority::Max);
-    let exec_disp = CmdRespChannel::new("", &cli).unwrap();
+    let mut exec_disp = CmdRespChannel::new("", &cli).unwrap();
     exec_disp.dispatch_loop(exec);
 }
 

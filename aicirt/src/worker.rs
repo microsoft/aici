@@ -13,7 +13,8 @@ use aici_abi::{
 use aicirt::{
     api::{AiciMidProcessResultInner, AiciPostProcessResultInner, SequenceResult},
     futexshm::{TypedClient, TypedClientHandle, TypedServer},
-    user_error, HashMap, shm::Unlink,
+    shm::Unlink,
+    user_error, HashMap,
 };
 use anyhow::{anyhow, Result};
 use libc::pid_t;
@@ -22,6 +23,7 @@ use std::{
     fmt::Debug,
     path::PathBuf,
     rc::Rc,
+    sync::Mutex,
     time::{Duration, Instant},
 };
 
@@ -45,7 +47,8 @@ pub struct WireProcessHandle<Cmd, Resp> {
 
 pub struct ProcessHandle<Cmd, Resp> {
     pid: pid_t,
-    cmd: TypedClient<Cmd, Resp>,
+    // should this be RefCell?
+    cmd: Mutex<TypedClient<Cmd, Resp>>,
 }
 
 impl<Cmd, Resp> WireProcessHandle<Cmd, Resp>
@@ -56,7 +59,7 @@ where
     pub fn to_client(self) -> ProcessHandle<Cmd, Resp> {
         ProcessHandle {
             pid: self.pid,
-            cmd: self.cmd.to_client(),
+            cmd: Mutex::new(self.cmd.to_client()),
         }
     }
 }
@@ -233,12 +236,12 @@ where
 {
     pub fn just_send(&self, cmd: Cmd) -> Result<()> {
         log::trace!("send {cmd:?}");
-        self.cmd.send_req(cmd)?;
+        self.cmd.lock().unwrap().send_req(cmd)?;
         Ok(())
     }
 
     pub fn recv(&self) -> Result<Resp> {
-        match self.cmd.recv_resp(Duration::MAX) {
+        match self.cmd.lock().unwrap().recv_resp(Duration::MAX) {
             Some(r) => {
                 log::trace!("recv {r:?}");
                 Ok(r)
@@ -284,7 +287,7 @@ where
     }
 
     fn recv_with_timeout_inner(&self, timeout: Duration) -> Option<Resp> {
-        match self.cmd.recv_resp(timeout) {
+        match self.cmd.lock().unwrap().recv_resp(timeout) {
             Some(r) => {
                 log::trace!("recv t/o {r:?}");
                 Some(r)
@@ -663,7 +666,7 @@ pub struct WorkerForker {
 }
 
 fn forker_dispatcher(
-    server: TypedServer<ForkerCmd, ForkerResp>,
+    mut server: TypedServer<ForkerCmd, ForkerResp>,
     wasm_ctx: WasmContext,
     shm: Shm,
 ) -> ! {

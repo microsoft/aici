@@ -97,7 +97,7 @@ impl Channel {
         Ok(())
     }
 
-    pub fn write_msg(&self, msg: &[u8]) -> Result<()> {
+    pub fn write_msg(&mut self, msg: &[u8]) -> Result<()> {
         self.fits_msg(msg)?;
 
         let msg_len = msg.len() as u32;
@@ -160,7 +160,7 @@ impl Channel {
     }
 
     pub fn read_msg(
-        &self,
+        &mut self,
         spin_duration: Duration,
         futex_duration: Option<Duration>,
     ) -> Option<Vec<u8>> {
@@ -189,11 +189,11 @@ impl ClientChannel {
         }
     }
 
-    pub fn send_req(&self, msg: &[u8]) -> Result<()> {
+    pub fn send_req(&mut self, msg: &[u8]) -> Result<()> {
         self.channel.write_msg(msg)
     }
 
-    pub fn recv_resp(&self, timeout: Duration) -> Option<Vec<u8>> {
+    pub fn recv_resp(&mut self, timeout: Duration) -> Option<Vec<u8>> {
         self.channel.read_msg(timeout, None)
     }
 }
@@ -212,7 +212,7 @@ impl ServerChannel {
         }
     }
 
-    pub fn recv_req(&self, busy_spin: Duration) -> Vec<u8> {
+    pub fn recv_req(&mut self, busy_spin: Duration) -> Vec<u8> {
         self.channel
             .read_msg(busy_spin, Some(Duration::MAX))
             .unwrap()
@@ -230,7 +230,7 @@ impl ServerChannel {
         // self.channel.read_msg(busy_spin, None).unwrap()
     }
 
-    pub fn send_resp(&self, msg: &[u8]) -> Result<()> {
+    pub fn send_resp(&mut self, msg: &[u8]) -> Result<()> {
         self.channel.write_msg(msg)
     }
 }
@@ -254,12 +254,12 @@ where
         }
     }
 
-    pub fn recv_req(&self, busy_spin: Duration) -> Cmd {
+    pub fn recv_req(&mut self, busy_spin: Duration) -> Cmd {
         let msg = self.channel.recv_req(busy_spin);
         bincode::deserialize(&msg).unwrap()
     }
 
-    pub fn send_resp(&self, resp: Resp) {
+    pub fn send_resp(&mut self, resp: Resp) {
         let msg = bincode::serialize(&resp).unwrap();
         self.channel.send_resp(&msg).unwrap();
     }
@@ -284,12 +284,12 @@ where
         }
     }
 
-    pub fn send_req(&self, cmd: Cmd) -> Result<()> {
+    pub fn send_req(&mut self, cmd: Cmd) -> Result<()> {
         let msg = bincode::serialize(&cmd).unwrap();
         self.channel.send_req(&msg)
     }
 
-    pub fn recv_resp(&self, timeout: Duration) -> Option<Resp> {
+    pub fn recv_resp(&mut self, timeout: Duration) -> Option<Resp> {
         let msg = self.channel.recv_resp(timeout)?;
         Some(bincode::deserialize(&msg).unwrap())
     }
