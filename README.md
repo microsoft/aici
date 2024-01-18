@@ -6,7 +6,7 @@ Controllers are light-weight [WebAssembly](https://webassembly.org/) (Wasm) modu
 which run in on the same machine as the LLM inference engine, utilizing the CPU while the GPU is busy
 with token generation. 
 
-AICI is a protytype, designed and built at [Microsoft Research](https://www.microsoft.com/en-us/research/).
+AICI is a prototype, designed and built at [Microsoft Research](https://www.microsoft.com/en-us/research/).
 
 AICI is:
 
@@ -40,7 +40,7 @@ And a number of sample/reference controllers:
 Everything above implemented in Rust, unless otherwise stated.
 
 AICI abstract LLM inference engine from the controller and vice-versa, as in the picture below.
-The rounded nodes are asiprational.
+The rounded nodes are aspirational.
 Additional layers can be built on top - we provide [promptlib](promptlib),
 but we strongly believe that
 [Guidance](https://github.com/guidance-ai/guidance),
@@ -147,7 +147,7 @@ and reading the whole memory takes about 40ms on A100 GPU (80GB).
 Thus, each step of generation takes on the order of 20-50ms.
 With careful engineering,
 this is more than enough to compute the set of allowed tokens in Rust compiled to Wasm.
-These can be combined either nativelly in Rust, or via Python or JavaScript interpreters
+These can be combined either natively in Rust, or via Python or JavaScript interpreters
 we provide.
 
 For example, computing allowed token set in the 32000-strong vocabulary of Llama model takes:
@@ -156,8 +156,8 @@ For example, computing allowed token set in the 32000-strong vocabulary of Llama
 - about 0.3ms for a regular expression
 - about 0.2ms for a substring contraint, from 4kB string
 
-The above numbers are for a single sequeance, however each sequence is processed in separate process,
-and thus if there is more cores than sequances (which is typical), they do not change.
+The above numbers are for a single sequence, however each sequence is processed in separate process,
+and thus if there is more cores than sequences (which is typical), they do not change.
 They also include overhead of calling into Python interpreter implemented in Wasm, and then back into 
 Rust-generated Wasm code for the constraint itself.
 They are all well within the 20-50ms budget, so do not affect the generation time at all.
