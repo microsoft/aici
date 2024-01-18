@@ -11,6 +11,8 @@ There are [several sample scripts](samples/) available.
 The scripts use the [pyaici.server module](pyaici/server.py) to communicate with the AICI runtime
 and use the native constraints.
 
+This is quite similar to [jsctrl](../jsctrl/README.md) but with Python instead of JavaScript.
+
 ## Usage
 
 To run a PyCtrl sample (using controller tagged with `pyctrl-latest`) use:
@@ -158,6 +160,7 @@ Performance-critical code is implemented natively. This includes:
 
 * `TokenSet` class
 * `RegexConstraint` class
+* `SubstrConstraint` class
 * tokenizer/detokenizer
 
 You should limit the amount of Python code you run after generating tokens to a few lines.
