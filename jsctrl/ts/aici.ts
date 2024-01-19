@@ -760,7 +760,9 @@ export function checkVar(name: string, value: string): void {
   }
   const vStr = v.decode();
   if (vStr !== value) {
-    throw new AssertionError(`Variable ${name}: ${JSON.stringify(vStr)} != ${JSON.stringify(value)}`);
+    throw new AssertionError(
+      `Variable ${name}: ${JSON.stringify(vStr)} != ${JSON.stringify(value)}`
+    );
   }
 }
 
@@ -804,3 +806,5 @@ globalThis.fixed = fixed;
 globalThis.assert = assert;
 globalThis.gen = gen;
 globalThis.genTokens = genTokens;
+globalThis.start = start;
+globalThis.waitVars = waitVars;
