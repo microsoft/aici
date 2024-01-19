@@ -1,7 +1,7 @@
 # JsCtrl
 
 This crate implements AI Controller Interface by embedding 
-[quickjs](https://bellard.org/quickjs/) (JavaScript (ES2023) interpreter)
+[QuickJS](https://bellard.org/quickjs/) (JavaScript (ES2023) interpreter)
 via [rquickjs](https://github.com/DelSkayn/rquickjs)
 in a Wasm module together with native
 primitives for specific kinds of output constraints:

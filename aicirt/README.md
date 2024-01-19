@@ -1,6 +1,6 @@
 # AICI Runtime (aicirt)
 
-Multi-threaded wasmtime-based runner.
+Multi-threaded runner for AICI Controllers, built on top of [Wasmtime](https://wasmtime.dev/).
 
 ```mermaid
 graph TD

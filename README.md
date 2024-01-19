@@ -2,7 +2,7 @@
 
 The Artificial Intelligence Controller Interface (AICI)
 lets you build Controllers that constrain and direct output of a Large Language Model (LLM) in real time.
-Controllers are light-weight [WebAssembly](https://webassembly.org/) (Wasm) modules
+Controllers are light-weight WebAssembly (Wasm) modules
 which run in on the same machine as the LLM inference engine, utilizing the CPU while the GPU is busy
 with token generation. 
 
@@ -20,9 +20,9 @@ This repository contains:
 - [definition](aici_abi/README.md#low-level-interface) of the AICI binary interface
 - [aici_abi](aici_abi) - a Rust crate for easily implementing controllers (Wasm modules adhering to AICI)
 - [aicirt](aicirt) - an implementation of a runtime for controllers,
-  built on top [Wasmtime](https://wasmtime.dev/);
+  built on top Wasmtime;
   LLM inference engines talk to aicirt via shared memory and semaphores
-- [rLLM](rllm) - a reference implementation of an LLM inference engine
+- [rLLM](rllm) - a reference implementation of an LLM inference engine, inspired by vLLM
 - [pyaici](pyaici) - a Python package for interacting with aicirt and running controllers;
   includes `aici` command-line tool
 - [promptlib](promptlib) - a Python package that exposes API for easily creating and running DeclCtrl ASTs
@@ -31,13 +31,14 @@ This repository contains:
 And a number of sample/reference controllers:
 
 - [uppercase](uppercase) - a sample/starter project for aici_abi
-- [PyCtrl](pyctrl) - an embedded Python 3 interpreter (using [RustPython](https://github.com/RustPython/RustPython)),
+- [PyCtrl](pyctrl) - an embedded Python 3 interpreter (using RustPython),
   which lets you write controllers in Python
-- [JsCtrl](jsctrl) - an embedded JavaScript interpreter (using [QuickJS](https://bellard.org/quickjs/)),
+- [JsCtrl](jsctrl) - an embedded JavaScript interpreter (using QuickJS),
   which lets you write controllers in JavaScript
 - [DeclCtrl](declctrl) - a controller that interprets a simple JSON AST (Abstract Syntax Tree) to specify constraints
 
-Everything above implemented in Rust, unless otherwise stated.
+Everything above implemented in Rust, unless otherwise stated,
+and all controllers compile to [Wasm](https://webassembly.org/).
 
 AICI abstract LLM inference engine from the controller and vice-versa, as in the picture below.
 The rounded nodes are aspirational.
@@ -165,6 +166,12 @@ They are all well within the 20-50ms budget, so do not affect the generation tim
 There is also some overhead in the critical path of sampling. It comes down to about 0.3ms per generation step
 when executing 10 sequences in parallel (this is irrespective of the constraint used).
 The overhead goes up to around 0.7ms for 40 sequences (though it has not been fully optimized yet).
+
+WebAssembly is designed to have minimal overhead, compared to native code.
+In our experience, [highly optimized](aici_abi/implementation.md#token-trie)
+Rust code is less than 2x slower when run in
+[Wasmtime](https://wasmtime.dev/) than native.
+This is 10-100x better than JavaScript or Python.
 
 All measurements done on AMD EPYC 7V13 with nVidia A100 GPU with 80GB of VRAM.
 
