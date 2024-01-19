@@ -9,4 +9,7 @@ setup(
             'aici = pyaici.cli:main'
         ]
     },
+    install_requires=[
+        'requests'
+    ],
 )
