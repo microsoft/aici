@@ -4,7 +4,7 @@ import sys
 import os
 import argparse
 
-from . import rest
+from . import rest, jssrc
 from . import add_cli_args, AiciRunner
 
 
@@ -103,6 +103,15 @@ def infer_args(cmd: argparse.ArgumentParser):
     )
 
 
+def save_file(name: str, content: str, force: bool):
+    if os.path.exists(name) and not force:
+        print(f"file {name} exists; use --force to overwrite")
+        return
+    with open(name, "w") as f:
+        f.write(content)
+    print(f"saved {name}")
+
+
 def main_inner():
     parser = argparse.ArgumentParser(
         description="Upload an AICI Controller and completion request to rllm or vllm",
@@ -128,7 +137,10 @@ def main_inner():
         """,
     )
     run_cmd.add_argument(
-        "aici_arg", metavar="FILE", nargs="?", help="file to pass to the AICI Controller"
+        "aici_arg",
+        metavar="FILE",
+        nargs="?",
+        help="file to pass to the AICI Controller",
     )
     infer_args(run_cmd)
     run_cmd.add_argument(
@@ -194,6 +206,15 @@ def main_inner():
         "build", metavar="FOLDER", help="path to rust project (folder with Cargo.toml)"
     )
 
+    jsinit_cmd = subparsers.add_parser(
+        "jsinit",
+        help="intialize current folder for jsctrl",
+        description="Intialize a JavaScript/TypeScript folder for jsctrl.",
+    )
+    jsinit_cmd.add_argument(
+        "--force", "-f", action="store_true", help="overwrite existing files"
+    )
+
     for cmd in [upload_cmd, build_cmd]:
         cmd.add_argument(
             "--tag",
@@ -210,6 +231,11 @@ def main_inner():
         rest.log_level = args.log_level
     else:
         rest.log_level = 3
+
+    if args.subcommand == "jsinit":
+        save_file("tsconfig.json", jssrc.tsconfig_json, args.force)
+        save_file("aici-types.d.ts", jssrc.aici_types_d_t, args.force)
+        sys.exit(0)
 
     if args.subcommand == "benchrt":
         AiciRunner.from_cli(args).bench()
@@ -270,7 +296,9 @@ def main_inner():
                 elif fn.endswith(".json"):
                     aici_module = "declctrl-latest"
                 else:
-                    cli_error("Can't determine AICI Controller type from file name: " + fn)
+                    cli_error(
+                        "Can't determine AICI Controller type from file name: " + fn
+                    )
                 print(f"Running with tagged AICI Controller: {aici_module}")
         if not aici_module:
             cli_error("no AICI Controller specified to run")
