@@ -8,6 +8,7 @@ from typing import cast, Optional, Union
 import torch
 import time
 import pyaici
+import pyaici.comms
 
 from transformers import (
     AutoTokenizer,
@@ -25,7 +26,7 @@ device = "cuda" if torch.cuda.is_available() else "cpu"
 
 class AsyncLogitProcessor(LogitsProcessor, BaseStreamer):
     def __init__(
-        self, runner: pyaici.AiciRunner, module_id: str, module_arg: str
+        self, runner: pyaici.comms.AiciRunner, module_id: str, module_arg: str
     ) -> None:
         super().__init__()
         self.runner = runner
@@ -72,7 +73,7 @@ def main(args):
     )
     model = cast(PreTrainedModel, model)
 
-    runner = pyaici.AiciRunner.from_cli(args)
+    runner = pyaici.runner_from_cli(args)
 
     arg = ""
     if args.aici_module_arg:

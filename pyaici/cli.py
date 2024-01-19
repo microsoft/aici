@@ -1,11 +1,11 @@
 import subprocess
-import ujson
+import json
 import sys
 import os
 import argparse
 
 from . import rest, jssrc
-from . import add_cli_args, AiciRunner
+from . import add_cli_args, runner_from_cli
 
 
 def cli_error(msg: str):
@@ -31,7 +31,7 @@ def build_rust(folder: str):
         stdout=-1,
         check=True,
     )
-    info = ujson.decode(r.stdout)
+    info = json.loads(r.stdout)
     if len(info["workspace_default_members"]) != 1:
         cli_error("please run from project, not workspace, folder")
     pkg_id = info["workspace_default_members"][0]
@@ -90,7 +90,7 @@ def ask_completion(cmd_args, *args, **kwargs):
     os.makedirs("tmp", exist_ok=True)
     path = "tmp/response.json"
     with open(path, "w") as f:
-        ujson.dump(res, f, indent=1)
+        json.dump(res, f, indent=1)
     print(f"response saved to {path}")
     print("Usage:", res["usage"])
     print("Storage:", res["storage"])
@@ -239,7 +239,7 @@ def main_inner():
         sys.exit(0)
 
     if args.subcommand == "benchrt":
-        AiciRunner.from_cli(args).bench()
+        runner_from_cli(args).bench()
         sys.exit(0)
 
     if args.subcommand == "tags":

@@ -1,5 +1,5 @@
 import requests
-import ujson
+import json
 import os
 import urllib.parse
 import sys
@@ -47,7 +47,7 @@ def _mk_url(path: str) -> str:
 def response_error(kind: str, resp: requests.Response):
     text = resp.text
     try:
-        d = ujson.decode(text)
+        d = json.loads(text)
         if "message" in d:
             text = d["message"]
     except:
@@ -63,7 +63,7 @@ def req(tp: str, url: str, **kwargs):
     if log_level >= 4:
         print(f"{tp.upper()} {url} headers={headers}")
         if "json" in kwargs:
-            print(ujson.dumps(kwargs["json"]))
+            print(json.dumps(kwargs["json"]))
     return requests.request(tp, url, headers=headers, **kwargs)
 
 
@@ -126,7 +126,7 @@ def completion(
 ):
     if ignore_eos is None:
         ignore_eos = not not ast_module
-    json = {
+    data = {
         "model": "",
         "prompt": prompt,
         "max_tokens": max_tokens,
@@ -137,7 +137,7 @@ def completion(
         "aici_arg": aici_arg,
         "ignore_eos": ignore_eos,
     }
-    resp = req("post", "completions", json=json, stream=True)
+    resp = req("post", "completions", json=data, stream=True)
     if resp.status_code != 200:
         raise response_error("completions", resp)
     texts = [""] * n
@@ -145,7 +145,7 @@ def completion(
     full_resp = []
     storage = {}
     res = {
-        "request": json,
+        "request": data,
         "response": full_resp,
         "text": texts,
         "logs": logs,
@@ -161,7 +161,7 @@ def completion(
             continue
         decoded_line: str = line.decode("utf-8")
         if decoded_line.startswith("data: {"):
-            d = ujson.decode(decoded_line[6:])
+            d = json.loads(decoded_line[6:])
             full_resp.append(d)
             if "usage" in d:
                 res["usage"] = d["usage"]
