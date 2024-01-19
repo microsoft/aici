@@ -235,6 +235,7 @@ def main_inner():
     if args.subcommand == "jsinit":
         save_file("tsconfig.json", jssrc.tsconfig_json, args.force)
         save_file("aici-types.d.ts", jssrc.aici_types_d_t, args.force)
+        save_file("hello.js", jssrc.hello_js, args.force)
         sys.exit(0)
 
     if args.subcommand == "benchrt":

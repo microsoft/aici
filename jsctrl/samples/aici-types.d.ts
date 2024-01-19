@@ -271,6 +271,9 @@ import { TokenSet, tokenize, detokenize, regexConstraint, cfgConstraint, substrC
 export { TokenSet, tokenize, detokenize, getVar, setVar, appendVar, eosToken };
 export type SeqId = number;
 type int = number;
+/**
+ * Return debug representation of the argument, suitable for printing in the console.
+ */
 export function inspect(v: any): string;
 export function log(...args: any[]): void;
 export class AssertionError extends Error {

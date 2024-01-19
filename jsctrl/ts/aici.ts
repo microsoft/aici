@@ -66,6 +66,9 @@ function dbgArg(arg: any, depth: number): string {
   }
 }
 
+/**
+ * Return debug representation of the argument, suitable for printing in the console.
+ */
 export function inspect(v: any) {
   return dbgArg(v, 0);
 }

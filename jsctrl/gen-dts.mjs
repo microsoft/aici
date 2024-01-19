@@ -3,7 +3,7 @@ import * as fs from 'fs';
 function gen() {
     const ts = "./ts/"
     const native = fs.readFileSync(ts + '/native.d.ts', 'utf8')
-    let aici = fs.readFileSync(ts + '/gen/aici.d.ts', 'utf8')
+    let aici = fs.readFileSync(ts + '/dist/aici.d.ts', 'utf8')
     aici = aici.replace(/<reference path=".*/g, "")
     aici = aici.replace(/ declare /g, " ")
     aici = aici.replace(/^declare /mg, "")

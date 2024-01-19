@@ -120,7 +120,6 @@
         "unpkg.com"
     ],
     "files.readonlyInclude": {
-        "**/ts/gen/*": true,
         "**/dist/*": true,
         "**/aici-types.d.ts": true
     }
