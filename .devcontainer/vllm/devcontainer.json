@@ -23,6 +23,8 @@
 				"1YiB.rust-bundle",
 				"dtsvet.vscode-wasm",
 				"ms-vscode.cpptools",
+				"esbenp.prettier-vscode",
+				"streetsidesoftware.code-spell-checker",
 				"GitHub.copilot"
 			]
 		}
