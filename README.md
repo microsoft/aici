@@ -13,13 +13,14 @@ AICI is:
 - [Secure](#security): Controllers are sandboxed and cannot access the filesystem, network, or any other resources
 - [Fast](#performance): Wasm modules are compiled to native code and run in parallel with the LLM inference engine, inducing only a 
 minimal overhead to the generation process
-- [Flexible](#flexibility): Controllers can be written in any language that can compile to Wasm (Rust, C/C++), or be interpreted inside Wasm (Python, JavaScript)
+- [Flexible](#flexibility): Controllers can be written in any language that can compile to Wasm (Rust, C, C++, ...),
+  or be interpreted inside Wasm (Python, JavaScript, ...)
 
 This repository contains:
 
 - [definition](aici_abi/README.md#low-level-interface) of the AICI binary interface
 - [aici_abi](aici_abi) - a Rust crate for easily implementing controllers (Wasm modules adhering to AICI)
-- [aicirt](aicirt) - an implementation of a runtime for controllers,
+- [aicirt](aicirt) - an implementation of a runtime for running controllers,
   built on top Wasmtime;
   LLM inference engines talk to aicirt via shared memory and semaphores
 - [rLLM](rllm) - a reference implementation of an LLM inference engine, inspired by vLLM
