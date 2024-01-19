@@ -19,13 +19,10 @@ export { TokenSet, tokenize, detokenize, getVar, setVar, appendVar, eosToken };
 
 import * as _aici from "_aici";
 
-export type Token = number;
 export type SeqId = number;
-
 type int = number;
-type Buffer = Uint8Array;
 
-function dbgarg(arg: any, depth: number): string {
+function dbgArg(arg: any, depth: number): string {
   const maxElts = 20;
   const maxDepth = 2;
   const maxStr = 200;
@@ -42,7 +39,7 @@ function dbgarg(arg: any, depth: number): string {
         arg = arg.slice(0, maxElts);
         suff = ", ...]";
       }
-      return "[" + arg.map((x: any) => dbgarg(x, depth + 1)).join(", ") + suff;
+      return "[" + arg.map((x: any) => dbgArg(x, depth + 1)).join(", ") + suff;
     } else {
       let keys = Object.keys(arg);
       if (depth >= maxDepth && keys.length > 0) return "{...}";
@@ -53,7 +50,7 @@ function dbgarg(arg: any, depth: number): string {
       }
       return (
         "{" +
-        keys.map((k) => `${k}: ${dbgarg(arg[k], depth + 1)}`).join(", ") +
+        keys.map((k) => `${k}: ${dbgArg(arg[k], depth + 1)}`).join(", ") +
         suff
       );
     }
@@ -70,21 +67,18 @@ function dbgarg(arg: any, depth: number): string {
 }
 
 export function inspect(v: any) {
-  return dbgarg(v, 0);
+  return dbgArg(v, 0);
 }
 
 export function log(...args: any[]) {
   (console as any)._print(args.map((x) => inspect(x)).join(" "));
 }
 
-console.log = log;
-console.info = log;
-console.warn = log;
-console.debug = log;
-console.trace = log;
-
 export class AssertionError extends Error {}
 
+/**
+ * Throw an exception if the condition is not met.
+ */
 export function assert(cond: boolean, msg = "Assertion failed"): asserts cond {
   if (!cond) throw new AssertionError(msg);
 }
@@ -272,7 +266,7 @@ export async function fixed(text: string) {
 }
 
 /**
- * Same as fixed(); usage: await $`Some text`
+ * Force the exact tokens to be generated; usage: await $`Some text`
  */
 export async function $(strings: TemplateStringsArray, ...values: any[]) {
   let result = "";
@@ -623,7 +617,7 @@ export class Label {
   ptr: number;
 
   /**
-   * Create a new label the indictes the current position in the sequence.
+   * Create a new label the indicates the current position in the sequence.
    * Can be passed as `following=` argument to `FixedTokens()`.
    */
   constructor() {
@@ -692,18 +686,7 @@ export class ChooseConstraint extends Constraint {
   }
 }
 
-export type GenOptions = {
-  regex?: string | RegExp;
-  yacc?: string;
-  substring?: string;
-  substringEnd?: string;
-  options?: string[];
-  storeVar?: string;
-  stopAt?: string;
-  maxTokens?: number;
-};
-
-export async function gen_tokens(options: GenOptions): Promise<Token[]> {
+export async function genTokens(options: GenOptions): Promise<Token[]> {
   console.log("GEN", options);
   const res: Token[] = [];
   const {
@@ -763,7 +746,7 @@ export async function gen_tokens(options: GenOptions): Promise<Token[]> {
 }
 
 export async function gen(options: GenOptions): Promise<string> {
-  const tokens = await gen_tokens(options);
+  const tokens = await genTokens(options);
   return detokenize(tokens).decode();
 }
 
@@ -806,3 +789,15 @@ Uint8Array.prototype.toString = function (this: Uint8Array) {
 Uint8Array.prototype.decode = function (this: Uint8Array) {
   return _aici.bufferToString(this);
 };
+
+console.log = log;
+console.info = log;
+console.warn = log;
+console.debug = log;
+console.trace = log;
+
+globalThis.$ = $;
+globalThis.fixed = fixed;
+globalThis.assert = assert;
+globalThis.gen = gen;
+globalThis.genTokens = genTokens;

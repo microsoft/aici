@@ -1,0 +1,18 @@
+{
+  "compilerOptions": {
+    /* Visit https://aka.ms/tsconfig to read more about this file */
+    "target": "ES2020",
+    "lib": [
+      "ES2020"
+    ],
+    "moduleDetection": "force",
+    "module": "ES2020",
+    "allowJs": true,
+    "checkJs": true,
+    "strict": true,
+    "noImplicitThis": true,
+    "noImplicitReturns": true,
+    "outDir": "./dist",
+    "skipDefaultLibCheck": true,
+  }
+}

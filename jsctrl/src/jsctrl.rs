@@ -419,7 +419,7 @@ impl Runner {
             context: Context::full(&rt).unwrap(),
         };
 
-        let aici_js = include_str!("../ts/aici.js");
+        let aici_js = include_str!("../ts/gen/aici.js");
 
         s.with_cb("_new", |ctx| {
             let global = ctx.globals();

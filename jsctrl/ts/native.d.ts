@@ -1,3 +1,96 @@
+// Top-level symbols
+
+type Token = number;
+type Buffer = Uint8Array;
+
+/**
+ * Force the exact tokens to be generated; usage: await $`Some text`
+ */
+declare function $(strings: TemplateStringsArray, ...values: any[]): Promise<void>;
+
+/**
+ * Throw an exception if the condition is not met.
+ */
+declare function assert(cond: boolean, msg?: string): asserts cond;
+
+/**
+ * Forces next tokens to be exactly the given text.
+ */
+declare function fixed(text: string): Promise<void>;
+
+/**
+ * Forks the execution into `numForks` branches.
+ * @param numForks how many branches
+ * @returns a number from 0 to `numForks`-1, indicating the branch
+ */
+declare function fork(numForks: number): Promise<number>;
+
+/**
+ * Suspends execution until all variables are available.
+ * @param vars names of variables
+ * @returns values of the variables
+ */
+declare function waitVars(...vars: string[]): Promise<Buffer[]>;
+
+/**
+ * Starts the AICI loop. The coroutine may first `await aici.getPrompt()` and
+ * then can `await aici.gen_*()` or `await aici.FixedTokens()` multiple times.
+ * @param f async function
+ */
+declare function start(f: () => Promise<void>): void;
+
+/**
+ * Specifies options for gen() and genTokens().
+ */
+interface GenOptions {
+  /**
+   * Make sure the generated text is one of the options.
+   */
+  options?: string[];
+  /**
+   * Make sure the generated text matches given regular expression.
+   */
+  regex?: string | RegExp;
+  /**
+   * Make sure the generated text matches given yacc-like grammar.
+   */
+  yacc?: string;
+  /**
+   * Make sure the generated text is a substring of the given string.
+   */
+  substring?: string;
+  /**
+   * Used together with `substring` - treat the substring as ending the substring
+   * (typically '"' or similar).
+   */
+  substringEnd?: string;
+  /**
+   * Store result of the generation (as bytes) into a shared variable.
+   */
+  storeVar?: string;
+  /**
+   * Stop generation when the string is generated (the result includes the string and any following bytes (from the same token)).
+   */
+  stopAt?: string;
+  /**
+   * Stop generation when the given number of tokens have been generated.
+   */
+  maxTokens?: number;
+}
+
+/**
+ * Generate a string that matches given constraints.
+ * If the tokens do not map cleanly into strings, it will contain Unicode replacement characters.
+ */
+declare function gen(options: GenOptions): Promise<string>;
+
+/**
+ * Generate a list of tokens that matches given constraints.
+ */
+declare function genTokens(options: GenOptions): Promise<Token[]>;
+
+// Extensions of JavaScript built-in types
+
 interface String {
   /**
    * UTF-8 encode the current string.
@@ -7,7 +100,7 @@ interface String {
 
 interface StringConstructor {
   /**
-   * Create a string from UTF-8 buffer (with replacement cheracter for invalid sequences)
+   * Create a string from UTF-8 buffer (with replacement character for invalid sequences)
    */
   fromBuffer(buffer: Uint8Array): string;
 }
@@ -19,6 +112,25 @@ interface Uint8Array {
   decode(): string;
 }
 
+/** [MDN Reference](https://developer.mozilla.org/docs/Web/API/console) */
+interface Console {
+  /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/console/debug) */
+  debug(...data: any[]): void;
+  /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/console/error) */
+  error(...data: any[]): void;
+  /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/console/info) */
+  info(...data: any[]): void;
+  /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/console/log) */
+  log(...data: any[]): void;
+  /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/console/trace) */
+  trace(...data: any[]): void;
+  /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/console/warn) */
+  warn(...data: any[]): void;
+}
+
+declare var console: Console;
+
+// native module
 declare module "_aici" {
   type Buffer = Uint8Array;
 
@@ -70,7 +182,7 @@ declare module "_aici" {
   function stringToBuffer(s: string): Buffer;
 
   /**
-   * UTF-8 decode (with replacement cheracter for invalid sequences)
+   * UTF-8 decode (with replacement character for invalid sequences)
    */
   function bufferToString(b: Buffer): string;
 

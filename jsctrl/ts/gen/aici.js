@@ -2,7 +2,7 @@
 import { TokenSet, tokenize, detokenize, regexConstraint, cfgConstraint, substrConstraint, Constraint, getVar, setVar, appendVar, eosToken, panic, } from "_aici";
 export { TokenSet, tokenize, detokenize, getVar, setVar, appendVar, eosToken };
 import * as _aici from "_aici";
-function dbgarg(arg, depth) {
+function dbgArg(arg, depth) {
     const maxElts = 20;
     const maxDepth = 2;
     const maxStr = 200;
@@ -23,7 +23,7 @@ function dbgarg(arg, depth) {
                 arg = arg.slice(0, maxElts);
                 suff = ", ...]";
             }
-            return "[" + arg.map((x) => dbgarg(x, depth + 1)).join(", ") + suff;
+            return "[" + arg.map((x) => dbgArg(x, depth + 1)).join(", ") + suff;
         }
         else {
             let keys = Object.keys(arg);
@@ -35,7 +35,7 @@ function dbgarg(arg, depth) {
                 keys = keys.slice(0, maxElts);
             }
             return ("{" +
-                keys.map((k) => `${k}: ${dbgarg(arg[k], depth + 1)}`).join(", ") +
+                keys.map((k) => `${k}: ${dbgArg(arg[k], depth + 1)}`).join(", ") +
                 suff);
         }
     }
@@ -54,18 +54,16 @@ function dbgarg(arg, depth) {
     }
 }
 export function inspect(v) {
-    return dbgarg(v, 0);
+    return dbgArg(v, 0);
 }
 export function log(...args) {
     console._print(args.map((x) => inspect(x)).join(" "));
 }
-console.log = log;
-console.info = log;
-console.warn = log;
-console.debug = log;
-console.trace = log;
 export class AssertionError extends Error {
 }
+/**
+ * Throw an exception if the condition is not met.
+ */
 export function assert(cond, msg = "Assertion failed") {
     if (!cond)
         throw new AssertionError(msg);
@@ -223,7 +221,7 @@ export async function fixed(text) {
     await new FixedTokens(text).run();
 }
 /**
- * Same as fixed(); usage: await $`Some text`
+ * Force the exact tokens to be generated; usage: await $`Some text`
  */
 export async function $(strings, ...values) {
     let result = "";
@@ -510,7 +508,7 @@ export function test(f) {
 }
 export class Label {
     /**
-     * Create a new label the indictes the current position in the sequence.
+     * Create a new label the indicates the current position in the sequence.
      * Can be passed as `following=` argument to `FixedTokens()`.
      */
     constructor() {
@@ -565,7 +563,7 @@ export class ChooseConstraint extends Constraint {
         }
     }
 }
-export async function gen_tokens(options) {
+export async function genTokens(options) {
     console.log("GEN", options);
     const res = [];
     const { regex, yacc, substring, substringEnd = '"', options: optionList, storeVar, stopAt, maxTokens = 20, } = options;
@@ -608,7 +606,7 @@ export async function gen_tokens(options) {
     return res;
 }
 export async function gen(options) {
-    const tokens = await gen_tokens(options);
+    const tokens = await genTokens(options);
     return detokenize(tokens).decode();
 }
 export function checkVar(name, value) {
@@ -645,3 +643,13 @@ Uint8Array.prototype.toString = function () {
 Uint8Array.prototype.decode = function () {
     return _aici.bufferToString(this);
 };
+console.log = log;
+console.info = log;
+console.warn = log;
+console.debug = log;
+console.trace = log;
+globalThis.$ = $;
+globalThis.fixed = fixed;
+globalThis.assert = assert;
+globalThis.gen = gen;
+globalThis.genTokens = genTokens;

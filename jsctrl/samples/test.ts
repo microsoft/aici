@@ -1,16 +1,12 @@
 import {
-  $,
   Label,
-  assert,
   checkVars,
-  fork,
-  gen,
   getPrompt,
   test,
   waitVars,
   getVar,
   setVar,
-} from "./aici";
+} from "aici";
 
 async function main() {
   await $`2 + 2 =`;
