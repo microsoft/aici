@@ -5,7 +5,7 @@ const SUBMODULE_DIR: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/llama.cpp");
 
 fn main() {
     let ccache = true;
-    let cuda = true;
+    let cuda = false;
 
     let submodule_dir = &PathBuf::from(SUBMODULE_DIR);
     let header_path = submodule_dir.join("llama.h");
@@ -16,11 +16,11 @@ fn main() {
     }
 
     let mut cmake = cmake::Config::new(&submodule_dir);
-    cmake
-        .configure_arg("-DLLAMA_STATIC=OFF")
-        .configure_arg("-DLLAMA_BUILD_EXAMPLES=OFF")
-        .configure_arg("-DLLAMA_BUILD_SERVER=OFF")
-        .configure_arg("-DLLAMA_BUILD_TESTS=OFF");
+    // cmake
+    //     .configure_arg("-DLLAMA_STATIC=OFF")
+    //     .configure_arg("-DLLAMA_BUILD_EXAMPLES=OFF")
+    //     .configure_arg("-DLLAMA_BUILD_SERVER=OFF")
+    //     .configure_arg("-DLLAMA_BUILD_TESTS=OFF");
 
     if ccache {
         cmake
@@ -31,11 +31,14 @@ fn main() {
 
     if cuda {
         cmake.configure_arg("-DLLAMA_CUBLAS=ON");
+        println!("cargo:rustc-link-search=/usr/local/cuda/lib64");
+        println!("cargo:rustc-link-lib=cuda");
+        println!("cargo:rustc-link-lib=cudart");
+        println!("cargo:rustc-link-lib=cublas");
+        println!("cargo:rustc-link-lib=cupti");
     }
 
     let dst = cmake.build();
-
-    println!("cargo:warning=dst: {:?}", dst);
 
     println!("cargo:rustc-link-search=native={}/lib", dst.display());
     println!("cargo:rustc-link-lib=static=llama");
@@ -53,6 +56,7 @@ fn main() {
         //.allowlist_type("ggml_.*")
         .opaque_type("FILE")
         .clang_arg("-xc++")
+        .clang_arg("-fparse-all-comments")
         .generate()
         .expect("Unable to generate bindings");
 
