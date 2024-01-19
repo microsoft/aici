@@ -9,6 +9,7 @@ members = [
     "uppercase",
     "rllm",
     "tch-cuda",
+    "llama-cpp-low",
 ]
 resolver = "2"
 
