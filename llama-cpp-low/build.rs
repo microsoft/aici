@@ -16,11 +16,11 @@ fn main() {
     }
 
     let mut cmake = cmake::Config::new(&submodule_dir);
-    // cmake
-    //     .configure_arg("-DLLAMA_STATIC=OFF")
-    //     .configure_arg("-DLLAMA_BUILD_EXAMPLES=OFF")
-    //     .configure_arg("-DLLAMA_BUILD_SERVER=OFF")
-    //     .configure_arg("-DLLAMA_BUILD_TESTS=OFF");
+    cmake
+        .configure_arg("-DLLAMA_STATIC=OFF")
+        .configure_arg("-DLLAMA_BUILD_EXAMPLES=OFF")
+        .configure_arg("-DLLAMA_BUILD_SERVER=OFF")
+        .configure_arg("-DLLAMA_BUILD_TESTS=OFF");
 
     if ccache {
         cmake
