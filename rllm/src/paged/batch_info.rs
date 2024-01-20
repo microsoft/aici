@@ -1,9 +1,6 @@
 use super::{cache_engine::CacheEngine, scheduler::SchedulerOutputs};
 use crate::{
-    config::RllmConfig,
-    llm::kernels::to_offsets,
-    seq::{SchedulingPhase, SeqId},
-    util::pad_to_multiple,
+    config::RllmConfig, llm::kernels::to_offsets, seq::SchedulingPhase, util::pad_to_multiple,
     HashMap,
 };
 use aicirt::api::Token;
@@ -27,7 +24,7 @@ pub struct BatchInfo {
     pub logit_idxs: Tensor,     // u32, [batch_size]
     pub max_seqlen_q: usize,
     pub max_seqlen_k: usize,
-    pub seq_id_to_idx: HashMap<SeqId, usize>, // seq_id -> index into seqlens_*
+    pub seq_id_to_idx: HashMap<usize, usize>, // seq_id -> index into seqlens_*
 
     pub infer_log: Mutex<Vec<(String, Tensor)>>,
     pub step_no: usize,
@@ -101,7 +98,7 @@ pub struct BatchInfoBuilder {
 }
 
 struct BatchEntry {
-    seq_id: SeqId,
+    seq_id: usize,
     query_pos_token: Vec<(usize, Token)>,
     kv_slots: Vec<usize>,
 }
@@ -135,7 +132,7 @@ impl BatchInfoBuilder {
 
                 let off = k_len - q_len;
                 self.entries.push(BatchEntry {
-                    seq_id: seq.seq_id,
+                    seq_id: seq.seq_id.to_num(),
                     query_pos_token: (off..off + q_len)
                         .map(|idx| (idx, seq.get_token(idx)))
                         .collect(),
@@ -199,7 +196,7 @@ impl BatchInfoBuilder {
         let mut seqlens_k: Vec<usize> = Vec::new();
         let mut gather_mapping: Vec<i32> = Vec::new();
         let mut slot_mapping: Vec<i32> = Vec::new();
-        let mut seq_id_to_idx: HashMap<SeqId, usize> = HashMap::default();
+        let mut seq_id_to_idx: HashMap<usize, usize> = HashMap::default();
 
         let mut paged_block_tables: Vec<Vec<i32>> = Vec::new();
         let mut paged_context_lens: Vec<i32> = Vec::new();

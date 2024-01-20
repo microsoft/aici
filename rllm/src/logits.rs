@@ -2,7 +2,7 @@
 
 use crate::{
     config::{SamplingParams, SAMPLING_EPS},
-    to_vec1, Tensor,
+    to_vec1, DType, Tensor,
 };
 use aici_abi::toktree::TokTrie;
 use anyhow::Result;
@@ -103,6 +103,7 @@ impl LogitsProcessor {
                 }
                 #[cfg(feature = "llamacpp")]
                 {
+                    let _ = DType::Float;
                     let mut prs: Vec<f32> = to_vec1(logits);
                     let temp = (1.0 / temperature) as f32;
                     for idx in 0..prs.len() {

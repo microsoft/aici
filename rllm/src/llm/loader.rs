@@ -1,7 +1,8 @@
 use crate::{
-    config::{CommonModelConfig, ModelConfig, ModelMeta, ModelType, RllmConfig},
+    config::{ModelConfig, ModelType, RllmConfig},
     llm::{
         llama, phi,
+        seqid::SeqIdGen,
         tmodel::TModel,
         util::{
             gpu_memory_size, gpu_peak_allocated_bytes, log_mem_stats, reset_mem_stats, to_vec1,
@@ -87,6 +88,9 @@ fn load_model(rllm_config: &RllmConfig, filenames: Vec<PathBuf>) -> Result<Box<d
     let mut model: Box<dyn TModelInner> = match rllm_config.model.model_type {
         ModelType::Llama => Box::new(llama::Llama::load(vs.root(), &rc_cfg).unwrap()),
         ModelType::Phi => Box::new(phi::MixFormerSequentialForCausalLM::new(&rc_cfg, vs.root())),
+        ModelType::LlamaCpp => {
+            panic!("LlamaCpp model type is not supported by the Rust loader")
+        }
     };
 
     vs.set_kind(rllm_config.dtype);
@@ -178,13 +182,13 @@ fn model_filenames(repo: &Repo) -> Result<Vec<PathBuf>> {
     Ok(filenames)
 }
 
-pub fn load_rllm_engine(args: LoaderArgs) -> Result<RllmEngine> {
+pub fn load_rllm_engine(mut args: LoaderArgs) -> Result<RllmEngine> {
     let _no_grad = tch::no_grad_guard();
 
     let device = args.device;
     let repo = Repo::from(&args)?;
 
-    let rllm_config = RllmEngine::build_config(&args)?;
+    let rllm_config = RllmEngine::build_config(&mut args)?;
 
     let filenames = model_filenames(&repo)?;
     log::info!("building the model");
@@ -203,7 +207,7 @@ pub fn load_rllm_engine(args: LoaderArgs) -> Result<RllmEngine> {
 
     let tmodel = TModel::new(rllm_config.clone(), cache_engine, model);
 
-    RllmEngine::build(args, tmodel, rllm_config, cache_size)
+    RllmEngine::build(args, tmodel, rllm_config, cache_size, SeqIdGen::new())
 }
 
 fn profile_model(config: Arc<RllmConfig>, model: &Box<dyn TModelInner>) -> CacheSize {

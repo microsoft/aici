@@ -355,7 +355,8 @@ fn run_tests(args: &Args, loader_args: LoaderArgs) {
 
     while tests.len() > 0 || engine.num_pending_requests() > 0 {
         if let Some(ref t) = tests.pop() {
-            let exp = ExpectedGeneration::load(&PathBuf::from(t)).expect("can't load test");
+            let exp = rllm::ExpectedGeneration::load(&std::path::PathBuf::from(t))
+                .expect("can't load test");
             log::info!(
                 "test {t}: {} tokens; {} logits",
                 exp.output.len(),
@@ -407,7 +408,7 @@ fn spawn_inference_loop(
             Some(w) if w == "off" => {}
             #[cfg(feature = "tch")]
             Some(w) => {
-                let exp = ExpectedGeneration::load(&PathBuf::from(&w)).expect("can't load warmup");
+                let exp = rllm::ExpectedGeneration::load(&std::path::PathBuf::from(&w)).expect("can't load warmup");
                 log::info!(
                     "warmup {w}: {} tokens; {} logits",
                     exp.output.len(),

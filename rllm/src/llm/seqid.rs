@@ -8,6 +8,10 @@ impl SeqId {
     pub fn to_num(&self) -> usize {
         self.num
     }
+
+    pub fn clone_from(&self, _other: &SeqId, _length: usize) {}
+
+    pub fn trim(&self, _length: usize) {}
 }
 
 impl std::fmt::Display for SeqId {
@@ -22,7 +26,9 @@ pub struct SeqIdGen {
 
 impl SeqIdGen {
     pub fn new() -> Self {
-        Self { next: Mutex::new(1) }
+        Self {
+            next: Mutex::new(1),
+        }
     }
 
     pub fn next(&self) -> SeqId {
@@ -32,4 +38,3 @@ impl SeqIdGen {
         r
     }
 }
-
