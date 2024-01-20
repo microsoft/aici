@@ -18,7 +18,7 @@ cfg_if::cfg_if! {
         pub mod llm;
         pub use tch::{Device, IndexOp, Kind as DType, Shape, Tensor};
         pub(crate) use paged::BlockRef;
-        pub(crate) use paged::blocks::BlockSpaceManager;
+        pub(crate) use paged::BlockSpaceManager;
     } else {
         pub mod llamacpp;
         pub use llamacpp as llm;

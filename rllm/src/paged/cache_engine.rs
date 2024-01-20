@@ -8,7 +8,7 @@ use tch_cuda::{CudaEvent, CudaStream};
 use crate::{config::RllmConfig, llm::kernels, Device, HashMap, Tensor};
 use std::sync::Arc;
 
-use super::CacheIface;
+use super::{CacheIface, CacheSize};
 
 type KVCache = (Tensor, Tensor);
 

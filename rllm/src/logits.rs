@@ -2,7 +2,7 @@
 
 use crate::{
     config::{SamplingParams, SAMPLING_EPS},
-    Tensor, to_vec1,
+    to_vec1, DType, Tensor,
 };
 use aici_abi::toktree::TokTrie;
 use anyhow::Result;

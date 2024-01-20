@@ -989,6 +989,7 @@ impl AiciBias {
         let bias = self.bias.as_ref().unwrap();
         #[cfg(feature = "tch")]
         {
+            use tch::IndexOp;
             let bias = bias.i((seq_id as i64, ..));
             *logits = &*logits + bias;
         }

@@ -1,6 +1,5 @@
 pub mod kernels;
 pub mod llama;
-pub mod logits;
 pub mod phi;
 pub mod refkernels;
 pub mod loader;
