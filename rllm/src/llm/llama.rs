@@ -2,7 +2,7 @@
 
 use crate::{
     config::{CommonModelConfig, ModelConfig, ModelType},
-    engine::{RllmModel, RllmModelConfig},
+    engine::RllmModelConfig,
     llm::{linear_no_bias, varlen_attn, RmsNorm, RotaryEmbedding},
     paged::BatchInfo,
     Tensor,
@@ -11,6 +11,8 @@ use anyhow::Result;
 use serde::Deserialize;
 use std::rc::Rc;
 use tch::nn::{self, Module, Path};
+
+use super::tmodel::TModelInner;
 
 #[derive(Deserialize)]
 pub struct LlamaConfig {
@@ -191,7 +193,7 @@ pub struct Llama {
     lm_head: nn::Linear,
 }
 
-impl RllmModel for Llama {
+impl TModelInner for Llama {
     fn forward(&self, batch_info: &mut BatchInfo) -> Tensor {
         let mut x = self.wte.forward(&batch_info.tokens).unsqueeze(0);
         for (block_idx, block) in self.blocks.iter().enumerate() {

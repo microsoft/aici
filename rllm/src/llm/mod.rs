@@ -5,6 +5,7 @@ pub mod phi;
 pub mod refkernels;
 pub mod loader;
 pub mod util;
+pub mod tmodel;
 
 use crate::{
     config::ModelConfig,

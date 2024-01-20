@@ -1,24 +1,24 @@
 use crate::{
-    config::{
-        CacheConfig, CommonModelConfig, ModelConfig, ModelMeta, ModelType, ParallelConfig,
-        RllmConfig, SchedulerConfig,
-    },
+    config::{CommonModelConfig, ModelConfig, ModelMeta, ModelType, RllmConfig},
     llm::{
         llama, phi,
+        tmodel::TModel,
         util::{
             gpu_memory_size, gpu_peak_allocated_bytes, log_mem_stats, reset_mem_stats, to_vec1,
             to_vec2,
         },
     },
-    paged::{BatchInfoBuilder, CacheEngine, CacheSize, Scheduler},
-    DType, ExpectedGeneration, ExpectedToken, HashSet, LoaderArgs, Repo, RllmEngine, RllmModel,
+    paged::{BatchInfoBuilder, CacheEngine, CacheSize},
+    DType, ExpectedGeneration, ExpectedToken, HashSet, LoaderArgs, Repo, RllmEngine,
     RllmModelConfig,
 };
-use aicirt::{api::Token, TimerSet};
+use aicirt::api::Token;
 use anyhow::{bail, Result};
 use safetensors::Dtype;
 use std::{path::PathBuf, rc::Rc, sync::Arc};
 use tch::{nn::VarStore, Device, Kind, Tensor};
+
+use super::tmodel::TModelInner;
 
 fn read_tensor(s: &safetensors::SafeTensors, name: &str) -> Result<Tensor> {
     let view = s.tensor(name)?;
@@ -80,11 +80,11 @@ impl ExpectedGeneration {
     }
 }
 
-fn load_model(rllm_config: &RllmConfig, filenames: Vec<PathBuf>) -> Result<Box<dyn RllmModel>> {
+fn load_model(rllm_config: &RllmConfig, filenames: Vec<PathBuf>) -> Result<Box<dyn TModelInner>> {
     let mut vs = VarStore::new(rllm_config.device.clone());
 
     let rc_cfg = Rc::new(rllm_config.model.clone());
-    let mut model: Box<dyn RllmModel> = match rllm_config.model.model_type {
+    let mut model: Box<dyn TModelInner> = match rllm_config.model.model_type {
         ModelType::Llama => Box::new(llama::Llama::load(vs.root(), &rc_cfg).unwrap()),
         ModelType::Phi => Box::new(phi::MixFormerSequentialForCausalLM::new(&rc_cfg, vs.root())),
     };
@@ -199,11 +199,14 @@ pub fn load_rllm_engine(args: LoaderArgs) -> Result<RllmEngine> {
 
     let rllm_config = Arc::new(rllm_config);
     let cache_size = profile_model(rllm_config.clone(), &model);
+    let cache_engine = CacheEngine::new(rllm_config.clone(), &cache_size);
 
-    RllmEngine::build(args, model, rllm_config, cache_size)
+    let tmodel = TModel::new(rllm_config.clone(), cache_engine, model);
+
+    RllmEngine::build(args, tmodel, rllm_config, cache_size)
 }
 
-fn profile_model(config: Arc<RllmConfig>, model: &Box<dyn RllmModel>) -> CacheSize {
+fn profile_model(config: Arc<RllmConfig>, model: &Box<dyn TModelInner>) -> CacheSize {
     let device = config.device.clone();
     let gpu_mem = gpu_memory_size(device);
 

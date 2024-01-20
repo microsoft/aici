@@ -6,9 +6,10 @@ use crate::{
     iface::AiciRtIface,
     llm::{
         self,
-        util::{scalar_tensor, synchronize, to_vec1},
+        tmodel::TModel,
+        util::{scalar_tensor, to_vec1},
     },
-    paged::{BatchInfo, BatchInfoBuilder, CacheEngine, CacheSize, Scheduler, SchedulerOutputs},
+    paged::{CacheSize, Scheduler, SchedulerOutputs},
     seq::{
         AiciSampling, FinishReason, RequestOutput, SchedulingPhase, SeqId, SeqOutput, Sequence,
         SequenceGroup, Token, TokenUsage,
@@ -113,11 +114,6 @@ impl Display for Repo {
     }
 }
 
-pub trait RllmModel {
-    fn forward(&self, batch_info: &mut BatchInfo) -> Tensor;
-    fn finalize(&mut self) {}
-}
-
 pub trait RllmModelConfig {
     fn into_config(self, common: CommonModelConfig) -> ModelConfig;
 }
@@ -140,9 +136,9 @@ pub struct RllmEngine {
     pub tokenizer: Arc<Tokenizer>,
     pub tok_trie: Arc<TokTrie>,
     pub model_id: String,
-    pub model: Box<dyn RllmModel>,
+    pub tmodel: TModel,
     seq_id: SeqId,
-    step_no: usize,
+    pub(crate) step_no: usize,
     pub profile_step_no: usize,
     req_id_cnt: usize,
     #[allow(dead_code)]
@@ -150,7 +146,6 @@ pub struct RllmEngine {
     pub device: Device,
     pub eos_token_id: Token,
     pub space_token_id: Token,
-    pub nv_profile: bool,
     pub num_errors: usize,
 
     pub timers: TimerSet,
@@ -162,7 +157,7 @@ pub struct RllmEngine {
     tim_aici_mid: TimerRef,
     tim_run_model: TimerRef,
 
-    tim_model_fwd: TimerRef,
+    pub(crate) tim_model_fwd: TimerRef,
     tim_sample: TimerRef,
 
     tim_aici_bias: TimerRef,
@@ -172,7 +167,6 @@ pub struct RllmEngine {
 
     aicirt: Option<AiciRtIface>,
 
-    cache_engine: CacheEngine,
     scheduler: Scheduler,
 }
 
@@ -214,7 +208,7 @@ impl RllmEngine {
 
     pub(crate) fn build(
         args: LoaderArgs,
-        model: Box<dyn RllmModel>,
+        tmodel: TModel,
         rllm_config: Arc<RllmConfig>,
         cache_size: CacheSize,
     ) -> Result<Self> {
@@ -225,7 +219,6 @@ impl RllmEngine {
 
         let device = args.device;
         let scheduler = Scheduler::new(rllm_config.clone(), &cache_size);
-        let cache_engine = CacheEngine::new(rllm_config.clone(), &cache_size);
 
         let timers = TimerSet::new();
 
@@ -234,7 +227,7 @@ impl RllmEngine {
             tokenizer: Arc::new(tokenizer),
             tok_trie: Arc::new(tok_trie),
             model_id: format!("{}", repo),
-            model,
+            tmodel,
             seq_id: 1,
             step_no: 0,
             profile_step_no: 0,
@@ -245,8 +238,6 @@ impl RllmEngine {
             space_token_id,
             alt: args.alt,
             scheduler,
-            cache_engine,
-            nv_profile: false,
             aicirt: None,
             tim_step: timers.new_timer("step"),
             tim_aici_pre: timers.new_timer("step.aici_pre"),
@@ -518,22 +509,8 @@ impl RllmEngine {
         Ok(self.dropped_outputs(sched_out))
     }
 
-    fn sample(
-        &mut self,
-        logits: &Tensor,
-        sched_out: &mut SchedulerOutputs,
-        info: &BatchInfo,
-    ) -> Result<Vec<RequestOutput>> {
-        let mut seq_id_to_logit_idx = info.seq_id_to_idx.clone();
-
-        {
-            let (num_seq, vocab_size) = logits.size2()?;
-            let t_vocab = self.tok_trie.vocab_size() as i64;
-            if vocab_size != t_vocab {
-                panic!("vocab size mismatch: model {vocab_size} != tokenizer {t_vocab}");
-            }
-            assert!(num_seq == info.seq_id_to_idx.len() as i64);
-        }
+    fn sample(&mut self, sched_out: &mut SchedulerOutputs) -> Result<Vec<RequestOutput>> {
+        let mut seq_id_mapping = HashMap::default();
 
         for sg in sched_out.next_seq_groups.iter_mut() {
             let mut to_add = Vec::new();
@@ -542,10 +519,9 @@ impl RllmEngine {
                     continue;
                 }
                 // get it even if no pending - make sure we have them all
-                let trg_idx = seq_id_to_logit_idx[&seq.seq_id];
                 let pending = std::mem::take(&mut seq.pending_fork_ids);
                 for copy_id in pending {
-                    seq_id_to_logit_idx.insert(copy_id, trg_idx);
+                    seq_id_mapping.insert(copy_id, seq.seq_id);
                     let copy = seq.fork_as(copy_id, sg.max_index + 1);
                     sg.max_index += 1;
                     log::debug!("forked: {:?} -> {:?}", seq, copy);
@@ -567,8 +543,8 @@ impl RllmEngine {
                     continue;
                 }
 
-                let idx = seq_id_to_logit_idx[&seq.seq_id];
-                let mut logits = logits.i((idx as i64, ..));
+                let sidx = seq_id_mapping.get(&seq.seq_id).unwrap_or(&seq.seq_id);
+                let mut logits = self.tmodel.get_logits(*sidx);
 
                 if let Some(op) = self.aici_apply_bias(seq, &mut logits, &aici_bias) {
                     post_ops.push(op);
@@ -669,58 +645,17 @@ impl RllmEngine {
             return self.empty_outputs(sched_out);
         }
 
-        let iface = {
-            self.cache_engine.new_round();
-            if sched_out.blocks_to_swap_in.len() > 0 {
-                self.cache_engine.swap_in(&sched_out.blocks_to_swap_in);
-            }
-            if sched_out.blocks_to_swap_out.len() > 0 {
-                self.cache_engine.swap_out(&sched_out.blocks_to_swap_out);
-            }
-            if sched_out.blocks_to_copy.len() > 0 {
-                self.cache_engine.copy(&sched_out.blocks_to_copy);
-            }
-            self.cache_engine.get_cache_iface()
-        };
-
-        let mut info = BatchInfoBuilder::new(self.config.clone())
-            .sched_out(sched_out)
-            .finish(self.step_no, iface);
-
-        log::trace!("batch_info #{}: {:?}", info.step_no, info);
-
-        #[cfg(feature = "cuda")]
-        if self.nv_profile {
-            cudarc::driver::safe::profiler_start()?;
-        }
-
-        let t0 = Instant::now();
-        let logits = with_timer!(self.tim_model_fwd, {
-            let l = self.model.forward(&mut info);
-            if false {
-                // without this, the timing is off but we may get better perf
-                synchronize(self.device);
-            }
-            l
-        });
-        let r = with_timer!(self.tim_sample, { self.sample(&logits, sched_out, &info) });
-        let dur = t0.elapsed().as_micros() as f64 / 1000.0;
-
-        log::info!(
-            "model forward: step #{} {:.2}ms; {} tok(s); {:.1}tps",
+        self.tmodel.run(
+            self.tok_trie.vocab_size(),
+            &self.tim_model_fwd,
             self.step_no,
-            dur,
-            info.tokens.numel(),
-            info.tokens.numel() as f64 / (dur / 1000.0),
-        );
+            sched_out,
+        )?;
 
-        #[cfg(feature = "cuda")]
-        if self.nv_profile {
-            cudarc::driver::safe::profiler_stop()?;
-        }
+        let r = with_timer!(self.tim_sample, { self.sample(sched_out) });
 
-        info.save_log(&format!("step-{}.safetensor", self.step_no));
-        log::trace!("logits: {:?}", logits);
+        self.tmodel.finalize_run()?;
+
         r
     }
 
