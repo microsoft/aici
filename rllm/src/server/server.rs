@@ -79,6 +79,10 @@ pub struct Args {
     #[arg(long)]
     local_weights: Option<String>,
 
+    /// Name of .gguf file inside of the model folder/repo.
+    #[arg(long)]
+    gguf: Option<String>,
+
     /// Tokenizer to use; try --tokenizer list to see options
     #[arg(short, long, default_value = "llama")]
     tokenizer: String,
@@ -458,7 +462,14 @@ async fn main() -> () {
         _ => panic!("invalid dtype; try one of bf16, f16, f32"),
     };
 
-    if args.model.contains('@') {
+    if args.gguf.is_none() && args.model.contains("::") {
+        let m = args.model.clone();
+        let mut parts = m.split("::");
+        args.model = parts.next().unwrap().to_string();
+        args.gguf = Some(parts.next().unwrap().to_string());
+    }
+
+    if args.revision.is_none() && args.model.contains('@') {
         let m = args.model.clone();
         let mut parts = m.split('@');
         args.model = parts.next().unwrap().to_string();

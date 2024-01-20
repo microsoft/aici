@@ -47,7 +47,7 @@ num_cpus = "1.15.0"
 rayon = "1.7.0"
 
 [features]
-#default = []
-default = ["tch", "cuda"]
+default = []
+#default = ["tch", "cuda"]
 tch = ["dep:tch", "dep:torch-sys"]
 cuda = ["tch", "dep:tch-cuda", "dep:cudarc"]

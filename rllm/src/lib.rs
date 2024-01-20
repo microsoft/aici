@@ -38,6 +38,7 @@ pub struct LoaderArgs {
     pub model_id: String,
     pub revision: Option<String>,
     pub local_weights: Option<String>,
+    pub gguf: Option<String>,
     pub alt: usize,
     pub aici: AiciConfig,
 
@@ -65,6 +66,7 @@ impl Default for LoaderArgs {
             model_id: "NousResearch/Llama-2-7b-hf".to_string(),
             revision: None,
             local_weights: None,
+            gguf: None,
             aici: AiciConfig::default(),
             alt: 0,
             dtype,
