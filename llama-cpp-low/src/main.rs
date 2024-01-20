@@ -2,9 +2,10 @@ use llama_cpp_low::*;
 
 fn main() {
     let mparams = ModelParams::default();
-    let cparams = ContextParams::default();
+    let mut cparams = ContextParams::default();
+    cparams.n_ctx = 2048;
     let mut model = Model::from_file("tmp/llama-2-7b-chat.Q5_K_M.gguf", mparams, cparams);
-    let mut batch = Batch::new(100);
+    let mut batch = Batch::new(512);
     for (idx, tok) in model
         .tokenize("Hello, my name is".as_bytes(), true, true)
         .iter()
@@ -19,9 +20,7 @@ fn main() {
     batch.enable_logits(logit_idx);
 
     for _ in 0..10 {
-        println!("pos: {:?}", pos);
         model.decode(&mut batch).unwrap();
-        println!("pos: done {:?}", pos);
         let logits = model.get_logits(logit_idx);
         let top_idx = logits
             .iter()

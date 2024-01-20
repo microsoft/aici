@@ -1,13 +1,12 @@
-#![allow(non_upper_case_globals)]
-#![allow(non_camel_case_types)]
-#![allow(non_snake_case)]
-
 use anyhow::{anyhow, Result};
 use core::slice;
 use std::ffi::CString;
 
 extern crate link_cplusplus;
 
+#[allow(non_upper_case_globals)]
+#[allow(non_camel_case_types)]
+#[allow(non_snake_case)]
 #[allow(dead_code)]
 mod sys {
     include!(concat!(env!("OUT_DIR"), "/bindings.rs"));
@@ -76,7 +75,7 @@ impl Batch {
         unsafe {
             self.batch.token.add(p).write(token as i32);
             self.batch.pos.add(p).write(pos as i32);
-            self.batch.n_seq_id.add(p).write(seq_id);
+            self.batch.n_seq_id.add(p).write(1);
             self.batch.seq_id.add(p).read().add(0).write(seq_id);
             self.batch.logits.add(p).write(if logits { 1 } else { 0 });
         }
