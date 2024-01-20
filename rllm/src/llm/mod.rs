@@ -3,11 +3,13 @@ pub mod llama;
 pub mod logits;
 pub mod phi;
 pub mod refkernels;
+pub mod loader;
+pub mod util;
 
 use crate::{
     config::ModelConfig,
     paged::BatchInfo,
-    util::{check_all_close, check_all_close_attn},
+    llm::util::{check_all_close, check_all_close_attn},
     DType, IndexOp, Tensor,
 };
 use std::rc::Rc;

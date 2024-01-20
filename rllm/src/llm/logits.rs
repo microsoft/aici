@@ -2,7 +2,7 @@
 
 use crate::{
     config::{SamplingParams, SAMPLING_EPS},
-    util::{scalar_tensor, to_vec1},
+    llm::util::{scalar_tensor, to_vec1},
     DType, Tensor,
 };
 use aici_abi::toktree::TokTrie;
