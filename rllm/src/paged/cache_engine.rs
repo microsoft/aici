@@ -20,11 +20,6 @@ pub struct CacheEngine {
     used_events: bool,
 }
 
-pub struct CacheSize {
-    pub gpu: usize,
-    pub cpu: usize,
-}
-
 struct MyCacheAwaiter {
     gpu_cache: Arc<Vec<KVCache>>,
     events: Option<Arc<Vec<CudaEvent>>>,

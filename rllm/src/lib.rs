@@ -1,4 +1,3 @@
-pub mod llm;
 pub mod paged;
 pub mod seq;
 
@@ -6,13 +5,30 @@ pub mod seq;
 pub mod config;
 mod engine;
 pub mod iface;
+mod logits;
 pub mod util;
 
 use config::AiciConfig;
 pub use engine::*;
-pub use llm::logits::LogitsProcessor;
+pub use logits::LogitsProcessor;
 use std::sync::atomic::AtomicBool;
-pub use tch::{Device, IndexOp, Kind as DType, Shape, Tensor};
+
+cfg_if::cfg_if! {
+    if #[cfg(feature = "tch")] {
+        pub mod llm;
+        pub use tch::{Device, IndexOp, Kind as DType, Shape, Tensor};
+        pub(crate) use paged::BlockRef;
+        pub(crate) use paged::blocks::BlockSpaceManager;
+    } else {
+        pub mod llamacpp;
+        pub use llamacpp as llm;
+        pub use llm::{Device, DType, Tensor};
+        pub(crate) use llamacpp::BlockRef;
+        pub(crate) use llamacpp::blocks::BlockSpaceManager;
+    }
+}
+
+pub use llm::{tmodel::TModel, util::to_vec1};
 
 pub use fxhash::FxHashMap as HashMap;
 pub use fxhash::FxHashSet as HashSet;
@@ -31,6 +47,7 @@ pub struct LoaderArgs {
 
 impl Default for LoaderArgs {
     fn default() -> Self {
+        #[cfg(feature = "tch")]
         let (device, dtype) = if tch::Cuda::is_available() {
             (Device::Cuda(0), None)
         } else {
@@ -41,6 +58,8 @@ impl Default for LoaderArgs {
             let r = (Device::Cpu, Some(DType::Float));
             r
         };
+        #[cfg(not(feature = "tch"))]
+        let (device, dtype) = (Device::Cpu, Some(DType::Float));
         Self {
             tokenizer: "llama".to_string(),
             model_id: "NousResearch/Llama-2-7b-hf".to_string(),

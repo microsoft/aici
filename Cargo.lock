@@ -2935,6 +2935,7 @@ dependencies = [
  "aicirt",
  "anyhow",
  "base64 0.21.5",
+ "cfg-if",
  "clap",
  "cudarc",
  "derive_more",

@@ -1,6 +1,9 @@
 use actix_web::{middleware::Logger, web, App, HttpServer};
 use aici_abi::toktree::TokTrie;
-use aicirt::{api::{AuthInfo, GetTagsResp, MkModuleReq, MkModuleResp, SetTagsReq}, set_max_priority};
+use aicirt::{
+    api::{AuthInfo, GetTagsResp, MkModuleReq, MkModuleResp, SetTagsReq},
+    set_max_priority,
+};
 use anyhow::Result;
 use base64::Engine;
 use clap::Parser;
@@ -337,6 +340,12 @@ fn inference_loop(
     }
 }
 
+#[cfg(not(feature = "tch"))]
+fn run_tests(_args: &Args, _loader_args: LoaderArgs) {
+    panic!("tests not supported without tch feature")
+}
+
+#[cfg(feature = "tch")]
 fn run_tests(args: &Args, loader_args: LoaderArgs) {
     let mut engine = RllmEngine::load(loader_args).expect("failed to load model");
     let mut tests = args.test.clone();
@@ -393,6 +402,7 @@ fn spawn_inference_loop(
         let wid = "warmup".to_string();
         match warmup {
             Some(w) if w == "off" => {}
+            #[cfg(feature = "tch")]
             Some(w) => {
                 let exp = ExpectedGeneration::load(&PathBuf::from(&w)).expect("can't load warmup");
                 log::info!(
@@ -402,7 +412,7 @@ fn spawn_inference_loop(
                 );
                 engine.add_expected_generation(exp, Some(wid)).unwrap();
             }
-            None => {
+            _ => {
                 engine
                     .add_request(
                         wid,

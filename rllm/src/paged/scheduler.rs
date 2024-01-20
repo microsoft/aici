@@ -1,10 +1,9 @@
-use super::cache_engine::CacheSize;
 use crate::{
     config::RllmConfig,
-    paged::blocks::BlockSpaceManager,
+    paged::CacheSize,
     seq::{FinishReason, SchedulingPhase, SeqId, Sequence, SequenceGroup},
     util::limit_str,
-    HashMap,
+    BlockSpaceManager, HashMap,
 };
 use aicirt::api::SequenceResult;
 use std::{

@@ -1,4 +1,4 @@
-use crate::{config::SamplingParams, engine::ExpectedGeneration, paged::BlockRef, LogitsProcessor};
+use crate::{config::SamplingParams, engine::ExpectedGeneration, BlockRef, LogitsProcessor};
 use aici_abi::{toktree::TokTrie, TokenId};
 use aicirt::api::SequenceResult;
 use serde::{Deserialize, Serialize};
@@ -167,7 +167,6 @@ impl Sequence {
         block_index * self.block_size + block_offset
     }
 
-    #[allow(dead_code)]
     pub(crate) fn fork_as(&self, seq_id: SeqId, index: usize) -> Self {
         Self {
             seq_id,
