@@ -4,14 +4,15 @@ fn main() {
     let mparams = ModelParams::default();
     let mut cparams = ContextParams::default();
     cparams.n_ctx = 2048;
-    let mut model = Model::from_file("tmp/llama-2-7b-chat.Q5_K_M.gguf", mparams, cparams);
+    let model = Model::from_file("tmp/llama-2-7b-chat.Q5_K_M.gguf", mparams, cparams);
     let mut batch = Batch::new(512);
+    let s = model.new_sequence();
     for (idx, tok) in model
         .tokenize("Hello, my name is".as_bytes(), true, true)
         .iter()
         .enumerate()
     {
-        batch.add_token(*tok, idx, 0, false)
+        batch.add_token(*tok, idx, &s, false)
     }
 
     let mut logit_idx = batch.len() - 1;
@@ -36,7 +37,7 @@ fn main() {
 
         logit_idx = 0;
         batch.clear();
-        batch.add_token(top_idx as u32, pos, 0, true);
+        batch.add_token(top_idx as u32, pos, &s, true);
         pos += 1;
     }
 }

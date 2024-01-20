@@ -1,6 +1,9 @@
 use anyhow::{anyhow, Result};
 use core::slice;
-use std::ffi::CString;
+use std::{
+    ffi::CString,
+    sync::{Arc, Mutex},
+};
 
 extern crate link_cplusplus;
 
@@ -13,14 +16,25 @@ mod sys {
 }
 use sys::*;
 
-pub struct Model {
+struct ModelInner {
+    seq_id: i32,
     model: *mut llama_model,
     ctx: *mut llama_context,
+}
+
+#[derive(Clone)]
+pub struct Model {
+    inner: Arc<Mutex<ModelInner>>,
 }
 
 pub struct Batch {
     size: usize,
     batch: llama_batch,
+}
+
+pub struct Sequence {
+    id: i32,
+    model: Model,
 }
 
 pub type ModelParams = llama_model_params;
@@ -69,25 +83,17 @@ impl Batch {
         }
     }
 
-    pub fn add_token(&mut self, token: u32, pos: usize, seq_id: i32, logits: bool) {
+    pub fn add_token(&mut self, token: u32, pos: usize, seq: &Sequence, logits: bool) {
         let p = self.batch.n_tokens as usize;
         assert!(p < self.size);
         unsafe {
             self.batch.token.add(p).write(token as i32);
             self.batch.pos.add(p).write(pos as i32);
             self.batch.n_seq_id.add(p).write(1);
-            self.batch.seq_id.add(p).read().add(0).write(seq_id);
+            self.batch.seq_id.add(p).read().add(0).write(seq.id);
             self.batch.logits.add(p).write(if logits { 1 } else { 0 });
         }
         self.batch.n_tokens += 1;
-    }
-}
-
-impl Drop for Batch {
-    fn drop(&mut self) {
-        unsafe {
-            llama_batch_free(self.batch);
-        }
     }
 }
 
@@ -101,21 +107,41 @@ impl Model {
             assert!(model != std::ptr::null_mut());
             let ctx = llama_new_context_with_model(model, cparams);
             assert!(ctx != std::ptr::null_mut());
-            Model { model, ctx }
+            Model {
+                inner: Arc::new(Mutex::new(ModelInner {
+                    model,
+                    ctx,
+                    seq_id: 0,
+                })),
+            }
+        }
+    }
+
+    pub fn new_sequence(&self) -> Sequence {
+        let mut inner = self.inner.lock().unwrap();
+        let seq_id = inner.seq_id;
+        inner.seq_id += 1;
+        Sequence {
+            id: seq_id,
+            model: self.clone(),
         }
     }
 
     pub fn vocab_size(&self) -> usize {
-        unsafe { llama_n_vocab(self.model) as usize }
+        unsafe {
+            let model = self.inner.lock().unwrap().model;
+            llama_n_vocab(model) as usize
+        }
     }
 
-    pub fn token_to_bytes(&mut self, token: u32) -> Vec<u8> {
+    pub fn token_to_bytes(&self, token: u32) -> Vec<u8> {
         let mut sz = 32;
         loop {
             let mut res = vec![0u8; sz];
             let ntok = unsafe {
+                let model = self.inner.lock().unwrap().model;
                 llama_token_to_piece(
-                    self.model,
+                    model,
                     token as i32,
                     res.as_mut_ptr() as *mut i8,
                     res.len() as i32,
@@ -134,11 +160,12 @@ impl Model {
     /// Convert the provided text into tokens.
     /// `special` - Allow tokenizing special and/or control tokens which otherwise are not exposed and treated as plaintext.
     ///             Does not insert a leading space.
-    pub fn tokenize(&mut self, data: &[u8], add_bos: bool, special: bool) -> Vec<u32> {
+    pub fn tokenize(&self, data: &[u8], add_bos: bool, special: bool) -> Vec<u32> {
         let mut res = vec![0u32; data.len()];
         let ntok = unsafe {
+            let model = self.inner.lock().unwrap().model;
             llama_tokenize(
-                self.model,
+                model,
                 data.as_ptr() as *mut i8,
                 data.len() as i32,
                 res.as_mut_ptr() as *mut i32,
@@ -152,8 +179,11 @@ impl Model {
         res
     }
 
-    pub fn decode(&mut self, batch: &mut Batch) -> Result<()> {
-        let r = unsafe { llama_decode(self.ctx, batch.batch) };
+    pub fn decode(&self, batch: &mut Batch) -> Result<()> {
+        let r = unsafe {
+            let ctx = self.inner.lock().unwrap().ctx;
+            llama_decode(ctx, batch.batch)
+        };
         if r == 1 {
             Err(anyhow!("KV cache overflow"))
         } else if r != 0 {
@@ -163,8 +193,43 @@ impl Model {
         }
     }
 
-    pub fn get_logits(&mut self, idx: usize) -> &[f32] {
+    pub fn get_logits(&self, idx: usize) -> &[f32] {
         let n = self.vocab_size();
-        unsafe { slice::from_raw_parts(llama_get_logits_ith(self.ctx, idx as i32), n) }
+        unsafe {
+            let ctx = self.inner.lock().unwrap().ctx;
+            slice::from_raw_parts(llama_get_logits_ith(ctx, idx as i32), n)
+        }
+    }
+}
+
+impl Sequence {
+    pub fn id(&self) -> i32 {
+        self.id
+    }
+}
+
+impl Drop for ModelInner {
+    fn drop(&mut self) {
+        unsafe {
+            llama_free(self.ctx);
+            llama_free_model(self.model);
+        }
+    }
+}
+
+impl Drop for Sequence {
+    fn drop(&mut self) {
+        unsafe {
+            let ctx = self.model.inner.lock().unwrap().ctx;
+            llama_kv_cache_seq_rm(ctx, self.id, 0, -1);
+        }
+    }
+}
+
+impl Drop for Batch {
+    fn drop(&mut self) {
+        unsafe {
+            llama_batch_free(self.batch);
+        }
     }
 }
