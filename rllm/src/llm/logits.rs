@@ -66,7 +66,7 @@ impl LogitsProcessor {
         self.sample_multinomial(prs)
     }
 
-    pub fn sample(&mut self, logits: &Tensor) -> Result<Tensor> {
+    pub fn sample(&mut self, logits: &Tensor) -> Result<u32> {
         let next_token = match self.temperature {
             None => self.sample_argmax(&logits)?,
             Some(temperature) => {
@@ -86,6 +86,6 @@ impl LogitsProcessor {
                 }
             }
         };
-        Ok(next_token)
+        Ok(next_token.int64_value(&[]) as u32)
     }
 }
