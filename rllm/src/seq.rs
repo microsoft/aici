@@ -2,43 +2,10 @@ use crate::{config::SamplingParams, engine::ExpectedGeneration, BlockRef, Logits
 use aici_abi::{toktree::TokTrie, TokenId};
 use aicirt::api::SequenceResult;
 use serde::{Deserialize, Serialize};
-use std::{fmt::Debug, sync::Mutex};
+use std::fmt::Debug;
 
 pub type Token = u32;
-
-#[derive(Debug, PartialEq, Eq, Hash)]
-pub struct SeqId {
-    num: usize,
-}
-
-impl SeqId {
-    pub fn to_num(&self) -> usize {
-        self.num
-    }
-}
-
-impl std::fmt::Display for SeqId {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.num)
-    }
-}
-
-pub struct SeqIdGen {
-    next: Mutex<usize>,
-}
-
-impl SeqIdGen {
-    pub fn new() -> Self {
-        Self { next: Mutex::new(1) }
-    }
-
-    pub fn next(&self) -> SeqId {
-        let mut l = self.next.lock().unwrap();
-        let r = SeqId { num: *l };
-        *l = *l + 1;
-        r
-    }
-}
+pub type SeqId = crate::llm::seqid::SeqId;
 
 #[derive(Debug, PartialEq, Eq, Clone, Copy, Serialize, Deserialize)]
 pub enum FinishReason {
@@ -124,7 +91,7 @@ pub struct Sequence {
 impl Debug for Sequence {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("Sequence")
-            .field("seq_id", &self.seq_id)
+            .field("seq_id", &self.seq_id.to_num())
             .field("sched_phase", &self.sched_phase)
             .field("kv_computed", &self.num_kv_computed)
             .field("aici_sampling", &self.aici_sampling)

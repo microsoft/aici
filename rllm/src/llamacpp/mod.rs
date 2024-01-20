@@ -2,6 +2,7 @@ pub mod blocks;
 pub mod loader;
 pub mod tmodel;
 pub mod util;
+pub mod seqid;
 
 pub type Model = llama_cpp_low::Model;
 

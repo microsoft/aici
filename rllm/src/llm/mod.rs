@@ -5,6 +5,7 @@ pub mod refkernels;
 pub mod loader;
 pub mod util;
 pub mod tmodel;
+pub mod seqid;
 
 use crate::{
     config::ModelConfig,

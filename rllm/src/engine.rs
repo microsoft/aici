@@ -4,10 +4,10 @@ use crate::{
         SchedulerConfig,
     },
     iface::AiciRtIface,
-    llm,
+    llm::{self, seqid::SeqIdGen},
     paged::{CacheSize, Scheduler, SchedulerOutputs},
     seq::{
-        AiciSampling, FinishReason, RequestOutput, SchedulingPhase, SeqIdGen, SeqOutput, Sequence,
+        AiciSampling, FinishReason, RequestOutput, SchedulingPhase, SeqOutput, Sequence,
         SequenceGroup, Token, TokenUsage,
     },
     to_vec1,
