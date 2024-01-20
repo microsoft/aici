@@ -284,13 +284,7 @@ fn load_one_config<T>(
 where
     T: RllmModelConfig + serde::de::DeserializeOwned,
 {
-    let common = CommonModelConfig {
-        meta: ModelMeta {
-            id: args.model_id.clone(),
-        },
-        dtype: args.dtype,
-        device: args.device.clone(),
-    };
+    let common = args.common_config();
     let json = serde_json::from_slice::<T>(bytes);
     if let Ok(json) = json {
         Some(json.into_config(common))

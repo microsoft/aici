@@ -2,10 +2,43 @@ use crate::{config::SamplingParams, engine::ExpectedGeneration, BlockRef, Logits
 use aici_abi::{toktree::TokTrie, TokenId};
 use aicirt::api::SequenceResult;
 use serde::{Deserialize, Serialize};
-use std::fmt::Debug;
+use std::{fmt::Debug, sync::Mutex};
 
 pub type Token = u32;
-pub type SeqId = usize;
+
+#[derive(Debug, PartialEq, Eq, Hash)]
+pub struct SeqId {
+    num: usize,
+}
+
+impl SeqId {
+    pub fn to_num(&self) -> usize {
+        self.num
+    }
+}
+
+impl std::fmt::Display for SeqId {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.num)
+    }
+}
+
+pub struct SeqIdGen {
+    next: Mutex<usize>,
+}
+
+impl SeqIdGen {
+    pub fn new() -> Self {
+        Self { next: Mutex::new(1) }
+    }
+
+    pub fn next(&self) -> SeqId {
+        let mut l = self.next.lock().unwrap();
+        let r = SeqId { num: *l };
+        *l = *l + 1;
+        r
+    }
+}
 
 #[derive(Debug, PartialEq, Eq, Clone, Copy, Serialize, Deserialize)]
 pub enum FinishReason {
@@ -231,7 +264,7 @@ impl Sequence {
         self.output_ptr = self.tokens.len();
         let new_text = String::from_utf8_lossy(&buf).to_string();
         SeqOutput {
-            seq_id: self.seq_id,
+            seq_id: self.seq_id.to_num(),
             index: self.index,
             new_output_tokens,
             new_text,
@@ -313,7 +346,7 @@ impl SequenceGroup {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SeqOutput {
-    pub seq_id: SeqId,
+    pub seq_id: usize,
     pub index: usize, // within the sequence group
     pub new_output_tokens: Vec<Token>,
     pub new_text: String,

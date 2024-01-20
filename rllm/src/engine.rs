@@ -7,7 +7,7 @@ use crate::{
     llm,
     paged::{CacheSize, Scheduler, SchedulerOutputs},
     seq::{
-        AiciSampling, FinishReason, RequestOutput, SchedulingPhase, SeqId, SeqOutput, Sequence,
+        AiciSampling, FinishReason, RequestOutput, SchedulingPhase, SeqIdGen, SeqOutput, Sequence,
         SequenceGroup, Token, TokenUsage,
     },
     to_vec1,
@@ -75,6 +75,7 @@ impl Repo {
         }
     }
 
+    #[allow(dead_code)]
     pub fn is_local(&self) -> bool {
         match self {
             Repo::Api(_) => false,
@@ -96,6 +97,7 @@ impl Repo {
         }
     }
 
+    #[allow(dead_code)]
     pub fn read(&self, filename: &str) -> Result<Vec<u8>> {
         std::fs::read(self.get(filename)?).map_err(E::msg)
     }
@@ -133,7 +135,7 @@ pub struct RllmEngine {
     pub tok_trie: Arc<TokTrie>,
     pub model_id: String,
     pub tmodel: TModel,
-    seq_id: SeqId,
+    seq_gen: SeqIdGen,
     pub(crate) step_no: usize,
     pub profile_step_no: usize,
     req_id_cnt: usize,
@@ -169,10 +171,10 @@ impl RllmEngine {
     pub fn load(args: LoaderArgs) -> Result<Self> {
         llm::loader::load_rllm_engine(args)
     }
-    pub fn load_model_config(args: &LoaderArgs) -> Result<ModelConfig> {
+    pub fn load_model_config(args: &mut LoaderArgs) -> Result<ModelConfig> {
         llm::loader::load_model_config(args)
     }
-    pub(crate) fn build_config(args: &LoaderArgs) -> Result<RllmConfig> {
+    pub(crate) fn build_config(args: &mut LoaderArgs) -> Result<RllmConfig> {
         let model_config = Self::load_model_config(args)?;
         let model_len = model_config.max_sequence_length;
 
@@ -202,12 +204,12 @@ impl RllmEngine {
     }
 
     pub(crate) fn build(
-        args: LoaderArgs,
+        mut args: LoaderArgs,
         tmodel: TModel,
         rllm_config: Arc<RllmConfig>,
         cache_size: CacheSize,
     ) -> Result<Self> {
-        let (tokenizer, tok_trie) = RllmEngine::load_tokenizer(&args)?;
+        let (tokenizer, tok_trie) = RllmEngine::load_tokenizer(&mut args)?;
         let eos_token_id = tok_trie.info().tok_eos;
         let space_token_id = tok_trie.greedy_tokenize(b" ")[0];
         let repo = Repo::from(&args)?;
@@ -223,7 +225,7 @@ impl RllmEngine {
             tok_trie: Arc::new(tok_trie),
             model_id: format!("{}", repo),
             tmodel,
-            seq_id: 1,
+            seq_gen: SeqIdGen::new(),
             step_no: 0,
             profile_step_no: 0,
             req_id_cnt: 0,
@@ -248,7 +250,7 @@ impl RllmEngine {
         })
     }
 
-    pub fn load_tokenizer(args: &LoaderArgs) -> Result<(Tokenizer, TokTrie)> {
+    pub fn load_tokenizer(args: &mut LoaderArgs) -> Result<(Tokenizer, TokTrie)> {
         let byte_tokenizer = aicirt::bintokens::find_tokenizer(&args.tokenizer)?;
         let hf_bytes = byte_tokenizer.get_hf_bytes();
         let tokenizer = Tokenizer::from_bytes(&hf_bytes).expect("can't load hf tokenizer");
@@ -285,15 +287,14 @@ impl RllmEngine {
 
     pub fn queue_request(&mut self, req: AddRequest) -> Result<()> {
         let mut seq = Sequence::new(
-            self.seq_id,
+            self.seq_gen.next(),
             &req.prompt,
             self.scheduler.config.cache.block_size,
         );
         seq.expected = req.expected;
         seq.pending_fork_ids = (1..req.sampling_params.n)
-            .map(|i| self.seq_id + i)
+            .map(|_| self.seq_gen.next())
             .collect::<Vec<_>>();
-        self.seq_id += req.sampling_params.n;
 
         let logits_processor = LogitsProcessor::new(&req.sampling_params, self.tok_trie.clone());
         let prompt = self
@@ -406,11 +407,10 @@ impl RllmEngine {
         logits: &mut Tensor,
         aici_bias: &AiciBias,
     ) -> Option<AiciPostOp> {
-        let sid = seq.seq_id;
         match std::mem::take(&mut seq.aici_sampling) {
             AiciSampling::Regular => None,
             AiciSampling::SampleWithBias { offset } => {
-                log::trace!("sample *{sid}: bias at {offset}");
+                log::trace!("sample *{}: bias at {offset}", seq.seq_id);
                 aici_bias.apply(logits, offset);
                 None
             }
@@ -418,10 +418,13 @@ impl RllmEngine {
                 backtrack,
                 ff_tokens,
             } => {
-                log::trace!("sample *{sid}: backtrack:{backtrack} ff_tokens:{ff_tokens:?}",);
+                log::trace!(
+                    "sample *{}: backtrack:{backtrack} ff_tokens:{ff_tokens:?}",
+                    seq.seq_id
+                );
                 seq.splice_tokens(backtrack as usize, &ff_tokens);
                 Some(AiciPostOp {
-                    id: seq.seq_id,
+                    id: seq.seq_id.to_num(),
                     tokens: ff_tokens,
                     backtrack: backtrack,
                     clone_id: None,
@@ -515,7 +518,7 @@ impl RllmEngine {
                 // get it even if no pending - make sure we have them all
                 let pending = std::mem::take(&mut seq.pending_fork_ids);
                 for copy_id in pending {
-                    seq_id_mapping.insert(copy_id, seq.seq_id);
+                    seq_id_mapping.insert(copy_id.to_num(), seq.seq_id.to_num());
                     let copy = seq.fork_as(copy_id, sg.max_index + 1);
                     sg.max_index += 1;
                     log::debug!("forked: {:?} -> {:?}", seq, copy);
@@ -535,7 +538,8 @@ impl RllmEngine {
                     continue;
                 }
 
-                let sidx = seq_id_mapping.get(&seq.seq_id).unwrap_or(&seq.seq_id);
+                let sidx = seq.seq_id.to_num();
+                let sidx = seq_id_mapping.get(&sidx).unwrap_or(&sidx);
                 let mut logits = self.tmodel.get_logits(*sidx);
 
                 if let Some(op) = self.aici_apply_bias(seq, &mut logits, &aici_bias) {
@@ -564,7 +568,7 @@ impl RllmEngine {
 
                 if seq.has_aici {
                     post_ops.push(AiciPostOp {
-                        id: seq.seq_id,
+                        id: seq.seq_id.to_num(),
                         tokens: vec![next_token],
                         backtrack: 0,
                         clone_id: None,
@@ -649,7 +653,7 @@ impl RllmEngine {
         seq: &mut Sequence,
         seqs: &'a HashMap<ModuleInstId, SequenceResult<T>>,
     ) -> Option<&'a T> {
-        if let Some(r) = seqs.get(&seq.seq_id) {
+        if let Some(r) = seqs.get(&seq.seq_id.to_num()) {
             seq.aici_logs.push(r.clone_with(None));
             if r.error.len() > 0 {
                 self.scheduler.finish_seq(seq, FinishReason::Failed);
@@ -718,7 +722,7 @@ impl RllmEngine {
                 max_context_len = std::cmp::max(max_context_len, seq.get_len());
                 seq.has_aici = true;
                 ops.push(AiciPreOp {
-                    id: seq.seq_id,
+                    id: seq.seq_id.to_num(),
                     req_id: Some(sg.request_id.clone()),
                 });
             } else {
@@ -743,15 +747,14 @@ impl RllmEngine {
                 ops,
             })?;
 
-        let mut curr_seq_id = self.seq_id;
+        // let gen = &mut self.seq_gen;
         self.scheduler.for_each_sg(|sg| {
             if sg.sampling_params.aici_module.is_none() {
                 return;
             }
 
             for seq in sg.seqs.iter_mut() {
-                let seq_id = seq.seq_id;
-                let res = pre_res.seqs.get(&seq_id);
+                let res = pre_res.seqs.get(&seq.seq_id.to_num());
                 if res.is_none() {
                     continue;
                 }
@@ -777,8 +780,7 @@ impl RllmEngine {
                         }
 
                         while seq.pending_fork_ids.len() < r.num_forks - 1 {
-                            seq.pending_fork_ids.push(curr_seq_id);
-                            curr_seq_id += 1;
+                            seq.pending_fork_ids.push(self.seq_gen.next());
                         }
                     }
                     None => {}
@@ -808,7 +810,6 @@ impl RllmEngine {
                 }
             }
         });
-        self.seq_id = curr_seq_id;
 
         Ok(())
     }
@@ -833,14 +834,14 @@ impl RllmEngine {
                 assert!(seq.has_aici);
 
                 mid_ops.push(AiciMidOp {
-                    id: seq.seq_id,
+                    id: seq.seq_id.to_num(),
                     clone_id: None,
                 });
 
                 for copy_id in &seq.pending_fork_ids {
                     mid_ops.push(AiciMidOp {
-                        id: *copy_id,
-                        clone_id: Some(seq.seq_id),
+                        id: copy_id.to_num(),
+                        clone_id: Some(seq.seq_id.to_num()),
                     });
                 }
             }
@@ -978,7 +979,11 @@ impl AiciBias {
             .to(device)
             .reshape(&[num_seqs as i64, vocab_size as i64]);
         #[cfg(feature = "llamacpp")]
-        let tensor = Tensor::from_slice(slice);
+        let tensor = {
+            let _ = device;
+            assert!(slice.len() == num_seqs * vocab_size);
+            Tensor::from_slice(slice)
+        };
         Self {
             vocab_size,
             bias: Some(tensor),

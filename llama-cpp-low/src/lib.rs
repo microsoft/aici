@@ -1,7 +1,8 @@
-use anyhow::{anyhow, Result};
+use anyhow::{anyhow, bail, Result};
 use core::slice;
 use std::{
     ffi::CString,
+    fmt::{Debug, Formatter},
     sync::{Arc, Mutex},
 };
 
@@ -21,6 +22,8 @@ struct ModelInner {
     model: *mut llama_model,
     ctx: *mut llama_context,
 }
+
+unsafe impl Send for ModelInner {}
 
 #[derive(Clone)]
 pub struct Model {
@@ -75,6 +78,10 @@ impl Batch {
         self.batch.n_tokens as usize
     }
 
+    pub fn max_len(&self) -> usize {
+        self.size
+    }
+
     pub fn enable_logits(&mut self, tok_idx: usize) {
         let p = tok_idx as usize;
         assert!(p < self.size);
@@ -97,23 +104,42 @@ impl Batch {
     }
 }
 
+impl Debug for Batch {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "Batch {{\n")?;
+        write!(f, "  size: {}, n_tokens: {}\n", self.size, self.len())?;
+        write!(f, "}}")
+    }
+}
+
+pub struct ModelInfo {
+    pub n_ctx_train: i32,
+    pub n_embd: i32,
+    pub n_vocab: i32,
+    pub rope: f32,
+}
+
 impl Model {
-    pub fn from_file(file: &str, mparams: ModelParams, cparams: ContextParams) -> Self {
+    pub fn from_file(file: &str, mparams: ModelParams, cparams: ContextParams) -> Result<Self> {
         unsafe {
             let numa = false;
             llama_backend_init(numa); // TODO: only call this once? also numa?
             let c = CString::new(file).unwrap();
             let model = llama_load_model_from_file(c.as_ptr(), mparams);
-            assert!(model != std::ptr::null_mut());
+            if model == std::ptr::null_mut() {
+                bail!("failed to load model")
+            }
             let ctx = llama_new_context_with_model(model, cparams);
-            assert!(ctx != std::ptr::null_mut());
-            Model {
+            if ctx == std::ptr::null_mut() {
+                bail!("failed to create context")
+            }
+            Ok(Model {
                 inner: Arc::new(Mutex::new(ModelInner {
                     model,
                     ctx,
                     seq_id: 0,
                 })),
-            }
+            })
         }
     }
 
@@ -124,6 +150,18 @@ impl Model {
         Sequence {
             id: seq_id,
             model: self.clone(),
+        }
+    }
+
+    pub fn model_info(&self) -> ModelInfo {
+        unsafe {
+            let model = self.inner.lock().unwrap().model;
+            ModelInfo {
+                n_ctx_train: llama_n_ctx_train(model),
+                n_embd: llama_n_embd(model),
+                n_vocab: llama_n_vocab(model),
+                rope: llama_rope_freq_scale_train(model),
+            }
         }
     }
 
@@ -193,7 +231,7 @@ impl Model {
         }
     }
 
-    pub fn get_logits(&self, idx: usize) -> &[f32] {
+    pub fn get_logits(&self, idx: usize) -> &'static [f32] {
         let n = self.vocab_size();
         unsafe {
             let ctx = self.inner.lock().unwrap().ctx;

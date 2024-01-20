@@ -64,6 +64,7 @@ impl RllmConfig {
 pub enum ModelType {
     Llama,
     Phi,
+    LlamaCpp,
 }
 
 pub struct CommonModelConfig {

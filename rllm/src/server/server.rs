@@ -13,11 +13,10 @@ use rllm::{
     iface::{kill_self, AiciRtIface, AsyncCmdChannel},
     seq::RequestOutput,
     util::apply_settings,
-    AddRequest, DType, ExpectedGeneration, HashMap, LoaderArgs, RllmEngine,
+    AddRequest, DType, HashMap, LoaderArgs, RllmEngine,
 };
 use std::{
     fmt::Display,
-    path::PathBuf,
     sync::{Arc, Mutex},
     time::Instant,
 };
@@ -495,12 +494,12 @@ async fn main() -> () {
     }
 
     let (tokenizer, tok_trie) =
-        RllmEngine::load_tokenizer(&loader_args).expect("failed to load tokenizer");
+        RllmEngine::load_tokenizer(&mut loader_args).expect("failed to load tokenizer");
 
     // make sure we try to load the model before spawning inference thread
     // otherwise, if the model doesn't exist, the inference thread will panic and things get messy
     let model_config =
-        RllmEngine::load_model_config(&loader_args).expect("failed to load model config");
+        RllmEngine::load_model_config(&mut loader_args).expect("failed to load model config");
 
     let rt_args = rllm::iface::Args {
         aicirt: args.aicirt.clone(),

@@ -24,7 +24,7 @@ impl BlockSpaceManager {
         Self {}
     }
 
-    pub fn can_allocate(&self, seq_group: &SequenceGroup) -> bool {
+    pub fn can_allocate(&self, _seq_group: &SequenceGroup) -> bool {
         true
     }
 
@@ -43,19 +43,19 @@ impl BlockSpaceManager {
 
     pub fn append_slots(&mut self, _seq: &mut Sequence, _outputs: &mut SchedulerOutputs) {}
 
-    pub fn can_swap_in(&self, seq_group: &SequenceGroup) -> bool {
+    pub fn can_swap_in(&self, _seq_group: &SequenceGroup) -> bool {
         false
     }
 
-    pub fn swap_in(&mut self, seq_group: &mut SequenceGroup) -> HashMap<usize, usize> {
+    pub fn swap_in(&mut self, _seq_group: &mut SequenceGroup) -> HashMap<usize, usize> {
         panic!("llama.cpp swap_in")
     }
 
-    pub fn swap_out(&mut self, seq_group: &mut SequenceGroup) -> HashMap<usize, usize> {
+    pub fn swap_out(&mut self, _seq_group: &mut SequenceGroup) -> HashMap<usize, usize> {
         panic!("llama.cpp swap_out")
     }
 
-    pub fn can_swap_out(&self, seq_group: &SequenceGroup) -> bool {
+    pub fn can_swap_out(&self, _seq_group: &SequenceGroup) -> bool {
         false
     }
 

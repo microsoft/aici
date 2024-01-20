@@ -82,6 +82,7 @@
         "isatty",
         "jsonformer",
         "layernorm",
+        "llamacpp",
         "LMFE",
         "LMQL",
         "logit",

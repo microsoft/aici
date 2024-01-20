@@ -9,6 +9,8 @@ mod logits;
 pub mod util;
 
 use config::AiciConfig;
+use config::CommonModelConfig;
+use config::ModelMeta;
 pub use engine::*;
 pub use logits::LogitsProcessor;
 use std::sync::atomic::AtomicBool;
@@ -42,6 +44,9 @@ pub struct LoaderArgs {
     pub alt: usize,
     pub aici: AiciConfig,
 
+    #[cfg(feature = "llamacpp")]
+    pub(crate) cached_model: Option<llamacpp::Model>,
+
     pub dtype: Option<DType>,
     pub device: Device,
 }
@@ -71,6 +76,20 @@ impl Default for LoaderArgs {
             alt: 0,
             dtype,
             device,
+            #[cfg(feature = "llamacpp")]
+            cached_model: None,
+        }
+    }
+}
+
+impl LoaderArgs {
+    pub fn common_config(&self) -> CommonModelConfig {
+        CommonModelConfig {
+            meta: ModelMeta {
+                id: self.model_id.clone(),
+            },
+            dtype: self.dtype,
+            device: self.device.clone(),
         }
     }
 }

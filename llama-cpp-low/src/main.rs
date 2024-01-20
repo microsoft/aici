@@ -1,6 +1,9 @@
-use llama_cpp_low::*;
+fn main() {}
 
+#[cfg(feature = "disabled")]
 fn main() {
+    use llama_cpp_low::*;
+
     let mparams = ModelParams::default();
     let mut cparams = ContextParams::default();
     cparams.n_ctx = 2048;

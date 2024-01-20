@@ -2946,6 +2946,7 @@ dependencies = [
  "indicatif",
  "lazy_static",
  "libc",
+ "llama_cpp_low",
  "log",
  "memmap2",
  "num_cpus",
