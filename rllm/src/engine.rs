@@ -429,14 +429,13 @@ impl RllmEngine {
         }
     }
 
-    fn check_expected(&mut self, logits: &Tensor, req_id: &str, seq: &mut Sequence) -> Token {
+    fn check_expected(&mut self, mut logits: Vec<f32>, req_id: &str, seq: &mut Sequence) -> Token {
         let exp = seq.expected.as_ref().unwrap();
         let idx = seq.get_len() - exp.prompt.len();
         let next_token = if idx >= exp.output.len() {
             self.eos_token_id
         } else {
             let out = &exp.output[idx];
-            let mut logits = to_vec1::<f32>(&logits.to_kind(Kind::Float));
             let mut max_err = 0.0;
             let mut sum_err = 0.0;
             let mut min_logit = f32::INFINITY;
@@ -544,7 +543,8 @@ impl RllmEngine {
                 }
 
                 let next_token = if seq.expected.is_some() {
-                    self.check_expected(&logits, &sg.request_id, seq)
+                    let logits = to_vec1::<f32>(&logits.to_kind(Kind::Float));
+                    self.check_expected(logits, &sg.request_id, seq)
                 } else {
                     with_timer!(self.tim_logit_sample, sg.logits_processor.sample(&logits)?)
                 };
