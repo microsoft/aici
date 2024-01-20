@@ -977,7 +977,7 @@ impl AiciBias {
         let tensor = Tensor::from_slice(slice)
             .to(device)
             .reshape(&[num_seqs as i64, vocab_size as i64]);
-        #[cfg(not(feature = "tch"))]
+        #[cfg(feature = "llamacpp")]
         let tensor = Tensor::from_slice(slice);
         Self {
             vocab_size,
@@ -993,7 +993,7 @@ impl AiciBias {
             let bias = bias.i((seq_id as i64, ..));
             *logits = &*logits + bias;
         }
-        #[cfg(not(feature = "tch"))]
+        #[cfg(feature = "llamacpp")]
         {
             let sp = seq_id * self.vocab_size;
             let logits = logits.as_mut_slice();

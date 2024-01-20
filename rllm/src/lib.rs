@@ -59,7 +59,7 @@ impl Default for LoaderArgs {
             let r = (Device::Cpu, Some(DType::Float));
             r
         };
-        #[cfg(not(feature = "tch"))]
+        #[cfg(feature = "llamacpp")]
         let (device, dtype) = (Device::Cpu, Some(DType::Float));
         Self {
             tokenizer: "llama".to_string(),

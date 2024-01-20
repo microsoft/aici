@@ -38,7 +38,7 @@ impl LogitsProcessor {
         {
             logits.argmax(0, false).int64_value(&[]) as u32
         }
-        #[cfg(not(feature = "tch"))]
+        #[cfg(feature = "llamacpp")]
         {
             let data = logits.as_slice();
             let mut top = data[0];
@@ -101,7 +101,7 @@ impl LogitsProcessor {
                         self.sample_topp(&mut prs, top_p as f32)?
                     }
                 }
-                #[cfg(not(feature = "tch"))]
+                #[cfg(feature = "llamacpp")]
                 {
                     let mut prs: Vec<f32> = to_vec1(logits);
                     let temp = (1.0 / temperature) as f32;

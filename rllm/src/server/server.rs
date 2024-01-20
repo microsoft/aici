@@ -344,7 +344,7 @@ fn inference_loop(
     }
 }
 
-#[cfg(not(feature = "tch"))]
+#[cfg(feature = "llamacpp")]
 fn run_tests(_args: &Args, _loader_args: LoaderArgs) {
     panic!("tests not supported without tch feature")
 }
