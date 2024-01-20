@@ -208,6 +208,7 @@ impl RllmEngine {
         tmodel: TModel,
         rllm_config: Arc<RllmConfig>,
         cache_size: CacheSize,
+        seq_gen: SeqIdGen,
     ) -> Result<Self> {
         let (tokenizer, tok_trie) = RllmEngine::load_tokenizer(&mut args)?;
         let eos_token_id = tok_trie.info().tok_eos;
@@ -225,7 +226,7 @@ impl RllmEngine {
             tok_trie: Arc::new(tok_trie),
             model_id: format!("{}", repo),
             tmodel,
-            seq_gen: SeqIdGen::new(),
+            seq_gen,
             step_no: 0,
             profile_step_no: 0,
             req_id_cnt: 0,
@@ -370,10 +371,6 @@ impl RllmEngine {
                 assert!(seq.has_aici);
                 match self.save_aici_log(seq, &mid_res.seqs) {
                     Some(r) if r.ff_tokens.len() > 0 || r.backtrack > 0 => {
-                        // save the computed prefix
-                        // we may drop some of it but seq.splice_tokens() takes care of that
-                        seq.num_kv_computed = seq.get_len();
-
                         seq.aici_sampling = AiciSampling::Splice {
                             // backtrack count includes the token that was supposed to be appended
                             // due to current sampling; however we never append it
@@ -553,8 +550,6 @@ impl RllmEngine {
                 } else {
                     with_timer!(self.tim_logit_sample, sg.logits_processor.sample(&logits)?)
                 };
-
-                seq.num_kv_computed = seq.get_len();
 
                 let mut info = "";
                 if seq.has_aici && next_token == self.eos_token_id {

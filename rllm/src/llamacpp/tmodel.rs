@@ -5,7 +5,7 @@ use llama_cpp_low as cpp;
 use std::{sync::Arc, time::Instant};
 
 pub struct TModel {
-    model: cpp::Model,
+    pub(super) model: cpp::Model,
     batch: cpp::Batch,
     seq_id_to_idx: HashMap<usize, usize>,
     t0: Instant,
@@ -61,13 +61,12 @@ impl TModel {
                         self.seq_id_to_idx
                             .insert(seq.seq_id.to_num(), self.batch.len());
                     }
-                    // self.batch.add_token(
-                    //     seq.get_token(idx),
-                    //     idx,
-                    //     seq.llamacpp_seq.as_ref().unwrap(),
-                    //     logits,
-                    // );
+                    seq.seq_id.cpp.assert_model(&self.model);
+                    self.batch
+                        .add_token(seq.get_token(idx), idx, &seq.seq_id.cpp, logits);
                 }
+
+                seq.sync_computed_kv();
             }
         }
 

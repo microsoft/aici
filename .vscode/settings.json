@@ -79,6 +79,7 @@
         "EPYC",
         "fdstat",
         "freqs",
+        "gguf",
         "isatty",
         "jsonformer",
         "layernorm",

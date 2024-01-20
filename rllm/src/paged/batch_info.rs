@@ -141,6 +141,8 @@ impl BatchInfoBuilder {
                         .collect(),
                     kv_slots: (0..k_len).map(|idx| seq.get_gpu_slot(idx)).collect(),
                 });
+
+                seq.sync_computed_kv();
             }
         }
 

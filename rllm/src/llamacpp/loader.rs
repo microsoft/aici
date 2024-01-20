@@ -9,13 +9,18 @@ use anyhow::{bail, Result};
 
 use llama_cpp_low as cpp;
 
+use super::seqid::SeqIdGen;
+
 pub fn load_rllm_engine(mut args: LoaderArgs) -> Result<RllmEngine> {
     let model = do_load(&mut args)?;
     let rllm_config = RllmEngine::build_config(&mut args)?;
     let rllm_config = Arc::new(rllm_config);
     let tmodel = TModel::new(rllm_config.clone(), model);
     let cache_size = CacheSize { gpu: 0, cpu: 0 };
-    RllmEngine::build(args, tmodel, rllm_config, cache_size)
+    let seq_gen = SeqIdGen {
+        model: tmodel.model.clone(),
+    };
+    RllmEngine::build(args, tmodel, rllm_config, cache_size, seq_gen)
 }
 
 fn do_load(args: &mut LoaderArgs) -> Result<cpp::Model> {

@@ -1,36 +1,38 @@
-use std::sync::Mutex;
+use llama_cpp_low as cpp;
 
+#[repr(transparent)]
 pub struct SeqId {
-    num: usize,
+    pub(super) cpp: cpp::Sequence,
 }
 
 impl SeqId {
     pub fn to_num(&self) -> usize {
-        self.num
+        self.cpp.id() as usize
+    }
+
+    pub fn clone_from(&self, other: &SeqId, length: usize) {
+        self.cpp.cp(&other.cpp, 0, length as i32);
+    }
+
+    pub fn trim(&self, length: usize) {
+        self.cpp.rm(length as i32, -1);
     }
 }
 
 impl std::fmt::Display for SeqId {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.num)
+        write!(f, "{}", self.to_num())
     }
 }
 
 pub struct SeqIdGen {
-    next: Mutex<usize>,
+    pub(super) model: cpp::Model,
 }
 
 impl SeqIdGen {
-    pub fn new() -> Self {
-        Self {
-            next: Mutex::new(1),
-        }
-    }
-
     pub fn next(&self) -> SeqId {
-        let mut l = self.next.lock().unwrap();
-        let r = SeqId { num: *l };
-        *l = *l + 1;
-        r
+        SeqId {
+            cpp: self.model.new_sequence(),
+        }
     }
 }

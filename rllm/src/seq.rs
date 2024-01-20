@@ -132,8 +132,27 @@ impl Sequence {
         (self.get_len() + self.block_size - 1) / self.block_size
     }
 
+    /// Indicate that the generation will soon run for this sequence and thus
+    /// all the tokens will have KV computed.
+    pub(crate) fn sync_computed_kv(&mut self) {
+        self.num_kv_computed = self.get_len();
+    }
+
+    fn trim_computed_kv(&mut self, v: usize) {
+        if self.num_kv_computed != v {
+            assert!(self.num_kv_computed > v);
+            self.seq_id.trim(v);
+            self.num_kv_computed = v;
+        }
+    }
+
+    pub(crate) fn clear_computed_kv(&mut self) {
+        self.gpu_blocks.clear();
+        self.trim_computed_kv(0);
+    }
+
     fn trim_physical_blocks(&mut self) {
-        self.num_kv_computed = std::cmp::min(self.num_kv_computed, self.get_len());
+        self.trim_computed_kv(std::cmp::min(self.num_kv_computed, self.get_len()));
         let num_logical = self.num_logical_blocks();
         if self.gpu_blocks.len() > num_logical {
             self.gpu_blocks.truncate(num_logical);
@@ -168,6 +187,7 @@ impl Sequence {
     }
 
     pub(crate) fn fork_as(&self, seq_id: SeqId, index: usize) -> Self {
+        seq_id.clone_from(&self.seq_id, self.num_kv_computed);
         Self {
             seq_id,
             index,

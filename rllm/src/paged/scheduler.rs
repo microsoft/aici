@@ -462,8 +462,7 @@ impl Scheduler {
             assert!(!seq.is_finished());
             seq.sched_phase = status;
             if to_waiting {
-                seq.gpu_blocks.clear();
-                seq.num_kv_computed = 0;
+                seq.clear_computed_kv();
             }
         }
     }

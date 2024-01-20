@@ -123,7 +123,7 @@ impl Model {
     pub fn from_file(file: &str, mparams: ModelParams, cparams: ContextParams) -> Result<Self> {
         unsafe {
             let numa = false;
-            llama_backend_init(numa); // TODO: only call this once? also numa?
+            llama_backend_init(numa); // TODO: only call this once?
             let c = CString::new(file).unwrap();
             let model = llama_load_model_from_file(c.as_ptr(), mparams);
             if model == std::ptr::null_mut() {
@@ -243,6 +243,21 @@ impl Model {
 impl Sequence {
     pub fn id(&self) -> i32 {
         self.id
+    }
+    pub fn assert_model(&self, model: &Model) {
+        assert!(Arc::ptr_eq(&self.model.inner, &model.inner));
+    }
+    pub fn rm(&self, start: i32, stop: i32) {
+        unsafe {
+            let ctx = self.model.inner.lock().unwrap().ctx;
+            llama_kv_cache_seq_rm(ctx, self.id, start, stop);
+        }
+    }
+    pub fn cp(&self, other: &Sequence, start: i32, stop: i32) {
+        unsafe {
+            let ctx = self.model.inner.lock().unwrap().ctx;
+            llama_kv_cache_seq_cp(ctx, self.id, other.id, start, stop);
+        }
     }
 }
 
