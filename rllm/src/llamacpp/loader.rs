@@ -37,7 +37,9 @@ fn do_load(args: &mut LoaderArgs) -> Result<cpp::Model> {
 
         let file = repo.get(gguf)?;
 
-        let mparams = cpp::ModelParams::default();
+        let mut mparams = cpp::ModelParams::default();
+        mparams.set_split_mode(cpp::SplitMode::None);
+        mparams.n_gpu_layers = 1000;
         let cparams = cpp::ContextParams::default();
 
         let m = cpp::Model::from_file(file.to_str().unwrap(), mparams, cparams)?;

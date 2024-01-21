@@ -5,7 +5,7 @@ const SUBMODULE_DIR: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/llama.cpp");
 
 fn main() {
     let ccache = true;
-    let cuda = false;
+    let cuda = true;
 
     let submodule_dir = &PathBuf::from(SUBMODULE_DIR);
     let header_path = submodule_dir.join("llama.h");

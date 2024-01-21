@@ -49,6 +49,20 @@ impl Default for ModelParams {
     }
 }
 
+pub enum SplitMode {
+    None = llama_split_mode_LLAMA_SPLIT_NONE as isize,
+    /// split layers and KV across GPUs
+    Layer = llama_split_mode_LLAMA_SPLIT_LAYER as isize,
+    /// split rows across GPUs
+    Row = llama_split_mode_LLAMA_SPLIT_ROW as isize,
+}
+
+impl ModelParams {
+    pub fn set_split_mode(&mut self, mode: SplitMode) {
+        self.split_mode = mode as u32;
+    }
+}
+
 impl Default for ContextParams {
     fn default() -> Self {
         let mut r = unsafe { llama_context_default_params() };
