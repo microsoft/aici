@@ -38,6 +38,7 @@ safetensors = "0.4.1"
 lazy_static = "1.4.0"
 fxhash = "0.2.1"
 cfg-if = "1.0.0"
+percent-encoding = "2.3.1"
 
 [[bin]]
 name = "rllm-server"
@@ -49,8 +50,8 @@ num_cpus = "1.15.0"
 rayon = "1.7.0"
 
 [features]
-#default = ["llamacpp"]
-default = ["tch", "cuda"]
+default = ["llamacpp"]
+#default = ["tch", "cuda"]
 tch = ["dep:tch", "dep:torch-sys"]
 cuda = ["tch", "dep:tch-cuda", "dep:cudarc"]
 llamacpp = ["dep:llama_cpp_low"]

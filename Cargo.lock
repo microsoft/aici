@@ -2950,6 +2950,7 @@ dependencies = [
  "log",
  "memmap2",
  "num_cpus",
+ "percent-encoding",
  "rand",
  "rayon",
  "safetensors 0.4.1",

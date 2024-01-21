@@ -408,7 +408,8 @@ fn spawn_inference_loop(
             Some(w) if w == "off" => {}
             #[cfg(feature = "tch")]
             Some(w) => {
-                let exp = rllm::ExpectedGeneration::load(&std::path::PathBuf::from(&w)).expect("can't load warmup");
+                let exp = rllm::ExpectedGeneration::load(&std::path::PathBuf::from(&w))
+                    .expect("can't load warmup");
                 log::info!(
                     "warmup {w}: {} tokens; {} logits",
                     exp.output.len(),
@@ -433,6 +434,21 @@ fn spawn_inference_loop(
     });
 
     handle_res
+}
+
+fn strip_suffix(sep: &str, s: &mut String) -> Option<String> {
+    let mut parts = s.splitn(2, sep);
+    let core = parts.next().unwrap().to_string();
+    let suff = parts.next().map(|s| s.to_string());
+    *s = core;
+    suff
+}
+
+fn url_decode(encoded_str: &str) -> String {
+    percent_encoding::percent_decode_str(encoded_str)
+        .decode_utf8()
+        .unwrap()
+        .to_string()
 }
 
 #[actix_web::main]
@@ -462,18 +478,28 @@ async fn main() -> () {
         _ => panic!("invalid dtype; try one of bf16, f16, f32"),
     };
 
-    if args.gguf.is_none() && args.model.contains("::") {
-        let m = args.model.clone();
-        let mut parts = m.split("::");
-        args.model = parts.next().unwrap().to_string();
-        args.gguf = Some(parts.next().unwrap().to_string());
+    let hf = "https://huggingface.co/";
+    if args.model.starts_with(hf) {
+        args.model = args.model[hf.len()..].to_string();
+
+        if let Some(url_rev) = strip_suffix("/tree/", &mut args.model) {
+            args.revision = Some(url_decode(&url_rev));
+        }
+
+        if let Some(mut blob_path) = strip_suffix("/blob/", &mut args.model) {
+            if let Some(url_rev) = strip_suffix("/", &mut blob_path) {
+                args.gguf = Some(url_decode(&url_rev));
+            }
+            args.revision = Some(url_decode(&blob_path));
+        }
     }
 
-    if args.revision.is_none() && args.model.contains('@') {
-        let m = args.model.clone();
-        let mut parts = m.split('@');
-        args.model = parts.next().unwrap().to_string();
-        args.revision = Some(parts.next().unwrap().to_string());
+    if let Some(gguf) = strip_suffix("::", &mut args.model) {
+        args.gguf = Some(gguf);
+    }
+
+    if let Some(rev) = strip_suffix("@", &mut args.model) {
+        args.revision = Some(rev);
     }
 
     if args.model.starts_with(".") {

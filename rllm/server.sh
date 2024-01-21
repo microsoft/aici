@@ -51,6 +51,9 @@ case "$1" in
   orca )
     ARGS="-m microsoft/Orca-2-13b@refs/pr/22 -t orca -w expected/orca/cats.safetensors"
     ;;
+  orcacpp )
+    ARGS="-m https://huggingface.co/TheBloke/Orca-2-13B-GGUF/blob/main/orca-2-13b.Q8_0.gguf -t orca"
+    ;;
   build )
     BUILD=1
     REL=--release
