@@ -808,3 +808,4 @@ globalThis.gen = gen;
 globalThis.genTokens = genTokens;
 globalThis.start = start;
 globalThis.waitVars = waitVars;
+globalThis.fork = fork;
