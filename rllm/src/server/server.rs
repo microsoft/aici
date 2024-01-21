@@ -511,6 +511,7 @@ async fn main() -> () {
     loader_args.revision = args.revision.clone();
     loader_args.local_weights = args.local_weights.clone();
     loader_args.tokenizer = args.tokenizer.clone();
+    loader_args.gguf = args.gguf.clone();
     if dtype.is_some() {
         loader_args.dtype = dtype;
     }
