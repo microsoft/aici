@@ -71,13 +71,11 @@ struct Channel {
     shm: Shm,
 }
 
-const MSG_OFF: usize = 8;
-
 impl Channel {
     fn new(shm: Shm, swap: bool) -> Self {
-        assert!(shm.size > MSG_OFF);
+        assert!(shm.size > 4096 * 2);
         let len0 = futex_at(&shm, 0);
-        let len1 = futex_at(&shm, 4);
+        let len1 = futex_at(&shm, shm.size / 2);
         let (wr_len, rd_len) = if swap { (len1, len0) } else { (len0, len1) };
         Self {
             wr_len,
@@ -86,31 +84,54 @@ impl Channel {
         }
     }
 
+    pub fn max_msg_size(&self) -> usize {
+        self.shm.size / 2 - 16
+    }
+
     pub fn fits_msg(&self, msg: &[u8]) -> Result<()> {
-        if msg.len() + MSG_OFF > self.shm.size {
+        if msg.len() > self.max_msg_size() {
             return Err(anyhow!(
-                "msg too large; {} + {MSG_OFF} > {}",
+                "msg too large; {} > {}",
                 msg.len(),
-                self.shm.size
+                self.max_msg_size()
             ));
         }
         Ok(())
     }
 
+    pub fn wait_for_reception(&mut self) {
+        let val = &self.wr_len.value;
+        while val.load(Ordering::Acquire) != 0 {
+            std::hint::spin_loop();
+        }
+    }
+
     pub fn write_msg(&mut self, msg: &[u8]) -> Result<()> {
         self.fits_msg(msg)?;
 
-        let msg_len = msg.len() as u32;
+        let val = &self.wr_len.value;
 
-        while self.wr_len.value.load(Ordering::Acquire) != 0 {
-            std::hint::spin_loop();
+        loop {
+            while val.load(Ordering::Acquire) != 0 {
+                std::hint::spin_loop();
+            }
+            if val
+                .compare_exchange_weak(0, u32::MAX, Ordering::AcqRel, Ordering::Relaxed)
+                .is_ok()
+            {
+                break;
+            }
         }
 
         unsafe {
-            ptr::copy_nonoverlapping(msg.as_ptr(), self.shm.ptr_at(MSG_OFF), msg.len());
+            ptr::copy_nonoverlapping(
+                msg.as_ptr(),
+                self.wr_len.value.as_ptr().add(1) as *mut u8,
+                msg.len(),
+            );
         }
 
-        self.wr_len.value.store(msg_len, Ordering::Release);
+        val.store(msg.len() as u32, Ordering::Release);
         let _n = self.wr_len.wake(i32::MAX);
         // if n > 0 {
         //     log::warn!("wake up {} threads", n);
@@ -120,7 +141,12 @@ impl Channel {
     }
 
     pub fn read_len(&self) -> usize {
-        return self.rd_len.value.load(Ordering::Acquire) as usize;
+        let r = self.rd_len.value.load(Ordering::Acquire);
+        if r == u32::MAX {
+            0
+        } else {
+            r as usize
+        }
     }
 
     pub fn wait_for_len(
@@ -145,11 +171,14 @@ impl Channel {
             return Some(len);
         }
         if let Some(futex_duration) = futex_duration {
-            if futex_duration == Duration::MAX {
-                let _ = self.rd_len.wait(0);
-            } else {
-                let _ = self.rd_len.wait_for(0, futex_duration);
-            };
+            let v = self.rd_len.value.load(Ordering::Acquire);
+            if v == 0 || v == u32::MAX {
+                if futex_duration == Duration::MAX {
+                    let _ = self.rd_len.wait(v);
+                } else {
+                    let _ = self.rd_len.wait_for(v, futex_duration);
+                }
+            }
             len = self.read_len();
         }
         if len != 0 {
@@ -166,12 +195,18 @@ impl Channel {
     ) -> Option<Vec<u8>> {
         let msg_len = self.wait_for_len(spin_duration, futex_duration)?;
 
-        if msg_len > self.shm.size - MSG_OFF {
-            panic!("read: shm too small {} + 4 < {}", msg_len, self.shm.size);
+        if msg_len > self.max_msg_size() {
+            panic!("read: shm too small {} < {}", msg_len, self.max_msg_size());
         }
 
         let mut res = vec![0u8; msg_len];
-        unsafe { ptr::copy_nonoverlapping(self.shm.ptr_at(MSG_OFF), res.as_mut_ptr(), msg_len) };
+        unsafe {
+            ptr::copy_nonoverlapping(
+                self.rd_len.value.as_ptr().add(1) as *const u8,
+                res.as_mut_ptr(),
+                msg_len,
+            )
+        };
         self.rd_len.value.store(0, Ordering::Release);
 
         Some(res)
@@ -197,7 +232,11 @@ impl ClientChannel {
         self.channel.read_msg(timeout, None)
     }
 
-    pub fn recv_resp2(&mut self, busy_timeout: Duration, futex_timeout: Duration) -> Option<Vec<u8>> {
+    pub fn recv_resp2(
+        &mut self,
+        busy_timeout: Duration,
+        futex_timeout: Duration,
+    ) -> Option<Vec<u8>> {
         self.channel.read_msg(busy_timeout, Some(futex_timeout))
     }
 }
@@ -286,6 +325,10 @@ where
             _cmd: std::marker::PhantomData,
             _resp: std::marker::PhantomData,
         }
+    }
+
+    pub fn wait_for_reception(&mut self) {
+        self.channel.channel.wait_for_reception();
     }
 
     pub fn send_req(&mut self, cmd: Cmd) -> Result<()> {

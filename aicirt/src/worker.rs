@@ -252,6 +252,9 @@ where
 
     pub fn send_cmd(&self, cmd: Cmd) -> Result<Resp> {
         self.just_send(cmd)?;
+        // otherwise we may get a response for someone else
+        // this is only used for group cmds and fork
+        self.cmd.lock().unwrap().wait_for_reception();
         self.recv()
     }
 
