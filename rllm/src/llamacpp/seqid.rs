@@ -10,8 +10,8 @@ impl SeqId {
         self.cpp.id() as usize
     }
 
-    pub fn clone_from(&self, other: &SeqId, length: usize) {
-        self.cpp.cp(&other.cpp, 0, length as i32);
+    pub fn clone_from(&self, src: &SeqId, length: usize) {
+        self.cpp.cp_from(&src.cpp, 0, length as i32);
     }
 
     pub fn trim(&self, length: usize) {

@@ -267,10 +267,10 @@ impl Sequence {
             llama_kv_cache_seq_rm(ctx, self.id, start, stop);
         }
     }
-    pub fn cp(&self, other: &Sequence, start: i32, stop: i32) {
+    pub fn cp_from(&self, src: &Sequence, start: i32, stop: i32) {
         unsafe {
             let ctx = self.model.inner.lock().unwrap().ctx;
-            llama_kv_cache_seq_cp(ctx, self.id, other.id, start, stop);
+            llama_kv_cache_seq_cp(ctx, src.id, self.id, start, stop);
         }
     }
 }

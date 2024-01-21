@@ -45,7 +45,7 @@ impl TModel {
 
                 let seq_len = seq.get_len();
                 let k_len = seq_len;
-                log::trace!("seq: {seq:?}");
+                log::trace!("fwd seq: {seq:?}");
                 let mut q_len = seq.get_len() - seq.num_kv_computed;
                 if q_len == 0 {
                     // just re-compute the last token
