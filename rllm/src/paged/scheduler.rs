@@ -1,10 +1,9 @@
-use super::cache_engine::CacheSize;
 use crate::{
     config::RllmConfig,
-    paged::blocks::BlockSpaceManager,
-    seq::{FinishReason, SchedulingPhase, SeqId, Sequence, SequenceGroup},
+    paged::CacheSize,
+    seq::{FinishReason, SchedulingPhase, Sequence, SequenceGroup},
     util::limit_str,
-    HashMap,
+    BlockSpaceManager, HashMap,
 };
 use aicirt::api::SequenceResult;
 use std::{
@@ -98,7 +97,7 @@ pub struct Scheduler {
     pub(crate) config: Arc<RllmConfig>,
     prompt_limit: usize,
     pub(crate) block_manager: BlockSpaceManager,
-    freed_seq_ids: RefCell<Vec<SeqId>>,
+    freed_seq_ids: RefCell<Vec<usize>>,
 
     queues: Mutex<Vec<Vec<SequenceGroup>>>,
 }
@@ -164,7 +163,7 @@ impl Scheduler {
         }
     }
 
-    pub(crate) fn get_freed_seq_ids(&self) -> Vec<SeqId> {
+    pub(crate) fn get_freed_seq_ids(&self) -> Vec<usize> {
         self.freed_seq_ids.borrow_mut().drain(..).collect()
     }
 
@@ -438,7 +437,7 @@ impl Scheduler {
             )))
         }
         seq.sched_phase = SchedulingPhase::Finished(reason);
-        self.freed_seq_ids.borrow_mut().push(seq.seq_id);
+        self.freed_seq_ids.borrow_mut().push(seq.seq_id.to_num());
         seq.gpu_blocks.clear();
         seq.cpu_blocks.clear();
     }
@@ -463,8 +462,7 @@ impl Scheduler {
             assert!(!seq.is_finished());
             seq.sched_phase = status;
             if to_waiting {
-                seq.gpu_blocks.clear();
-                seq.num_kv_computed = 0;
+                seq.clear_computed_kv();
             }
         }
     }

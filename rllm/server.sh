@@ -14,6 +14,13 @@ else
   (cd .. && git submodule update --init --recursive)
 fi
 
+P=`ps -fax|grep 'aicir[t]\|rllm-serve[r]' | awk '{print $1}' | xargs echo`
+
+if [ "X$P" != "X" ] ; then 
+  echo "KILL $P"
+  kill $P
+fi
+
 if [ "$1" = loop ] ; then
     REL=--release
     LOOP=1
@@ -50,6 +57,9 @@ case "$1" in
     ;;
   orca )
     ARGS="-m microsoft/Orca-2-13b@refs/pr/22 -t orca -w expected/orca/cats.safetensors"
+    ;;
+  orcacpp )
+    ARGS="-m https://huggingface.co/TheBloke/Orca-2-13B-GGUF/blob/main/orca-2-13b.Q8_0.gguf -t orca"
     ;;
   build )
     BUILD=1

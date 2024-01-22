@@ -8,7 +8,9 @@ members = [
     "jsctrl",
     "uppercase",
     "rllm",
+    "cpp-rllm",
     "tch-cuda",
+    "llama-cpp-low",
 ]
 resolver = "2"
 

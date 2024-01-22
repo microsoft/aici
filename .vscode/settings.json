@@ -43,7 +43,15 @@
         "ios": "cpp",
         "random": "cpp",
         "cstdint": "cpp",
-        "chrono": "cpp"
+        "chrono": "cpp",
+        "limits": "c",
+        "semaphore": "c",
+        "valarray": "c",
+        "algorithm": "c",
+        "ratio": "c",
+        "*.tcc": "cpp",
+        "filesystem": "cpp",
+        "regex": "cpp"
     },
     "python.analysis.extraPaths": [
         "./vllm"
@@ -71,9 +79,11 @@
         "EPYC",
         "fdstat",
         "freqs",
+        "gguf",
         "isatty",
         "jsonformer",
         "layernorm",
+        "llamacpp",
         "LMFE",
         "LMQL",
         "logit",

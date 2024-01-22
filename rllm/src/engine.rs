@@ -1,20 +1,18 @@
 use crate::{
     config::{
-        CacheConfig, CommonModelConfig, ModelConfig, ModelMeta, ModelType, ParallelConfig,
-        RllmConfig, SamplingParams, SchedulerConfig,
+        CacheConfig, CommonModelConfig, ModelConfig, ParallelConfig, RllmConfig, SamplingParams,
+        SchedulerConfig,
     },
     iface::AiciRtIface,
-    llm::{llama, phi},
-    paged::{BatchInfo, BatchInfoBuilder, CacheEngine, CacheSize, Scheduler, SchedulerOutputs},
+    llm::{self, seqid::SeqIdGen},
+    paged::{CacheSize, Scheduler, SchedulerOutputs},
     seq::{
-        AiciSampling, FinishReason, RequestOutput, SchedulingPhase, SeqId, SeqOutput, Sequence,
+        AiciSampling, FinishReason, RequestOutput, SchedulingPhase, SeqOutput, Sequence,
         SequenceGroup, Token, TokenUsage,
     },
-    util::{
-        get_setting, gpu_memory_size, gpu_peak_allocated_bytes, log_mem_stats, reset_mem_stats,
-        scalar_tensor, synchronize, to_vec1, to_vec2,
-    },
-    DType, Device, HashMap, HashSet, IndexOp, LoaderArgs, LogitsProcessor, Tensor,
+    to_vec1,
+    util::get_setting,
+    DType, Device, HashMap, LoaderArgs, LogitsProcessor, TModel, Tensor,
 };
 use aici_abi::toktree::TokTrie;
 use aicirt::{
@@ -29,10 +27,8 @@ use hf_hub::{
     api::sync::{Api, ApiRepo},
     RepoType,
 };
-use safetensors::Dtype;
 use serde::{Deserialize, Serialize};
-use std::{fmt::Display, path::PathBuf, rc::Rc, sync::Arc, time::Instant};
-use tch::{nn::VarStore, Kind};
+use std::{fmt::Display, path::PathBuf, sync::Arc, time::Instant};
 use tokenizers::Tokenizer;
 
 #[derive(Clone)]
@@ -49,66 +45,6 @@ pub struct ExpectedGeneration {
     pub output: Vec<ExpectedToken>,
 }
 
-fn read_tensor(s: &safetensors::SafeTensors, name: &str) -> Result<Tensor> {
-    let view = s.tensor(name)?;
-    let size: Vec<i64> = view.shape().iter().map(|&x| x as i64).collect();
-    let kind: DType = kind_from_dt(view.dtype());
-    // Using from_blob here instead of from_data_size avoids some unnecessary copy.
-    let tensor = unsafe { Tensor::from_blob(view.data().as_ptr(), &size, &[], kind, Device::Cpu) };
-    Ok(tensor)
-}
-
-fn kind_from_dt(dtype: Dtype) -> Kind {
-    match dtype {
-        Dtype::BOOL => Kind::Bool,
-        Dtype::U8 => Kind::Uint8,
-        Dtype::I8 => Kind::Int8,
-        Dtype::I16 => Kind::Int16,
-        Dtype::I32 => Kind::Int,
-        Dtype::I64 => Kind::Int64,
-        Dtype::BF16 => Kind::BFloat16,
-        Dtype::F16 => Kind::Half,
-        Dtype::F32 => Kind::Float,
-        Dtype::F64 => Kind::Double,
-        dtype => panic!("unsupported dtype {dtype:?}"),
-    }
-}
-
-impl ExpectedGeneration {
-    pub fn load(f: &PathBuf) -> Result<Self> {
-        let fp = std::fs::File::open(f)?;
-        let content = unsafe { memmap2::MmapOptions::new().map(&fp)? };
-        let s = safetensors::SafeTensors::deserialize(&content)?;
-
-        let prompt = to_vec1::<i32>(&read_tensor(&s, "prompt")?.to_kind(Kind::Int));
-        let output = to_vec1::<i32>(&read_tensor(&s, "output")?.to_kind(Kind::Int));
-        let prob_mass = to_vec1::<f32>(&read_tensor(&s, "prob_mass")?.to_kind(Kind::Float));
-        let tokens = to_vec2::<i32>(&read_tensor(&s, "tokens")?.to_kind(Kind::Int));
-        let logits = to_vec2::<f32>(&read_tensor(&s, "logits")?.to_kind(Kind::Float));
-
-        let num_tokens = output.len();
-        assert!(tokens.len() == num_tokens);
-        assert!(logits.len() == num_tokens);
-        assert!(prob_mass.len() == num_tokens);
-
-        Ok(ExpectedGeneration {
-            prompt: prompt.into_iter().map(|x| x as Token).collect(),
-            output: (0..num_tokens)
-                .map(|i| ExpectedToken {
-                    sampled: output[i] as Token,
-                    ff_section_len: 1,
-                    prob_mass: prob_mass[i],
-                    logits: tokens[i]
-                        .iter()
-                        .zip(logits[i].iter())
-                        .map(|(t, p)| (*t as Token, *p))
-                        .collect(),
-                })
-                .collect(),
-        })
-    }
-}
-
 pub struct AddRequest {
     pub request_id: String,
     pub prompt: Vec<Token>,
@@ -116,13 +52,13 @@ pub struct AddRequest {
     pub expected: Option<ExpectedGeneration>,
 }
 
-enum Repo {
+pub(crate) enum Repo {
     Api(ApiRepo),
     Local(String),
 }
 
 impl Repo {
-    fn from(args: &LoaderArgs) -> Result<Repo> {
+    pub fn from(args: &LoaderArgs) -> Result<Repo> {
         match &args.local_weights {
             Some(path) => Ok(Repo::Local(path.to_owned() + "/")),
             None => {
@@ -139,14 +75,15 @@ impl Repo {
         }
     }
 
-    fn is_local(&self) -> bool {
+    #[allow(dead_code)]
+    pub fn is_local(&self) -> bool {
         match self {
             Repo::Api(_) => false,
             Repo::Local(_) => true,
         }
     }
 
-    fn get(&self, filename: &str) -> Result<PathBuf> {
+    pub fn get(&self, filename: &str) -> Result<PathBuf> {
         match self {
             Repo::Api(api) => api.get(filename).map_err(E::msg),
             Repo::Local(path) => {
@@ -160,7 +97,8 @@ impl Repo {
         }
     }
 
-    fn read(&self, filename: &str) -> Result<Vec<u8>> {
+    #[allow(dead_code)]
+    pub fn read(&self, filename: &str) -> Result<Vec<u8>> {
         std::fs::read(self.get(filename)?).map_err(E::msg)
     }
 }
@@ -174,38 +112,8 @@ impl Display for Repo {
     }
 }
 
-pub trait RllmModel {
-    fn forward(&self, batch_info: &mut BatchInfo) -> Tensor;
-    fn finalize(&mut self) {}
-}
-
 pub trait RllmModelConfig {
     fn into_config(self, common: CommonModelConfig) -> ModelConfig;
-}
-
-fn load_one_config<T>(
-    err: &mut String,
-    args: &LoaderArgs,
-    name: &str,
-    bytes: &[u8],
-) -> Option<ModelConfig>
-where
-    T: RllmModelConfig + serde::de::DeserializeOwned,
-{
-    let common = CommonModelConfig {
-        meta: ModelMeta {
-            id: args.model_id.clone(),
-        },
-        dtype: args.dtype,
-        device: args.device.clone(),
-    };
-    let json = serde_json::from_slice::<T>(bytes);
-    if let Ok(json) = json {
-        Some(json.into_config(common))
-    } else {
-        *err += &format!("{name}: {}\n", json.err().unwrap());
-        None
-    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -226,9 +134,9 @@ pub struct RllmEngine {
     pub tokenizer: Arc<Tokenizer>,
     pub tok_trie: Arc<TokTrie>,
     pub model_id: String,
-    pub model: Box<dyn RllmModel>,
-    seq_id: SeqId,
-    step_no: usize,
+    pub tmodel: TModel,
+    seq_gen: SeqIdGen,
+    pub(crate) step_no: usize,
     pub profile_step_no: usize,
     req_id_cnt: usize,
     #[allow(dead_code)]
@@ -236,7 +144,6 @@ pub struct RllmEngine {
     pub device: Device,
     pub eos_token_id: Token,
     pub space_token_id: Token,
-    pub nv_profile: bool,
     pub num_errors: usize,
 
     pub timers: TimerSet,
@@ -248,159 +155,27 @@ pub struct RllmEngine {
     tim_aici_mid: TimerRef,
     tim_run_model: TimerRef,
 
-    tim_model_fwd: TimerRef,
+    pub(crate) tim_model_fwd: TimerRef,
     tim_sample: TimerRef,
 
     tim_aici_bias: TimerRef,
     tim_logit_sample: TimerRef,
-    tim_logit_sync: TimerRef,
     tim_aici_post: TimerRef,
 
     aicirt: Option<AiciRtIface>,
 
-    cache_engine: CacheEngine,
     scheduler: Scheduler,
 }
 
 impl RllmEngine {
-    pub fn load_tokenizer(args: &LoaderArgs) -> Result<(Tokenizer, TokTrie)> {
-        let byte_tokenizer = aicirt::bintokens::find_tokenizer(&args.tokenizer)?;
-        let hf_bytes = byte_tokenizer.get_hf_bytes();
-        let tokenizer = Tokenizer::from_bytes(&hf_bytes).expect("can't load hf tokenizer");
-        let tokens = byte_tokenizer.token_bytes();
-        let trie = TokTrie::from(&byte_tokenizer.tokrx_info(), &tokens);
-        trie.check_against(&tokens);
-        Ok((tokenizer, trie))
+    pub fn load(args: LoaderArgs) -> Result<Self> {
+        llm::loader::load_rllm_engine(args)
     }
-
-    pub fn load_model_config(args: &LoaderArgs) -> Result<ModelConfig> {
-        let repo = Repo::from(args)?;
-        log::info!("loading the model from {}", repo);
-
-        let bytes = repo.read("config.json")?;
-        let mut err = String::new();
-
-        let cfg = load_one_config::<llama::LlamaConfig>(&mut err, args, "llama", &bytes)
-            .or_else(|| load_one_config::<phi::PhiConfig>(&mut err, args, "phi", &bytes));
-
-        match cfg {
-            Some(mut v) => {
-                let tok = aicirt::bintokens::find_tokenizer(&args.tokenizer)?;
-                v.tok_vocab_size = tok.tokrx_info().vocab_size as usize;
-                Ok(v)
-            }
-            None => bail!("failed to load model config:\n{}", err),
-        }
+    pub fn load_model_config(args: &mut LoaderArgs) -> Result<ModelConfig> {
+        llm::loader::load_model_config(args)
     }
-
-    fn load_model(rllm_config: &RllmConfig, filenames: Vec<PathBuf>) -> Result<Box<dyn RllmModel>> {
-        let mut vs = VarStore::new(rllm_config.device.clone());
-
-        let rc_cfg = Rc::new(rllm_config.model.clone());
-        let mut model: Box<dyn RllmModel> = match rllm_config.model.model_type {
-            ModelType::Llama => Box::new(llama::Llama::load(vs.root(), &rc_cfg).unwrap()),
-            ModelType::Phi => {
-                Box::new(phi::MixFormerSequentialForCausalLM::new(&rc_cfg, vs.root()))
-            }
-        };
-
-        vs.set_kind(rllm_config.dtype);
-
-        let mut vars = vs.variables();
-
-        let bar = indicatif::ProgressBar::new(vars.len() as u64);
-        bar.set_style(
-            indicatif::ProgressStyle::with_template(
-                "[{elapsed_precise}] {bar:60.cyan/blue} {pos:>4}/{len:4} [{eta_precise}] {msg}",
-            )
-            .unwrap(),
-        );
-
-        for f in &filenames {
-            let fp = std::fs::File::open(f)?;
-            let content = unsafe { memmap2::MmapOptions::new().map(&fp)? };
-            let safetensors = safetensors::SafeTensors::deserialize(&content)?;
-
-            for vname in safetensors.names() {
-                let target_name = vname.to_string();
-                if !vars.contains_key(&target_name) {
-                    if vname.ends_with(".inv_freq") {
-                        // OK
-                    } else {
-                        log::warn!("variable {} not found in the model", target_name);
-                    }
-                    continue;
-                }
-
-                // Using from_blob here instead of from_data_size avoids some unnecessary copy.
-                let src_tensor = read_tensor(&safetensors, vname)?;
-                let mut var = vars.remove(&target_name).unwrap();
-                assert!(var.size() == src_tensor.size());
-                // println!("copying to {var:?} from {src_tensor:?}");
-                var.f_copy_(&src_tensor)?;
-
-                bar.inc(1);
-                if bar.is_hidden() {
-                    eprint!(".");
-                }
-            }
-        }
-
-        if vars.len() > 0 {
-            bail!("{} variables not found in the model: {vars:?}", vars.len());
-        }
-
-        if bar.is_hidden() {
-            eprintln!(" done");
-        }
-        bar.finish();
-
-        log::info!("model loaded");
-
-        model.finalize();
-
-        Ok(model)
-    }
-
-    fn model_filenames(repo: &Repo) -> Result<Vec<PathBuf>> {
-        let idx = repo.read("model.safetensors.index.json");
-
-        let filenames = if let Ok(idx) = idx {
-            let st_index: serde_json::Value = serde_json::from_slice(&idx)?;
-            let entries = st_index["weight_map"]
-                .as_object()
-                .unwrap()
-                .values()
-                .map(|v| v.as_str().unwrap().to_owned());
-
-            let h = HashSet::<String>::from_iter(entries);
-            let mut filenames = h.into_iter().collect::<Vec<_>>();
-            filenames.sort();
-            filenames
-        } else {
-            if repo.is_local() && repo.get("model.safetensors-rust").is_ok() {
-                vec!["model.safetensors-rust".to_string()]
-            } else {
-                vec!["model.safetensors".to_string()]
-            }
-        };
-
-        let filenames = filenames
-            .iter()
-            .map(|f| repo.get(f))
-            .collect::<Result<Vec<_>>>()?;
-
-        Ok(filenames)
-    }
-
-    pub fn load(args: LoaderArgs) -> Result<RllmEngine> {
-        let _no_grad = tch::no_grad_guard();
-
-        let device = args.device;
-        let repo = Repo::from(&args)?;
-
-        let (tokenizer, tok_trie) = Self::load_tokenizer(&args)?;
-        let model_config = Self::load_model_config(&args)?;
+    pub(crate) fn build_config(args: &mut LoaderArgs) -> Result<RllmConfig> {
+        let model_config = Self::load_model_config(args)?;
         let model_len = model_config.max_sequence_length;
 
         let mut aici = args.aici.clone();
@@ -420,31 +195,28 @@ impl RllmEngine {
             },
             aici,
             dtype: model_config.dtype,
-            device: device.clone(),
+            device: args.device.clone(),
         };
-
-        let filenames = Self::model_filenames(&repo)?;
 
         rllm_config.verify_args()?;
 
-        log::info!("building the model");
+        Ok(rllm_config)
+    }
 
+    pub(crate) fn build(
+        mut args: LoaderArgs,
+        tmodel: TModel,
+        rllm_config: Arc<RllmConfig>,
+        cache_size: CacheSize,
+        seq_gen: SeqIdGen,
+    ) -> Result<Self> {
+        let (tokenizer, tok_trie) = RllmEngine::load_tokenizer(&mut args)?;
         let eos_token_id = tok_trie.info().tok_eos;
         let space_token_id = tok_trie.greedy_tokenize(b" ")[0];
+        let repo = Repo::from(&args)?;
 
-        let _ = Tensor::zeros(&[1], (model_config.dtype, device));
-        reset_mem_stats(device);
-        log_mem_stats("initial", device);
-
-        let model = Self::load_model(&rllm_config, filenames)?;
-
-        log_mem_stats("model fully loaded", device);
-
-        let rllm_config = Arc::new(rllm_config);
-        let cache_size = Self::profile_model(rllm_config.clone(), &model);
-
+        let device = args.device;
         let scheduler = Scheduler::new(rllm_config.clone(), &cache_size);
-        let cache_engine = CacheEngine::new(rllm_config.clone(), &cache_size);
 
         let timers = TimerSet::new();
 
@@ -453,8 +225,8 @@ impl RllmEngine {
             tokenizer: Arc::new(tokenizer),
             tok_trie: Arc::new(tok_trie),
             model_id: format!("{}", repo),
-            model,
-            seq_id: 1,
+            tmodel,
+            seq_gen,
             step_no: 0,
             profile_step_no: 0,
             req_id_cnt: 0,
@@ -464,8 +236,6 @@ impl RllmEngine {
             space_token_id,
             alt: args.alt,
             scheduler,
-            cache_engine,
-            nv_profile: false,
             aicirt: None,
             tim_step: timers.new_timer("step"),
             tim_aici_pre: timers.new_timer("step.aici_pre"),
@@ -476,59 +246,19 @@ impl RllmEngine {
             tim_sample: timers.new_timer("step.run_model.sample"),
             tim_aici_bias: timers.new_timer("step.run_model.sample.aici_bias"),
             tim_logit_sample: timers.new_timer("step.run_model.sample.sample"),
-            tim_logit_sync: timers.new_timer("step.run_model.sample.sync"),
             tim_aici_post: timers.new_timer("step.run_model.sample.aici_post"),
             timers,
         })
     }
 
-    fn profile_model(config: Arc<RllmConfig>, model: &Box<dyn RllmModel>) -> CacheSize {
-        let device = config.device.clone();
-        let gpu_mem = gpu_memory_size(device);
-
-        let gpu_cache_size = if gpu_mem > 0 {
-            let mut info = BatchInfoBuilder::new(config.clone()).profile_run();
-            reset_mem_stats(device);
-            log_mem_stats("before model profile", device);
-            let _logits = model.forward(&mut info);
-            log_mem_stats("after model profile", device);
-
-            let frac = config.cache.gpu_memory_utilization;
-            let peak = gpu_peak_allocated_bytes(device) as isize;
-            let left = (gpu_mem as f64 * frac) as isize - peak;
-            if left < 0 {
-                panic!("not enough GPU memory for the cache: {gpu_mem} * {frac} < {peak}");
-            }
-            left as usize
-        } else {
-            512 << 20 // 512MiB
-        };
-
-        let max_cpu = 2 << 30; // 2GiB
-        let cpu_cache_size = std::cmp::min(max_cpu, gpu_cache_size);
-
-        let elt_size = CacheEngine::get_cache_block_size(&config);
-
-        let r = CacheSize {
-            cpu: cpu_cache_size / elt_size,
-            gpu: gpu_cache_size / elt_size,
-        };
-
-        let token_kv_size = elt_size / config.cache.block_size;
-
-        const G: f64 = 1024.0 * 1024.0 * 1024.0;
-        log::info!(
-            "caches: gpu:{:.3}GiB cpu:{:.3}GiB; blocks: {}/{}; tokens: {}/{}; {}KiB/token",
-            gpu_cache_size as f64 / G,
-            cpu_cache_size as f64 / G,
-            r.gpu,
-            r.cpu,
-            r.gpu * config.cache.block_size,
-            r.cpu * config.cache.block_size,
-            token_kv_size / 1024,
-        );
-
-        r
+    pub fn load_tokenizer(args: &mut LoaderArgs) -> Result<(Tokenizer, TokTrie)> {
+        let byte_tokenizer = aicirt::bintokens::find_tokenizer(&args.tokenizer)?;
+        let hf_bytes = byte_tokenizer.get_hf_bytes();
+        let tokenizer = Tokenizer::from_bytes(&hf_bytes).expect("can't load hf tokenizer");
+        let tokens = byte_tokenizer.token_bytes();
+        let trie = TokTrie::from(&byte_tokenizer.tokrx_info(), &tokens);
+        trie.check_against(&tokens);
+        Ok((tokenizer, trie))
     }
 
     pub fn set_aicirt(&mut self, aicirt: AiciRtIface) {
@@ -558,15 +288,14 @@ impl RllmEngine {
 
     pub fn queue_request(&mut self, req: AddRequest) -> Result<()> {
         let mut seq = Sequence::new(
-            self.seq_id,
+            self.seq_gen.next(),
             &req.prompt,
             self.scheduler.config.cache.block_size,
         );
         seq.expected = req.expected;
         seq.pending_fork_ids = (1..req.sampling_params.n)
-            .map(|i| self.seq_id + i)
+            .map(|_| self.seq_gen.next())
             .collect::<Vec<_>>();
-        self.seq_id += req.sampling_params.n;
 
         let logits_processor = LogitsProcessor::new(&req.sampling_params, self.tok_trie.clone());
         let prompt = self
@@ -622,9 +351,10 @@ impl RllmEngine {
         })
     }
 
-    fn aici_bias(&mut self, sched_out: &mut SchedulerOutputs) -> Result<Tensor> {
+    fn aici_bias(&mut self, sched_out: &mut SchedulerOutputs) -> Result<AiciBias> {
+        let vocab_size = self.tok_trie.vocab_size();
         if self.aicirt.is_none() {
-            return Ok(Tensor::zeros(&[0], (DType::Float, self.device)));
+            return Ok(AiciBias::empty(vocab_size));
         }
 
         let mid_res = self.aicirt.as_mut().unwrap().finish_mid_process()?;
@@ -641,10 +371,6 @@ impl RllmEngine {
                 assert!(seq.has_aici);
                 match self.save_aici_log(seq, &mid_res.seqs) {
                     Some(r) if r.ff_tokens.len() > 0 || r.backtrack > 0 => {
-                        // save the computed prefix
-                        // we may drop some of it but seq.splice_tokens() takes care of that
-                        seq.num_kv_computed = seq.get_len();
-
                         seq.aici_sampling = AiciSampling::Splice {
                             // backtrack count includes the token that was supposed to be appended
                             // due to current sampling; however we never append it
@@ -663,37 +389,39 @@ impl RllmEngine {
         assert!(idx == mid_res.num_seqs);
 
         let shm = &self.aicirt.as_mut().unwrap().bin_shm;
-        let num_elts = mid_res.num_seqs * self.tok_trie.vocab_size();
-        let slice = shm.slice_at_byte_offset::<f32>(0, num_elts);
-        let t = Tensor::from_slice(slice)
-            .to(self.device)
-            .reshape(&[mid_res.num_seqs as i64, self.tok_trie.vocab_size() as i64]);
-        Ok(t)
+        let slice = shm.slice_at_byte_offset::<f32>(0, mid_res.num_seqs * vocab_size);
+        Ok(AiciBias::new(
+            self.device,
+            slice,
+            mid_res.num_seqs,
+            vocab_size,
+        ))
     }
 
     fn aici_apply_bias(
         &self,
         seq: &mut Sequence,
         logits: &mut Tensor,
-        aici_bias: &Tensor,
+        aici_bias: &AiciBias,
     ) -> Option<AiciPostOp> {
-        let sid = seq.seq_id;
         match std::mem::take(&mut seq.aici_sampling) {
             AiciSampling::Regular => None,
             AiciSampling::SampleWithBias { offset } => {
-                log::trace!("sample *{sid}: bias at {offset}");
-                let logits_aici = aici_bias.i((offset as i64, ..));
-                *logits = &*logits + logits_aici;
+                log::trace!("sample *{}: bias at {offset}", seq.seq_id);
+                aici_bias.apply(logits, offset);
                 None
             }
             AiciSampling::Splice {
                 backtrack,
                 ff_tokens,
             } => {
-                log::trace!("sample *{sid}: backtrack:{backtrack} ff_tokens:{ff_tokens:?}",);
+                log::trace!(
+                    "sample *{}: backtrack:{backtrack} ff_tokens:{ff_tokens:?}",
+                    seq.seq_id
+                );
                 seq.splice_tokens(backtrack as usize, &ff_tokens);
                 Some(AiciPostOp {
-                    id: seq.seq_id,
+                    id: seq.seq_id.to_num(),
                     tokens: ff_tokens,
                     backtrack: backtrack,
                     clone_id: None,
@@ -702,14 +430,13 @@ impl RllmEngine {
         }
     }
 
-    fn check_expected(&mut self, logits: &Tensor, req_id: &str, seq: &mut Sequence) -> Token {
+    fn check_expected(&mut self, mut logits: Vec<f32>, req_id: &str, seq: &mut Sequence) -> Token {
         let exp = seq.expected.as_ref().unwrap();
         let idx = seq.get_len() - exp.prompt.len();
         let next_token = if idx >= exp.output.len() {
             self.eos_token_id
         } else {
             let out = &exp.output[idx];
-            let mut logits = to_vec1::<f32>(&logits.to_kind(Kind::Float));
             let mut max_err = 0.0;
             let mut sum_err = 0.0;
             let mut min_logit = f32::INFINITY;
@@ -776,22 +503,8 @@ impl RllmEngine {
         Ok(self.dropped_outputs(sched_out))
     }
 
-    fn sample(
-        &mut self,
-        logits: &Tensor,
-        sched_out: &mut SchedulerOutputs,
-        info: &BatchInfo,
-    ) -> Result<Vec<RequestOutput>> {
-        let mut seq_id_to_logit_idx = info.seq_id_to_idx.clone();
-
-        {
-            let (num_seq, vocab_size) = logits.size2()?;
-            let t_vocab = self.tok_trie.vocab_size() as i64;
-            if vocab_size != t_vocab {
-                panic!("vocab size mismatch: model {vocab_size} != tokenizer {t_vocab}");
-            }
-            assert!(num_seq == info.seq_id_to_idx.len() as i64);
-        }
+    fn sample(&mut self, sched_out: &mut SchedulerOutputs) -> Result<Vec<RequestOutput>> {
+        let mut seq_id_mapping = HashMap::default();
 
         for sg in sched_out.next_seq_groups.iter_mut() {
             let mut to_add = Vec::new();
@@ -800,10 +513,9 @@ impl RllmEngine {
                     continue;
                 }
                 // get it even if no pending - make sure we have them all
-                let trg_idx = seq_id_to_logit_idx[&seq.seq_id];
                 let pending = std::mem::take(&mut seq.pending_fork_ids);
                 for copy_id in pending {
-                    seq_id_to_logit_idx.insert(copy_id, trg_idx);
+                    seq_id_mapping.insert(copy_id.to_num(), seq.seq_id.to_num());
                     let copy = seq.fork_as(copy_id, sg.max_index + 1);
                     sg.max_index += 1;
                     log::debug!("forked: {:?} -> {:?}", seq, copy);
@@ -817,44 +529,26 @@ impl RllmEngine {
 
         let mut post_ops = Vec::new();
 
-        let mut pre_sample = HashMap::default();
-
         for sg in sched_out.next_seq_groups.iter_mut() {
             for seq in sg.seqs.iter_mut() {
                 if seq.sched_phase != SchedulingPhase::Running {
                     continue;
                 }
 
-                let idx = seq_id_to_logit_idx[&seq.seq_id];
-                let mut logits = logits.i((idx as i64, ..));
+                let sidx = seq.seq_id.to_num();
+                let sidx = seq_id_mapping.get(&sidx).unwrap_or(&sidx);
+                let mut logits = self.tmodel.get_logits(*sidx);
 
                 if let Some(op) = self.aici_apply_bias(seq, &mut logits, &aici_bias) {
                     post_ops.push(op);
                     continue;
                 }
 
-                seq.num_kv_computed = seq.get_len();
-
                 let next_token = if seq.expected.is_some() {
-                    let t = self.check_expected(&logits, &sg.request_id, seq);
-                    scalar_tensor(t as i64, logits.device())
+                    let logits = to_vec1(&logits.to_kind(DType::Float));
+                    self.check_expected(logits, &sg.request_id, seq)
                 } else {
                     with_timer!(self.tim_logit_sample, sg.logits_processor.sample(&logits)?)
-                };
-
-                pre_sample.insert(seq.seq_id, next_token);
-            }
-        }
-
-        for sg in sched_out.next_seq_groups.iter_mut() {
-            for seq in sg.seqs.iter_mut() {
-                if seq.sched_phase != SchedulingPhase::Running {
-                    continue;
-                }
-
-                let next_token = match pre_sample.get(&seq.seq_id) {
-                    Some(t) => with_timer!(self.tim_logit_sync, t.int64_value(&[]) as u32),
-                    None => continue,
                 };
 
                 let mut info = "";
@@ -869,7 +563,7 @@ impl RllmEngine {
 
                 if seq.has_aici {
                     post_ops.push(AiciPostOp {
-                        id: seq.seq_id,
+                        id: seq.seq_id.to_num(),
                         tokens: vec![next_token],
                         backtrack: 0,
                         clone_id: None,
@@ -927,58 +621,17 @@ impl RllmEngine {
             return self.empty_outputs(sched_out);
         }
 
-        let iface = {
-            self.cache_engine.new_round();
-            if sched_out.blocks_to_swap_in.len() > 0 {
-                self.cache_engine.swap_in(&sched_out.blocks_to_swap_in);
-            }
-            if sched_out.blocks_to_swap_out.len() > 0 {
-                self.cache_engine.swap_out(&sched_out.blocks_to_swap_out);
-            }
-            if sched_out.blocks_to_copy.len() > 0 {
-                self.cache_engine.copy(&sched_out.blocks_to_copy);
-            }
-            self.cache_engine.get_cache_iface()
-        };
-
-        let mut info = BatchInfoBuilder::new(self.config.clone())
-            .sched_out(sched_out)
-            .finish(self.step_no, iface);
-
-        log::trace!("batch_info #{}: {:?}", info.step_no, info);
-
-        #[cfg(feature = "cuda")]
-        if self.nv_profile {
-            cudarc::driver::safe::profiler_start()?;
-        }
-
-        let t0 = Instant::now();
-        let logits = with_timer!(self.tim_model_fwd, {
-            let l = self.model.forward(&mut info);
-            if false {
-                // without this, the timing is off but we may get better perf
-                synchronize(self.device);
-            }
-            l
-        });
-        let r = with_timer!(self.tim_sample, { self.sample(&logits, sched_out, &info) });
-        let dur = t0.elapsed().as_micros() as f64 / 1000.0;
-
-        log::info!(
-            "model forward: step #{} {:.2}ms; {} tok(s); {:.1}tps",
+        self.tmodel.run(
+            self.tok_trie.vocab_size(),
+            &self.tim_model_fwd,
             self.step_no,
-            dur,
-            info.tokens.numel(),
-            info.tokens.numel() as f64 / (dur / 1000.0),
-        );
+            sched_out,
+        )?;
 
-        #[cfg(feature = "cuda")]
-        if self.nv_profile {
-            cudarc::driver::safe::profiler_stop()?;
-        }
+        let r = with_timer!(self.tim_sample, { self.sample(sched_out) });
 
-        info.save_log(&format!("step-{}.safetensor", self.step_no));
-        log::trace!("logits: {:?}", logits);
+        self.tmodel.finalize_run()?;
+
         r
     }
 
@@ -995,7 +648,7 @@ impl RllmEngine {
         seq: &mut Sequence,
         seqs: &'a HashMap<ModuleInstId, SequenceResult<T>>,
     ) -> Option<&'a T> {
-        if let Some(r) = seqs.get(&seq.seq_id) {
+        if let Some(r) = seqs.get(&seq.seq_id.to_num()) {
             seq.aici_logs.push(r.clone_with(None));
             if r.error.len() > 0 {
                 self.scheduler.finish_seq(seq, FinishReason::Failed);
@@ -1064,7 +717,7 @@ impl RllmEngine {
                 max_context_len = std::cmp::max(max_context_len, seq.get_len());
                 seq.has_aici = true;
                 ops.push(AiciPreOp {
-                    id: seq.seq_id,
+                    id: seq.seq_id.to_num(),
                     req_id: Some(sg.request_id.clone()),
                 });
             } else {
@@ -1089,15 +742,14 @@ impl RllmEngine {
                 ops,
             })?;
 
-        let mut curr_seq_id = self.seq_id;
+        // let gen = &mut self.seq_gen;
         self.scheduler.for_each_sg(|sg| {
             if sg.sampling_params.aici_module.is_none() {
                 return;
             }
 
             for seq in sg.seqs.iter_mut() {
-                let seq_id = seq.seq_id;
-                let res = pre_res.seqs.get(&seq_id);
+                let res = pre_res.seqs.get(&seq.seq_id.to_num());
                 if res.is_none() {
                     continue;
                 }
@@ -1123,8 +775,7 @@ impl RllmEngine {
                         }
 
                         while seq.pending_fork_ids.len() < r.num_forks - 1 {
-                            seq.pending_fork_ids.push(curr_seq_id);
-                            curr_seq_id += 1;
+                            seq.pending_fork_ids.push(self.seq_gen.next());
                         }
                     }
                     None => {}
@@ -1154,7 +805,6 @@ impl RllmEngine {
                 }
             }
         });
-        self.seq_id = curr_seq_id;
 
         Ok(())
     }
@@ -1179,14 +829,14 @@ impl RllmEngine {
                 assert!(seq.has_aici);
 
                 mid_ops.push(AiciMidOp {
-                    id: seq.seq_id,
+                    id: seq.seq_id.to_num(),
                     clone_id: None,
                 });
 
                 for copy_id in &seq.pending_fork_ids {
                     mid_ops.push(AiciMidOp {
-                        id: *copy_id,
-                        clone_id: Some(seq.seq_id),
+                        id: copy_id.to_num(),
+                        clone_id: Some(seq.seq_id.to_num()),
                     });
                 }
             }
@@ -1207,6 +857,7 @@ impl RllmEngine {
     }
 
     pub fn step(&mut self) -> Result<Vec<RequestOutput>> {
+        #[cfg(feature = "tch")]
         let _no_grad = tch::no_grad_guard();
         let r = with_timer!(self.tim_step, self.step_inner());
 
@@ -1300,6 +951,56 @@ impl RllmEngine {
         Stats {
             free_gpu_blocks: self.scheduler.block_manager.get_num_free_gpu_blocks(),
             free_cpu_blocks: self.scheduler.block_manager.get_num_free_cpu_blocks(),
+        }
+    }
+}
+
+pub struct AiciBias {
+    pub vocab_size: usize,
+    pub bias: Option<Tensor>,
+}
+
+impl AiciBias {
+    pub fn empty(vocab_size: usize) -> Self {
+        Self {
+            bias: None,
+            vocab_size,
+        }
+    }
+
+    pub fn new(device: Device, slice: &'static [f32], num_seqs: usize, vocab_size: usize) -> Self {
+        #[cfg(feature = "tch")]
+        let tensor = Tensor::from_slice(slice)
+            .to(device)
+            .reshape(&[num_seqs as i64, vocab_size as i64]);
+        #[cfg(feature = "llamacpp")]
+        let tensor = {
+            let _ = device;
+            assert!(slice.len() == num_seqs * vocab_size);
+            Tensor::from_slice(slice)
+        };
+        Self {
+            vocab_size,
+            bias: Some(tensor),
+        }
+    }
+
+    pub fn apply(&self, logits: &mut Tensor, seq_id: usize) {
+        let bias = self.bias.as_ref().unwrap();
+        #[cfg(feature = "tch")]
+        {
+            use tch::IndexOp;
+            let bias = bias.i((seq_id as i64, ..));
+            *logits = &*logits + bias;
+        }
+        #[cfg(feature = "llamacpp")]
+        {
+            let sp = seq_id * self.vocab_size;
+            let logits = logits.as_mut_slice();
+            let bias = bias.as_slice();
+            for i in 0..self.vocab_size {
+                logits[i] += bias[sp + i];
+            }
         }
     }
 }

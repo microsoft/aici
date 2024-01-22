@@ -8,7 +8,7 @@ use tch_cuda::{CudaEvent, CudaStream};
 use crate::{config::RllmConfig, llm::kernels, Device, HashMap, Tensor};
 use std::sync::Arc;
 
-use super::CacheIface;
+use super::{CacheIface, CacheSize};
 
 type KVCache = (Tensor, Tensor);
 
@@ -18,11 +18,6 @@ pub struct CacheEngine {
     cache_stream: CudaStream,
     events: Arc<Vec<CudaEvent>>,
     used_events: bool,
-}
-
-pub struct CacheSize {
-    pub gpu: usize,
-    pub cpu: usize,
 }
 
 struct MyCacheAwaiter {

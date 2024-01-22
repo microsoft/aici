@@ -1,11 +1,11 @@
-use crate::{config::SamplingParams, engine::ExpectedGeneration, paged::BlockRef, LogitsProcessor};
+use crate::{config::SamplingParams, engine::ExpectedGeneration, BlockRef, LogitsProcessor};
 use aici_abi::{toktree::TokTrie, TokenId};
 use aicirt::api::SequenceResult;
 use serde::{Deserialize, Serialize};
 use std::fmt::Debug;
 
 pub type Token = u32;
-pub type SeqId = usize;
+pub type SeqId = crate::llm::seqid::SeqId;
 
 #[derive(Debug, PartialEq, Eq, Clone, Copy, Serialize, Deserialize)]
 pub enum FinishReason {
@@ -91,7 +91,7 @@ pub struct Sequence {
 impl Debug for Sequence {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("Sequence")
-            .field("seq_id", &self.seq_id)
+            .field("seq_id", &self.seq_id.to_num())
             .field("sched_phase", &self.sched_phase)
             .field("kv_computed", &self.num_kv_computed)
             .field("aici_sampling", &self.aici_sampling)
@@ -132,8 +132,27 @@ impl Sequence {
         (self.get_len() + self.block_size - 1) / self.block_size
     }
 
+    /// Indicate that the generation will soon run for this sequence and thus
+    /// all the tokens will have KV computed.
+    pub(crate) fn sync_computed_kv(&mut self) {
+        self.num_kv_computed = self.get_len();
+    }
+
+    fn trim_computed_kv(&mut self, v: usize) {
+        if self.num_kv_computed != v {
+            assert!(self.num_kv_computed > v);
+            self.seq_id.trim(v);
+            self.num_kv_computed = v;
+        }
+    }
+
+    pub(crate) fn clear_computed_kv(&mut self) {
+        self.gpu_blocks.clear();
+        self.trim_computed_kv(0);
+    }
+
     fn trim_physical_blocks(&mut self) {
-        self.num_kv_computed = std::cmp::min(self.num_kv_computed, self.get_len());
+        self.trim_computed_kv(std::cmp::min(self.num_kv_computed, self.get_len()));
         let num_logical = self.num_logical_blocks();
         if self.gpu_blocks.len() > num_logical {
             self.gpu_blocks.truncate(num_logical);
@@ -167,8 +186,8 @@ impl Sequence {
         block_index * self.block_size + block_offset
     }
 
-    #[allow(dead_code)]
     pub(crate) fn fork_as(&self, seq_id: SeqId, index: usize) -> Self {
+        seq_id.clone_from(&self.seq_id, self.num_kv_computed);
         Self {
             seq_id,
             index,
@@ -232,7 +251,7 @@ impl Sequence {
         self.output_ptr = self.tokens.len();
         let new_text = String::from_utf8_lossy(&buf).to_string();
         SeqOutput {
-            seq_id: self.seq_id,
+            seq_id: self.seq_id.to_num(),
             index: self.index,
             new_output_tokens,
             new_text,
@@ -314,7 +333,7 @@ impl SequenceGroup {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SeqOutput {
-    pub seq_id: SeqId,
+    pub seq_id: usize,
     pub index: usize, // within the sequence group
     pub new_output_tokens: Vec<Token>,
     pub new_text: String,

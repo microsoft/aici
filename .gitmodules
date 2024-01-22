@@ -5,3 +5,6 @@
 [submodule "tch-cuda/cutlass"]
 	path = tch-cuda/cutlass
 	url = https://github.com/NVIDIA/cutlass.git
+[submodule "llama-cpp-low/llama.cpp"]
+	path = llama-cpp-low/llama.cpp
+	url = https://github.com/ggerganov/llama.cpp

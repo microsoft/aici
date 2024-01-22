@@ -1,7 +1,6 @@
-use super::cache_engine::CacheSize;
 use crate::{
     config::RllmConfig,
-    paged::{cache_engine::CacheEngine, scheduler::SchedulerOutputs},
+    paged::{cache_engine::CacheEngine, scheduler::SchedulerOutputs, CacheSize},
     seq::{SchedulingPhase, Sequence, SequenceGroup},
     HashMap,
 };

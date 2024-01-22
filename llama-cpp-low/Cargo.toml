@@ -1,0 +1,13 @@
+[package]
+name = "llama_cpp_low"
+version = "0.0.1"
+edition = "2021"
+
+[dependencies]
+anyhow = "1.0.79"
+link-cplusplus = "1.0.9"
+num_cpus = "1.16.0"
+
+[build-dependencies]
+bindgen = "0.69.2"
+cmake = "0.1.50"

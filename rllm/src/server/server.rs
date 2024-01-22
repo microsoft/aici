@@ -1,6 +1,9 @@
 use actix_web::{middleware::Logger, web, App, HttpServer};
 use aici_abi::toktree::TokTrie;
-use aicirt::{api::{AuthInfo, GetTagsResp, MkModuleReq, MkModuleResp, SetTagsReq}, set_max_priority};
+use aicirt::{
+    api::{AuthInfo, GetTagsResp, MkModuleReq, MkModuleResp, SetTagsReq},
+    set_max_priority,
+};
 use anyhow::Result;
 use base64::Engine;
 use clap::Parser;
@@ -10,11 +13,10 @@ use rllm::{
     iface::{kill_self, AiciRtIface, AsyncCmdChannel},
     seq::RequestOutput,
     util::apply_settings,
-    AddRequest, DType, ExpectedGeneration, HashMap, LoaderArgs, RllmEngine,
+    AddRequest, DType, HashMap, LoaderArgs, RllmEngine,
 };
 use std::{
     fmt::Display,
-    path::PathBuf,
     sync::{Arc, Mutex},
     time::Instant,
 };
@@ -75,6 +77,10 @@ pub struct Args {
     /// (same structure as HuggingFace online)
     #[arg(long)]
     local_weights: Option<String>,
+
+    /// Name of .gguf file inside of the model folder/repo.
+    #[arg(long)]
+    gguf: Option<String>,
 
     /// Tokenizer to use; try --tokenizer list to see options
     #[arg(short, long, default_value = "llama")]
@@ -337,13 +343,20 @@ fn inference_loop(
     }
 }
 
+#[cfg(feature = "llamacpp")]
+fn run_tests(_args: &Args, _loader_args: LoaderArgs) {
+    panic!("tests not supported without tch feature")
+}
+
+#[cfg(feature = "tch")]
 fn run_tests(args: &Args, loader_args: LoaderArgs) {
     let mut engine = RllmEngine::load(loader_args).expect("failed to load model");
     let mut tests = args.test.clone();
 
     while tests.len() > 0 || engine.num_pending_requests() > 0 {
         if let Some(ref t) = tests.pop() {
-            let exp = ExpectedGeneration::load(&PathBuf::from(t)).expect("can't load test");
+            let exp = rllm::ExpectedGeneration::load(&std::path::PathBuf::from(t))
+                .expect("can't load test");
             log::info!(
                 "test {t}: {} tokens; {} logits",
                 exp.output.len(),
@@ -393,8 +406,10 @@ fn spawn_inference_loop(
         let wid = "warmup".to_string();
         match warmup {
             Some(w) if w == "off" => {}
+            #[cfg(feature = "tch")]
             Some(w) => {
-                let exp = ExpectedGeneration::load(&PathBuf::from(&w)).expect("can't load warmup");
+                let exp = rllm::ExpectedGeneration::load(&std::path::PathBuf::from(&w))
+                    .expect("can't load warmup");
                 log::info!(
                     "warmup {w}: {} tokens; {} logits",
                     exp.output.len(),
@@ -402,7 +417,7 @@ fn spawn_inference_loop(
                 );
                 engine.add_expected_generation(exp, Some(wid)).unwrap();
             }
-            None => {
+            _ => {
                 engine
                     .add_request(
                         wid,
@@ -419,6 +434,21 @@ fn spawn_inference_loop(
     });
 
     handle_res
+}
+
+fn strip_suffix(sep: &str, s: &mut String) -> Option<String> {
+    let mut parts = s.splitn(2, sep);
+    let core = parts.next().unwrap().to_string();
+    let suff = parts.next().map(|s| s.to_string());
+    *s = core;
+    suff
+}
+
+fn url_decode(encoded_str: &str) -> String {
+    percent_encoding::percent_decode_str(encoded_str)
+        .decode_utf8()
+        .unwrap()
+        .to_string()
 }
 
 #[actix_web::main]
@@ -448,11 +478,28 @@ async fn main() -> () {
         _ => panic!("invalid dtype; try one of bf16, f16, f32"),
     };
 
-    if args.model.contains('@') {
-        let m = args.model.clone();
-        let mut parts = m.split('@');
-        args.model = parts.next().unwrap().to_string();
-        args.revision = Some(parts.next().unwrap().to_string());
+    let hf = "https://huggingface.co/";
+    if args.model.starts_with(hf) {
+        args.model = args.model[hf.len()..].to_string();
+
+        if let Some(url_rev) = strip_suffix("/tree/", &mut args.model) {
+            args.revision = Some(url_decode(&url_rev));
+        }
+
+        if let Some(mut blob_path) = strip_suffix("/blob/", &mut args.model) {
+            if let Some(url_rev) = strip_suffix("/", &mut blob_path) {
+                args.gguf = Some(url_decode(&url_rev));
+            }
+            args.revision = Some(url_decode(&blob_path));
+        }
+    }
+
+    if let Some(gguf) = strip_suffix("::", &mut args.model) {
+        args.gguf = Some(gguf);
+    }
+
+    if let Some(rev) = strip_suffix("@", &mut args.model) {
+        args.revision = Some(rev);
     }
 
     if args.model.starts_with(".") {
@@ -464,6 +511,7 @@ async fn main() -> () {
     loader_args.revision = args.revision.clone();
     loader_args.local_weights = args.local_weights.clone();
     loader_args.tokenizer = args.tokenizer.clone();
+    loader_args.gguf = args.gguf.clone();
     if dtype.is_some() {
         loader_args.dtype = dtype;
     }
@@ -474,12 +522,12 @@ async fn main() -> () {
     }
 
     let (tokenizer, tok_trie) =
-        RllmEngine::load_tokenizer(&loader_args).expect("failed to load tokenizer");
+        RllmEngine::load_tokenizer(&mut loader_args).expect("failed to load tokenizer");
 
     // make sure we try to load the model before spawning inference thread
     // otherwise, if the model doesn't exist, the inference thread will panic and things get messy
     let model_config =
-        RllmEngine::load_model_config(&loader_args).expect("failed to load model config");
+        RllmEngine::load_model_config(&mut loader_args).expect("failed to load model config");
 
     let rt_args = rllm::iface::Args {
         aicirt: args.aicirt.clone(),

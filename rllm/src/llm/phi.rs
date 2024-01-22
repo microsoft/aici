@@ -1,6 +1,6 @@
 use crate::{
     config::{CommonModelConfig, ModelConfig, ModelType},
-    engine::{RllmModel, RllmModelConfig},
+    engine::RllmModelConfig,
     llm::{layer_norm, linear, varlen_attn, RotaryEmbedding},
     paged::BatchInfo,
     Tensor,
@@ -11,6 +11,8 @@ use tch::{
     nn::{self, Module, Path},
     IndexOp,
 };
+
+use super::tmodel::TModelInner;
 
 /// MixFormer model.
 /// https://huggingface.co/microsoft/phi-1_5
@@ -204,7 +206,7 @@ impl MixFormerSequentialForCausalLM {
     }
 }
 
-impl RllmModel for MixFormerSequentialForCausalLM {
+impl TModelInner for MixFormerSequentialForCausalLM {
     fn forward(&self, batch_info: &mut BatchInfo) -> Tensor {
         let mut xs = self.embedding.forward(&batch_info.tokens);
         for block in self.blocks.iter() {

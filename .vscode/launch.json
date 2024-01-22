@@ -1,0 +1,25 @@
+{
+    // Use IntelliSense to learn about possible attributes.
+    // Hover to view descriptions of existing attributes.
+    // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "type": "lldb",
+            "request": "launch",
+            "name": "cpp-rllm orca",
+            "cwd": "rllm",
+            "program": "${workspaceFolder}/target/debug/cpp-rllm",
+            "env": {
+                "RUST_LOG": "info,rllm=debug,aicirt=info"
+            },
+            "args": [
+                "--verbose",
+                "--port=8080",
+                "--aicirt=${workspaceFolder}/target/release/aicirt",
+                "--model=https://huggingface.co/TheBloke/Orca-2-13B-GGUF/blob/main/orca-2-13b.Q8_0.gguf",
+                "--tokenizer=orca"
+            ]
+        }
+    ]
+}

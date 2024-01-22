@@ -7,7 +7,18 @@ fn run(cmd: &mut Command, msg: &str) {
     }
 }
 
+fn rerun_if_glob(pattern: &str) {
+    for entry in glob::glob(pattern).expect(pattern).flatten() {
+        let display = entry.display();
+        println!("cargo:rerun-if-changed={display}");
+    }
+}
+
 fn main() {
+    rerun_if_glob("ts/*.ts");
+    rerun_if_glob("ts/*.json");
+    rerun_if_glob("gen-dts.mjs");
+
     if Command::new("tsc").arg("--version").status().is_err() {
         println!("cargo:warning=typescript not found, installing...");
         run(
