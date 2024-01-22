@@ -14,6 +14,13 @@ else
   (cd .. && git submodule update --init --recursive)
 fi
 
+P=`ps -fax|grep 'aicir[t]\|rllm-serve[r]' | awk '{print $1}' | xargs echo`
+
+if [ "X$P" != "X" ] ; then 
+  echo "KILL $P"
+  kill $P
+fi
+
 if [ "$1" = loop ] ; then
     REL=--release
     LOOP=1
