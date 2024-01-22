@@ -34,7 +34,7 @@ impl LogitsProcessor {
     }
 
     fn sample_argmax(&mut self, logits: &Tensor) -> u32 {
-        #[cfg(feature = "tch")]
+        #[cfg(not(feature = "llamacpp"))]
         {
             logits.argmax(0, false).int64_value(&[]) as u32
         }
@@ -85,7 +85,7 @@ impl LogitsProcessor {
         let next_token = match self.temperature {
             None => self.sample_argmax(&logits),
             Some(temperature) => {
-                #[cfg(feature = "tch")]
+                #[cfg(not(feature = "llamacpp"))]
                 {
                     let logits = logits.to_kind(DType::Float);
                     let logits = logits / (temperature as f64);

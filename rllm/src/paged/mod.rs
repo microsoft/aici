@@ -3,7 +3,7 @@ mod scheduler;
 pub use scheduler::*;
 
 cfg_if::cfg_if! {
-    if #[cfg(feature = "tch")] {
+    if #[cfg(not(feature = "llamacpp"))] {
         #[cfg(not(feature = "cuda"))]
         mod cuda_stub;
 

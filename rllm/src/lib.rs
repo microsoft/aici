@@ -16,7 +16,7 @@ pub use logits::LogitsProcessor;
 use std::sync::atomic::AtomicBool;
 
 cfg_if::cfg_if! {
-    if #[cfg(feature = "tch")] {
+    if #[cfg(not(feature = "llamacpp"))] {
         pub mod llm;
         pub use tch::{Device, IndexOp, Kind as DType, Shape, Tensor};
         pub(crate) use paged::BlockRef;
@@ -53,7 +53,7 @@ pub struct LoaderArgs {
 
 impl Default for LoaderArgs {
     fn default() -> Self {
-        #[cfg(feature = "tch")]
+        #[cfg(not(feature = "llamacpp"))]
         let (device, dtype) = if tch::Cuda::is_available() {
             (Device::Cuda(0), None)
         } else {
