@@ -343,12 +343,12 @@ fn inference_loop(
     }
 }
 
-#[cfg(feature = "llamacpp")]
+#[cfg(not(feature = "tch"))]
 fn run_tests(_args: &Args, _loader_args: LoaderArgs) {
     panic!("tests not supported without tch feature")
 }
 
-#[cfg(not(feature = "llamacpp"))]
+#[cfg(feature = "tch")]
 fn run_tests(args: &Args, loader_args: LoaderArgs) {
     let mut engine = RllmEngine::load(loader_args).expect("failed to load model");
     let mut tests = args.test.clone();
@@ -406,7 +406,7 @@ fn spawn_inference_loop(
         let wid = "warmup".to_string();
         match warmup {
             Some(w) if w == "off" => {}
-            #[cfg(not(feature = "llamacpp"))]
+            #[cfg(feature = "tch")]
             Some(w) => {
                 let exp = rllm::ExpectedGeneration::load(&std::path::PathBuf::from(&w))
                     .expect("can't load warmup");

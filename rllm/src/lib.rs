@@ -16,7 +16,7 @@ pub use logits::LogitsProcessor;
 use std::sync::atomic::AtomicBool;
 
 cfg_if::cfg_if! {
-    if #[cfg(not(feature = "llamacpp"))] {
+    if #[cfg(feature = "tch")] {
         pub mod llm;
         pub use tch::{Device, IndexOp, Kind as DType, Shape, Tensor};
         pub(crate) use paged::BlockRef;
@@ -44,7 +44,7 @@ pub struct LoaderArgs {
     pub alt: usize,
     pub aici: AiciConfig,
 
-    #[cfg(feature = "llamacpp")]
+    #[cfg(not(feature = "tch"))]
     pub(crate) cached_model: Option<llamacpp::Model>,
 
     pub dtype: Option<DType>,
@@ -53,7 +53,7 @@ pub struct LoaderArgs {
 
 impl Default for LoaderArgs {
     fn default() -> Self {
-        #[cfg(not(feature = "llamacpp"))]
+        #[cfg(feature = "tch")]
         let (device, dtype) = if tch::Cuda::is_available() {
             (Device::Cuda(0), None)
         } else {
@@ -64,7 +64,7 @@ impl Default for LoaderArgs {
             let r = (Device::Cpu, Some(DType::Float));
             r
         };
-        #[cfg(feature = "llamacpp")]
+        #[cfg(not(feature = "tch"))]
         let (device, dtype) = (Device::Cpu, Some(DType::Float));
         Self {
             tokenizer: "llama".to_string(),
@@ -76,7 +76,7 @@ impl Default for LoaderArgs {
             alt: 0,
             dtype,
             device,
-            #[cfg(feature = "llamacpp")]
+            #[cfg(not(feature = "tch"))]
             cached_model: None,
         }
     }

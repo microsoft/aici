@@ -857,7 +857,7 @@ impl RllmEngine {
     }
 
     pub fn step(&mut self) -> Result<Vec<RequestOutput>> {
-        #[cfg(not(feature = "llamacpp"))]
+        #[cfg(feature = "tch")]
         let _no_grad = tch::no_grad_guard();
         let r = with_timer!(self.tim_step, self.step_inner());
 
@@ -969,11 +969,11 @@ impl AiciBias {
     }
 
     pub fn new(device: Device, slice: &'static [f32], num_seqs: usize, vocab_size: usize) -> Self {
-        #[cfg(not(feature = "llamacpp"))]
+        #[cfg(feature = "tch")]
         let tensor = Tensor::from_slice(slice)
             .to(device)
             .reshape(&[num_seqs as i64, vocab_size as i64]);
-        #[cfg(feature = "llamacpp")]
+        #[cfg(not(feature = "tch"))]
         let tensor = {
             let _ = device;
             assert!(slice.len() == num_seqs * vocab_size);
@@ -987,13 +987,13 @@ impl AiciBias {
 
     pub fn apply(&self, logits: &mut Tensor, seq_id: usize) {
         let bias = self.bias.as_ref().unwrap();
-        #[cfg(not(feature = "llamacpp"))]
+        #[cfg(feature = "tch")]
         {
             use tch::IndexOp;
             let bias = bias.i((seq_id as i64, ..));
             *logits = &*logits + bias;
         }
-        #[cfg(feature = "llamacpp")]
+        #[cfg(not(feature = "tch"))]
         {
             let sp = seq_id * self.vocab_size;
             let logits = logits.as_mut_slice();
