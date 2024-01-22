@@ -42,7 +42,7 @@ percent-encoding = "2.3.1"
 
 [[bin]]
 name = "rllm-server"
-path = "src/server/server.rs"
+path = "src/driver.rs"
 
 [build-dependencies]
 anyhow = { version = "1", features = ["backtrace"] }

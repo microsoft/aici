@@ -1,4 +1,4 @@
-use crate::{
+use crate::server::{
     auth_info,
     openai::{
         requests::CompletionRequest,
@@ -9,9 +9,9 @@ use crate::{
     },
     InferenceResult, OpenAIServerData,
 };
+use crate::{config::SamplingParams, seq::Token, AddRequest};
 use actix_web::{post, web, web::Bytes, Either, HttpResponse};
 use aicirt::{api::InstantiateReq, get_unix_time};
-use rllm::{config::SamplingParams, seq::Token, AddRequest};
 use serde_json::{json, Value};
 use tokio::sync::mpsc::Receiver;
 use uuid::Uuid;

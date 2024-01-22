@@ -8,7 +8,7 @@ use anyhow::Result;
 use base64::Engine;
 use clap::Parser;
 use openai::responses::APIError;
-use rllm::{
+use crate::{
     config::{ModelConfig, SamplingParams},
     iface::{kill_self, AiciRtIface, AsyncCmdChannel},
     seq::RequestOutput,
@@ -355,7 +355,7 @@ fn run_tests(args: &Args, loader_args: LoaderArgs) {
 
     while tests.len() > 0 || engine.num_pending_requests() > 0 {
         if let Some(ref t) = tests.pop() {
-            let exp = rllm::ExpectedGeneration::load(&std::path::PathBuf::from(t))
+            let exp = crate::ExpectedGeneration::load(&std::path::PathBuf::from(t))
                 .expect("can't load test");
             log::info!(
                 "test {t}: {} tokens; {} logits",
@@ -408,7 +408,7 @@ fn spawn_inference_loop(
             Some(w) if w == "off" => {}
             #[cfg(feature = "tch")]
             Some(w) => {
-                let exp = rllm::ExpectedGeneration::load(&std::path::PathBuf::from(&w))
+                let exp = crate::ExpectedGeneration::load(&std::path::PathBuf::from(&w))
                     .expect("can't load warmup");
                 log::info!(
                     "warmup {w}: {} tokens; {} logits",
@@ -451,8 +451,8 @@ fn url_decode(encoded_str: &str) -> String {
         .to_string()
 }
 
-#[actix_web::main]
-async fn main() -> () {
+// #[actix_web::main]
+pub async fn server_main() -> () {
     let mut args = Args::parse();
 
     aicirt::init_log(if args.daemon {
@@ -529,7 +529,7 @@ async fn main() -> () {
     let model_config =
         RllmEngine::load_model_config(&mut loader_args).expect("failed to load model config");
 
-    let rt_args = rllm::iface::Args {
+    let rt_args = crate::iface::Args {
         aicirt: args.aicirt.clone(),
         tokenizer: args.tokenizer.clone(),
         json_size: args.json_size,

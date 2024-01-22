@@ -7,6 +7,7 @@ mod engine;
 pub mod iface;
 mod logits;
 pub mod util;
+pub mod server;
 
 use config::AiciConfig;
 use config::CommonModelConfig;
