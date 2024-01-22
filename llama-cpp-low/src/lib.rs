@@ -20,7 +20,14 @@ use sys::*;
 struct ModelInner {
     seq_id: i32,
     model: *mut llama_model,
-    ctx: *mut llama_context,
+    _ctx: *mut llama_context,
+}
+
+impl ModelInner {
+    fn ctx(&self) -> *mut llama_context {
+        assert!(self._ctx != std::ptr::null_mut());
+        self._ctx
+    }
 }
 
 unsafe impl Send for ModelInner {}
@@ -150,11 +157,21 @@ impl Model {
             Ok(Model {
                 inner: Arc::new(Mutex::new(ModelInner {
                     model,
-                    ctx,
+                    _ctx: ctx,
                     seq_id: 0,
                 })),
             })
         }
+    }
+
+    fn with_model<T>(&self, f: impl FnOnce(*mut llama_model) -> T) -> T {
+        let inner = self.inner.lock().unwrap();
+        f(inner.model)
+    }
+
+    fn with_ctx<T>(&self, f: impl FnOnce(*mut llama_context) -> T) -> T {
+        let inner = self.inner.lock().unwrap();
+        f(inner.ctx())
     }
 
     pub fn new_sequence(&self) -> Sequence {
@@ -168,37 +185,32 @@ impl Model {
     }
 
     pub fn model_info(&self) -> ModelInfo {
-        unsafe {
-            let model = self.inner.lock().unwrap().model;
+        self.with_model(|model| unsafe {
             ModelInfo {
                 n_ctx_train: llama_n_ctx_train(model),
                 n_embd: llama_n_embd(model),
                 n_vocab: llama_n_vocab(model),
                 rope: llama_rope_freq_scale_train(model),
             }
-        }
+        })
     }
 
     pub fn vocab_size(&self) -> usize {
-        unsafe {
-            let model = self.inner.lock().unwrap().model;
-            llama_n_vocab(model) as usize
-        }
+        self.with_model(|model| unsafe { llama_n_vocab(model) as usize })
     }
 
     pub fn token_to_bytes(&self, token: u32) -> Vec<u8> {
         let mut sz = 32;
         loop {
             let mut res = vec![0u8; sz];
-            let ntok = unsafe {
-                let model = self.inner.lock().unwrap().model;
+            let ntok = self.with_model(|model| unsafe {
                 llama_token_to_piece(
                     model,
                     token as i32,
                     res.as_mut_ptr() as *mut i8,
                     res.len() as i32,
                 )
-            };
+            });
             if ntok < 0 {
                 assert!(sz == 32);
                 sz = -ntok as usize;
@@ -214,8 +226,7 @@ impl Model {
     ///             Does not insert a leading space.
     pub fn tokenize(&self, data: &[u8], add_bos: bool, special: bool) -> Vec<u32> {
         let mut res = vec![0u32; data.len()];
-        let ntok = unsafe {
-            let model = self.inner.lock().unwrap().model;
+        let ntok = self.with_model(|model| unsafe {
             llama_tokenize(
                 model,
                 data.as_ptr() as *mut i8,
@@ -225,17 +236,14 @@ impl Model {
                 add_bos,
                 special,
             )
-        };
+        });
         assert!(ntok >= 0);
         res.truncate(ntok as usize);
         res
     }
 
     pub fn decode(&self, batch: &mut Batch) -> Result<()> {
-        let r = unsafe {
-            let ctx = self.inner.lock().unwrap().ctx;
-            llama_decode(ctx, batch.batch)
-        };
+        let r = self.with_ctx(|ctx| unsafe { llama_decode(ctx, batch.batch) });
         if r == 1 {
             Err(anyhow!("KV cache overflow"))
         } else if r != 0 {
@@ -247,10 +255,9 @@ impl Model {
 
     pub fn get_logits(&self, idx: usize) -> &'static [f32] {
         let n = self.vocab_size();
-        unsafe {
-            let ctx = self.inner.lock().unwrap().ctx;
+        self.with_ctx(|ctx| unsafe {
             slice::from_raw_parts(llama_get_logits_ith(ctx, idx as i32), n)
-        }
+        })
     }
 }
 
@@ -262,23 +269,23 @@ impl Sequence {
         assert!(Arc::ptr_eq(&self.model.inner, &model.inner));
     }
     pub fn rm(&self, start: i32, stop: i32) {
-        unsafe {
-            let ctx = self.model.inner.lock().unwrap().ctx;
+        self.model.with_ctx(|ctx| unsafe {
             llama_kv_cache_seq_rm(ctx, self.id, start, stop);
-        }
+        })
     }
     pub fn cp_from(&self, src: &Sequence, start: i32, stop: i32) {
-        unsafe {
-            let ctx = self.model.inner.lock().unwrap().ctx;
+        self.model.with_ctx(|ctx| unsafe {
             llama_kv_cache_seq_cp(ctx, src.id, self.id, start, stop);
-        }
+        })
     }
 }
 
 impl Drop for ModelInner {
     fn drop(&mut self) {
         unsafe {
-            llama_free(self.ctx);
+            if self._ctx != std::ptr::null_mut() {
+                llama_free(self._ctx);
+            }
             llama_free_model(self.model);
         }
     }
@@ -286,10 +293,9 @@ impl Drop for ModelInner {
 
 impl Drop for Sequence {
     fn drop(&mut self) {
-        unsafe {
-            let ctx = self.model.inner.lock().unwrap().ctx;
+        self.model.with_ctx(|ctx| unsafe {
             llama_kv_cache_seq_rm(ctx, self.id, 0, -1);
-        }
+        });
     }
 }
 
