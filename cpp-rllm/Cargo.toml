@@ -13,5 +13,5 @@ name = "cpp-rllm"
 path = "src/cpp-rllm.rs"
 
 [features]
-default = ["cuda"]
+default = []
 cuda = ["llama_cpp_low/cuda"]
