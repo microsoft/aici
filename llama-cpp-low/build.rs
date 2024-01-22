@@ -5,7 +5,7 @@ const SUBMODULE_DIR: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/llama.cpp");
 
 fn main() {
     let ccache = true;
-    let cuda = true;
+    let cuda = std::env::var("CARGO_FEATURE_CUDA").unwrap_or(String::new());
 
     let submodule_dir = &PathBuf::from(SUBMODULE_DIR);
     let header_path = submodule_dir.join("llama.h");
@@ -29,7 +29,7 @@ fn main() {
             .configure_arg("-DCMAKE_CUDA_COMPILER_LAUNCHER=ccache");
     }
 
-    if cuda {
+    if cuda == "1" {
         cmake.configure_arg("-DLLAMA_CUBLAS=ON");
         println!("cargo:rustc-link-search=/usr/local/cuda/lib64");
         println!("cargo:rustc-link-lib=cuda");

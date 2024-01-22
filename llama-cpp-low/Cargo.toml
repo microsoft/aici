@@ -11,3 +11,7 @@ num_cpus = "1.16.0"
 [build-dependencies]
 bindgen = "0.69.2"
 cmake = "0.1.50"
+
+[features]
+default = []
+cuda = []

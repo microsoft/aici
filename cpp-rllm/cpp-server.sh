@@ -20,6 +20,11 @@ if [ "$1" = bench ] ; then
     shift
 fi
 
+if [ "$1" = cpu ] ; then
+    REL="--release --no-default-features"
+    shift
+fi
+
 case "$1" in
   orca )
     ARGS="-m https://huggingface.co/TheBloke/Orca-2-13B-GGUF/blob/main/orca-2-13b.Q8_0.gguf -t orca"

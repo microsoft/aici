@@ -5,9 +5,13 @@ edition = "2021"
 
 [dependencies]
 actix-web = "4.4.0"
+llama_cpp_low = { path = "../llama-cpp-low" }
 rllm = { path = "../rllm", default-features = false, features = ["llamacpp"] }
 
 [[bin]]
 name = "cpp-rllm"
 path = "src/cpp-rllm.rs"
 
+[features]
+default = ["cuda"]
+cuda = ["llama_cpp_low/cuda"]
