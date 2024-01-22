@@ -198,7 +198,26 @@ We also provide [Python](pyctrl) and [JavaScript](jsctrl) interpreters
 that allow to glue these constraints together.
 All of these can be easily extended.
 
+## Acknowledgements
 
+- [Flash Attention kernels](tch-cuda/kernels/flash_attn/) are copied from
+  [flash-attention repo](https://github.com/Dao-AILab/flash-attention);
+  see [BSD LICENSE](tch-cuda/kernels/flash_attn/LICENSE)
+- [Paged Attention kernels](tch-cuda/kernels/vllm/) are copied from
+  [vLLM repo](https://github.com/vllm-project/vllm);
+  see [Apache LICENSE](tch-cuda/kernels/vllm/LICENSE)
+- [OpenAI API definitions](rllm/src/server/openai/) are copied and modified from
+  [candle-vllm](https://github.com/EricLBuehler/candle-vllm);
+  see [MIT LICENSE](rllm/src/server/openai/LICENSE)
+- [cache_engine.rs](rllm/src/paged/cache_engine.rs),
+  [config.rs](rllm/src/config.rs),
+  and [scheduler.rs](rllm/src/paged/scheduler.rs)
+  are loosely based on [vLLM](https://github.com/vllm-project/vllm)
+- [llama.rs](rllm/src/llm/llama.rs), [phi.rs](rllm/src/llm/phi.rs) 
+  and [logits.rs](rllm/src/logits.rs) are based on 
+  [candle-transformers](https://github.com/huggingface/candle/tree/main/candle-transformers)
+- the [example ANSI C grammar](aici_abi/grammars/c.y) is based on 
+  https://www.lysator.liu.se/c/ANSI-C-grammar-y.html by Jeff Lee (from 1985)
 
 ## Contributing
 
