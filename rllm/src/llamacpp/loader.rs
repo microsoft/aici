@@ -14,6 +14,12 @@ use super::seqid::SeqIdGen;
 pub fn load_rllm_engine(mut args: LoaderArgs) -> Result<RllmEngine> {
     let model = do_load(&mut args)?;
     let rllm_config = RllmEngine::build_config(&mut args)?;
+
+    let mut cparams = cpp::ContextParams::default();
+    cparams.n_batch = rllm_config.scheduler.max_num_batched_tokens as u32;
+    cparams.n_ctx = 30000; // TODO
+    model.setup_context(cparams);
+
     let rllm_config = Arc::new(rllm_config);
     let tmodel = TModel::new(rllm_config.clone(), model);
     let cache_size = CacheSize { gpu: 0, cpu: 0 };
@@ -38,11 +44,11 @@ fn do_load(args: &mut LoaderArgs) -> Result<cpp::Model> {
         let file = repo.get(gguf)?;
 
         let mut mparams = cpp::ModelParams::default();
-        mparams.set_split_mode(cpp::SplitMode::None);
+        // TODO: make this configurable
+        // mparams.set_split_mode(cpp::SplitMode::Row);
         mparams.n_gpu_layers = 1000;
-        let cparams = cpp::ContextParams::default();
 
-        let m = cpp::Model::from_file(file.to_str().unwrap(), mparams, cparams)?;
+        let m = cpp::Model::from_file(file.to_str().unwrap(), mparams)?;
         args.cached_model = Some(m);
     }
 

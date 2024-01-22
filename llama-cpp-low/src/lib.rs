@@ -141,7 +141,7 @@ pub struct ModelInfo {
 }
 
 impl Model {
-    pub fn from_file(file: &str, mparams: ModelParams, cparams: ContextParams) -> Result<Self> {
+    pub fn from_file(file: &str, mparams: ModelParams) -> Result<Self> {
         unsafe {
             let numa = false;
             llama_backend_init(numa); // TODO: only call this once?
@@ -150,18 +150,24 @@ impl Model {
             if model == std::ptr::null_mut() {
                 bail!("failed to load model")
             }
-            let ctx = llama_new_context_with_model(model, cparams);
-            if ctx == std::ptr::null_mut() {
-                bail!("failed to create context")
-            }
             Ok(Model {
                 inner: Arc::new(Mutex::new(ModelInner {
                     model,
-                    _ctx: ctx,
+                    _ctx: std::ptr::null_mut(),
                     seq_id: 0,
                 })),
             })
         }
+    }
+
+    pub fn setup_context(&self, cparams: ContextParams) {
+        let mut inner = self.inner.lock().unwrap();
+        assert!(inner._ctx == std::ptr::null_mut());
+        let ctx = unsafe { llama_new_context_with_model(inner.model, cparams) };
+        if ctx == std::ptr::null_mut() {
+            panic!("failed to create context")
+        }
+        inner._ctx = ctx;
     }
 
     fn with_model<T>(&self, f: impl FnOnce(*mut llama_model) -> T) -> T {
