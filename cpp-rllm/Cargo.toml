@@ -1,0 +1,12 @@
+[package]
+name = "cpp-rllm"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+rllm = { path = "../rllm", default-features = false, features = ["llamacpp"] }
+
+[[bin]]
+name = "cpp-rllm"
+path = "src/cpp-rllm.rs"
+
