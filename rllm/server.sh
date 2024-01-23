@@ -6,6 +6,7 @@ LOOP=
 BUILD=
 ADD_ARGS=
 
+mkdir -p ../target
 BIN=$(cd ../target; pwd)
 
 if [ -f "../tch-cuda/cutlass/README.md" ] ; then

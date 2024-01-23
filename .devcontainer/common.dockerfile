@@ -12,9 +12,8 @@ RUN DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
     cmake curl libjpeg-dev libpng-dev \
     strace linux-tools-common linux-tools-generic \
     llvm-dev libclang-dev clang ccache apache2-utils git-lfs \
-    screen bsdmainutils \
-    pip python3-dev \
-    python-is-python3
+    screen bsdmainutils pip python3-dev python-is-python3 \
+    nodejs npm pkg-config
 
 RUN pip install pytest pytest-forked ujson posix_ipc numpy requests
 

@@ -6,7 +6,14 @@ LOOP=
 BUILD=
 ADD_ARGS=
 
+mkdir -p ../target
 BIN=$(cd ../target; pwd)
+
+if [ -f "../llama-cpp-low/llama.cpp/CMakeLists.txt" ] ; then
+  :
+else
+  (cd .. && git submodule update --init --recursive)
+fi
 
 P=`ps -ax|grep 'aicir[t]\|rllm-serve[r]' | awk '{print $1}' | xargs echo`
 

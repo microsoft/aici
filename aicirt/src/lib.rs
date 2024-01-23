@@ -143,12 +143,12 @@ pub fn valid_tagname(s: &str) -> bool {
 }
 
 fn set_priority(pri: ThreadPriority) {
-    set_thread_priority_and_policy(
+    // this fails on WSL
+    let _ = set_thread_priority_and_policy(
         thread_native_id(),
         pri,
         ThreadSchedulePolicy::Realtime(RealtimeThreadSchedulePolicy::Fifo),
-    )
-    .unwrap();
+    );
 }
 
 pub fn set_max_priority() {

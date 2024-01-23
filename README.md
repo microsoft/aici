@@ -94,6 +94,35 @@ you need to install the [Dev Containers VSCode extension](https://marketplace.vi
 and from the command palette in VSCode select **Dev Containers: Reopen in Container...**.
 It pops a list of available devcontainers, select the one you want to use.
 
+### Build setup on Linux (including WSL2)
+
+See also [common.dockerfile](.devcontainer/common.dockerfile).
+
+* install required packages; it's likely you already have some or all of these
+  but the list should be exhaustive for fresh Ubuntu-22.04 install in WSL
+```bash
+sudo apt-get install -y --no-install-recommends \
+    build-essential ca-certificates ccache \
+    cmake curl libjpeg-dev libpng-dev \
+    strace linux-tools-common linux-tools-generic \
+    llvm-dev libclang-dev clang ccache apache2-utils git-lfs \
+    screen bsdmainutils pip python3-dev python-is-python3 \
+    nodejs npm pkg-config
+
+pip install pytest pytest-forked ujson posix_ipc numpy requests
+```
+
+* [install](https://www.rust-lang.org/tools/install) rustup and restart current shell
+```bash
+curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+```
+
+* install rustup components:
+```bash
+rustup target add wasm32-wasi
+rustup component add rustfmt
+```
+
 ### Interacting with server
 
 To get started interacting with a cloud AICI server first export the API key.
