@@ -1,3 +1,10 @@
+use crate::{
+    config::{ModelConfig, SamplingParams},
+    iface::{kill_self, AiciRtIface, AsyncCmdChannel},
+    seq::RequestOutput,
+    util::apply_settings,
+    AddRequest, DType, HashMap, LoaderArgs, RllmEngine,
+};
 use actix_web::{middleware::Logger, web, App, HttpServer};
 use aici_abi::toktree::TokTrie;
 use aicirt::{
@@ -6,15 +13,8 @@ use aicirt::{
 };
 use anyhow::Result;
 use base64::Engine;
-use clap::Parser;
+use clap::Args;
 use openai::responses::APIError;
-use crate::{
-    config::{ModelConfig, SamplingParams},
-    iface::{kill_self, AiciRtIface, AsyncCmdChannel},
-    seq::RequestOutput,
-    util::apply_settings,
-    AddRequest, DType, HashMap, LoaderArgs, RllmEngine,
-};
 use std::{
     fmt::Display,
     sync::{Arc, Mutex},
@@ -54,85 +54,85 @@ pub struct OpenAIServerData {
     pub stats: Arc<Mutex<ServerStats>>,
 }
 
-#[derive(Parser, Debug)]
-#[command(author, version, about, long_about = None)]
-pub struct Args {
-    /// Port to serve on (localhost:port)
-    #[arg(long, default_value_t = 8080)]
-    port: u16,
+#[derive(Args, Debug)]
+pub struct RllmCliArgs {
+    /// Set engine setting (see below or in --help for list)
+    #[arg(long, short, name = "NAME=VALUE")]
+    pub setting: Vec<String>,
 
-    /// Set verbose mode (print all requests)
-    #[arg(long, default_value_t = false)]
-    verbose: bool,
-
-    /// HuggingFace model name; can be also path starting with "./"
-    #[arg(short, long)]
-    model: String,
+    /// HuggingFace model name, URL or path starting with "./"
+    #[arg(short, long, help_heading = "Model")]
+    pub model: String,
 
     /// HuggingFace model revision; --model foo/bar@revision is also possible
-    #[arg(long)]
-    revision: Option<String>,
+    #[arg(long, help_heading = "Model")]
+    pub revision: Option<String>,
 
     /// The folder name that contains safetensor weights and json files
     /// (same structure as HuggingFace online)
-    #[arg(long)]
-    local_weights: Option<String>,
+    #[arg(long, help_heading = "Model")]
+    pub local_weights: Option<String>,
 
-    /// Name of .gguf file inside of the model folder/repo.
-    #[arg(long)]
-    gguf: Option<String>,
-
-    /// Tokenizer to use; try --tokenizer list to see options
-    #[arg(short, long, default_value = "llama")]
-    tokenizer: String,
-
-    /// Path to the aicirt binary.
-    #[arg(long)]
-    aicirt: String,
-
-    /// Size of JSON comm buffer in megabytes
-    #[arg(long, default_value = "128")]
-    json_size: usize,
-
-    /// Size of binary comm buffer in megabytes
-    #[arg(long, default_value = "32")]
-    bin_size: usize,
-
-    /// How many milliseconds to spin-wait for a message over IPC and SHM.
-    #[arg(long, default_value = "200")]
-    busy_wait_time: u64,
-
-    /// Shm/semaphore name prefix
-    #[arg(long, default_value = "/aici0-")]
-    shm_prefix: String,
-
-    /// Enable nvprof profiling for given engine step
-    #[arg(long, default_value_t = 0)]
-    profile_step: usize,
+    /// Tokenizer to use (see below or in --help for list)
+    #[arg(short, long, default_value = "llama", help_heading = "Model")]
+    pub tokenizer: String,
 
     /// Specify which type to use in the model (bf16, f16, f32)
-    #[arg(long, default_value = "")]
-    dtype: String,
+    #[arg(long, default_value = "", help_heading = "Model")]
+    pub dtype: String,
 
-    /// Specify test-cases (expected/*/*.safetensors)
-    #[arg(long)]
-    test: Vec<String>,
+    /// Port to serve on (localhost:port)
+    #[arg(long, default_value_t = 8080, help_heading = "Server")]
+    pub port: u16,
 
-    /// Specify warm-up request (expected/*/*.safetensors or "off")
-    #[arg(long, short)]
-    warmup: Option<String>,
-
-    /// Exit after processing warmup request
-    #[arg(long, default_value_t = false)]
-    warmup_only: bool,
-
-    /// Set engine setting; try '--setting help' to list them
-    #[arg(long, short, name = "NAME=VALUE")]
-    setting: Vec<String>,
+    /// Set verbose mode (print all requests)
+    #[arg(long, default_value_t = false, help_heading = "Server")]
+    pub verbose: bool,
 
     /// Enable daemon mode (log timestamps)
-    #[arg(long, default_value_t = false)]
-    daemon: bool,
+    #[arg(long, default_value_t = false, help_heading = "Server")]
+    pub daemon: bool,
+
+    /// Path to the aicirt binary.
+    #[arg(long, help_heading = "AICI settings")]
+    pub aicirt: String,
+
+    /// Size of JSON comm buffer in megabytes
+    #[arg(long, default_value = "128", help_heading = "AICI settings")]
+    pub json_size: usize,
+
+    /// Size of binary comm buffer in megabytes
+    #[arg(long, default_value = "32", help_heading = "AICI settings")]
+    pub bin_size: usize,
+
+    /// How many milliseconds to spin-wait for a message over IPC and SHM.
+    #[arg(long, default_value = "200", help_heading = "AICI settings")]
+    pub busy_wait_time: u64,
+
+    /// Shm/semaphore name prefix
+    #[arg(long, default_value = "/aici0-", help_heading = "AICI settings")]
+    pub shm_prefix: String,
+
+    /// Enable nvprof profiling for given engine step
+    #[cfg(feature = "cuda")]
+    #[arg(long, default_value_t = 0, help_heading = "Development")]
+    pub profile_step: usize,
+
+    /// Specify test-cases (expected/*/*.safetensors)
+    #[arg(long, help_heading = "Development")]
+    pub test: Vec<String>,
+
+    /// Specify warm-up request (expected/*/*.safetensors or "off")
+    #[arg(long, short, help_heading = "Development")]
+    pub warmup: Option<String>,
+
+    /// Exit after processing warmup request
+    #[arg(long, default_value_t = false, help_heading = "Development")]
+    pub warmup_only: bool,
+
+    // these are copied from command-specific parsers
+    #[arg(skip)]
+    pub gguf: Option<String>,
 }
 
 #[actix_web::get("/v1/aici_modules/tags")]
@@ -344,12 +344,12 @@ fn inference_loop(
 }
 
 #[cfg(not(feature = "tch"))]
-fn run_tests(_args: &Args, _loader_args: LoaderArgs) {
+fn run_tests(_args: &RllmCliArgs, _loader_args: LoaderArgs) {
     panic!("tests not supported without tch feature")
 }
 
 #[cfg(feature = "tch")]
-fn run_tests(args: &Args, loader_args: LoaderArgs) {
+fn run_tests(args: &RllmCliArgs, loader_args: LoaderArgs) {
     let mut engine = RllmEngine::load(loader_args).expect("failed to load model");
     let mut tests = args.test.clone();
 
@@ -384,7 +384,7 @@ fn run_tests(args: &Args, loader_args: LoaderArgs) {
 }
 
 fn spawn_inference_loop(
-    args: &Args,
+    args: &RllmCliArgs,
     loader_args: LoaderArgs,
     iface: AiciRtIface,
     stats: Arc<Mutex<ServerStats>>,
@@ -394,7 +394,10 @@ fn spawn_inference_loop(
     let handle = handle_res.clone();
 
     // prep for move
+    #[cfg(feature = "cuda")]
     let profile_step = args.profile_step;
+    #[cfg(not(feature = "cuda"))]
+    let profile_step = 0;
     let warmup = args.warmup.clone();
     let warmup_only = args.warmup_only.clone();
 
@@ -452,9 +455,7 @@ fn url_decode(encoded_str: &str) -> String {
 }
 
 // #[actix_web::main]
-pub async fn server_main() -> () {
-    let mut args = Args::parse();
-
+pub async fn server_main(mut args: RllmCliArgs) -> () {
     aicirt::init_log(if args.daemon {
         aicirt::LogMode::Deamon
     } else {

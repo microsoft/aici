@@ -1,5 +1,7 @@
 use crate::HashMap;
+use aicirt::bintokens::list_tokenizers;
 use anyhow::{bail, Result};
+use clap::{Args, Command, Parser};
 use std::time::Instant;
 
 const SETTINGS: [(&'static str, &'static str, f64); 4] = [
@@ -16,9 +18,12 @@ lazy_static::lazy_static! {
 }
 
 pub fn all_settings() -> String {
-    SETTINGS
-        .map(|(k, d, v)| format!("{}: {} (default={})", k, d, v))
-        .join("\n")
+    format!(
+        "Settings available via -s or --setting (with their default values):\n{all}\n",
+        all = SETTINGS
+            .map(|(k, d, v)| format!("  -s {:20} {}", format!("{}={}", k, v), d))
+            .join("\n")
+    )
 }
 
 pub fn set_setting(name: &str, val: f64) -> Result<()> {
@@ -56,13 +61,26 @@ pub fn apply_settings(settings: &Vec<String>) -> Result<()> {
             Ok(_) => {}
             Err(e) => {
                 bail!(
-                    "all settings:\n{all}\nfailed to set setting {s}: {e}",
+                    "{all}\nfailed to set setting {s}: {e}",
                     all = all_settings()
                 );
             }
         }
     }
     Ok(())
+}
+
+pub fn parse_with_settings<T>() -> T
+where
+    T: Parser + Args,
+{
+    let cli =
+        Command::new("CLI").after_help(format!("\n{}\n{}", all_settings(), list_tokenizers()));
+    let cli = T::augment_args(cli);
+    let matches = cli.get_matches();
+    T::from_arg_matches(&matches)
+        .map_err(|err| err.exit())
+        .unwrap()
 }
 
 pub fn limit_str(s: &str, max_len: usize) -> String {

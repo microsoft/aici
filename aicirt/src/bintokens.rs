@@ -88,9 +88,20 @@ pub fn tokenizers() -> Vec<Tokenizer> {
         ),
         tok!("falcon", "used by Falcon 7b, 40b, etc."),
         tok!("mpt", "MPT"),
-        tok!("phi", "Phi 1.5"),
+        tok!("phi", "Phi 1.5 and Phi 2"),
         tok!("gpt2", "GPT-2"),
     ]
+}
+
+pub fn list_tokenizers() -> String {
+    format!(
+        "Available tokenizers for -t or --tokenizer:\n{}",
+        tokenizers()
+            .iter()
+            .map(|t| format!("  -t {:16} {}", t.name, t.description))
+            .collect::<Vec<_>>()
+            .join("\n")
+    )
 }
 
 pub fn find_tokenizer(name: &str) -> Result<Tokenizer> {
@@ -102,10 +113,7 @@ pub fn find_tokenizer(name: &str) -> Result<Tokenizer> {
     }
 
     println!("unknown tokenizer: {}", name);
-    println!("available tokenizers:");
-    for t in tokenizers() {
-        println!("  {:20} {}", t.name, t.description);
-    }
+    println!("{}", list_tokenizers());
     return Err(anyhow!("unknown tokenizer: {}", name));
 }
 
