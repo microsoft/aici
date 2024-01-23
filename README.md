@@ -156,7 +156,7 @@ you can also run tests with `pytest` for the DeclCtrl, or with `./scripts/test-p
 
 To run rLLM server, go to `rllm/` and run `./server.sh orca`.
 This will run the inference server with Orca-2 13B model (which is expected by testcases).
-If you don't have CUDA, go to `cpp-rllm/` and run `./cpp-server.sh cpu phi2`.
+If you don't have CUDA, go to `cpp-rllm/` and run `./cpp-server.sh phi2`.
 You can also try other models, see [rllm/README.md](rllm/README.md) and
 [cpp-rllm/README.md](cpp-rllm/README.md) for details.
 

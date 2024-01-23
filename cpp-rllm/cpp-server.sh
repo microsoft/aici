@@ -1,7 +1,7 @@
 #!/bin/sh
 
 set -e
-REL=
+REL=--release
 LOOP=
 BUILD=
 ADD_ARGS=
@@ -24,19 +24,14 @@ fi
 
 VER="--no-default-features"
 
-if [ "$1" = gpu ] ; then
-    REL=--release
+if [ "$1" = "--cuda" ] ; then
     VER="$VER --features cuda"
     shift
-elif [ "$1" = cpu ] ; then
-    REL=--release
-    shift
-elif [ "$1" = debug ] ; then
+fi
+
+if [ "$1" = "--debug" ] ; then
     REL=
     shift
-else
-    echo "usage: $0 [gpu|cpu|debug] [phi2|orca|build]"
-    exit 1
 fi
 
 case "$1" in
@@ -48,10 +43,9 @@ case "$1" in
     ;;
   build )
     BUILD=1
-    REL=--release
     ;;
   * )
-    echo "try one of models: phi2, orca" 
+    echo "usage: $0 [--cuda] [--debug] [phi2|orca|build] [rllm_args...]"
     exit 1
     ;;
 esac

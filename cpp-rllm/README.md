@@ -11,8 +11,7 @@ If you're not using the supplied docker container follow the
 To compile and run first aicirt and then the rllm server, run:
 
 ```bash
-./cpp-server.sh cpu phi2
+./cpp-server.sh phi2
 ```
 
-You can also try `gpu` instead of `gpu` which will try to use CUDA.
-
+You can also try passing `--cuda` before `phi2`.
