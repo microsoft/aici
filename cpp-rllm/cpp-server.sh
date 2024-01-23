@@ -8,7 +8,7 @@ ADD_ARGS=
 
 BIN=$(cd ../target; pwd)
 
-P=`ps -fax|grep 'aicir[t]\|rllm-serve[r]' | awk '{print $1}' | xargs echo`
+P=`ps -ax|grep 'aicir[t]\|rllm-serve[r]' | awk '{print $1}' | xargs echo`
 
 if [ "X$P" != "X" ] ; then 
   echo "KILL $P"
