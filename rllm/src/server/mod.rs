@@ -61,6 +61,10 @@ pub struct RllmCliArgs {
     #[arg(long, short, name = "NAME=VALUE")]
     pub setting: Vec<String>,
 
+    /// Set log level (ex: "info,rllm=trace,aicirt=debug", "warn", "error")
+    #[arg(long)]
+    pub log: Option<String>,
+
     /// HuggingFace model name, URL or path starting with "./"
     #[arg(short, long, help_heading = "Model")]
     pub model: String,
@@ -468,6 +472,11 @@ fn guess_aicirt() -> Result<String> {
 
 // #[actix_web::main]
 pub async fn server_main(mut args: RllmCliArgs) -> () {
+    // we setenv, so that aicirt process also gets it
+    match &args.log {
+        Some(v) => std::env::set_var("RUST_LOG", v),
+        None => {}
+    }
     aicirt::init_log(if args.daemon {
         aicirt::LogMode::Deamon
     } else {

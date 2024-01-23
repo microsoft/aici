@@ -70,12 +70,27 @@ pub fn apply_settings(settings: &Vec<String>) -> Result<()> {
     Ok(())
 }
 
+fn logging_info() -> &'static str {
+    r#"
+There are 5 logging levels: error, warn, info, debug, and trace.
+You can assign different log levels to crates:
+
+   info,rllm=trace,aicirt=debug - rllm at trace, aicirt at debug, otherwise info
+
+You can set logging levels with --log or with RUST_LOG environment variable.
+"#
+}
+
 pub fn parse_with_settings<T>() -> T
 where
     T: Parser + Args,
 {
-    let cli =
-        Command::new("CLI").after_help(format!("\n{}\n{}", all_settings(), list_tokenizers()));
+    let cli = Command::new("CLI").after_help(format!(
+        "\n{}\n{}\n{}",
+        all_settings(),
+        list_tokenizers(),
+        logging_info()
+    ));
     let cli = T::augment_args(cli);
     let matches = cli.get_matches();
     T::from_arg_matches(&matches)

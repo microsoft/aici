@@ -43,7 +43,7 @@ fn daemon_format(
 
 pub fn init_log(mode: LogMode) -> Result<()> {
     let logger = match mode {
-        LogMode::Normal => Logger::try_with_env_or_str("warn")?.log_to_stdout(),
+        LogMode::Normal => Logger::try_with_env_or_str("info")?.log_to_stdout(),
         LogMode::Test => {
             Logger::try_with_env_or_str("debug")?.write_mode(WriteMode::SupportCapture)
         }
