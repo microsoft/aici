@@ -1958,6 +1958,7 @@ dependencies = [
  "bindgen",
  "cmake",
  "link-cplusplus",
+ "log",
  "num_cpus",
 ]
 

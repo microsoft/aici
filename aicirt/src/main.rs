@@ -1058,6 +1058,11 @@ fn save_tokenizer(cli: &Cli) {
     let tokenizer = find_tokenizer(&cli.tokenizer).unwrap();
     let tokens = tokenizer.token_bytes();
 
+    log::info!(
+        "TokTrie building: {:?} wl={}",
+        tokenizer.tokrx_info(),
+        tokens.len()
+    );
     let trie = TokTrie::from(&tokenizer.tokrx_info(), &tokens);
     trie.check_against(&tokens);
 

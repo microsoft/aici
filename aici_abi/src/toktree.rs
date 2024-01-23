@@ -122,7 +122,6 @@ impl TokTrie {
         let mut trie = TrieHash::new(0xff);
         let mut token_offsets = Vec::new();
         let mut token_data = Vec::new();
-        println!("info: {:?} wl={}", info, words.len());
         assert!(info.vocab_size == words.len() as u32);
         for (idx, word) in words.iter().enumerate() {
             if word.len() > 0 {

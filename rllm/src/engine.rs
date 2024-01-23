@@ -256,6 +256,11 @@ impl RllmEngine {
         let hf_bytes = byte_tokenizer.get_hf_bytes();
         let tokenizer = Tokenizer::from_bytes(&hf_bytes).expect("can't load hf tokenizer");
         let tokens = byte_tokenizer.token_bytes();
+        log::info!(
+            "TokTrie building: {:?} wl={}",
+            byte_tokenizer.tokrx_info(),
+            tokens.len()
+        );
         let trie = TokTrie::from(&byte_tokenizer.tokrx_info(), &tokens);
         trie.check_against(&tokens);
         Ok((tokenizer, trie))

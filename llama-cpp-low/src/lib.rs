@@ -50,6 +50,31 @@ pub struct Sequence {
 pub type ModelParams = llama_model_params;
 pub type ContextParams = llama_context_params;
 
+extern "C" fn llama_log(
+    level: ggml_log_level,
+    text: *const ::std::os::raw::c_char,
+    _user_data: *mut ::std::os::raw::c_void,
+) {
+    let ll = if level == ggml_log_level_GGML_LOG_LEVEL_DEBUG {
+        log::Level::Trace
+    } else if level == ggml_log_level_GGML_LOG_LEVEL_INFO {
+        // llama.cpp idea of INFO is a bit too verbose
+        log::Level::Debug
+    } else if level == ggml_log_level_GGML_LOG_LEVEL_WARN {
+        log::Level::Warn
+    } else if level <= ggml_log_level_GGML_LOG_LEVEL_ERROR {
+        log::Level::Error
+    } else {
+        log::Level::Trace
+    };
+    let str = unsafe { std::ffi::CStr::from_ptr(text).to_string_lossy() };
+    let str = str.trim_end();
+    if str.len() == 1 {
+        return;
+    }
+    log::log!(ll, "{}", str);
+}
+
 impl Default for ModelParams {
     fn default() -> Self {
         unsafe { llama_model_default_params() }
@@ -143,6 +168,7 @@ pub struct ModelInfo {
 impl Model {
     pub fn from_file(file: &str, mparams: ModelParams) -> Result<Self> {
         unsafe {
+            llama_log_set(Some(llama_log), std::ptr::null_mut());
             let numa = false;
             llama_backend_init(numa); // TODO: only call this once?
             let c = CString::new(file).unwrap();

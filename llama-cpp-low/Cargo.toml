@@ -6,6 +6,7 @@ edition = "2021"
 [dependencies]
 anyhow = "1.0.79"
 link-cplusplus = "1.0.9"
+log = "0.4.20"
 num_cpus = "1.16.0"
 
 [build-dependencies]
