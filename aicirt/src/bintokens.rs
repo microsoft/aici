@@ -104,6 +104,18 @@ pub fn list_tokenizers() -> String {
     )
 }
 
+pub fn guess_tokenizer(model_name: &str) -> Option<String> {
+    let m = model_name.to_lowercase();
+    if m.contains("codellama-13b") {
+        Some("llama16".to_string())
+    } else {
+        tokenizers()
+            .iter()
+            .find(|t| m.contains(&t.name))
+            .map(|t| t.name.clone())
+    }
+}
+
 pub fn find_tokenizer(name: &str) -> Result<Tokenizer> {
     for mut t in tokenizers() {
         if t.name == name {
