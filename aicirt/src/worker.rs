@@ -13,8 +13,9 @@ use aici_abi::{
 use aicirt::{
     api::{AiciMidProcessResultInner, AiciPostProcessResultInner, SequenceResult},
     futexshm::{TypedClient, TypedClientHandle, TypedServer},
+    set_max_priority,
     shm::Unlink,
-    user_error, HashMap, set_max_priority,
+    user_error, HashMap,
 };
 use anyhow::{anyhow, Result};
 use libc::pid_t;
@@ -78,7 +79,12 @@ where
     Cmd: for<'d> Deserialize<'d> + Serialize,
     Resp: for<'d> Deserialize<'d> + Serialize,
 {
-    let shm_name = format!("/aici-{}", uuid::Uuid::new_v4());
+    let shm_name = format!(
+        "/aici-{}",
+        uuid::Uuid::new_v4().to_string().replace('-', "")
+    );
+    // 31 is max length for shm name on macos
+    let shm_name = shm_name[0..31].to_string();
     let shm = Shm::new(&shm_name, limits.ipc_shm_bytes, Unlink::Pre)?;
 
     let pid = unsafe { libc::fork() };

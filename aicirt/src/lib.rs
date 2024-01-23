@@ -6,6 +6,9 @@ pub mod msgchannel;
 pub mod semaphore;
 pub mod shm;
 
+#[cfg(target_os = "macos")]
+mod macos;
+
 use anyhow::Result;
 pub use bench::*;
 use flexi_logger::{DeferredNow, Logger, WriteMode};

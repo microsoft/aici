@@ -11,7 +11,7 @@ fn main() {
     let header_path = submodule_dir.join("llama.h");
 
     if !submodule_dir.join("CMakeLists.txt").exists() {
-        eprintln!("did you run 'git submodules init --update' ?");
+        eprintln!("did you run 'git submodule update --init' ?");
         std::process::exit(1);
     }
 
@@ -42,6 +42,24 @@ fn main() {
 
     println!("cargo:rustc-link-search=native={}/lib", dst.display());
     println!("cargo:rustc-link-lib=static=llama");
+
+    if env::var("CARGO_CFG_TARGET_OS").unwrap() == "macos" {
+        // This has no effect: println!("cargo:rustc-env=MACOSX_DEPLOYMENT_TARGET={}", line);
+        // so don't bother...
+        //
+        // let pref = b"CMAKE_OSX_DEPLOYMENT_TARGET:STRING=";
+        // fs::read(&dst.join("build/CMakeCache.txt"))
+        //     .expect("CMakeCache.txt not found")
+        //     .split(|&b| b == b'\n')
+        //     .filter(|line| line.starts_with(pref))
+        //     .for_each(|line| {
+        //         let line = std::str::from_utf8(&line[pref.len()..]).unwrap();
+        //         println!("cargo:rustc-env=MACOSX_DEPLOYMENT_TARGET={}", line);
+        //     });
+        println!("cargo:rustc-link-lib=framework=Metal");
+        println!("cargo:rustc-link-lib=framework=Accelerate");
+        println!("cargo:rustc-link-lib=framework=Foundation");
+    }
 
     let bindings = bindgen::Builder::default()
         .header(header_path.to_string_lossy())

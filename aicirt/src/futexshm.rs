@@ -1,6 +1,5 @@
 use crate::shm::{Shm, Unlink};
 use anyhow::{anyhow, Result};
-use linux_futex::AsFutex;
 use serde::{Deserialize, Serialize};
 use std::{
     ptr,
@@ -11,7 +10,15 @@ use std::{
     time::{Duration, Instant},
 };
 
+#[cfg(target_os = "linux")]
+use linux_futex::AsFutex;
+#[cfg(target_os = "linux")]
 type Futex = linux_futex::Futex<linux_futex::Shared>;
+
+#[cfg(target_os = "macos")]
+use crate::macos::AsFutex;
+#[cfg(target_os = "macos")]
+type Futex = crate::macos::Futex;
 
 fn futex_at(shm: &Shm, off: usize) -> &'static Futex {
     assert!(shm.size >= off + 4);
