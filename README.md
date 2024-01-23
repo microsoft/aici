@@ -4,15 +4,15 @@ The Artificial Intelligence Controller Interface (AICI)
 lets you build Controllers that constrain and direct output of a Large Language Model (LLM) in real time.
 Controllers are light-weight WebAssembly (Wasm) modules
 which run in on the same machine as the LLM inference engine, utilizing the CPU while the GPU is busy
-with token generation. 
+with token generation.
 
 AICI is a prototype, designed and built at [Microsoft Research](https://www.microsoft.com/en-us/research/).
 
 AICI is:
 
 - [Secure](#security): Controllers are sandboxed and cannot access the filesystem, network, or any other resources
-- [Fast](#performance): Wasm modules are compiled to native code and run in parallel with the LLM inference engine, inducing only a 
-minimal overhead to the generation process
+- [Fast](#performance): Wasm modules are compiled to native code and run in parallel with the LLM inference engine, inducing only a
+  minimal overhead to the generation process
 - [Flexible](#flexibility): Controllers can be written in any language that can compile to Wasm (Rust, C, C++, ...),
   or be interpreted inside Wasm (Python, JavaScript, ...)
 
@@ -23,7 +23,8 @@ This repository contains:
 - [aicirt](aicirt) - an implementation of a runtime for running controllers,
   built on top Wasmtime;
   LLM inference engines talk to aicirt via shared memory and semaphores
-- [rLLM](rllm) - a reference implementation of an LLM inference engine, inspired by vLLM
+- [rLLM](rllm) - a reference implementation of an LLM inference engine built on libtorch, inspired by vLLM
+- [rLLM-llama-cpp](cpp-rllm) - rLLM running on top of llama.cpp instead of libtorch
 - [pyaici](pyaici) - a Python package for interacting with aicirt and running controllers;
   includes `aici` command-line tool
 - [promptlib](promptlib) - a Python package that exposes API for easily creating and running DeclCtrl ASTs
@@ -47,7 +48,7 @@ Additional layers can be built on top - we provide [promptlib](promptlib),
 but we strongly believe that
 [Guidance](https://github.com/guidance-ai/guidance),
 [LMQL](https://lmql.ai/),
-[Outlines](https://github.com/outlines-dev/outlines), 
+[Outlines](https://github.com/outlines-dev/outlines),
 [jsonformer](https://github.com/1rgs/jsonformer),
 [LMFE](https://github.com/noamgat/lm-format-enforcer),
 etc.
@@ -72,7 +73,6 @@ and [vLLM REST server](harness/vllm_server.py) is currently out of date
 and llama.cpp is in plans.
 Please use the [rLLM](rllm) for now.
 
-
 ## Getting started
 
 There are several levels at which you can use AICI.
@@ -82,6 +82,8 @@ There are several levels at which you can use AICI.
 - you can modify one of the provided controllers or build a new one;
   this typically requires rust, and the preferred way to work with it is to use the
   provided **AICI Client-side** devcontainer - it should work on any machine with Docker and VSCode
+- you can also build the [rLLM-llama-cpp](cpp-rllm) and run it locally;
+  the same **AICI Client-side** devcontainer should work
 - if you want to run the inference server (rllm) locally, use the **AICI with CUDA** container;
   this requires a CUDA-capable GPU (currently only 8.0 (A100) is supported)
 - finally, if you want to try the AICI integration with vLLM, use the
@@ -96,10 +98,12 @@ It pops a list of available devcontainers, select the one you want to use.
 
 ### Build setup on Linux (including WSL2)
 
+This should be roughly equivalent to the **AICI Client-side** devcontainer.
 See also [common.dockerfile](.devcontainer/common.dockerfile).
 
-* install required packages; it's likely you already have some or all of these
+- install required packages; it's likely you already have some or all of these
   but the list should be exhaustive for fresh Ubuntu-22.04 install in WSL
+
 ```bash
 sudo apt-get install -y --no-install-recommends \
     build-essential ca-certificates ccache \
@@ -112,12 +116,14 @@ sudo apt-get install -y --no-install-recommends \
 pip install pytest pytest-forked ujson posix_ipc numpy requests
 ```
 
-* [install](https://www.rust-lang.org/tools/install) rustup and restart current shell
+- [install](https://www.rust-lang.org/tools/install) rustup and restart current shell
+
 ```bash
 curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
 ```
 
-* install rustup components:
+- install rustup components:
+
 ```bash
 rustup target add wasm32-wasi
 rustup component add rustfmt
@@ -150,7 +156,9 @@ you can also run tests with `pytest` for the DeclCtrl, or with `./scripts/test-p
 
 To run rLLM server, go to `rllm/` and run `./server.sh orca`.
 This will run the inference server with Orca-2 13B model (which is expected by testcases).
-You can also try other models, see [rllm/README.md](rllm/README.md) for details.
+If you don't have CUDA, go to `cpp-rllm/` and run `./cpp-server.sh cpu phi2`.
+You can also try other models, see [rllm/README.md](rllm/README.md) and
+[cpp-rllm/README.md](cpp-rllm/README.md) for details.
 
 ## Security
 
@@ -189,7 +197,7 @@ For example, computing allowed token set in the 32000-strong vocabulary of Llama
 
 The above numbers are for a single sequence, however each sequence is processed in separate process,
 and thus if there is more cores than sequences (which is typical), they do not change.
-They also include overhead of calling into Python interpreter implemented in Wasm, and then back into 
+They also include overhead of calling into Python interpreter implemented in Wasm, and then back into
 Rust-generated Wasm code for the constraint itself.
 They are all well within the 20-50ms budget, so do not affect the generation time at all.
 
@@ -220,8 +228,8 @@ The low-level interface that AICI runtime provides allows for:
 It can be utilized from any language that compiles to Wasm.
 
 This repository provides a Rust library that makes it easy to implement controllers in Rust,
-and provides [efficient implementations](aici_abi/implementation.md) 
-of specific constraints ([regular expressions](aici_abi/README.md#regular-expressions), 
+and provides [efficient implementations](aici_abi/implementation.md)
+of specific constraints ([regular expressions](aici_abi/README.md#regular-expressions),
 [yacc grammars](aici_abi/README.md#lr1-grammars), substrings).
 We also provide [Python](pyctrl) and [JavaScript](jsctrl) interpreters
 that allow to glue these constraints together.
@@ -242,10 +250,10 @@ All of these can be easily extended.
   [config.rs](rllm/src/config.rs),
   and [scheduler.rs](rllm/src/paged/scheduler.rs)
   are loosely based on [vLLM](https://github.com/vllm-project/vllm)
-- [llama.rs](rllm/src/llm/llama.rs), [phi.rs](rllm/src/llm/phi.rs) 
-  and [logits.rs](rllm/src/logits.rs) are based on 
+- [llama.rs](rllm/src/llm/llama.rs), [phi.rs](rllm/src/llm/phi.rs)
+  and [logits.rs](rllm/src/logits.rs) are based on
   [candle-transformers](https://github.com/huggingface/candle/tree/main/candle-transformers)
-- the [example ANSI C grammar](aici_abi/grammars/c.y) is based on 
+- the [example ANSI C grammar](aici_abi/grammars/c.y) is based on
   https://www.lysator.liu.se/c/ANSI-C-grammar-y.html by Jeff Lee (from 1985)
 
 ## Contributing
