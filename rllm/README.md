@@ -53,13 +53,6 @@ The following models have been tested:
 
 In general all Llama models should work.
 
-## Credits
+## Acknowledgements
 
-Some OpenAI JSON datatype definitions are copied from
-[candle-vllm](https://github.com/EricLBuehler/candle-vllm/tree/master/src/openai).
-
-Parts of code are direct port of Python from [vLLM](https://github.com/vllm-project/vllm).
-
-Bits of model implementations are influenced by
-[candle-transformers](https://github.com/huggingface/candle/blob/main/candle-transformers/src/models).
-
+See [top-level README.md](../README.md#acknowledgements).
