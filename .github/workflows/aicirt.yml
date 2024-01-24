@@ -42,6 +42,11 @@ jobs:
       working-directory: aicirt
     - name: Release script
       run: ./scripts/release.sh --xz
+    - name: Artifact upload
+      uses: actions/upload-artifact@v4
+      with:
+        name: aicirt-xz
+        path: target/dist/*.tar.xz
     - name: Release
       uses: softprops/action-gh-release@v1
       if: startsWith(github.ref, 'refs/tags/')

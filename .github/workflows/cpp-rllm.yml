@@ -25,3 +25,8 @@ jobs:
     - name: Build cpp-rllm
       run: cargo build --verbose --release --no-default-features
       working-directory: cpp-rllm
+    - name: Artifact upload
+      uses: actions/upload-artifact@v4
+      with:
+        name: cpp-rllm
+        path: target/release/cpp-rllm
