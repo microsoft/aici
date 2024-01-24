@@ -5,8 +5,9 @@ This repository incorporates material as listed below or described in the code.
 
 ## Component: FlashAttention
 
-*Open Source License*:
+**Open Source License**:
 
+```
 BSD 3-Clause License
 
 Copyright (c) 2022, the respective contributors, as shown by the AUTHORS file.
@@ -36,8 +37,9 @@ SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
 CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
 OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+```
 
-*Additional Attribution*:
+**Additional Attribution**:
 
 AUTHORS:
 
@@ -45,8 +47,9 @@ Tri Dao, trid@cs.stanford.edu
 
 ## Component: vLLM
 
-*Open Source License*:
+**Open Source License**:
 
+```
                                  Apache License
                            Version 2.0, January 2004
                         http://www.apache.org/licenses/
@@ -248,12 +251,13 @@ Tri Dao, trid@cs.stanford.edu
    WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
    See the License for the specific language governing permissions and
    limitations under the License.
-
+```
 
 ## Component: candle-vLLM
 
-*Open Source License*:
+**Open Source License**:
 
+```
 MIT License
 
 Copyright (c) 2023 Eric Buehler
@@ -275,11 +279,13 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
+```
 
 ## Component: candle-transformers
 
-*Open Source License*:
+**Open Source License**:
 
+```
                                  Apache License
                            Version 2.0, January 2004
                         http://www.apache.org/licenses/
@@ -481,9 +487,11 @@ SOFTWARE.
    WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
    See the License for the specific language governing permissions and
    limitations under the License.
+```
 
-*or:*
+**or:**
 
+```
 Permission is hereby granted, free of charge, to any
 person obtaining a copy of this software and associated
 documentation files (the "Software"), to deal in the
@@ -507,3 +515,4 @@ CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
 OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR
 IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE.
+```
