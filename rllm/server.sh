@@ -1,7 +1,7 @@
 #!/bin/sh
 
 set -e
-REL=
+REL=--release
 LOOP=
 BUILD=
 ADD_ARGS=
@@ -22,20 +22,13 @@ if [ "X$P" != "X" ] ; then
   kill $P
 fi
 
-if [ "$1" = loop ] ; then
-    REL=--release
+if [ "$1" = "--loop" ] ; then
     LOOP=1
     shift
 fi
 
-if [ "$1" = bench ] ; then
-    REL=--release
-    shift
-fi
-
-if [ "$1" = warm ] ; then
-    REL=--release
-    ADD_ARGS="--warmup-only"
+if [ "$1" = "--debug" ] ; then
+    REL=
     shift
 fi
 
@@ -64,7 +57,8 @@ case "$1" in
     REL=--release
     ;;
   * )
-    echo "try one of models: phi, phi2, 7b, code, code34" 
+    echo "usage: $0 [--loop] [--debug] [phi|phi2|7b|code|orca|build] [rllm_args...]"
+    echo "Try $0 phi2 --help to see available rllm_args"
     exit 1
     ;;
 esac

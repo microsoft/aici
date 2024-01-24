@@ -129,6 +129,20 @@ rustup target add wasm32-wasi
 rustup component add rustfmt
 ```
 
+### Running local server
+
+If you have CUDA, go to `rllm/` and run `./server.sh orca`.
+This will run the inference server with Orca-2 13B model (which is expected by testcases).
+
+If you don't have CUDA, go to `cpp-rllm/` and run `./cpp-server.sh phi2`.
+
+Both of these commands first compile aicirt and the inference engine,
+and then run it.
+You can also try other models, see README.md files for [rllm](rllm/README.md) and
+[cpp-rllm](cpp-rllm/README.md) as well as the shell scripts themselves for details.
+
+The command line 
+
 ### Interacting with server
 
 To get started interacting with a cloud AICI server first export the API key.
@@ -151,14 +165,6 @@ Run `./aici.sh -h` to see usage info.
 
 If the server is running with Orca-2 13B model,
 you can also run tests with `pytest` for the DeclCtrl, or with `./scripts/test-pyctrl.sh` for PyCtrl.
-
-### Running local server
-
-To run rLLM server, go to `rllm/` and run `./server.sh orca`.
-This will run the inference server with Orca-2 13B model (which is expected by testcases).
-If you don't have CUDA, go to `cpp-rllm/` and run `./cpp-server.sh phi2`.
-You can also try other models, see [rllm/README.md](rllm/README.md) and
-[cpp-rllm/README.md](cpp-rllm/README.md) for details.
 
 ## Security
 

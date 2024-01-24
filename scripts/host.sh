@@ -40,7 +40,7 @@ function docker_cmd() {
 
 if [ "$INNER" = 1 ] ; then
     echo "Running inner..."
-    docker_cmd "cd rllm && ./server.sh loop $MODEL"
+    docker_cmd "cd rllm && ./server.sh --loop $MODEL"
     exit 0
 fi
 

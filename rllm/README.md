@@ -1,7 +1,9 @@
 # rLLM
 
 This is a partial port of [vLLM](https://github.com/vllm-project/vllm)
-to Rust and [tch-rs](https://github.com/LaurentMazare/tch-rs).
+to Rust and [tch-rs](https://github.com/LaurentMazare/tch-rs)
+(bindings for [libtorch](https://github.com/pytorch/pytorch/blob/main/docs/libtorch.rst)
+which is basis of [PyTorch](https://github.com/pytorch/pytorch)).
 It is mostly meant as a proving ground for AICI (AI Controller Interface) integration.
 
 

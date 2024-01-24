@@ -46,6 +46,7 @@ case "$1" in
     ;;
   * )
     echo "usage: $0 [--cuda] [--debug] [phi2|orca|build] [rllm_args...]"
+    echo "Try $0 phi2 --help to see available rllm_args"
     exit 1
     ;;
 esac
