@@ -6,6 +6,8 @@ Controllers are light-weight WebAssembly (Wasm) modules
 which run in on the same machine as the LLM inference engine, utilizing the CPU while the GPU is busy
 with token generation.
 
+AICI is meant to run both locally and in the cloud, including multi-tenant LLM deployments.
+
 AICI is a prototype, designed and built at [Microsoft Research](https://www.microsoft.com/en-us/research/).
 
 AICI is:
@@ -42,7 +44,7 @@ And a number of sample/reference controllers:
 Everything above implemented in Rust, unless otherwise stated,
 and all controllers compile to [Wasm](https://webassembly.org/).
 
-AICI abstract LLM inference engine from the controller and vice-versa, as in the picture below.
+AICI abstracts LLM inference engine from the controller and vice-versa, as in the picture below.
 The rounded nodes are aspirational.
 Additional layers can be built on top - we provide [promptlib](promptlib),
 but we strongly believe that
@@ -61,7 +63,7 @@ graph TD
     guidance([GuidanceCtrl]) -- AICI --> aicirt
     lmql([LMQL Ctrl]) -- AICI --> aicirt
     aicirt -- POSIX SHM --> rLLM
-    aicirt -- POSIX SHM --> llama([llama.cpp])
+    aicirt -- POSIX SHM --> llama[llama.cpp]
     aicirt -- POSIX SHM --> pyaici
     pyaici -- Python --> vLLM(vLLM)
     pyaici -- Python --> hf(HF Transformers)
@@ -69,9 +71,8 @@ graph TD
 
 The [pyaici](pyaici) package makes it easier to integrate AICI with Python-based LLM inference engines.
 The support for [HuggingFace Transformers](harness/run_hf.py)
-and [vLLM REST server](harness/vllm_server.py) is currently out of date
-and llama.cpp is in plans.
-Please use the [rLLM](rllm) for now.
+and [vLLM REST server](harness/vllm_server.py) is currently out of date.
+Please use the [rLLM](rllm) or [rLLM-llama-cpp](cpp-rllm) for now.
 
 ## Getting started
 
@@ -80,11 +81,11 @@ There are several levels at which you can use AICI.
 - you can use the provided PyCtrl, JsCtrl or DeclCtrl on a remote server;
   no devcontainer is required in that case; [more info](proxy.md)
 - you can modify one of the provided controllers or build a new one;
-  this typically requires rust, and the preferred way to work with it is to use the
+  this typically requires Rust, and the preferred way to work with it is to use the
   provided **AICI Client-side** devcontainer - it should work on any machine with Docker and VSCode
 - you can also build the [rLLM-llama-cpp](cpp-rllm) and run it locally;
   the same **AICI Client-side** devcontainer should work
-- if you want to run the inference server (rllm) locally, use the **AICI with CUDA** container;
+- if you want to run the CUDA version of inference server [rllm](rllm) locally, use the **AICI with CUDA** container;
   this requires a CUDA-capable GPU (currently only 8.0 (A100) is supported)
 - finally, if you want to try the AICI integration with vLLM, use the
   **AICI with CUDA and vLLM (experimental)** container
