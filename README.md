@@ -56,6 +56,9 @@ but we strongly believe that
 etc.
 can also run on top of AICI (either with custom controllers or utilizing PyCtrl or JsCtrl).
 
+> [!IMPORTANT]
+> In other words, AICI is a way to run Guidance et al. in a possibly multi-tenant cloud deployment.
+
 ```mermaid
 graph TD
     PyCtrl -- AICI --> aicirt[AICI-runtime]
