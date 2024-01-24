@@ -48,7 +48,9 @@ fn do_load(args: &mut LoaderArgs) -> Result<cpp::Model> {
         mparams.set_split_mode(cpp::SplitMode::None);
         // don't GPU offload on Intel macs - it just fails there
         #[cfg(not(all(target_os = "macos", target_arch = "x86_64")))]
-        mparams.n_gpu_layers = 1000;
+        {
+            mparams.n_gpu_layers = 1000;
+        }
 
         let m = cpp::Model::from_file(file.to_str().unwrap(), mparams)?;
         args.cached_model = Some(m);
