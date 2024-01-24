@@ -3,7 +3,7 @@
 The Artificial Intelligence Controller Interface (AICI)
 lets you build Controllers that constrain and direct output of a Large Language Model (LLM) in real time.
 Controllers are light-weight WebAssembly (Wasm) modules
-which run in on the same machine as the LLM inference engine, utilizing the CPU while the GPU is busy
+which run on the same machine as the LLM inference engine, utilizing the CPU while the GPU is busy
 with token generation.
 
 AICI is meant to run both locally and in the cloud, including multi-tenant LLM deployments.
