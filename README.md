@@ -7,6 +7,7 @@ which run in on the same machine as the LLM inference engine, utilizing the CPU 
 with token generation.
 
 AICI is meant to run both locally and in the cloud, including multi-tenant LLM deployments.
+Guidance, LMQL, and other LLM control libraries are expected to run on top of AICI.
 
 AICI is a prototype, designed and built at [Microsoft Research](https://www.microsoft.com/en-us/research/).
 
@@ -55,9 +56,6 @@ but we strongly believe that
 [LMFE](https://github.com/noamgat/lm-format-enforcer),
 etc.
 can also run on top of AICI (either with custom controllers or utilizing PyCtrl or JsCtrl).
-
-> [!IMPORTANT]
-> In other words, AICI is a way to run Guidance et al. in a possibly multi-tenant cloud deployment.
 
 ```mermaid
 graph TD
