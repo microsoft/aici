@@ -163,5 +163,17 @@ async def test_eos():
     await aici.gen_tokens(regex=r' "[^"]+"', max_tokens=6, store_var="french")
     aici.check_vars({"french": ' "bonjour"'})
 
+async def test_joke():
+    await aici.FixedTokens("Do you want a joke or a poem? A")
+    answer = await aici.gen_text(options=[" joke", " poem"])
+    if answer == " joke":
+        await aici.FixedTokens("\nHere is a one-line joke about cats: ")
+    else:
+        await aici.FixedTokens("\nHere is a one-line poem about dogs: ")
+    await aici.gen_text(regex="[A-Z].*", stop_at="\n", store_var="result")
+    print("explaining...")
+    await aici.FixedTokens("\nLet me explain it: ")
+    await aici.gen_text(max_tokens=15)
 
-aici.test(test_fork())
+
+aici.test(test_joke())

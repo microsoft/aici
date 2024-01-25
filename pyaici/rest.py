@@ -64,7 +64,10 @@ def req(tp: str, url: str, **kwargs):
         print(f"{tp.upper()} {url} headers={headers}")
         if "json" in kwargs:
             print(json.dumps(kwargs["json"]))
-    return requests.request(tp, url, headers=headers, **kwargs)
+    resp = requests.request(tp, url, headers=headers, **kwargs)
+    if log_level >= 4 and "stream" not in kwargs:
+        print(f"{resp.status_code} {resp.reason}: {resp.text}")
+    return resp
 
 
 def upload_module(file_path: str) -> str:
@@ -160,6 +163,7 @@ def completion(
         if not line:
             continue
         decoded_line: str = line.decode("utf-8")
+        # print(decoded_line)
         if decoded_line.startswith("data: {"):
             d = json.loads(decoded_line[6:])
             full_resp.append(d)

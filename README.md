@@ -6,7 +6,7 @@ Controllers are light-weight WebAssembly (Wasm) modules
 which run on the same machine as the LLM inference engine, utilizing the CPU while the GPU is busy
 with token generation.
 
-AICI is meant to run both locally and in the cloud, including multi-tenant LLM deployments.
+AICI is meant to run both locally and in the cloud, including (eventually) multi-tenant LLM deployments.
 Guidance, LMQL, and other LLM control libraries are expected to run on top of AICI.
 
 AICI is a prototype, designed and built at [Microsoft Research](https://www.microsoft.com/en-us/research/).
@@ -22,6 +22,7 @@ AICI is:
 This repository contains:
 
 - [definition](aici_abi/README.md#low-level-interface) of the AICI binary interface
+- [REST API definition](REST.md) for AICI Server
 - [aici_abi](aici_abi) - a Rust crate for easily implementing controllers (Wasm modules adhering to AICI)
 - [aicirt](aicirt) - an implementation of a runtime for running controllers,
   built on top Wasmtime;
