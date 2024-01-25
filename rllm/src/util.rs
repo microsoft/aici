@@ -7,8 +7,8 @@ use std::time::Instant;
 const SETTINGS: [(&'static str, &'static str, f64); 4] = [
     ("attn_rtol", "relative tolerance for flash attn check", 0.1),
     ("attn_atol", "absolute tolerance for flash attn check", 0.1),
-    ("test_maxtol", "max allowed error", 0.5),
-    ("test_avgtol", "avg allowed error", 0.2),
+    ("test_maxtol", "max allowed error for --test and --warmup", 0.5),
+    ("test_avgtol", "avg allowed error for --test and --warmup", 0.2),
 ];
 
 lazy_static::lazy_static! {

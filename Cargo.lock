@@ -2967,6 +2967,7 @@ dependencies = [
  "llama_cpp_low",
  "log",
  "memmap2",
+ "num-traits",
  "num_cpus",
  "percent-encoding",
  "rand",

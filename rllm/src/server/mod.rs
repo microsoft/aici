@@ -348,12 +348,6 @@ fn inference_loop(
     }
 }
 
-#[cfg(not(feature = "tch"))]
-fn run_tests(_args: &RllmCliArgs, _loader_args: LoaderArgs) {
-    panic!("tests not supported without tch feature")
-}
-
-#[cfg(feature = "tch")]
 fn run_tests(args: &RllmCliArgs, loader_args: LoaderArgs) {
     let mut engine = RllmEngine::load(loader_args).expect("failed to load model");
     let mut tests = args.test.clone();
@@ -414,7 +408,6 @@ fn spawn_inference_loop(
         let wid = "warmup".to_string();
         match warmup {
             Some(w) if w == "off" => {}
-            #[cfg(feature = "tch")]
             Some(w) => {
                 let exp = crate::ExpectedGeneration::load(&std::path::PathBuf::from(&w))
                     .expect("can't load warmup");

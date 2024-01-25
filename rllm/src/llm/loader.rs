@@ -10,7 +10,7 @@ use crate::{
         },
     },
     paged::{BatchInfoBuilder, CacheEngine, CacheSize},
-    DType, ExpectedGeneration, ExpectedToken, HashSet, LoaderArgs, Repo, RllmEngine,
+    DType, ExpectedGeneration, HashSet, LoaderArgs, Repo, RllmEngine,
     RllmModelConfig,
 };
 use aicirt::api::Token;
@@ -28,57 +28,6 @@ fn read_tensor(s: &safetensors::SafeTensors, name: &str) -> Result<Tensor> {
     // Using from_blob here instead of from_data_size avoids some unnecessary copy.
     let tensor = unsafe { Tensor::from_blob(view.data().as_ptr(), &size, &[], kind, Device::Cpu) };
     Ok(tensor)
-}
-
-fn kind_from_dt(dtype: Dtype) -> Kind {
-    match dtype {
-        Dtype::BOOL => Kind::Bool,
-        Dtype::U8 => Kind::Uint8,
-        Dtype::I8 => Kind::Int8,
-        Dtype::I16 => Kind::Int16,
-        Dtype::I32 => Kind::Int,
-        Dtype::I64 => Kind::Int64,
-        Dtype::BF16 => Kind::BFloat16,
-        Dtype::F16 => Kind::Half,
-        Dtype::F32 => Kind::Float,
-        Dtype::F64 => Kind::Double,
-        dtype => panic!("unsupported dtype {dtype:?}"),
-    }
-}
-
-impl ExpectedGeneration {
-    pub fn load(f: &PathBuf) -> Result<Self> {
-        let fp = std::fs::File::open(f)?;
-        let content = unsafe { memmap2::MmapOptions::new().map(&fp)? };
-        let s = safetensors::SafeTensors::deserialize(&content)?;
-
-        let prompt = to_vec1::<i32>(&read_tensor(&s, "prompt")?.to_kind(Kind::Int));
-        let output = to_vec1::<i32>(&read_tensor(&s, "output")?.to_kind(Kind::Int));
-        let prob_mass = to_vec1::<f32>(&read_tensor(&s, "prob_mass")?.to_kind(Kind::Float));
-        let tokens = to_vec2::<i32>(&read_tensor(&s, "tokens")?.to_kind(Kind::Int));
-        let logits = to_vec2::<f32>(&read_tensor(&s, "logits")?.to_kind(Kind::Float));
-
-        let num_tokens = output.len();
-        assert!(tokens.len() == num_tokens);
-        assert!(logits.len() == num_tokens);
-        assert!(prob_mass.len() == num_tokens);
-
-        Ok(ExpectedGeneration {
-            prompt: prompt.into_iter().map(|x| x as Token).collect(),
-            output: (0..num_tokens)
-                .map(|i| ExpectedToken {
-                    sampled: output[i] as Token,
-                    ff_section_len: 1,
-                    prob_mass: prob_mass[i],
-                    logits: tokens[i]
-                        .iter()
-                        .zip(logits[i].iter())
-                        .map(|(t, p)| (*t as Token, *p))
-                        .collect(),
-                })
-                .collect(),
-        })
-    }
 }
 
 fn load_model(rllm_config: &RllmConfig, filenames: Vec<PathBuf>) -> Result<Box<dyn TModelInner>> {

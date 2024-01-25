@@ -46,10 +46,12 @@ fn do_load(args: &mut LoaderArgs) -> Result<cpp::Model> {
         let mut mparams = cpp::ModelParams::default();
         // TODO: make this configurable
         mparams.set_split_mode(cpp::SplitMode::None);
+        mparams.n_gpu_layers = 1000;
         // don't GPU offload on Intel macs - it just fails there
-        #[cfg(not(all(target_os = "macos", target_arch = "x86_64")))]
+        #[cfg(all(target_os = "macos", target_arch = "x86_64"))]
         {
-            mparams.n_gpu_layers = 1000;
+            log::warn!("disabling GPU (Intel macOS)");
+            mparams.n_gpu_layers = 0;
         }
 
         let m = cpp::Model::from_file(file.to_str().unwrap(), mparams)?;

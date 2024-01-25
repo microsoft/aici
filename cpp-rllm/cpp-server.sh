@@ -36,10 +36,10 @@ fi
 
 case "$1" in
   phi2 )
-    ARGS="-m https://huggingface.co/TheBloke/phi-2-GGUF/blob/main/phi-2.Q8_0.gguf -t phi"
+    ARGS="-m https://huggingface.co/TheBloke/phi-2-GGUF/blob/main/phi-2.Q8_0.gguf -t phi -w ../rllm/expected/phi-2/cats.safetensors -s test_maxtol=0.8 -s test_avgtol=0.3"
     ;;
   orca )
-    ARGS="-m https://huggingface.co/TheBloke/Orca-2-13B-GGUF/blob/main/orca-2-13b.Q8_0.gguf -t orca"
+    ARGS="-m https://huggingface.co/TheBloke/Orca-2-13B-GGUF/blob/main/orca-2-13b.Q8_0.gguf -t orca -w ../rllm/expected/orca/cats.safetensors"
     ;;
   build )
     BUILD=1

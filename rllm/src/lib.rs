@@ -6,6 +6,7 @@ pub mod config;
 mod engine;
 pub mod iface;
 mod logits;
+mod expected;
 pub mod util;
 pub mod server;
 
