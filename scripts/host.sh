@@ -23,8 +23,9 @@ while [ $# -gt 0 ] ; do
             MODEL="$2"
             shift
             ;;
-        --inner1 ) INNER=1 ;;
-        --inner2 ) INNER=2 ;;
+        --in-screen ) INNER=screen ;;
+        --start-tunnel ) INNER=tunnel ;;
+        --start-model ) INNER=model ;;
         --full ) FULL=1 ;;
         * )
             echo "Unknown option: $1"
@@ -38,16 +39,30 @@ function docker_cmd() {
     docker exec -w /workspaces/aici -it $CONT /bin/sh -c "$*"
 }
 
-if [ "$INNER" = 1 ] ; then
-    echo "Running inner..."
-    docker_cmd "cd rllm && ./server.sh --loop $MODEL"
+if [ "$INNER" = "screen" ] ; then
+    docker_cmd "cd tmp/ws-http-tunnel && source /usr/local/nvm/nvm.sh && yarn compile-client"
+    export WORKER="$WS/tmp/ws-http-tunnel/built/worker.js"
+
+    cd $WS
+    for f in tmp/models/*/.env ; do
+        . $f
+        export FOLDER=`dirname $f` MODEL FWD_PORT CUDA_VISIBLE_DEVICES
+        echo "Starting $MODEL..."
+        screen "$0" --start-tunnel
+        screen "$0" --start-model
+    done
     exit 0
 fi
 
-if [ "$INNER" = 2 ] ; then
-    echo "Running inner2..."
-    screen "$0" --inner1
-    docker_cmd "cd tmp/ws-http-tunnel && source /usr/local/nvm/nvm.sh && yarn worker"
+if [ "$INNER" = "tunnel" ] ; then
+    echo "in tunnel for $MODEL in $FOLDER"
+    docker_cmd "cd $FOLDER && source /usr/local/nvm/nvm.sh && while : ; do node $WORKER ; sleep 2 ; done"
+    exit 0
+fi
+
+if [ "$INNER" = "model" ] ; then
+    echo "in server for $MODEL in $FOLDER"
+    docker_cmd "cd $FOLDER && /workspaces/aici/rllm/server.sh --loop $MODEL --port $FWD_PORT"
     exit 0
 fi
 
@@ -96,4 +111,4 @@ docker_cmd "cd rllm && ./server.sh build"
 screen -wipe >/dev/null || :
 
 echo "Starting screen..."
-screen "$0" --inner2
+screen "$0" --in-screen

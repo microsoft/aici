@@ -287,19 +287,22 @@ impl ModuleRegistry {
         auth: &AuthInfo,
     ) -> Result<()> {
         fs::create_dir_all(&self.cache_path)?;
-        Ok(if !self.wasm_path(module_id).exists() {
-            fs::write(self.wasm_path(module_id), wasm_bytes)?;
-            fs::write(
-                self.sys_meta_path(module_id),
-                serde_json::to_vec(&json!({
-                    "created": get_unix_time(),
-                    "auth": auth,
-                }))?,
-            )?;
-            self.compile_module(module_id, true)?
-        } else {
-            self.compile_module(module_id, false)?
-        })
+        let meta = self.wasm_path(module_id).metadata();
+        Ok(
+            if meta.is_err() || meta.unwrap().len() != wasm_bytes.len() as u64 {
+                fs::write(self.wasm_path(module_id), wasm_bytes)?;
+                fs::write(
+                    self.sys_meta_path(module_id),
+                    serde_json::to_vec(&json!({
+                        "created": get_unix_time(),
+                        "auth": auth,
+                    }))?,
+                )?;
+                self.compile_module(module_id, true)?
+            } else {
+                self.compile_module(module_id, false)?
+            },
+        )
     }
 
     fn mk_module(&self, req: MkModuleReq, auth: AuthInfo) -> Result<Value> {

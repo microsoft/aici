@@ -1,25 +1,27 @@
-#!/bin/sh
+#!/bin/bash
 
 set -e
+WS=`cd $(dirname $0)/.. && pwd`
 REL=--release
 LOOP=
 BUILD=
 ADD_ARGS=
 
-mkdir -p ../target
-BIN=$(cd ../target; pwd)
+mkdir -p "$WS/target"
+BIN="$WS/target"
 
-if [ -f "../tch-cuda/cutlass/README.md" ] ; then
+if [ -f "$WS/tch-cuda/cutlass/README.md" ] ; then
   :
 else
-  (cd .. && git submodule update --init --recursive)
+  (cd $WS && git submodule update --init --recursive)
 fi
 
-P=`ps -ax|grep 'aicir[t]\|rllm-serve[r]' | awk '{print $1}' | xargs echo`
-
-if [ "X$P" != "X" ] ; then 
-  echo "KILL $P"
-  kill $P
+if [ "X$CUDA_VISIBLE_DEVICES" = "X" ] ; then
+  P=`ps -ax|grep 'aicir[t]\|rllm-serve[r]' | awk '{print $1}' | xargs echo`
+  if [ "X$P" != "X" ] ; then 
+    echo "KILL $P"
+    kill $P
+  fi
 fi
 
 if [ "$1" = "--loop" ] ; then
@@ -32,25 +34,27 @@ if [ "$1" = "--debug" ] ; then
     shift
 fi
 
+EXPECTED=$WS/rllm/expected
+
 case "$1" in
   phi )
-    ARGS="-m microsoft/phi-1_5@refs/pr/66 -t phi -w expected/phi-1_5/cats.safetensors"
+    ARGS="-m microsoft/phi-1_5@refs/pr/66 -t phi -w $EXPECTED/phi-1_5/cats.safetensors"
     ;;
   phi2 )
-    ARGS="-m microsoft/phi-2 -t phi -w expected/phi-2/cats.safetensors"
+    ARGS="-m microsoft/phi-2 -t phi -w $EXPECTED/phi-2/cats.safetensors"
     ;;
   7 | 7b )
-    ARGS="-m NousResearch/Llama-2-7b-hf -t llama -w expected/llama/cats.safetensors"
+    ARGS="-m NousResearch/Llama-2-7b-hf -t llama -w $EXPECTED/llama/cats.safetensors"
     ;;
   code )
-    ARGS="-m codellama/CodeLlama-13b-Instruct-hf -t llama16 -w expected/codellama/cats.safetensors"
+    ARGS="-m codellama/CodeLlama-13b-Instruct-hf -t llama16 -w $EXPECTED/codellama/cats.safetensors"
     ;;
   code34 )
     # OOM in hf transformers - can't generate testcases...
     ARGS="-m codellama/CodeLlama-34b-Instruct-hf -t llama"
     ;;
   orca )
-    ARGS="-m microsoft/Orca-2-13b@refs/pr/22 -t orca -w expected/orca/cats.safetensors"
+    ARGS="-m microsoft/Orca-2-13b@refs/pr/22 -t orca -w $EXPECTED/orca/cats.safetensors"
     ;;
   build )
     BUILD=1
@@ -64,9 +68,9 @@ case "$1" in
 esac
 shift
 
-ARGS="--verbose --port 8080 --aicirt $BIN/release/aicirt $ARGS $ADD_ARGS"
+ARGS="--verbose --aicirt $BIN/release/aicirt $ARGS $ADD_ARGS"
 
-(cd ../aicirt; cargo build --release)
+(cd $WS/aicirt && cargo build --release)
 
 if echo "$*" | grep -q -- --profile-step ; then
     rm -f profile.ncu-rep report1.*
@@ -81,7 +85,7 @@ RUST_LOG=info \
     exit
 fi
 
-cargo build $REL --bin rllm-server
+(cd $WS/rllm && cargo build $REL --bin rllm-server)
 
 if [ "$BUILD" = "1" ] ; then
     exit
