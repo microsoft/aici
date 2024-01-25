@@ -6,11 +6,11 @@
 
 set -e
 
-MODEL=orca
 CONT=rllm
 INNER=0
 INNER_STOP=0
 FULL=0
+STOP=0
 START_CONTAINER=0
 
 WS=`cd $(dirname $0)/..; pwd`
@@ -19,14 +19,17 @@ test -f .devcontainer/Dockerfile-cuda || exit 1
 
 while [ $# -gt 0 ] ; do
     case "$1" in
-        --model )
-            MODEL="$2"
+        --env )
+            . "$2"
+            export CUDA_VISIBLE_DEVICES
+            FOLDER=`dirname $2`
             shift
             ;;
         --in-screen ) INNER=screen ;;
         --start-tunnel ) INNER=tunnel ;;
         --start-model ) INNER=model ;;
         --full ) FULL=1 ;;
+        --stop ) STOP=1 ;;
         * )
             echo "Unknown option: $1"
             exit 1
@@ -41,21 +44,18 @@ function docker_cmd() {
 
 if [ "$INNER" = "screen" ] ; then
     docker_cmd "cd tmp/ws-http-tunnel && source /usr/local/nvm/nvm.sh && yarn compile-client"
-    export WORKER="$WS/tmp/ws-http-tunnel/built/worker.js"
-
-    cd $WS
     for f in tmp/models/*/.env ; do
         . $f
-        export FOLDER=`dirname $f` MODEL FWD_PORT CUDA_VISIBLE_DEVICES
-        echo "Starting $MODEL..."
-        screen "$0" --start-tunnel
-        screen "$0" --start-model
+        screen "$0" --start-tunnel --env $f
+        screen "$0" --start-model  --env $f
     done
+    sleep 3
     exit 0
 fi
 
 if [ "$INNER" = "tunnel" ] ; then
     echo "in tunnel for $MODEL in $FOLDER"
+    WORKER="/workspaces/aici/tmp/ws-http-tunnel/built/worker.js"
     docker_cmd "cd $FOLDER && source /usr/local/nvm/nvm.sh && while : ; do node $WORKER ; sleep 2 ; done"
     exit 0
 fi
@@ -103,12 +103,23 @@ if [ $START_CONTAINER = 1 ] ; then
 fi
 
 echo "Stopping inner servers..."
-docker_cmd "./scripts/kill-server.sh"
+P=`ps -ax|grep 'docker [e]xec' | awk '{print $1}' | xargs echo`
+if [ "X$P" != "X" ] ; then 
+  echo "KILL $P"
+  kill $P
+fi
+
+# docker_cmd "./scripts/kill-server.sh"
 
 echo "Building ..."
 docker_cmd "cd rllm && ./server.sh build"
 
 screen -wipe >/dev/null || :
+
+if [ $STOP = 1 ] ; then
+    echo "Stopped."
+    exit 0
+fi
 
 echo "Starting screen..."
 screen "$0" --in-screen
