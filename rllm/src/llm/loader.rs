@@ -4,22 +4,33 @@ use crate::{
         llama, phi,
         seqid::SeqIdGen,
         tmodel::TModel,
-        util::{
-            gpu_memory_size, gpu_peak_allocated_bytes, log_mem_stats, reset_mem_stats, to_vec1,
-            to_vec2,
-        },
+        util::{gpu_memory_size, gpu_peak_allocated_bytes, log_mem_stats, reset_mem_stats},
     },
     paged::{BatchInfoBuilder, CacheEngine, CacheSize},
-    DType, ExpectedGeneration, HashSet, LoaderArgs, Repo, RllmEngine,
-    RllmModelConfig,
+    DType, HashSet, LoaderArgs, Repo, RllmEngine, RllmModelConfig,
 };
-use aicirt::api::Token;
 use anyhow::{bail, Result};
 use safetensors::Dtype;
 use std::{path::PathBuf, rc::Rc, sync::Arc};
 use tch::{nn::VarStore, Device, Kind, Tensor};
 
 use super::tmodel::TModelInner;
+
+fn kind_from_dt(dtype: Dtype) -> Kind {
+    match dtype {
+        Dtype::BOOL => Kind::Bool,
+        Dtype::U8 => Kind::Uint8,
+        Dtype::I8 => Kind::Int8,
+        Dtype::I16 => Kind::Int16,
+        Dtype::I32 => Kind::Int,
+        Dtype::I64 => Kind::Int64,
+        Dtype::BF16 => Kind::BFloat16,
+        Dtype::F16 => Kind::Half,
+        Dtype::F32 => Kind::Float,
+        Dtype::F64 => Kind::Double,
+        dtype => panic!("unsupported dtype {dtype:?}"),
+    }
+}
 
 fn read_tensor(s: &safetensors::SafeTensors, name: &str) -> Result<Tensor> {
     let view = s.tensor(name)?;
