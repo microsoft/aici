@@ -63,7 +63,7 @@ fi
 
 if [ "$INNER" = "model" ] ; then
     echo "in server for $MODEL in $FOLDER"
-    docker_cmd "cd $FOLDER && CUDA_VISIBLE_DEVICES=$CUDA_VISIBLE_DEVICES /workspaces/aici/rllm/server.sh --loop $MODEL --port $FWD_PORT"
+    docker_cmd "cd $FOLDER && CUDA_VISIBLE_DEVICES=$CUDA_VISIBLE_DEVICES /workspaces/aici/rllm/server.sh --loop $MODEL --port $FWD_PORT --shm-prefix /aici-${MODEL}-"
     exit 0
 fi
 
