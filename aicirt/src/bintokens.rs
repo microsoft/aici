@@ -87,6 +87,7 @@ pub fn tokenizers() -> Vec<Tokenizer> {
             })
         ),
         tok!("falcon", "used by Falcon 7b, 40b, etc."),
+        tok!("mistral", "used by Mistral and Mixtral"),
         tok!("mpt", "MPT"),
         tok!("phi", "Phi 1.5 and Phi 2"),
         tok!("gpt2", "GPT-2"),
