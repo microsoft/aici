@@ -1,4 +1,5 @@
 {
+"hf_model": "mistralai/Mistral-7B-Instruct-v0.2",
 "eos_token":2,
   "special": {
 "</s>":2,
