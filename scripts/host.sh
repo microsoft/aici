@@ -13,6 +13,7 @@ FULL=0
 STOP=0
 START_CONTAINER=0
 PULL=1
+CPP=0
 
 WS=`cd $(dirname $0)/..; pwd`
 
@@ -63,7 +64,13 @@ fi
 
 if [ "$INNER" = "model" ] ; then
     echo "in server for $MODEL in $FOLDER"
-    docker_cmd "cd $FOLDER && CUDA_VISIBLE_DEVICES=$CUDA_VISIBLE_DEVICES /workspaces/aici/rllm/server.sh --loop $MODEL --port $FWD_PORT --shm-prefix /aici-${MODEL}-"
+    PREF="cd $FOLDER && CUDA_VISIBLE_DEVICES=$CUDA_VISIBLE_DEVICES"
+    ARGS="--port $FWD_PORT --shm-prefix /aici-${MODEL}-"
+    if [ "$CPP" -eq 1 ] ; then
+        docker_cmd "$PREF /workspaces/aici/cpp-rllm/cpp-server.sh --loop --cuda $MODEL $ARGS"
+    else
+        docker_cmd "$PREF /workspaces/aici/rllm/server.sh --loop $MODEL $ARGS"
+    fi
     exit 0
 fi
 

@@ -24,6 +24,10 @@ fi
 
 VER="--no-default-features"
 
+if [ "$1" = "--loop" ] ; then
+    LOOP=1
+fi
+
 if [ "$1" = "--cuda" ] ; then
     VER="$VER --features cuda"
     shift
@@ -82,5 +86,14 @@ export RUST_LOG=info,rllm=debug,aicirt=info
 
 echo "running $BIN_SERVER $ARGS $@"
 
-$BIN_SERVER $ARGS "$@"
-exit $?
+if [ "$LOOP" = "" ] ; then
+    $BIN_SERVER $ARGS "$@"
+    exit $?
+fi
+
+set +e
+while : ; do
+    $BIN_SERVER --daemon $ARGS "$@" 2>&1 | rotatelogs -e -D ./logs/%Y-%m-%d-%H_%M_%S.txt 3600 
+    echo "restarting..."
+    sleep 2
+done
