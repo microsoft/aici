@@ -41,6 +41,15 @@ case "$1" in
   orca )
     ARGS="-m https://huggingface.co/TheBloke/Orca-2-13B-GGUF/blob/main/orca-2-13b.Q8_0.gguf -t orca -w ../rllm/expected/orca/cats.safetensors"
     ;;
+  mistral )
+    ARGS="-m https://huggingface.co/TheBloke/Mistral-7B-Instruct-v0.2-GGUF/blob/main/mistral-7b-instruct-v0.2.Q5_K_M.gguf"
+    ;;
+  mixtral )
+    ARGS="-m https://huggingface.co/TheBloke/Mixtral-8x7B-Instruct-v0.1-GGUF/blob/main/mixtral-8x7b-instruct-v0.1.Q6_K.gguf"
+    ;;
+  https* )
+    ARGS="-m $1"
+    ;;
   build )
     BUILD=1
     ;;

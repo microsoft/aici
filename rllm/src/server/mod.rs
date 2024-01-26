@@ -538,7 +538,10 @@ pub async fn server_main(mut args: RllmCliArgs) -> () {
     match &args.tokenizer {
         Some(v) => loader_args.tokenizer = v.clone(),
         None => match guess_tokenizer(&loader_args.model_id) {
-            Some(v) => loader_args.tokenizer = v,
+            Some(v) => {
+                log::info!("guessed tokenizer: {}", v);
+                loader_args.tokenizer = v;
+            },
             None => {
                 eprintln!("can't guess tokenizer from {}", loader_args.model_id);
                 eprintln!("{}", list_tokenizers());

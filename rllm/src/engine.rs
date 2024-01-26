@@ -219,12 +219,21 @@ impl RllmEngine {
         let scheduler = Scheduler::new(rllm_config.clone(), &cache_size);
 
         let timers = TimerSet::new();
+        let mut model_id = format!("{}", repo);
+        match &args.revision {
+            Some(r) => model_id += &format!("@{}", r),
+            None => {}
+        }
+        match &args.gguf {
+            Some(r) => model_id += &format!("::{}", r),
+            None => {}
+        }
 
         Ok(RllmEngine {
             config: rllm_config,
             tokenizer: Arc::new(tokenizer),
             tok_trie: Arc::new(tok_trie),
-            model_id: format!("{}", repo),
+            model_id,
             tmodel,
             seq_gen,
             step_no: 0,
