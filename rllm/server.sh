@@ -22,6 +22,8 @@ if [ "X$CUDA_VISIBLE_DEVICES" = "X" ] ; then
     echo "KILL $P"
     kill $P
   fi
+else
+  echo "CUDA_VISIBLE_DEVICES=$CUDA_VISIBLE_DEVICES"
 fi
 
 if [ "$1" = "--loop" ] ; then

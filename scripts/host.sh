@@ -12,6 +12,7 @@ INNER_STOP=0
 FULL=0
 STOP=0
 START_CONTAINER=0
+PULL=1
 
 WS=`cd $(dirname $0)/..; pwd`
 
@@ -19,9 +20,9 @@ test -f .devcontainer/Dockerfile-cuda || exit 1
 
 while [ $# -gt 0 ] ; do
     case "$1" in
+        --no-pull ) PULL=0 ;;
         --env )
             . "$2"
-            export CUDA_VISIBLE_DEVICES
             FOLDER=`dirname $2`
             shift
             ;;
@@ -62,13 +63,15 @@ fi
 
 if [ "$INNER" = "model" ] ; then
     echo "in server for $MODEL in $FOLDER"
-    docker_cmd "cd $FOLDER && /workspaces/aici/rllm/server.sh --loop $MODEL --port $FWD_PORT"
+    docker_cmd "cd $FOLDER && CUDA_VISIBLE_DEVICES=$CUDA_VISIBLE_DEVICES /workspaces/aici/rllm/server.sh --loop $MODEL --port $FWD_PORT"
     exit 0
 fi
 
-echo "Pulling..."
-git pull
-(cd tmp/ws-http-tunnel && git pull)
+if [ "$PULL" = 1 ] ; then
+    echo "Pulling..."
+    git pull
+    (cd tmp/ws-http-tunnel && git pull)
+fi
 
 if [ "$FULL" = 1 ] ; then
     echo "Building full..."
@@ -103,13 +106,13 @@ if [ $START_CONTAINER = 1 ] ; then
 fi
 
 echo "Stopping inner servers..."
-P=`ps -ax|grep 'docker [e]xec' | awk '{print $1}' | xargs echo`
-if [ "X$P" != "X" ] ; then 
-  echo "KILL $P"
-  kill $P
-fi
+# P=`ps -ax|grep 'docker [e]xec' | awk '{print $1}' | xargs echo`
+# if [ "X$P" != "X" ] ; then 
+#   echo "KILL $P"
+#   kill $P
+# fi
 
-# docker_cmd "./scripts/kill-server.sh"
+docker_cmd "./scripts/kill-server.sh"
 
 echo "Building ..."
 docker_cmd "cd rllm && ./server.sh build"
