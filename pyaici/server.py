@@ -396,7 +396,7 @@ class AiciAsync(AiciCallbacks):
             if r2.suspended:
                 # need to generate one fake token...
                 self._pending_cb = self._cb
-                f = FixedTokens("░")
+                f = FixedTokens(" ")
                 assert len(f.fixed_tokens) == 1
                 self._cb = f
             r = self._cb._mid_process(fork_group)
