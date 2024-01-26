@@ -17,7 +17,7 @@ pub fn load_rllm_engine(mut args: LoaderArgs) -> Result<RllmEngine> {
 
     let mut cparams = cpp::ContextParams::default();
     cparams.n_batch = rllm_config.scheduler.max_num_batched_tokens as u32;
-    cparams.n_ctx = 30000; // TODO
+    cparams.n_ctx = 10000; // TODO
     model.setup_context(cparams);
 
     let rllm_config = Arc::new(rllm_config);

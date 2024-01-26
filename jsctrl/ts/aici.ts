@@ -562,7 +562,7 @@ export class AiciAsync implements AiciCallbacks {
       if (r2._n_suspended) {
         // Need to generate one fake token...
         this._pendingCb = this._token;
-        const f = new FixedTokens("░");
+        const f = new FixedTokens(" ");
         assert(f.fixedTokens.length === 1);
         this._token = f;
       }

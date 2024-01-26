@@ -1259,7 +1259,7 @@ impl AiciCtrl for Runner {
             // this is a bit late in the game, but it's the best we can do
             MidProcessResult::Splice {
                 backtrack: 0,
-                ff_tokens: tokenize("░"),
+                ff_tokens: tokenize(" "),
             }
 
             // // we pop the useless generated token

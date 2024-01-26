@@ -22,10 +22,11 @@ pub struct Tokenizer {
     info_bytes: Option<&'static [u8]>,
     hf_bytes: Option<&'static [u8]>,
     add_tokens: Value,
+    model_ids: String,
 }
 
 macro_rules! tok {
-    ($name:literal, $desc:literal) => {
+    ($name:literal, $desc:literal, $models:literal) => {
         Tokenizer {
             name: $name.into(),
             description: $desc.into(),
@@ -34,9 +35,10 @@ macro_rules! tok {
             hf_bytes: Some(include_bytes!(concat!("hf-tokenizers/", $name, ".json"))),
             info: None,
             add_tokens: json!({}),
+            model_ids: $models.into(),
         }
     };
-    ($username:literal, $name:literal, $desc:literal, $add:expr) => {
+    ($username:literal, $name:literal, $desc:literal, $models:literal, $add:expr) => {
         Tokenizer {
             name: $username.into(),
             description: $desc.into(),
@@ -45,18 +47,20 @@ macro_rules! tok {
             hf_bytes: None,
             info: None,
             add_tokens: $add,
+            model_ids: $models.into(),
         }
     };
 }
 
 pub fn tokenizers() -> Vec<Tokenizer> {
     vec![
-        tok!("gpt4", "cl100k_base, used by GPT-4 and GPT-3.5"),
-        tok!("llama", "used by Llama, CodeLlama, etc."),
+        tok!("gpt4", "cl100k_base, used by GPT-4 and GPT-3.5", "gpt-4"),
+        tok!("llama", "used by Llama, CodeLlama, etc.", ""),
         tok!(
             "llama16",
             "llama",
             "same as llama, with 16 added tokens (used by 13B codellama)",
+            "codellama-13b",
             json!({
                 "▁<SU": 32000,
                 "▁<SUF": 32001,
@@ -80,16 +84,18 @@ pub fn tokenizers() -> Vec<Tokenizer> {
             "orca",
             "llama",
             "for microsoft/Orca models; similar to llama, with 3 tokens added for chat",
+            "",
             json!({
                 "<|im_end|>": 32002,
                 "<|im_start|>": 32001,
                 "[PAD]": 32000
             })
         ),
-        tok!("falcon", "used by Falcon 7b, 40b, etc."),
-        tok!("mpt", "MPT"),
-        tok!("phi", "Phi 1.5 and Phi 2"),
-        tok!("gpt2", "GPT-2"),
+        tok!("falcon", "used by Falcon 7b, 40b, etc.", ""),
+        tok!("mistral", "used by Mistral and Mixtral", "mixtral"),
+        tok!("mpt", "MPT", ""),
+        tok!("phi", "Phi 1.5 and Phi 2", ""),
+        tok!("gpt2", "GPT-2", "gpt-2"),
     ]
 }
 
@@ -106,14 +112,17 @@ pub fn list_tokenizers() -> String {
 
 pub fn guess_tokenizer(model_name: &str) -> Option<String> {
     let m = model_name.to_lowercase();
-    if m.contains("codellama-13b") {
-        Some("llama16".to_string())
-    } else {
-        tokenizers()
-            .iter()
-            .find(|t| m.contains(&t.name))
-            .map(|t| t.name.clone())
-    }
+    tokenizers()
+        .iter()
+        .find(|t| {
+            m.contains(&t.name)
+                || t.model_ids
+                    .split(',')
+                    .map(|x| x.trim())
+                    .filter(|x| x.len() > 0)
+                    .any(|x| m.contains(x))
+        })
+        .map(|t| t.name.clone())
 }
 
 pub fn find_tokenizer(name: &str) -> Result<Tokenizer> {
