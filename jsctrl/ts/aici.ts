@@ -94,14 +94,6 @@ export function getTokens(): Token[] {
   return AiciAsync.instance._tokens;
 }
 
-/**
- * Get the length of the prompt in the current sequence.
- */
-export function getPromptLen(): number {
-  assert(!!AiciAsync.instance);
-  return AiciAsync.instance._prompt_len;
-}
-
 export class MidProcessResult {
   _n_skip_me = false;
   _n_stop = false;
@@ -429,47 +421,17 @@ export interface AiciCallbacks {
   post_process(backtrack: number, tokens: Token[]): PostProcessResult;
 }
 
-/**
- * Awaiting this returns the prompt passed by the user.
- * The code before call to this function has a long time limit (~1000ms).
- * Afterwards, the time limit is ~1ms before awaiting NextToken().
- */
-export function getPrompt(): Promise<Token[]> {
-  return new GetPrompt().run();
-}
-
-class GetPrompt {
-  _resolve?: (value: Token[]) => void;
-  run(): Promise<Token[]> {
-    assert(!this._resolve);
-    return new Promise((resolve) => {
-      AiciAsync.instance._setGetPrompt(this);
-      this._resolve = resolve;
-    });
-  }
-}
-
 export type CbType = NextToken;
 export class AiciAsync implements AiciCallbacks {
   static instance: AiciAsync;
 
   _tokens: Token[] = [];
-  _prompt_len = 0;
   private _pendingCb: CbType | undefined;
   private _token: CbType | undefined;
-  private _getPrompt: GetPrompt | undefined;
   private midProcessReEntry = false;
-
-  _setGetPrompt(g: GetPrompt) {
-    assert(!this._getPrompt);
-    assert(!this._token);
-    assert(g instanceof GetPrompt);
-    this._getPrompt = g;
-  }
 
   _nextToken(t: NextToken) {
     assert(!this._token);
-    assert(!this._getPrompt);
     assert(t instanceof NextToken);
     this._token = t;
   }
@@ -494,17 +456,12 @@ export class AiciAsync implements AiciCallbacks {
       .then(
         () => {},
         (e) => {
-          // make sure we catch errors from promises, otherwise they silently stop a thread
+          // make sure we catch errors from promises, otherwise they silently stop the thread
           panic(e);
         }
       );
 
-    if (this._getPrompt) {
-      assert(this._getPrompt instanceof GetPrompt);
-      assert(!this._token);
-    } else {
-      assert(this._token instanceof NextToken);
-    }
+    assert(this._token instanceof NextToken);
   }
 
   step(tokens: Token[]): void {
@@ -530,15 +487,8 @@ export class AiciAsync implements AiciCallbacks {
 
   init_prompt(prompt: Token[]): void {
     assert(!this._tokens.length);
-    this._prompt_len = prompt.length;
     this._tokens.push(...prompt);
-
-    if (this._getPrompt) {
-      this._getPrompt._resolve!(prompt);
-      this._getPrompt = undefined;
-    } else {
-      assert(this._token instanceof NextToken);
-    }
+    assert(this._token instanceof NextToken);
   }
 
   pre_process(): PreProcessResult {
@@ -597,8 +547,7 @@ export class AiciAsync implements AiciCallbacks {
 }
 
 /**
- * Starts the AICI loop. The coroutine may first `await aici.getPrompt()` and
- * then can `await aici.gen_*()` or `await aici.FixedTokens()` multiple times.
+ * Starts the AICI loop.
  * @param f async function
  */
 export function start(f: () => Promise<void>): AiciAsync {

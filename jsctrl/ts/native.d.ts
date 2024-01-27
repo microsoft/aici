@@ -33,8 +33,7 @@ declare function fork(numForks: number): Promise<number>;
 declare function waitVars(...vars: string[]): Promise<Buffer[]>;
 
 /**
- * Starts the AICI loop. The coroutine may first `await aici.getPrompt()` and
- * then can `await aici.gen_*()` or `await aici.FixedTokens()` multiple times.
+ * Starts the AICI loop. 
  * @param f async function
  */
 declare function start(f: () => Promise<void>): void;

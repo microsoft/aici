@@ -33,8 +33,7 @@ declare function fork(numForks: number): Promise<number>;
 declare function waitVars(...vars: string[]): Promise<Buffer[]>;
 
 /**
- * Starts the AICI loop. The coroutine may first `await aici.getPrompt()` and
- * then can `await aici.gen_*()` or `await aici.FixedTokens()` multiple times.
+ * Starts the AICI loop. 
  * @param f async function
  */
 declare function start(f: () => Promise<void>): void;
@@ -286,10 +285,6 @@ export function assert(cond: boolean, msg?: string): asserts cond;
  * Get list of tokens in the current sequence, including the prompt.
  */
 export function getTokens(): Token[];
-/**
- * Get the length of the prompt in the current sequence.
- */
-export function getPromptLen(): number;
 export class MidProcessResult {
     _n_skip_me: boolean;
     _n_stop: boolean;
@@ -414,26 +409,13 @@ export interface AiciCallbacks {
     mid_process(fork_group: SeqId[]): MidProcessResult;
     post_process(backtrack: number, tokens: Token[]): PostProcessResult;
 }
-/**
- * Awaiting this returns the prompt passed by the user.
- * The code before call to this function has a long time limit (~1000ms).
- * Afterwards, the time limit is ~1ms before awaiting NextToken().
- */
-export function getPrompt(): Promise<Token[]>;
-class GetPrompt {
-    _resolve?: (value: Token[]) => void;
-    run(): Promise<Token[]>;
-}
 export type CbType = NextToken;
 export class AiciAsync implements AiciCallbacks {
     static instance: AiciAsync;
     _tokens: Token[];
-    _prompt_len: number;
     private _pendingCb;
     private _token;
-    private _getPrompt;
     private midProcessReEntry;
-    _setGetPrompt(g: GetPrompt): void;
     _nextToken(t: NextToken): void;
     constructor(f: () => Promise<void>);
     step(tokens: Token[]): void;
@@ -443,8 +425,7 @@ export class AiciAsync implements AiciCallbacks {
     post_process(backtrack: number, tokens: Token[]): PostProcessResult;
 }
 /**
- * Starts the AICI loop. The coroutine may first `await aici.getPrompt()` and
- * then can `await aici.gen_*()` or `await aici.FixedTokens()` multiple times.
+ * Starts the AICI loop.
  * @param f async function
  */
 export function start(f: () => Promise<void>): AiciAsync;

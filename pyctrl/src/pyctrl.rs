@@ -279,10 +279,7 @@ fn _main() -> Result<()> {
     let mut runner = Runner::new(source.as_bytes().to_vec());
 
     runner.init_prompt(InitPromptArg {
-        prompt: vec![1, 2, 3],
-    });
-    runner.init_prompt(InitPromptArg {
-        prompt: vec![1, 2, 3],
+        prompt: vec![1],
     });
 
     Ok(())
@@ -292,7 +289,7 @@ fn _main() -> Result<()> {
 pub extern "C" fn aici_main(p: *mut Runner) {
     let runner = unsafe { &mut *p };
     let _ = runner;
-    // runner.init_prompt(InitPromptArg {
+    // runner.init(InitPromptArg {
     //     prompt: vec![1, 2, 3],
     // });
 }
