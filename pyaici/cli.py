@@ -158,7 +158,9 @@ def main_rest(args):
     if args.subcommand == "run":
         aici_arg = ""
         fn: str = args.aici_arg
-        if fn is not None:
+        if fn == "-":
+            aici_arg = sys.stdin.read()
+        elif fn is not None:
             aici_arg = open(fn).read()
             if not aici_module:
                 if fn.endswith(".py"):
@@ -216,9 +218,9 @@ def main_inner():
     )
     run_cmd.add_argument(
         "aici_arg",
-        metavar="FILE",
+        metavar='FILE',
         nargs="?",
-        help="file to pass to the AICI Controller",
+        help="file to pass to the AICI Controller; use '-' for stdin",
     )
     infer_args(run_cmd)
     run_cmd.add_argument(
