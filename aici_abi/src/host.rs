@@ -79,6 +79,11 @@ pub fn arg_bytes() -> Vec<u8> {
     return std::fs::read("arg.json").unwrap();
 }
 
+pub fn arg_string() -> String {
+    String::from_utf8_lossy(&arg_bytes()).to_string()
+}
+
+
 pub fn trie_bytes() -> Vec<u8> {
     #[cfg(target_arch = "wasm32")]
     return read_blob(unsafe { aici_host_token_trie() }, 0);

@@ -1,9 +1,10 @@
 use aici_abi::{
+    arg_string,
     recognizer::{FunctionalRecognizer, StackRecognizer},
     tokenize,
     toktree::{SpecialToken, TokTrie},
-    AiciCtrl, InitPromptArg, InitPromptResult, MidProcessArg, MidProcessResult, PostProcessArg,
-    PostProcessResult, PreProcessArg, PreProcessResult,
+    AiciCtrl, MidProcessArg, MidProcessResult, PostProcessArg, PostProcessResult, PreProcessArg,
+    PreProcessResult,
 };
 
 // This constraints enforces an upper case letter every 4th byte
@@ -37,14 +38,15 @@ impl FunctionalRecognizer<usize> for QuadUpper {
 pub struct Runner {
     toktrie: TokTrie,
     tokens: Vec<u32>,
+    prompt: String,
     recognizer: StackRecognizer<usize, QuadUpper>,
 }
 
 impl Runner {
-    pub fn new(aici_arg: Vec<u8>) -> Self {
-        println!("user passed in {} bytes", aici_arg.len());
+    pub fn new() -> Self {
         Runner {
             toktrie: TokTrie::from_host(),
+            prompt: arg_string() + "\n",
             tokens: Vec::new(),
             recognizer: StackRecognizer::from(QuadUpper {}),
         }
@@ -52,21 +54,15 @@ impl Runner {
 }
 
 impl AiciCtrl for Runner {
-    fn init_prompt(&mut self, arg: InitPromptArg) -> InitPromptResult {
-        // when using AICI Controllers, the prompt is often empty, but let's print it
-        println!(
-            "init_prompt: {:?} {:?}",
-            arg.prompt,
-            self.toktrie.decode_str(&arg.prompt)
-        );
-        // result is currently empty
-        InitPromptResult::default()
-    }
-
     fn pre_process(&mut self, _arg: PreProcessArg) -> PreProcessResult {
         if self.tokens.is_empty() {
             // if no tokens yet, send our prompt
-            let toks = tokenize("Here's a tweet:\n");
+            let prompt = if self.prompt.is_empty() {
+                "Here's a tweet:\n"
+            } else {
+                &self.prompt
+            };
+            let toks = tokenize(prompt);
             PreProcessResult::ff_tokens(toks)
         } else {
             // otherwise just continue - the other option is to suspend
@@ -92,18 +88,15 @@ impl AiciCtrl for Runner {
         // save our tokens
         self.tokens.extend_from_slice(&arg.tokens);
         // and update the state of our recognizer
-        self.toktrie.append_tokens(&mut self.recognizer, &arg.tokens);
+        self.toktrie
+            .append_tokens(&mut self.recognizer, &arg.tokens);
         // ::from_arg() will translate generation of EOS token into Stop instruction
         PostProcessResult::from_arg(&arg)
     }
-}
-
-fn runner_from_env() -> Runner {
-    Runner::new(aici_abi::arg_bytes())
 }
 
 fn main() {
     // test code here?
 }
 
-aici_abi::aici_expose_all!(Runner, runner_from_env());
+aici_abi::aici_expose_all!(Runner, Runner::new());

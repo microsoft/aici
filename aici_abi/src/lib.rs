@@ -21,8 +21,8 @@ pub mod substring;
 pub type TokenId = bytes::TokenId;
 
 pub use host::{
-    aici_stop, arg_bytes, return_logit_bias, self_seq_id, tokenize, tokenize_bytes, StorageCmd,
-    StorageOp, StorageResp, VariableStorage,
+    aici_stop, arg_bytes, arg_string, return_logit_bias, self_seq_id, tokenize, tokenize_bytes,
+    StorageCmd, StorageOp, StorageResp, VariableStorage,
 };
 
 #[derive(Serialize, Deserialize, Debug)]

@@ -1,11 +1,12 @@
 use aici_abi::{
-    tokenize, toktree::TokTrie, AiciCtrl, InitPromptArg, InitPromptResult, MidProcessArg,
-    MidProcessResult, PostProcessArg, PostProcessResult, PreProcessArg, PreProcessResult, TokenId,
+    arg_string, tokenize, toktree::TokTrie, AiciCtrl, MidProcessArg, MidProcessResult,
+    PostProcessArg, PostProcessResult, PreProcessArg, PreProcessResult, TokenId,
 };
 
 pub struct Runner {
     toktrie: TokTrie,
     tokens: Vec<TokenId>,
+    question: String,
     yes: TokenId,
     no: TokenId,
 }
@@ -18,6 +19,7 @@ impl Runner {
         Runner {
             toktrie: TokTrie::from_host(),
             tokens: Vec::new(),
+            question: arg_string() + "\n",
             yes,
             no,
         }
@@ -25,18 +27,9 @@ impl Runner {
 }
 
 impl AiciCtrl for Runner {
-    fn init_prompt(&mut self, arg: InitPromptArg) -> InitPromptResult {
-        if arg.prompt.len() < 2 {
-            // we'll be forcing answer; require a question
-            panic!("prompt too short")
-        }
-        InitPromptResult::default()
-    }
-
     fn pre_process(&mut self, _arg: PreProcessArg) -> PreProcessResult {
         if self.tokens.is_empty() {
-            // Make sure the prompt ends with newline
-            let toks = tokenize("\n");
+            let toks = tokenize(&self.question);
             PreProcessResult::ff_tokens(toks)
         } else {
             PreProcessResult::continue_()
