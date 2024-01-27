@@ -11,16 +11,15 @@ It forces every 4th letter of the model output to be uppercase.
 
 ```
 $ ../aici.sh run --build .
-will build uppercase from /workspaces/aici/aici_abi/Cargo.toml
-    Finished release [optimized + debuginfo] target(s) in 0.09s
-built: /workspaces/aici/target/wasm32-wasi/release/uppercase.wasm, 0.193 MiB
-upload module... 197kB -> 687kB id:4d3b70bf
-[0]: user passed in 0 bytes
-[0]: init_prompt: [1] ""
+will build aici_uppercase from /workspaces/aici/uppercase/Cargo.toml
+   Compiling aici_uppercase v0.1.0 (/workspaces/aici/uppercase)
+    Finished release [optimized + debuginfo] target(s) in 0.59s
+built: /workspaces/aici/target/wasm32-wasi/release/aici_uppercase.wasm, 0.19 MiB
+upload module... 194kB -> 676kB id:d8fa5197
 [0]: tokenize: "Here's a tweet:\n" -> [10605, 29915, 29879, 263, 7780, 300, 29901, 13]
 [DONE]
 
-[Prompt]
+[Prompt] 
 
 [Response] Here's a tweet:
 I'm SO EXCITED! I'm GoinG toBe aMom!I'm GoinG toHaVeA BaBy!
@@ -36,18 +35,22 @@ only allows the model to say "Yes" or "No" in answer to the question in the prom
 
 ```
 $ ./scripts/sample-yesno.sh "Can orcas sing?"
++ echo 'Can orcas sing?'
++ ./aici.sh run --build aici_abi::yesno -
 will build yesno from /workspaces/aici/aici_abi/Cargo.toml
-    Finished release [optimized + debuginfo] target(s) in 0.09s
-built: /workspaces/aici/target/wasm32-wasi/release/yesno.wasm, 0.187 MiB
-upload module... 191kB -> 668kB id:255ce305
+   Compiling aici_abi v0.1.0 (/workspaces/aici/aici_abi)
+    Finished release [optimized + debuginfo] target(s) in 0.58s
+built: /workspaces/aici/target/wasm32-wasi/release/yesno.wasm, 0.189 MiB
+upload module... 193kB -> 676kB id:fd7b322d
 [0]: tokenize: "Yes" -> [8241]
 [0]: tokenize: "No" -> [3782]
-[0]: tokenize: "\n" -> [13]
+[0]: tokenize: "Can orcas sing?\n\n" -> [6028, 470, 9398, 1809, 29973, 13, 13]
 [DONE]
 
-[Prompt] Can orcas sing?
+[Prompt] 
 
-[Response]
+[Response] Can orcas sing?
+
 Yes
 ```
 
@@ -56,8 +59,8 @@ but it illustrates the raw token APIs.
 
 
 ```
-$ ./aici.sh run pyctrl/samples/yesno.py --prompt "Are dolphins fish?"
-...
+$ ./aici.sh run pyctrl/samples/yesno.py
+[Response] Are dolphins fish?
 No
 ```
 

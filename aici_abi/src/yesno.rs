@@ -6,7 +6,7 @@ use aici_abi::{
 pub struct Runner {
     toktrie: TokTrie,
     tokens: Vec<TokenId>,
-    question: String,
+    question: Vec<TokenId>,
     yes: TokenId,
     no: TokenId,
 }
@@ -19,7 +19,7 @@ impl Runner {
         Runner {
             toktrie: TokTrie::from_host(),
             tokens: Vec::new(),
-            question: arg_string() + "\n",
+            question: tokenize(&(arg_string() + "\n")),
             yes,
             no,
         }
@@ -29,8 +29,7 @@ impl Runner {
 impl AiciCtrl for Runner {
     fn pre_process(&mut self, _arg: PreProcessArg) -> PreProcessResult {
         if self.tokens.is_empty() {
-            let toks = tokenize(&self.question);
-            PreProcessResult::ff_tokens(toks)
+            PreProcessResult::ff_tokens(self.question.clone())
         } else {
             PreProcessResult::continue_()
         }
@@ -48,7 +47,7 @@ impl AiciCtrl for Runner {
     fn post_process(&mut self, arg: PostProcessArg) -> PostProcessResult {
         // save our tokens
         self.tokens.extend_from_slice(&arg.tokens);
-        if self.tokens.len() >= 2 {
+        if self.tokens.len() >= self.question.len() + 1 {
             PostProcessResult::stop()
         } else {
             PostProcessResult::from_arg(&arg)

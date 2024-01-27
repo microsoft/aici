@@ -27,6 +27,7 @@ pub use host::{
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct InitPromptArg {
+    /// Typically just the start token if any.
     pub prompt: Vec<TokenId>,
 }
 
@@ -150,6 +151,7 @@ impl PreProcessResult {
 pub trait AiciCtrl {
     /// Called with the initial prompt. ~1000ms time limit.
     /// By default ignore prompt.
+    /// This is typically just the start token if any (REST API forces empty prompt).
     fn init_prompt(&mut self, _arg: InitPromptArg) -> InitPromptResult {
         InitPromptResult::default()
     }

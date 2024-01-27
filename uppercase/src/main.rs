@@ -57,7 +57,7 @@ impl AiciCtrl for Runner {
     fn pre_process(&mut self, _arg: PreProcessArg) -> PreProcessResult {
         if self.tokens.is_empty() {
             // if no tokens yet, send our prompt
-            let prompt = if self.prompt.is_empty() {
+            let prompt = if self.prompt.len() <= 1 {
                 "Here's a tweet:\n"
             } else {
                 &self.prompt
