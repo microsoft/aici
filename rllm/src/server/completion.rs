@@ -7,7 +7,7 @@ use crate::server::{
             StreamingCompletionResponse,
         },
     },
-    APIError, InferenceResult, OpenAIServerData,
+    APIError, InferenceResult, AiciServerData,
 };
 use crate::{config::SamplingParams, seq::Token, AddRequest};
 use actix_web::{post, web, web::Bytes, Either, HttpResponse};
@@ -18,7 +18,7 @@ use uuid::Uuid;
 
 fn check_length(
     request: &web::Json<CompletionRequest>,
-    data: &OpenAIServerData,
+    data: &AiciServerData,
 ) -> Result<Vec<Token>, APIError> {
     let token_ids = data
         .tokenizer
@@ -70,7 +70,7 @@ macro_rules! bail_if_error {
 #[post("/v1/completions")]
 async fn completions(
     req: actix_web::HttpRequest,
-    data: web::Data<OpenAIServerData>,
+    data: web::Data<AiciServerData>,
     request: web::Json<CompletionRequest>,
 ) -> Either<Result<web::Json<CompletionResponse>, APIError>, HttpResponse> {
     if request.logit_bias.as_ref().is_some()

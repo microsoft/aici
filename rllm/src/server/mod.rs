@@ -113,7 +113,7 @@ impl Display for ServerStats {
 }
 
 #[derive(Clone)]
-pub struct OpenAIServerData {
+pub struct AiciServerData {
     pub worker: Arc<Mutex<InferenceWorker>>,
     pub model_config: ModelConfig,
     pub tokenizer: Arc<tokenizers::Tokenizer>,
@@ -210,7 +210,7 @@ pub struct RllmCliArgs {
 #[actix_web::get("/v1/aici_modules/tags")]
 async fn get_aici_module_tags(
     req: actix_web::HttpRequest,
-    data: web::Data<OpenAIServerData>,
+    data: web::Data<AiciServerData>,
 ) -> Result<web::Json<GetTagsResp>, APIError> {
     let r = data
         .side_cmd_ch
@@ -223,7 +223,7 @@ async fn get_aici_module_tags(
 #[actix_web::post("/v1/aici_modules/tags")]
 async fn tag_aici_module(
     req: actix_web::HttpRequest,
-    data: web::Data<OpenAIServerData>,
+    data: web::Data<AiciServerData>,
     body: web::Json<SetTagsReq>,
 ) -> Result<web::Json<GetTagsResp>, APIError> {
     let r = data
@@ -237,7 +237,7 @@ async fn tag_aici_module(
 #[actix_web::post("/v1/aici_modules")]
 async fn upload_aici_module(
     req: actix_web::HttpRequest,
-    data: web::Data<OpenAIServerData>,
+    data: web::Data<AiciServerData>,
     body: web::Bytes,
 ) -> Result<web::Json<MkModuleResp>, APIError> {
     let binary = base64::engine::general_purpose::STANDARD.encode(body);
@@ -251,7 +251,7 @@ async fn upload_aici_module(
 
 #[actix_web::get("/v1/models")]
 async fn models(
-    data: web::Data<OpenAIServerData>,
+    data: web::Data<AiciServerData>,
 ) -> Result<web::Json<openai::responses::List<openai::responses::Model>>, APIError> {
     let id = data.model_config.meta.id.clone();
     Ok(web::Json(openai::responses::List::new(vec![
@@ -284,7 +284,7 @@ pub fn auth_info(req: &actix_web::HttpRequest) -> AuthInfo {
 #[actix_web::get("/ws-http-tunnel/info")]
 async fn tunnel_info(
     req: actix_web::HttpRequest,
-    data: web::Data<OpenAIServerData>,
+    data: web::Data<AiciServerData>,
 ) -> Result<web::Json<serde_json::Value>, APIError> {
     let name = req
         .headers()
@@ -653,7 +653,7 @@ pub async fn server_main(mut args: RllmCliArgs) -> () {
     let side_cmd_ch = iface.side_cmd.clone();
     let handle = spawn_inference_loop(&args, loader_args, iface, stats.clone());
 
-    let app_data = OpenAIServerData {
+    let app_data = AiciServerData {
         worker: handle.clone(),
         model_config,
         tokenizer: Arc::new(tokenizer),
