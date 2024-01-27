@@ -4,6 +4,7 @@ import os
 import urllib.parse
 import sys
 import time
+import re
 from typing import Optional
 
 BASE_URL_ENV = "AICI_API_BASE"
@@ -56,9 +57,16 @@ def response_error(kind: str, resp: requests.Response):
         f"bad response to {kind} {resp.status_code} {resp.reason}: {text}"
     )
 
+def strip_url_path(url):
+    pattern = r'^(https?://[^/]+)'
+    match = re.match(pattern, url)
+    assert match
+    return match.group(1)
 
-def req(tp: str, url: str, **kwargs):
-    url = _mk_url(url)
+def req(tp: str, path: str, **kwargs):
+    url = _mk_url(path)
+    if path == "/proxy/info":
+        url = strip_url_path(url) + path
     headers = _headers()
     if log_level >= 4:
         print(f"{tp.upper()} {url} headers={headers}")
@@ -69,6 +77,13 @@ def req(tp: str, url: str, **kwargs):
         print(f"{resp.status_code} {resp.reason}: {resp.text}")
     return resp
 
+def detect_prefixes():
+    resp = req("get", "/proxy/info")
+    if resp.status_code == 200:
+        dd = resp.json()
+        return dd["prefixes"]
+    else:
+        return ["/"]
 
 def upload_module(file_path: str) -> str:
     """

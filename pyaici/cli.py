@@ -112,6 +112,78 @@ def save_file(name: str, content: str, force: bool):
     print(f"saved {name}")
 
 
+def main_rest(args):
+    if args.subcommand == "tags":
+        for tag in rest.list_tags():
+            print(rest.pp_tag(tag))
+        return
+
+    if args.subcommand == "infer":
+        if args.prompt == "":
+            cli_error("--prompt empty")
+        # for plain prompting, use log-level 1 by default
+        if args.log_level is None:
+            rest.log_level = 1
+        ask_completion(
+            args,
+            aici_module=None,
+            aici_arg=None,
+            max_tokens=100,
+        )
+        return
+
+    aici_module = ""
+
+    for k in ["build", "upload", "ctrl", "tag", "ignore_eos"]:
+        if k not in args:
+            setattr(args, k, None)
+
+    if args.build:
+        assert not aici_module
+        aici_module = build_rust(args.build)
+
+    if args.upload:
+        assert not aici_module
+        aici_module = rest.upload_module(args.upload)
+
+    if args.ctrl:
+        assert not aici_module
+        aici_module = args.ctrl
+
+    if args.tag:
+        if len(aici_module) != 64:
+            cli_error("no AICI Controller to tag")
+        rest.tag_module(aici_module, args.tag)
+
+    if args.subcommand == "run":
+        aici_arg = ""
+        fn: str = args.aici_arg
+        if fn is not None:
+            aici_arg = open(fn).read()
+            if not aici_module:
+                if fn.endswith(".py"):
+                    aici_module = "pyctrl-latest"
+                elif fn.endswith(".js"):
+                    aici_module = "jsctrl-latest"
+                elif fn.endswith(".json"):
+                    aici_module = "declctrl-latest"
+                else:
+                    cli_error(
+                        "Can't determine AICI Controller type from file name: " + fn
+                    )
+                print(f"Running with tagged AICI Controller: {aici_module}")
+        if not aici_module:
+            cli_error("no AICI Controller specified to run")
+
+        ask_completion(
+            args,
+            aici_module=aici_module,
+            aici_arg=aici_arg,
+            ignore_eos=True,
+            max_tokens=2000,
+        )
+
+
 def main_inner():
     parser = argparse.ArgumentParser(
         description="Upload an AICI Controller and completion request to rllm or vllm",
@@ -123,6 +195,12 @@ def main_inner():
         "-l",
         type=int,
         help="log level (higher is more); default 3 (except in 'infer', where it's 1)",
+    )
+
+    parser.add_argument(
+        "--all-prefixes",
+        action="store_true",
+        help="attempt the action for all detected prefixes (models/deployments)",
     )
 
     subparsers = parser.add_subparsers(dest="subcommand", required=True)
@@ -236,81 +314,28 @@ def main_inner():
         save_file("tsconfig.json", jssrc.tsconfig_json, args.force)
         save_file("aici-types.d.ts", jssrc.aici_types_d_t, args.force)
         save_file("hello.js", jssrc.hello_js, args.force)
-        sys.exit(0)
+        return
 
     if args.subcommand == "benchrt":
         runner_from_cli(args).bench()
-        sys.exit(0)
+        return
 
-    if args.subcommand == "tags":
-        for tag in rest.list_tags():
-            print(rest.pp_tag(tag))
-        sys.exit(0)
-
-    if args.subcommand == "infer":
-        if args.prompt == "":
-            cli_error("--prompt empty")
-        # for plain prompting, use log-level 1 by default
-        if args.log_level is None:
-            rest.log_level = 1
-        ask_completion(
-            args,
-            aici_module=None,
-            aici_arg=None,
-            max_tokens=100,
-        )
-        sys.exit(0)
-
-    aici_module = ""
-
-    for k in ["build", "upload", "ctrl", "tag", "ignore_eos"]:
-        if k not in args:
-            setattr(args, k, None)
-
-    if args.build:
-        assert not aici_module
-        aici_module = build_rust(args.build)
-
-    if args.upload:
-        assert not aici_module
-        aici_module = rest.upload_module(args.upload)
-
-    if args.ctrl:
-        assert not aici_module
-        aici_module = args.ctrl
-
-    if args.tag:
-        if len(aici_module) != 64:
-            cli_error("no AICI Controller to tag")
-        rest.tag_module(aici_module, args.tag)
-
-    if args.subcommand == "run":
-        aici_arg = ""
-        fn: str = args.aici_arg
-        if fn is not None:
-            aici_arg = open(fn).read()
-            if not aici_module:
-                if fn.endswith(".py"):
-                    aici_module = "pyctrl-latest"
-                elif fn.endswith(".js"):
-                    aici_module = "jsctrl-latest"
-                elif fn.endswith(".json"):
-                    aici_module = "declctrl-latest"
-                else:
-                    cli_error(
-                        "Can't determine AICI Controller type from file name: " + fn
-                    )
-                print(f"Running with tagged AICI Controller: {aici_module}")
-        if not aici_module:
-            cli_error("no AICI Controller specified to run")
-
-        ask_completion(
-            args,
-            aici_module=aici_module,
-            aici_arg=aici_arg,
-            ignore_eos=True,
-            max_tokens=2000,
-        )
+    if args.all_prefixes:
+        prefixes = rest.detect_prefixes()
+        if len(prefixes) <= 1:
+            print("no prefixes detected; continuing")
+            main_rest(args)
+        else:
+            base_url = rest.base_url
+            pref0s = [p for p in prefixes if p in base_url]
+            if len(pref0s) != 1:
+                cli_error("can't determine prefix from base url")
+            for prefix in prefixes:
+                print(f"prefix: {prefix}")
+                rest.base_url = base_url.replace(pref0s[0], prefix)
+                main_rest(args)
+    else:
+        main_rest(args)
 
 
 def main():
