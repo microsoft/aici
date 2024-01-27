@@ -10,12 +10,11 @@ use aici_abi::toktree::TokTrie;
 use aicirt::{
     api::{AuthInfo, GetTagsResp, MkModuleReq, MkModuleResp, SetTagsReq},
     bintokens::{guess_tokenizer, list_tokenizers},
-    set_max_priority,
+    set_max_priority, UserError,
 };
 use anyhow::{bail, Result};
 use base64::Engine;
 use clap::Args;
-use openai::responses::APIError;
 use std::{
     fmt::Display,
     sync::{Arc, Mutex},
@@ -25,6 +24,74 @@ use tokio::sync::mpsc::{channel, error::TryRecvError, Receiver, Sender};
 
 mod completion;
 mod openai;
+
+#[derive(Debug)]
+pub struct APIError {
+    code: actix_web::http::StatusCode,
+    msg: String,
+}
+
+impl From<anyhow::Error> for APIError {
+    fn from(e: anyhow::Error) -> Self {
+        Self::from_anyhow(e)
+    }
+}
+
+impl From<Box<dyn std::error::Error + Send + Sync>> for APIError {
+    fn from(e: Box<dyn std::error::Error + Send + Sync>) -> Self {
+        Self::from_anyhow(anyhow::anyhow!(e))
+    }
+}
+
+impl std::error::Error for APIError {}
+impl actix_web::error::ResponseError for APIError {
+    fn status_code(&self) -> actix_web::http::StatusCode {
+        self.code
+    }
+}
+
+impl Display for APIError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "APIError: {}", self.msg)
+    }
+}
+
+impl APIError {
+    pub fn new(data: String) -> Self {
+        Self {
+            code: actix_web::http::StatusCode::BAD_REQUEST,
+            msg: data,
+        }
+    }
+
+    pub fn new_str(data: &str) -> Self {
+        Self::new(data.to_string())
+    }
+
+    pub fn from_anyhow(value: anyhow::Error) -> Self {
+        if UserError::is_self(&value) {
+            log::info!("UserError: {value}");
+            Self {
+                code: actix_web::http::StatusCode::BAD_REQUEST,
+                msg: format!("{value}"),
+            }
+        } else {
+            log::warn!("APIError: {value:?}");
+            Self {
+                code: actix_web::http::StatusCode::INTERNAL_SERVER_ERROR,
+                msg: format!("{value:?}"),
+            }
+        }
+    }
+
+    pub fn just_msg(value: anyhow::Error) -> Self {
+        log::info!("Error: {value}");
+        Self {
+            code: actix_web::http::StatusCode::BAD_REQUEST,
+            msg: format!("{value}"),
+        }
+    }
+}
 
 #[derive(Clone, Debug)]
 pub struct ServerStats {
@@ -541,7 +608,7 @@ pub async fn server_main(mut args: RllmCliArgs) -> () {
             Some(v) => {
                 log::info!("guessed tokenizer: {}", v);
                 loader_args.tokenizer = v;
-            },
+            }
             None => {
                 eprintln!("can't guess tokenizer from {}", loader_args.model_id);
                 eprintln!("{}", list_tokenizers());

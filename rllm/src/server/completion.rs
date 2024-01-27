@@ -3,11 +3,11 @@ use crate::server::{
     openai::{
         requests::CompletionRequest,
         responses::{
-            APIError, ChatCompletionUsageResponse, CompletionResponse, StreamingCompletionChoice,
+            ChatCompletionUsageResponse, CompletionResponse, StreamingCompletionChoice,
             StreamingCompletionResponse,
         },
     },
-    InferenceResult, OpenAIServerData,
+    APIError, InferenceResult, OpenAIServerData,
 };
 use crate::{config::SamplingParams, seq::Token, AddRequest};
 use actix_web::{post, web, web::Bytes, Either, HttpResponse};
