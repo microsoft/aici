@@ -16,7 +16,7 @@ import threading
 import atexit
 import signal
 
-from typing import List, Union, Dict, Any
+from typing import List, Union, Dict, Any, Optional
 
 # macOS has 31 character name limit, so keep this short
 # (Linux has 255)
@@ -137,7 +137,7 @@ M = 1024 * 1024
 class PendingRequest:
     def __init__(self, *, cmd: Dict[str, Any]) -> None:
         self.cmd = cmd
-        self.resp: dict | None = None
+        self.resp: Optional[dict] = None
         self.ev = asyncio.Event()
 
 
@@ -434,7 +434,7 @@ class AiciRunner:
         """
         self.gen_q = []
 
-    def step_add_pre(self, id: int, req_id: str | None = None):
+    def step_add_pre(self, id: int, req_id: Optional[str] = None):
         """
         Adds a generated token to the step.
 
@@ -448,14 +448,14 @@ class AiciRunner:
             obj["req_id"] = req_id
         self.gen_q.append(obj)
 
-    def step_add_mid(self, id: int, clone_id: int | None = None):
+    def step_add_mid(self, id: int, clone_id: Optional[int] = None):
         obj = {"id": id}
         if clone_id is not None:
             obj["clone_id"] = clone_id
         self.gen_q.append(obj)
 
     def step_add_post(
-        self, id: int, backtrack: int, tokens: list[int], clone_id: int | None = None
+        self, id: int, backtrack: int, tokens: list[int], clone_id: Optional[int] = None
     ):
         obj = {"id": id, "tokens": tokens, "backtrack": backtrack}
         if clone_id is not None:

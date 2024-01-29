@@ -208,7 +208,7 @@ class ConstrainedToken(NextToken):
         """
         super().__init__()
         self.mk_constraint = mk_constraint
-        self._constraint: Constraint | None = None
+        self._constraint: Optional[Constraint] = None
 
     def mid_process(self) -> MidProcessResult:
         bias = TokenSet()
@@ -452,13 +452,13 @@ class ChooseConstraint(Constraint):
 
 
 async def gen_tokens(
-    regex: str | None = None,
-    yacc: str | None = None,
-    substring: str | None = None,
+    regex: Optional[str] = None,
+    yacc: Optional[str] = None,
+    substring: Optional[str] = None,
     substring_end: str = '"',
-    options: list[str] | None = None,
-    store_var: str | None = None,
-    stop_at: str | None = None,
+    options: Optional[list[str]] = None,
+    store_var: Optional[str] = None,
+    stop_at: Optional[str] = None,
     max_tokens=20,
 ) -> list[Token]:
     """
