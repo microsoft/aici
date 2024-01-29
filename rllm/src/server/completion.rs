@@ -165,7 +165,6 @@ impl futures::Stream for Client {
                     usage: RunUsageResponse {
                         sampled_tokens: u.gen_tokens,
                         ff_tokens: u.prompt_tokens,
-                        total_tokens: u.total_tokens(),
                         cost: u.fuel_tokens(),
                     },
                     forks: so

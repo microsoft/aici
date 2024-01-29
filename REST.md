@@ -3,10 +3,6 @@
 AICI server exposes REST APIs for uploading and tagging Controllers (.wasm files),
 and extends the "completion" REST APIs to allow for running the controllers.
 
-## TODO
-
-- [ ] `/v1/completions` -> `/v1/run`
-
 ## Uploading a Controller
 
 To upload a controller, POST it to `/v1/controllers`.
@@ -30,113 +26,105 @@ Wasm file, `time` is the time it took to compile the Wasm file in milliseconds.
 
 ## Running a Controller
 
-This API is similar to [OpenAI's Completion API](https://platform.openai.com/docs/api-reference/completions),
-with added `aici_module` and `aici_arg` parameters.
-The `aici_module` parameter specifies the module to run, either the HEX `module_id`
+To run a controller, POST to `/v1/run`.
+The `controller` parameter specifies the module to run, either the HEX `module_id`
 or a tag name (see below).
-The `aici_arg` is the argument to pass to the module; it can be either JSON object (it will be encoded as a string)
+The `controller_arg` is the argument to pass to the module; it can be either JSON object (it will be encoded as a string)
 or a JSON string (which will be passed as is).
 The `jsctrl` expects an argument that is the string, which is the program to execute.
-When using the AICI Controllers, the prompt is often empty.
 
 ```json
-// POST /v1/completions
+// POST /v1/run
 {
-  "model": "",
-  "prompt": "Ultimate answer is to the life, universe and everything is ",
-  "max_tokens": 2000,
-  "n": 1,
-  "temperature": 0.0,
-  "stream": true,
-  "aici_module": "jsctrl-latest",
-  "aici_arg": "async function main() { await gen({ regex: /\\d\\d/, storeVar: \"answer\" }) }\nstart(main)",
-  "ignore_eos": true
+  "controller": "jsctrl-latest",
+  "controller_arg": "async function main() {\n    await $`Ultimate answer is to the life, universe and everything is `\n    await gen({ regex: /\\d\\d/ })\n}\n\nstart(main)\n"
 }
 ```
 
 ```
 200 OK
-data: {"object":"text_completion","id":"cmpl-a9997cb5-...
-data: {"object":"text_completion","id":"cmpl-a9997cb5-...
-...
+data: {"id":"run-cfa3ed5b-7be1-4e57-a480-1873ad096817","object":"initial-run","cr...
+data: {"object":"run","forks":[{"index":0,"text":"Ultimate answer is to the life,...
+data: {"object":"run","forks":[{"index":0,"text":"2","error":"","logs":"GEN \"42....
+data: {"object":"run","forks":[{"index":0,"finish_reason":"aici-stop","text":" ",...
+data: {"object":"run","forks":[{"index":0,"finish_reason":"aici-stop","text":"","...
 data: [DONE]
 ```
 
-Each `text_completion` object looks like below.
-Fields that are new compared to OpenAI's API are:
+There is `initial-run` object first, followed by zero or more `run` objects.
+The final entry is string `[DONE]`.
 
+Each `run` entry contains:
+- `forks` - list of forks (sequences within the request)
+- `usage` - information about the number of tokens processed and generated
+
+Each fork contains:
+- `text` - the result of the LLM; note that it will get confusing if use backtracking 
+  (AICI inserts additional `↩` characters to indicate backtracking)
 - `logs` - console output of the controller
 - `storage` - list of storage operations (that's one way of extracting the result of the controller);
   the `value` in `WriteVar` is hex-encoded byte string
 - `error` - set when there is an error
-- `usage` - usage statistics
+
+The `usage` object contains:
+- `sampled_tokens` - number of generated tokens
+- `ff_tokens` - number of processed tokens (prompt, fast-forward, and generated tokens)
+- `cost` - cost of the run (formula: `2*sampled_tokens + ff_tokens`; to be refined!)
+
 
 ```json
 {
-  "object": "text_completion",
-  "id": "cmpl-a9997cb5-01fd-4d0b-a194-ae945eaf7d57",
-  "model": "microsoft/Orca-2-13b",
-  "created": 1706141817,
-  "choices": [
+  "id": "run-cfa3ed5b-7be1-4e57-a480-1873ad096817",
+  "object": "initial-run",
+  "created": 1706571547,
+  "model": "microsoft/Orca-2-13b"
+}
+```
+
+```json
+{
+  "object": "run",
+  "forks": [
     {
       "index": 0,
-      "finish_reason": null,
-      "text": "4",
+      "text": "Ultimate answer is to the life, universe and everything is 4",
       "error": "",
-      "logs": "GEN {regex: /\\d\\d/, storeVar: answer}\nregex constraint: \"\\\\d\\\\d\"\ndfa: 160 bytes\n",
+      "logs": "FIXED \"Ultimate answer is to the life, universe and everything is \"\nGEN-OPT {regex: /\\d\\d/}\nregex constraint: \"\\\\d\\\\d\"\ndfa: 160 bytes\n",
       "storage": []
     }
   ],
   "usage": {
-    "completion_tokens": 1,
-    "prompt_tokens": 15,
-    "total_tokens": 16,
-    "fuel_tokens": 17
+    "sampled_tokens": 1,
+    "ff_tokens": 15,
+    "cost": 17
   }
 }
 ```
 
 ```json
 {
-  "object": "text_completion",
-  "id": "cmpl-a9997cb5-01fd-4d0b-a194-ae945eaf7d57",
-  "model": "microsoft/Orca-2-13b",
-  "created": 1706141817,
-  "choices": [
+  "object": "run",
+  "forks": [
     {
       "index": 0,
-      "finish_reason": null,
       "text": "2",
       "error": "",
-      "logs": "GEN [29946, 29906] b\"42\"\nJsCtrl: done\n",
-      "storage": [
-        {
-          "WriteVar": {
-            "name": "answer",
-            "value": "3432",
-            "op": "Set",
-            "when_version_is": null
-          }
-        }
-      ]
+      "logs": "GEN \"42\"\nJsCtrl: done\n",
+      "storage": []
     }
   ],
   "usage": {
-    "completion_tokens": 2,
-    "prompt_tokens": 16,
-    "total_tokens": 18,
-    "fuel_tokens": 20
+    "sampled_tokens": 2,
+    "ff_tokens": 16,
+    "cost": 20
   }
 }
 ```
 
 ```json
 {
-  "object": "text_completion",
-  "id": "cmpl-a9997cb5-01fd-4d0b-a194-ae945eaf7d57",
-  "model": "microsoft/Orca-2-13b",
-  "created": 1706141817,
-  "choices": [
+  "object": "run",
+  "forks": [
     {
       "index": 0,
       "finish_reason": "aici-stop",
@@ -147,10 +135,30 @@ Fields that are new compared to OpenAI's API are:
     }
   ],
   "usage": {
-    "completion_tokens": 3,
-    "prompt_tokens": 17,
-    "total_tokens": 20,
-    "fuel_tokens": 23
+    "sampled_tokens": 3,
+    "ff_tokens": 17,
+    "cost": 23
+  }
+}
+```
+
+```json
+{
+  "object": "run",
+  "forks": [
+    {
+      "index": 0,
+      "finish_reason": "aici-stop",
+      "text": "",
+      "error": "",
+      "logs": "",
+      "storage": []
+    }
+  ],
+  "usage": {
+    "sampled_tokens": 3,
+    "ff_tokens": 17,
+    "cost": 23
   }
 }
 ```

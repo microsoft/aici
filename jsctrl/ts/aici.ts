@@ -694,7 +694,7 @@ export async function genTokens(options: GenOptions): Promise<Token[]> {
     setVar(storeVar, detokenize(res));
   }
 
-  console.log("GEN", JSON.stringify(detokenize(res)));
+  console.log("GEN", JSON.stringify(detokenize(res).decode()));
   return res;
 }
 

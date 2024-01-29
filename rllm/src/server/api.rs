@@ -15,7 +15,6 @@ pub struct RunRequest {
 pub struct RunUsageResponse {
     pub sampled_tokens: usize,
     pub ff_tokens: usize,
-    pub total_tokens: usize,
     pub cost: usize,
 }
 
@@ -37,6 +36,7 @@ pub struct RunResponse {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RunForkResponse {
     pub index: usize,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub finish_reason: Option<String>,
     pub text: String,
     pub error: String,

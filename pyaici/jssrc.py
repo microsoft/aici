@@ -499,8 +499,8 @@ export const helpers: {
 """
 
 hello_js = """async function main() {
-    await $`Hello`
-    await gen({ regex: / [A-Z]+/ })
+    await $`Ultimate answer is to the life, universe and everything is `
+    await gen({ regex: /\d\d/ })
 }
 
 start(main)

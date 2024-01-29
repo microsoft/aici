@@ -14,6 +14,20 @@ log_level = 1
 ast_module = ""
 
 
+def _clear_none(obj):
+    if isinstance(obj, dict):
+        kk = list(obj.keys())
+        for key in kk:
+            if obj[key] is None:
+                del obj[key]
+            else:
+                _clear_none(obj[key])
+    elif isinstance(obj, list):
+        for o in obj:
+            _clear_none(o)
+    return obj
+
+
 def require_explicit_base_url():
     if not os.environ.get(BASE_URL_ENV, ""):
         print(f"Please set the {BASE_URL_ENV} environment variable")
@@ -150,7 +164,7 @@ def run_controller(
         "max_tokens": max_tokens,
         "temperature": temperature,
     }
-    resp = req("post", "run", json=data, stream=True)
+    resp = req("post", "run", json=_clear_none(data), stream=True)
     if resp.status_code != 200:
         raise response_error("completions", resp)
     texts = [""]
@@ -173,7 +187,8 @@ def run_controller(
         if not line:
             continue
         decoded_line: str = line.decode("utf-8")
-        # print(decoded_line)
+        if log_level >= 5:
+            print(decoded_line)
         if decoded_line.startswith("data: {"):
             d = json.loads(decoded_line[6:])
             full_resp.append(d)
