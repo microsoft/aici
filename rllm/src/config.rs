@@ -221,10 +221,10 @@ pub enum EarlyStopping {
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct SamplingParams {
     /// Which AICI module to run, if any.
-    pub aici_module: Option<String>,
+    pub controller: Option<String>,
 
     /// What argument to pass to the module.
-    pub aici_arg: String,
+    pub controller_arg: String,
 
     /// Maximum number of tokens to use as fuel for the AICI module.
     pub aici_fuel: Option<usize>,
@@ -275,8 +275,8 @@ pub struct SamplingParams {
 impl SamplingParams {
     pub fn default() -> Self {
         let r = Self {
-            aici_module: None,
-            aici_arg: String::new(),
+            controller: None,
+            controller_arg: String::new(),
             aici_fuel: None,
             n: 1,
             best_of: 1,
@@ -312,10 +312,10 @@ impl SamplingParams {
     }
 
     fn _verify_args(&self) -> Result<()> {
-        if let Some(mod_id) = self.aici_module.as_ref() {
+        if let Some(mod_id) = self.controller.as_ref() {
             if !valid_module_or_tag(mod_id) {
                 bail_user!(
-                    "aici_module must be a 64-char hex string or tag name, got {}.",
+                    "'controller' must be a 64-char hex string or tag name, got {}.",
                     mod_id
                 );
             }

@@ -27,11 +27,9 @@ class Tester:
             print(f"{id}... ", end="")
             sys.stdout.flush()
 
-            r = pyaici.rest.completion(
-                prompt="",
-                aici_module=self.mod,
-                aici_arg=arg,
-                ignore_eos=True,
+            r = pyaici.rest.run_controller(
+                controller=self.mod,
+                controller_arg=arg,
                 max_tokens=2000,
             )
             logs = "\n".join(r["logs"])
@@ -67,11 +65,15 @@ def main():
     for f in files:
         arg = open(f).read()
         # remove direct calls to tests
-        arg = re.subn(r"^aici.(start|test)\(.*", cmt + r" \g<0>", arg, flags=re.MULTILINE)[0]
+        arg = re.subn(
+            r"^aici.(start|test)\(.*", cmt + r" \g<0>", arg, flags=re.MULTILINE
+        )[0]
         arg = re.subn(r"^(start|test)\(.*", cmt + r" \g<0>", arg, flags=re.MULTILINE)[0]
         # find tests
         if js_mode:
-            tests = re.findall(r"^async function (test[A-Z_]\w*)\(.*", arg, flags=re.MULTILINE)
+            tests = re.findall(
+                r"^async function (test[A-Z_]\w*)\(.*", arg, flags=re.MULTILINE
+            )
         else:
             tests = re.findall(r"^async def (test_\w+)\(.*", arg, flags=re.MULTILINE)
         for t in tests:

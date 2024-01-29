@@ -283,6 +283,7 @@ class FixedTokens extends NextToken {
   constructor(text: string | Buffer, following: Label | null = null) {
     super();
     this.fixedTokens = tokenize(text);
+    console.log("FIXED", JSON.stringify(detokenize(this.fixedTokens).decode()));
     this.following = following;
   }
 
@@ -298,7 +299,7 @@ class FixedTokens extends NextToken {
     if (this.following !== null) {
       backtrack = getTokens().length - this.following.ptr;
       assert(backtrack >= 0);
-      console.log("backtrack", backtrack);
+      console.log("BACKTRACK", backtrack);
     }
     return MidProcessResult.splice(backtrack, this.fixedTokens);
   }
@@ -639,7 +640,7 @@ export class ChooseConstraint extends Constraint {
 }
 
 export async function genTokens(options: GenOptions): Promise<Token[]> {
-  console.log("GEN", options);
+  console.log("GEN-OPT", options);
   const res: Token[] = [];
   const {
     regex,
@@ -693,7 +694,7 @@ export async function genTokens(options: GenOptions): Promise<Token[]> {
     setVar(storeVar, detokenize(res));
   }
 
-  console.log("GEN", res, detokenize(res));
+  console.log("GEN", JSON.stringify(detokenize(res)));
   return res;
 }
 

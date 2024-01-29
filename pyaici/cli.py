@@ -7,6 +7,8 @@ import argparse
 from . import rest, jssrc
 from . import add_cli_args, runner_from_cli
 
+from typing import List, Dict, Any, Optional
+
 
 def cli_error(msg: str):
     print("Error: " + msg)
@@ -77,16 +79,26 @@ def build_rust(folder: str):
     return rest.upload_module(trg_path)
 
 
-def ask_completion(cmd_args, *args, **kwargs):
-    if cmd_args is not None:
-        for k in ["max_tokens", "prompt", "ignore_eos"]:
-            v = getattr(cmd_args, k)
-            if v is not None:
-                kwargs[k] = v
-    res = rest.completion(*args, **kwargs)
-    print("\n[Prompt] " + res["request"]["prompt"] + "\n")
-    for text in res["text"]:
-        print("[Response] " + text + "\n")
+def run_ctrl(
+    cmd_args,
+    *,
+    controller: str,
+    controller_arg="",
+    temperature: Optional[float] = None,
+    max_tokens: Optional[int] = None,
+    print_response: bool = True,
+):
+    max_tokens = getattr(cmd_args, "max_tokens", max_tokens)
+    temperature = getattr(cmd_args, "temperature", temperature)
+    res = rest.run_controller(
+        controller=controller,
+        controller_arg=controller_arg,
+        temperature=temperature,
+        max_tokens=max_tokens,
+    )
+    if print_response:
+        for text in res["text"]:
+            print("[Response] " + text + "\n")
     os.makedirs("tmp", exist_ok=True)
     path = "tmp/response.json"
     with open(path, "w") as f:
@@ -97,9 +109,11 @@ def ask_completion(cmd_args, *args, **kwargs):
 
 
 def infer_args(cmd: argparse.ArgumentParser):
-    cmd.add_argument("--prompt", "-p", default="", type=str, help="specify prompt")
     cmd.add_argument(
         "--max-tokens", "-t", type=int, help="maximum number of tokens to generate"
+    )
+    cmd.add_argument(
+        "--temperature", "-T", type=float, help="temperature for sampling; deflaut 0.0 (argmax)"
     )
 
 
@@ -120,69 +134,67 @@ def main_rest(args):
 
     if args.subcommand == "infer":
         if args.prompt == "":
-            cli_error("--prompt empty")
+            cli_error("empty prompt")
         # for plain prompting, use log-level 1 by default
         if args.log_level is None:
             rest.log_level = 1
-        ask_completion(
+        run_ctrl(
             args,
-            aici_module=None,
-            aici_arg=None,
+            controller="none",
+            controller_arg=args.prompt,
             max_tokens=100,
         )
         return
 
-    aici_module = ""
+    controller = ""
 
-    for k in ["build", "upload", "ctrl", "tag", "ignore_eos"]:
+    for k in ["build", "upload", "ctrl", "tag"]:
         if k not in args:
             setattr(args, k, None)
 
     if args.build:
-        assert not aici_module
-        aici_module = build_rust(args.build)
+        assert not controller
+        controller = build_rust(args.build)
 
     if args.upload:
-        assert not aici_module
-        aici_module = rest.upload_module(args.upload)
+        assert not controller
+        controller = rest.upload_module(args.upload)
 
     if args.ctrl:
-        assert not aici_module
-        aici_module = args.ctrl
+        assert not controller
+        controller = args.ctrl
 
     if args.tag:
-        if len(aici_module) != 64:
+        if len(controller) != 64:
             cli_error("no AICI Controller to tag")
-        rest.tag_module(aici_module, args.tag)
+        rest.tag_module(controller, args.tag)
 
     if args.subcommand == "run":
-        aici_arg = ""
-        fn: str = args.aici_arg
+        controller_arg = ""
+        fn: str = args.controller_arg
         if fn == "-":
-            aici_arg = sys.stdin.read()
+            controller_arg = sys.stdin.read()
         elif fn is not None:
-            aici_arg = open(fn).read()
-            if not aici_module:
+            controller_arg = open(fn).read()
+            if not controller:
                 if fn.endswith(".py"):
-                    aici_module = "pyctrl-latest"
+                    controller = "pyctrl-latest"
                 elif fn.endswith(".js"):
-                    aici_module = "jsctrl-latest"
+                    controller = "jsctrl-latest"
                 elif fn.endswith(".json"):
-                    aici_module = "declctrl-latest"
+                    controller = "declctrl-latest"
                 else:
                     cli_error(
                         "Can't determine AICI Controller type from file name: " + fn
                     )
-                print(f"Running with tagged AICI Controller: {aici_module}")
-        if not aici_module:
+                print(f"Running with tagged AICI Controller: {controller}")
+        if not controller:
             cli_error("no AICI Controller specified to run")
 
-        ask_completion(
+        run_ctrl(
             args,
-            aici_module=aici_module,
-            aici_arg=aici_arg,
-            ignore_eos=True,
-            max_tokens=2000,
+            controller=controller,
+            controller_arg=controller_arg,
         )
 
 
@@ -217,8 +229,8 @@ def main_inner():
         """,
     )
     run_cmd.add_argument(
-        "aici_arg",
-        metavar='FILE',
+        "controller_arg",
+        metavar="FILE",
         nargs="?",
         help="file to pass to the AICI Controller; use '-' for stdin",
     )
@@ -250,10 +262,8 @@ def main_inner():
         help="run model inference without any AICI Controller",
         description="Run model inference without any AICI Controller.",
     )
+    infer_cmd.add_argument("prompt", help="prompt to pass to the model")
     infer_args(infer_cmd)
-    infer_cmd.add_argument(
-        "--ignore-eos", action="store_true", help="ignore EOS tokens generated by model"
-    )
 
     tags_cmd = subparsers.add_parser(
         "tags",

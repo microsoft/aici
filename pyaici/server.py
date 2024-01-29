@@ -168,6 +168,7 @@ class FixedTokens(NextToken):
         """
         super().__init__()
         self.fixed_tokens: list[Token] = tokenize(text)
+        print("FIXED", repr(detokenize(self.fixed_tokens).decode(errors="replace")))
         self.following = following
 
     def pre_process(self) -> PreProcessResult:
@@ -180,7 +181,7 @@ class FixedTokens(NextToken):
         if self.following is not None:
             backtrack = len(get_tokens()) - self.following.ptr
             assert backtrack >= 0
-            print("backtrack", backtrack)
+            print("BACKTRACK", backtrack)
         return MidProcessResult.splice(backtrack, tokens=self.fixed_tokens)
 
 
@@ -496,7 +497,7 @@ async def gen_tokens(
             break
     if store_var is not None:
         set_var(store_var, detokenize(res))
-    print("GEN", res, repr(detokenize(res).decode(errors="replace")))
+    print("GEN", repr(detokenize(res).decode(errors="replace")))
     return res
 
 

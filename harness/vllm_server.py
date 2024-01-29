@@ -104,7 +104,7 @@ async def check_length(
         return input_ids, None
 
 
-@app.post("/v1/aici_modules")
+@app.post("/v1/contollers")
 async def upload_aici_module(request: Request):
     contents = await request.body()
     return await aici.upload_module_async(contents)

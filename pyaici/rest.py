@@ -57,11 +57,13 @@ def response_error(kind: str, resp: requests.Response):
         f"bad response to {kind} {resp.status_code} {resp.reason}: {text}"
     )
 
+
 def strip_url_path(url):
-    pattern = r'^(https?://[^/]+)'
+    pattern = r"^(https?://[^/]+)"
     match = re.match(pattern, url)
     assert match
     return match.group(1)
+
 
 def req(tp: str, path: str, **kwargs):
     url = _mk_url(path)
@@ -77,6 +79,7 @@ def req(tp: str, path: str, **kwargs):
         print(f"{resp.status_code} {resp.reason}: {resp.text}")
     return resp
 
+
 def detect_prefixes():
     resp = req("get", "/proxy/info")
     if resp.status_code == 200:
@@ -84,6 +87,7 @@ def detect_prefixes():
         return dd["prefixes"]
     else:
         return ["/"]
+
 
 def upload_module(file_path: str) -> str:
     """
@@ -93,7 +97,7 @@ def upload_module(file_path: str) -> str:
     if log_level > 0:
         print("upload module... ", end="")
     with open(file_path, "rb") as f:
-        resp = req("post", "aici_modules", data=f)
+        resp = req("post", "controllers", data=f)
         if resp.status_code == 200:
             dd = resp.json()
             mod_id = dd["module_id"]
@@ -113,7 +117,7 @@ def pp_tag(d: dict) -> str:
 
 
 def list_tags():
-    resp = req("get", "aici_modules/tags")
+    resp = req("get", "controllers/tags")
     if resp.status_code == 200:
         dd = resp.json()
         return dd["tags"]
@@ -122,7 +126,7 @@ def list_tags():
 
 
 def tag_module(module_id: str, tags: list[str]):
-    resp = req("post", "aici_modules/tags", json={"module_id": module_id, "tags": tags})
+    resp = req("post", "controllers/tags", json={"module_id": module_id, "tags": tags})
     if resp.status_code == 200:
         dd = resp.json()
         if log_level > 0:
@@ -133,33 +137,24 @@ def tag_module(module_id: str, tags: list[str]):
         raise response_error("module tag", resp)
 
 
-def completion(
-    prompt,
-    aici_module=None,
-    aici_arg="",
-    temperature=0.0,
-    max_tokens=200,
-    n=1,
-    ignore_eos: bool | None = None,
+def run_controller(
+    *,
+    controller,
+    controller_arg="",
+    temperature: Optional[float] = None,
+    max_tokens: Optional[int] = 200,
 ):
-    if ignore_eos is None:
-        ignore_eos = not not ast_module
     data = {
-        "model": "",
-        "prompt": prompt,
+        "controller": controller,
+        "controller_arg": controller_arg,
         "max_tokens": max_tokens,
-        "n": n,
         "temperature": temperature,
-        "stream": True,
-        "aici_module": aici_module,
-        "aici_arg": aici_arg,
-        "ignore_eos": ignore_eos,
     }
-    resp = req("post", "completions", json=data, stream=True)
+    resp = req("post", "run", json=data, stream=True)
     if resp.status_code != 200:
         raise response_error("completions", resp)
-    texts = [""] * n
-    logs = [""] * n
+    texts = [""]
+    logs = [""]
     full_resp = []
     storage = {}
     res = {
@@ -184,7 +179,9 @@ def completion(
             full_resp.append(d)
             if "usage" in d:
                 res["usage"] = d["usage"]
-            for ch in d["choices"]:
+            if "forks" not in d:
+                continue
+            for ch in d["forks"]:
                 if "Previous WASM Error" in ch["logs"]:
                     res["error"] = "WASM error"
                 idx = ch["index"]

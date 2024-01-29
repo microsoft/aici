@@ -158,10 +158,10 @@ export AICI_API_BASE="https://inference.example.com/v1/#key=wht_..."
 Now, use query the model with or without AICI Controller:
 
 ```bash
-./aici.sh infer --prompt "The answer to the ultimate question of life"
+./aici.sh infer "The answer to the ultimate question of life"
 ./aici.sh run pyctrl/samples/test.py
 ./aici.sh run declctrl/arg2.json
-./aici.sh run --build aici_abi::uppercase
+./aici.sh run --build aici_abi::yesno
 ```
 
 Run `./aici.sh -h` to see usage info.

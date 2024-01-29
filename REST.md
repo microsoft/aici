@@ -3,14 +3,21 @@
 AICI server exposes REST APIs for uploading and tagging Controllers (.wasm files),
 and extends the "completion" REST APIs to allow for running the controllers.
 
+## TODO
+
+- [ ] `/v1/completions` -> `/v1/run`
+
 ## Uploading a Controller
 
-To upload a controller, POST it to `/v1/aici_modules`.
+To upload a controller, POST it to `/v1/controllers`.
 Note that the body is the raw binary `.wasm` file, not JSON-encoded.
 The `module_id` is just the SHA256 hash of the `.wasm` file.
+The other fields are optional:
+the `wasm_size` is the input size in bytes, and `compiled_size` is the size of the compiled
+Wasm file, `time` is the time it took to compile the Wasm file in milliseconds.
 
 ```json
-// POST /v1/aici_modules
+// POST /v1/controllers
 // ... binary of Wasm file ...
 // 200 OK
 {
@@ -153,7 +160,7 @@ Fields that are new compared to OpenAI's API are:
 You can tag a `module_id` with one or more tags:
 
 ```json
-// POST /v1/aici_modules/tags
+// POST /v1/controllers/tags
 {
   "module_id": "44f595216d8410335a4beb1cc530321beabe050817b41bf24855c4072c2dde2d",
   "tags": ["jsctrl-test"]
@@ -176,7 +183,7 @@ You can tag a `module_id` with one or more tags:
 You can also list all existing tags:
 
 ```json
-// GET /v1/aici_modules/tags
+// GET /v1/controllers/tags
 // 200 OK
 {
   "tags": [

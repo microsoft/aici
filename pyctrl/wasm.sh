@@ -6,7 +6,6 @@ cargo build --release
 BIN=$(cd ../target; pwd)
 cp $BIN/wasm32-wasi/release/aici_pyctrl.wasm $BIN/opt.wasm
 ls -l $BIN/opt.wasm
-# curl -X POST -T "$BIN/opt.wasm" "http://127.0.0.1:8080/v1/aici_modules"
 if [ "X$1" = "Xbuild" ] ; then
   exit
 fi

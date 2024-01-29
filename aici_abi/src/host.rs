@@ -246,11 +246,11 @@ pub fn tokenize_bytes(s: &[u8]) -> Vec<TokenId> {
     let id = unsafe { aici_host_tokenize(s.as_ptr(), s.len() as u32) };
     let r = read_blob(id, 4 * (s.len() / 3 + 10));
     let res = vec_from_bytes(&r);
-    println!(
-        "tokenize_bytes: {:?} -> {:?}",
-        String::from_utf8_lossy(s),
-        res
-    );
+    // println!(
+    //     "tokenize_bytes: {:?} -> {:?}",
+    //     String::from_utf8_lossy(s),
+    //     res
+    // );
     res
 }
 

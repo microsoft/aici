@@ -375,7 +375,7 @@ impl RllmEngine {
         let mut idx = 0;
 
         for sg in sched_out.next_seq_groups.iter_mut() {
-            if sg.sampling_params.aici_module.is_none() {
+            if sg.sampling_params.controller.is_none() {
                 continue;
             }
             for seq in sg.seqs.iter_mut() {
@@ -693,7 +693,7 @@ impl RllmEngine {
         }
 
         for sg in sched_out.next_seq_groups.iter_mut() {
-            if sg.sampling_params.aici_module.is_none() {
+            if sg.sampling_params.controller.is_none() {
                 continue;
             }
 
@@ -723,7 +723,7 @@ impl RllmEngine {
         let mut ops = Vec::new();
 
         self.scheduler.for_each_sg(|sg| {
-            if sg.sampling_params.aici_module.is_none() {
+            if sg.sampling_params.controller.is_none() {
                 return;
             }
             if sg.seqs.len() == 1 && !sg.seqs[0].has_aici {
@@ -758,7 +758,7 @@ impl RllmEngine {
 
         // let gen = &mut self.seq_gen;
         self.scheduler.for_each_sg(|sg| {
-            if sg.sampling_params.aici_module.is_none() {
+            if sg.sampling_params.controller.is_none() {
                 return;
             }
 
@@ -831,7 +831,7 @@ impl RllmEngine {
         let mut mid_ops = Vec::new();
 
         for sg in sched_out.next_seq_groups.iter_mut() {
-            if sg.sampling_params.aici_module.is_none() {
+            if sg.sampling_params.controller.is_none() {
                 continue;
             }
 

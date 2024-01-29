@@ -24,6 +24,7 @@ use tokio::sync::mpsc::{channel, error::TryRecvError, Receiver, Sender};
 
 mod completion;
 mod openai;
+mod api;
 
 #[derive(Debug)]
 pub struct APIError {
@@ -207,8 +208,8 @@ pub struct RllmCliArgs {
     pub gguf: Option<String>,
 }
 
-#[actix_web::get("/v1/aici_modules/tags")]
-async fn get_aici_module_tags(
+#[actix_web::get("/v1/controllers/tags")]
+async fn get_controllers_tags(
     req: actix_web::HttpRequest,
     data: web::Data<AiciServerData>,
 ) -> Result<web::Json<GetTagsResp>, APIError> {
@@ -220,8 +221,8 @@ async fn get_aici_module_tags(
     Ok(web::Json(r))
 }
 
-#[actix_web::post("/v1/aici_modules/tags")]
-async fn tag_aici_module(
+#[actix_web::post("/v1/controllers/tags")]
+async fn tag_controller(
     req: actix_web::HttpRequest,
     data: web::Data<AiciServerData>,
     body: web::Json<SetTagsReq>,
@@ -234,8 +235,8 @@ async fn tag_aici_module(
     Ok(web::Json(r))
 }
 
-#[actix_web::post("/v1/aici_modules")]
-async fn upload_aici_module(
+#[actix_web::post("/v1/controllers")]
+async fn upload_controller(
     req: actix_web::HttpRequest,
     data: web::Data<AiciServerData>,
     body: web::Bytes,
@@ -670,12 +671,12 @@ pub async fn server_main(mut args: RllmCliArgs) -> () {
             .wrap(Logger::default())
             .service(models)
             .service(tunnel_info)
-            .service(completion::completions)
-            .service(get_aici_module_tags)
-            .service(tag_aici_module)
+            .service(completion::run_controller)
+            .service(get_controllers_tags)
+            .service(tag_controller)
             .configure(|cfg| {
                 cfg.app_data(web::PayloadConfig::new(128 * 1024 * 1024))
-                    .service(upload_aici_module);
+                    .service(upload_controller);
             })
             .app_data(app_data.clone())
     })

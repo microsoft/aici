@@ -215,7 +215,7 @@ impl Scheduler {
 
     fn step_drop_finished(&mut self, outputs: &mut SchedulerOutputs) {
         self.for_each_sg(|sg| {
-            if sg.sampling_params.aici_module.is_some() {
+            if sg.sampling_params.controller.is_some() {
                 let fuel = sg.usage.fuel_tokens();
                 let max_fuel = std::cmp::min(
                     sg.sampling_params.aici_fuel.unwrap_or(usize::MAX),

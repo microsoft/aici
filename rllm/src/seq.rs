@@ -167,6 +167,7 @@ impl Sequence {
         self.output_ptr = std::cmp::min(self.output_ptr, self.get_len());
         if backtrack > 0 {
             self.output_pending.clear();
+            self.output_pending.extend_from_slice(" ↩ ".as_bytes());
         }
         self.trim_physical_blocks();
         self.append_tokens(tokens);
