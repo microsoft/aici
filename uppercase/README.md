@@ -12,15 +12,12 @@ It forces every 4th letter of the model output to be uppercase.
 ```
 $ ../aici.sh run --build .
 will build aici_uppercase from /workspaces/aici/uppercase/Cargo.toml
+   Compiling aici_abi v0.1.0 (/workspaces/aici/aici_abi)
    Compiling aici_uppercase v0.1.0 (/workspaces/aici/uppercase)
-    Finished release [optimized + debuginfo] target(s) in 0.59s
-built: /workspaces/aici/target/wasm32-wasi/release/aici_uppercase.wasm, 0.19 MiB
-upload module... 194kB -> 676kB id:d8fa5197
-[0]: tokenize: "Here's a tweet:\n" -> [10605, 29915, 29879, 263, 7780, 300, 29901, 13]
+    Finished release [optimized + debuginfo] target(s) in 1.81s
+built: /workspaces/aici/target/wasm32-wasi/release/aici_uppercase.wasm, 0.189 MiB
+upload module... 193kB -> 675kB id:a4000d9b
 [DONE]
-
-[Prompt] 
-
 [Response] Here's a tweet:
 I'm SO EXCITED! I'm GoinG toBe aMom!I'm GoinG toHaVeA BaBy!
 ```
@@ -40,15 +37,8 @@ $ ./scripts/sample-yesno.sh "Can orcas sing?"
 will build yesno from /workspaces/aici/aici_abi/Cargo.toml
    Compiling aici_abi v0.1.0 (/workspaces/aici/aici_abi)
     Finished release [optimized + debuginfo] target(s) in 0.58s
-built: /workspaces/aici/target/wasm32-wasi/release/yesno.wasm, 0.189 MiB
-upload module... 193kB -> 676kB id:fd7b322d
-[0]: tokenize: "Yes" -> [8241]
-[0]: tokenize: "No" -> [3782]
-[0]: tokenize: "Can orcas sing?\n\n" -> [6028, 470, 9398, 1809, 29973, 13, 13]
+upload module... 192kB -> 671kB id:c65e78e9
 [DONE]
-
-[Prompt] 
-
 [Response] Can orcas sing?
 
 Yes
@@ -60,6 +50,10 @@ but it illustrates the raw token APIs.
 
 ```
 $ ./aici.sh run pyctrl/samples/yesno.py
+Running with tagged AICI Controller: pyctrl-latest
+[0]: FIXED 'Are dolphins fish?\n'
+[0]: GEN 'No'
+[DONE]
 [Response] Are dolphins fish?
 No
 ```
