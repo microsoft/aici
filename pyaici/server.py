@@ -62,7 +62,7 @@ class PreProcessResult:
     def __init__(self, *, suspended=False):
         self.suspended = suspended
         self.ff_tokens: List[Token] = []
-        self.attention_masks: List[List[float]] = [[]]
+        self.num_forks = 1
 
     @classmethod
     def continue_(cls):
@@ -75,7 +75,7 @@ class PreProcessResult:
     @classmethod
     def fork(cls, num_forks: int):
         res = cls()
-        res.attention_masks = [[] for _ in range(num_forks)]
+        res.num_forks = num_forks
         return res
 
     @classmethod
@@ -356,7 +356,7 @@ class AiciAsync(AiciCallbacks):
             assert isinstance(self._cb, NextToken)
             r2 = self._cb._pre_process()
             assert isinstance(r2, PreProcessResult)
-            assert len(r2.attention_masks) == 1, "nested fork not allowed"
+            assert r2.num_forks == 1, "nested fork not allowed"
             if r2.suspended:
                 # need to generate one fake token...
                 self._pending_cb = self._cb

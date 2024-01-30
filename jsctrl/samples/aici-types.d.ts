@@ -300,7 +300,7 @@ export class MidProcessResult {
 export class PreProcessResult {
     _n_suspended: boolean;
     _n_ff_tokens: Token[];
-    _n_attention_masks: number[][];
+    _n_num_forks: number;
     constructor();
     static continue_(): PreProcessResult;
     static suspend(): PreProcessResult;

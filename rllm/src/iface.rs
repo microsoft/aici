@@ -6,9 +6,8 @@ use aici_abi::{
 };
 use aicirt::{
     api::{
-        AiciMidProcessReq, AiciMidProcessResp, AiciPostProcessReq, AiciPostProcessResp,
-        AiciPreProcessReq, AiciPreProcessResp, AuthInfo, GetTagsResp, InstantiateReq, MkModuleReq,
-        MkModuleResp, SetTagsReq, TokensResp,
+        AiciMidProcessReq, AiciMidProcessResp, AiciPostPreProcessReq, AiciPostPreProcessResp,
+        AuthInfo, GetTagsResp, InstantiateReq, MkModuleReq, MkModuleResp, SetTagsReq, TokensResp,
     },
     futexshm::ClientChannel,
     msgchannel::MessageChannel,
@@ -219,11 +218,6 @@ impl AiciRtIface {
         Ok(r)
     }
 
-    pub fn pre_process(&mut self, req: AiciPreProcessReq) -> Result<AiciPreProcessResp> {
-        assert!(self.pending_mid_size == usize::MAX);
-        self.cmd.exec("pre_process_all", req)
-    }
-
     pub fn start_mid_process(&mut self, req: AiciMidProcessReq) -> Result<()> {
         assert!(self.pending_mid_size == usize::MAX);
         self.pending_mid_size = req.ops.len();
@@ -238,8 +232,11 @@ impl AiciRtIface {
         Ok(r)
     }
 
-    pub fn post_process(&mut self, req: AiciPostProcessReq) -> Result<AiciPostProcessResp> {
-        self.cmd.exec("post_process", req)
+    pub fn post_pre_process(
+        &mut self,
+        req: AiciPostPreProcessReq,
+    ) -> Result<AiciPostPreProcessResp> {
+        self.cmd.exec("post_pre_process", req)
     }
 }
 

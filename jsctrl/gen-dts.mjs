@@ -12,13 +12,13 @@ function gen() {
     fs.writeFileSync("./samples/aici-types.d.ts", aici)
 
     let jssrc = fs.readFileSync("../pyaici/jssrc.py", 'utf8')
-    jssrc = jssrc.replace(/(aici_types_d_t = """)[^]*?"""/g, (_, pre) => pre + aici + '"""')
+    jssrc = jssrc.replace(/(aici_types_d_t = r""")[^]*?"""/g, (_, pre) => pre + aici + '"""')
 
     const tsconfig = fs.readFileSync("./samples/tsconfig.json", "utf-8")
-    jssrc = jssrc.replace(/(tsconfig_json = """)[^]*?"""/g, (_, pre) => pre + tsconfig + '"""')
+    jssrc = jssrc.replace(/(tsconfig_json = r""")[^]*?"""/g, (_, pre) => pre + tsconfig + '"""')
 
     const hello = fs.readFileSync("./samples/hello.js", "utf-8")
-    jssrc = jssrc.replace(/(hello_js = """)[^]*?"""/g, (_, pre) => pre + hello + '"""')
+    jssrc = jssrc.replace(/(hello_js = r""")[^]*?"""/g, (_, pre) => pre + hello + '"""')
 
     fs.writeFileSync("../pyaici/jssrc.py", jssrc)
 }

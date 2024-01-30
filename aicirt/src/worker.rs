@@ -127,15 +127,9 @@ pub struct RtMidProcessArg {
 }
 
 #[derive(Serialize, Deserialize, Debug)]
-pub struct RtPreProcessArg {
-    pub op: PreProcessArg,
-    pub max_context_size: usize, // elements
-    pub allow_ff_tokens: bool,
-}
-
-#[derive(Serialize, Deserialize, Debug)]
-pub struct RtPostProcessArg {
-    pub op: PostProcessArg,
+pub struct RtPostPreProcessArg {
+    pub post_op: Option<PostProcessArg>,
+    pub pre_op: PreProcessArg,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -156,14 +150,11 @@ enum SeqCmd {
     SetId {
         inst_id: ModuleInstId,
     },
-    PreProcess {
-        data: RtPreProcessArg,
+    PostPreProcess {
+        data: RtPostPreProcessArg,
     },
     MidProcess {
         data: RtMidProcessArg,
-    },
-    PostProcess {
-        data: RtPostProcessArg,
     },
     RunMain {},
     Compile {
@@ -177,9 +168,8 @@ impl SeqCmd {
             SeqCmd::Instantiate { .. } => "instantiate",
             SeqCmd::Fork { .. } => "fork",
             SeqCmd::SetId { .. } => "set_id",
-            SeqCmd::PreProcess { .. } => "pre_process",
             SeqCmd::MidProcess { .. } => "process",
-            SeqCmd::PostProcess { .. } => "post_process",
+            SeqCmd::PostPreProcess { .. } => "post_pre_process",
             SeqCmd::RunMain {} => "run_main",
             SeqCmd::Compile { .. } => "compile",
         }
@@ -190,7 +180,7 @@ impl SeqCmd {
 pub struct RtPreProcessResult {
     pub json: SequenceResult,
     pub suspend: bool,
-    pub attn_masks: Vec<Vec<f32>>,
+    pub num_forks: usize,
     pub ff_tokens: Vec<TokenId>,
 }
 
@@ -199,7 +189,7 @@ impl RtPreProcessResult {
         RtPreProcessResult {
             json,
             suspend: false,
-            attn_masks: Vec::new(),
+            num_forks: 1,
             ff_tokens: Vec::new(),
         }
     }
@@ -214,16 +204,14 @@ enum SeqResp {
     InitPrompt {
         json: String,
     },
-    PreProcess {
-        json: String,
+    PostPreProcess {
+        post_json: String,
+        pre_json: String,
         suspend: bool,
-        attn_masks: Vec<Vec<f32>>,
+        num_forks: usize,
         ff_tokens: Vec<TokenId>,
     },
     MidProcess {
-        json: String,
-    },
-    PostProcess {
         json: String,
     },
     Compile {
@@ -259,7 +247,7 @@ where
     pub fn send_cmd(&self, cmd: Cmd) -> Result<Resp> {
         self.just_send(cmd)?;
         // otherwise we may get a response for someone else
-        // this is only used for group cmds and fork
+        // this is only used for group commands and fork
         self.cmd.lock().unwrap().wait_for_reception();
         self.recv()
     }
@@ -411,12 +399,25 @@ impl SeqCtx {
                 self.mutinst().set_id(inst_id);
                 ok()
             }
-            SeqCmd::PreProcess { data } => {
-                let res = with_timer!(self.pre_timer, self.mutinst().pre_process(data));
-                Ok(SeqResp::PreProcess {
-                    json: serde_json::to_string(&res.json)?,
+            SeqCmd::PostPreProcess { data } => {
+                let post_json = if let Some(req) = data.post_op {
+                    let t0 = Instant::now();
+                    let res = self.mutinst().post_process(req);
+                    let json = serde_json::to_string(&res)?;
+                    let e = t0.elapsed();
+                    if e.as_micros() > 100 {
+                        log::warn!("post_process took {:?}", e);
+                    }
+                    json
+                } else {
+                    String::new()
+                };
+                let res = with_timer!(self.pre_timer, self.mutinst().pre_process(data.pre_op));
+                Ok(SeqResp::PostPreProcess {
+                    post_json,
+                    pre_json: serde_json::to_string(&res.json)?,
                     suspend: res.suspend,
-                    attn_masks: res.attn_masks,
+                    num_forks: res.num_forks,
                     ff_tokens: res.ff_tokens,
                 })
             }
@@ -426,16 +427,6 @@ impl SeqCtx {
                 Ok(SeqResp::MidProcess {
                     json: serde_json::to_string(&res)?,
                 })
-            }
-            SeqCmd::PostProcess { data } => {
-                let t0 = Instant::now();
-                let res = self.mutinst().post_process(data);
-                let json = serde_json::to_string(&res)?;
-                let e = t0.elapsed();
-                if e.as_micros() > 100 {
-                    log::warn!("post_process took {:?}", e);
-                }
-                Ok(SeqResp::PostProcess { json })
             }
             SeqCmd::RunMain {} => {
                 self.mutinst().run_main()?;
@@ -448,7 +439,7 @@ impl SeqCtx {
         self.modinst.as_mut().unwrap()
     }
 
-    // we may want to do this in future, but for now only groupcmd is storage
+    // we may want to do this in future, but for now only group cmd is storage
     #[allow(dead_code)]
     fn group_cmd(&self, query: GroupCmd) -> GroupResp {
         if let Some(q) = &self.query {
@@ -545,13 +536,8 @@ impl SeqWorkerHandle {
         }
     }
 
-    pub fn start_post_process(&self, data: RtPostProcessArg) -> Result<()> {
-        self.handle.just_send(SeqCmd::PostProcess { data })?;
-        Ok(())
-    }
-
-    pub fn start_pre_process(&self, data: RtPreProcessArg) -> Result<()> {
-        self.handle.just_send(SeqCmd::PreProcess { data })?;
+    pub fn start_post_process(&self, data: RtPostPreProcessArg) -> Result<()> {
+        self.handle.just_send(SeqCmd::PostPreProcess { data })?;
         Ok(())
     }
 
@@ -564,20 +550,27 @@ impl SeqWorkerHandle {
         &self,
         timeout: Duration,
         timer: &TimerRef,
-    ) -> Result<RtPreProcessResult> {
+    ) -> Result<(
+        SequenceResult<AiciPostProcessResultInner>,
+        RtPreProcessResult,
+    )> {
         let r = timer.with(|| self.handle.seq_recv_with_timeout("r-pre_process", timeout));
         match r {
-            Ok(SeqResp::PreProcess {
-                json,
+            Ok(SeqResp::PostPreProcess {
+                post_json,
+                pre_json,
                 suspend,
-                attn_masks,
+                num_forks,
                 ff_tokens,
-            }) => Ok(RtPreProcessResult {
-                json: serde_json::from_str(&json)?,
-                suspend,
-                attn_masks,
-                ff_tokens,
-            }),
+            }) => Ok((
+                serde_json::from_str(&post_json)?,
+                RtPreProcessResult {
+                    json: serde_json::from_str(&pre_json)?,
+                    suspend,
+                    num_forks,
+                    ff_tokens,
+                },
+            )),
             Ok(r) => Err(anyhow!("unexpected response (pre_process) {r:?}")),
             Err(e) => Err(e.into()),
         }
@@ -590,17 +583,6 @@ impl SeqWorkerHandle {
         match self.handle.seq_recv_with_timeout("r-process", timeout) {
             Ok(SeqResp::MidProcess { json }) => Ok(serde_json::from_str(&json)?),
             Ok(r) => Err(anyhow!("unexpected response (process) {r:?}")),
-            Err(e) => Err(e.into()),
-        }
-    }
-
-    pub fn check_post_process(
-        &self,
-        timeout: Duration,
-    ) -> Result<SequenceResult<AiciPostProcessResultInner>> {
-        match self.handle.seq_recv_with_timeout("r-post", timeout) {
-            Ok(SeqResp::PostProcess { json }) => Ok(serde_json::from_str(&json)?),
-            Ok(r) => Err(anyhow!("unexpected response (post_process) {r:?}")),
             Err(e) => Err(e.into()),
         }
     }

@@ -6,17 +6,19 @@ use crate::HashMap;
 pub type ModuleInstId = usize;
 
 #[derive(Serialize, Deserialize)]
-pub struct AiciPreProcessReq {
-    pub max_context_len: usize, // in tokens
+pub struct AiciPostPreProcessReq {
+    // Executed first
+    pub post_ops: Vec<AiciPostOp>,
+    // Executed second
+    pub pre_ops: Vec<AiciPreOp>,
+    // Executed third
     pub freed: Vec<ModuleInstId>,
-    pub ops: Vec<AiciPreOp>,
 }
 
 #[derive(Serialize, Deserialize)]
-pub struct AiciPreProcessResp {
-    pub seqs: HashMap<ModuleInstId, SequenceResult<AiciPreProcessResultInner>>,
-    pub fork_map: Vec<usize>,
-    pub suspend_ids: Vec<ModuleInstId>,
+pub struct AiciPostPreProcessResp {
+    pub post_seqs: HashMap<ModuleInstId, SequenceResult<AiciPostProcessResultInner>>,
+    pub pre_seqs: HashMap<ModuleInstId, SequenceResult<AiciPreProcessResultInner>>,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -44,24 +46,15 @@ pub struct AiciMidProcessResultInner {
 }
 
 #[derive(Serialize, Deserialize)]
-pub struct AiciPostProcessReq {
-    pub ops: Vec<AiciPostOp>,
-}
-
-#[derive(Serialize, Deserialize)]
-pub struct AiciPostProcessResp {
-    pub seqs: HashMap<ModuleInstId, SequenceResult<AiciPostProcessResultInner>>,
-}
-
-#[derive(Serialize, Deserialize)]
 pub struct AiciPostProcessResultInner {
     pub stop: bool,
 }
 
 #[derive(Clone, Serialize, Deserialize, Debug)]
 pub struct AiciPreOp {
+    // This assigns id to the module currently instantiated with req_id
     pub id: ModuleInstId,
-    pub req_id: Option<String>,
+    pub req_id: String,
 }
 
 #[derive(Clone, Serialize, Deserialize, Debug)]
@@ -76,7 +69,6 @@ pub struct AiciPostOp {
     pub tokens: Vec<Token>,
     #[serde(default)]
     pub backtrack: u32,
-    pub clone_id: Option<ModuleInstId>,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]

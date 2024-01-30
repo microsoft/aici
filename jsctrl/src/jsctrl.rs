@@ -495,7 +495,7 @@ impl AiciCtrl for Runner {
             let cb: Function = ctx.eval2("globalThis._aici_cb.pre_process");
             let r: Object = cb.call2(());
             PreProcessResult {
-                attention_masks: r.get2("_n_attention_masks"),
+                num_forks: r.get2("_n_num_forks"),
                 suspend: r.get2("_n_suspended"),
                 ff_tokens: r.get2("_n_ff_tokens"),
             }

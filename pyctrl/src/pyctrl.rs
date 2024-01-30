@@ -278,9 +278,7 @@ fn _main() -> Result<()> {
     let source = std::fs::read_to_string("samples/test.py").unwrap();
     let mut runner = Runner::new(source.as_bytes().to_vec());
 
-    runner.init_prompt(InitPromptArg {
-        prompt: vec![1],
-    });
+    runner.init_prompt(InitPromptArg { prompt: vec![1] });
 
     Ok(())
 }
@@ -497,12 +495,10 @@ impl AiciCtrl for Runner {
         self.interpreter.enter(|vm| {
             let r = vm.catch_exn(vm.call_method(obj.deref(), "pre_process", vec![]));
             let suspend = vm.bool_attr(&r, "suspended");
-            let attention_masks = vm.to_list(vm.attr(&r, "attention_masks"), |v| {
-                vm.to_list(v, |v| vm.to_f64(v) as f32)
-            });
+            let num_forks = vm.int_attr(&r, "num_forks") as usize;
             let ff_tokens = vm.to_list(vm.attr(&r, "ff_tokens"), |v| vm.to_i32(v) as u32);
             PreProcessResult {
-                attention_masks,
+                num_forks,
                 suspend,
                 ff_tokens,
             }

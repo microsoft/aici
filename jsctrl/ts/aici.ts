@@ -134,7 +134,7 @@ export class MidProcessResult {
 export class PreProcessResult {
   _n_suspended = false;
   _n_ff_tokens: Token[] = [];
-  _n_attention_masks: number[][] = [[]];
+  _n_num_forks: number = 1;
 
   constructor() {}
 
@@ -150,7 +150,7 @@ export class PreProcessResult {
 
   static fork(numForks: number): PreProcessResult {
     const res = new PreProcessResult();
-    res._n_attention_masks = Array.from({ length: numForks }, () => []);
+    res._n_num_forks = numForks;
     return res;
   }
 
@@ -509,7 +509,7 @@ export class AiciAsync implements AiciCallbacks {
     if (this.midProcessReEntry) {
       const r2 = this._token._pre_process();
       assert(r2 instanceof PreProcessResult);
-      assert(r2._n_attention_masks.length === 1, "nested fork not allowed");
+      assert(r2._n_num_forks === 1, "nested fork not allowed");
       if (r2._n_suspended) {
         // Need to generate one fake token...
         this._pendingCb = this._token;

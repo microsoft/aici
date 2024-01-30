@@ -43,12 +43,10 @@ pub struct PreProcessArg {}
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct PreProcessResult {
-    /// If no attention masks are returned - stop the sequence.
-    /// If one is returned - just continue with this mask.
-    /// If more than one attention mask is returned - fork the generation.
-    /// Attention mask of length 0 is equivalent [1.0, ..., 1.0].
-    /// Otherwise, length of the mask should be the same as the number of prompt + generated tokens.
-    pub attention_masks: Vec<Vec<f32>>,
+    /// If 0 - stop the sequence.
+    /// If 1 - just continue.
+    /// If more than 1 - fork the generation.
+    pub num_forks: usize,
 
     pub suspend: bool,
 
@@ -59,7 +57,7 @@ pub struct PreProcessResult {
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct MidProcessArg {
-    /// fork_group.len() == attention_masks.len().
+    /// fork_group.len() == num_forks.
     /// Use host::self_seq_id() to get the ID of the current sequence.
     pub fork_group: Vec<SeqId>,
 }
@@ -119,29 +117,29 @@ impl PostProcessResult {
 }
 
 impl PreProcessResult {
-    pub fn new(attention_masks: Vec<Vec<f32>>) -> Self {
+    pub fn new(num_forks: usize) -> Self {
         PreProcessResult {
-            attention_masks,
+            num_forks,
             suspend: false,
             ff_tokens: vec![],
         }
     }
     pub fn continue_() -> Self {
-        PreProcessResult::new(vec![vec![]])
+        PreProcessResult::new(1)
     }
     pub fn suspend() -> Self {
         PreProcessResult {
-            attention_masks: vec![vec![]],
+            num_forks: 1,
             suspend: true,
             ff_tokens: vec![],
         }
     }
     pub fn stop() -> Self {
-        PreProcessResult::new(vec![])
+        PreProcessResult::new(0)
     }
     pub fn ff_tokens(toks: Vec<TokenId>) -> Self {
         PreProcessResult {
-            attention_masks: vec![vec![]],
+            num_forks: 1,
             suspend: false,
             ff_tokens: toks,
         }

@@ -4,12 +4,12 @@ use crate::{
         setup_linker, AiciLimits, GlobalInfo, ModuleData, LOGIT_BIAS_ALLOW, LOGIT_BIAS_DISALLOW,
     },
     shm::Shm,
-    worker::{GroupHandle, RtMidProcessArg, RtPostProcessArg, RtPreProcessArg, RtPreProcessResult},
+    worker::{GroupHandle, RtMidProcessArg, RtPreProcessResult},
     TimerSet, UserError,
 };
 use aici_abi::{
     toktree::TokTrie, InitPromptArg, InitPromptResult, MidProcessResult, PostProcessArg,
-    PostProcessResult, PreProcessResult, TokenId,
+    PostProcessResult, PreProcessArg, PreProcessResult, TokenId,
 };
 use aicirt::{
     api::{AiciMidProcessResultInner, AiciPostProcessResultInner, SequenceResult},
@@ -258,24 +258,22 @@ impl ModuleInstance {
         }
     }
 
-    fn do_pre_process(&mut self, rtarg: RtPreProcessArg) -> Result<PreProcessResult> {
+    fn do_pre_process(&mut self, rtarg: PreProcessArg) -> Result<PreProcessResult> {
         let mut ff_tokens = Vec::new();
         let mut cnt = 0;
         loop {
             let mut res = self.do_pre_process_inner(&rtarg)?;
 
-            if rtarg.allow_ff_tokens && res.ff_tokens.len() > 0 {
-                ensure!(res.attention_masks.len() == 1);
+            if res.ff_tokens.len() > 0 {
+                ensure!(res.num_forks == 1);
                 ensure!(res.suspend == false);
                 ff_tokens.extend_from_slice(&res.ff_tokens);
-                let r_post = self.do_post_process(RtPostProcessArg {
-                    op: PostProcessArg {
-                        tokens: res.ff_tokens.clone(),
-                        backtrack: 0,
-                    },
+                let r_post = self.do_post_process(PostProcessArg {
+                    tokens: res.ff_tokens.clone(),
+                    backtrack: 0,
                 })?;
                 if r_post.stop {
-                    res.attention_masks.clear();
+                    res.num_forks = 0;
                     return Ok(res); // we're stopping - no point returning ff_tokens
                 } else {
                     cnt += 1;
@@ -291,28 +289,10 @@ impl ModuleInstance {
         }
     }
 
-    fn do_pre_process_inner(&mut self, rtarg: &RtPreProcessArg) -> Result<PreProcessResult> {
-        let attn_elts = rtarg.max_context_size;
-        self.store.data_mut().set_pre_process_data(&rtarg.op);
+    fn do_pre_process_inner(&mut self, rtarg: &PreProcessArg) -> Result<PreProcessResult> {
+        self.store.data_mut().set_pre_process_data(&rtarg);
         self.call_func::<WasmAici, ()>("aici_pre_process", self.handle)?;
         let res: PreProcessResult = self.proc_result()?;
-        // TODO is this needed?
-        ensure!(
-            res.attention_masks.len() >= 1,
-            "at least one attention_mask required ([[]] will work)"
-        );
-        for attn in &res.attention_masks {
-            if attn.len() == 0 {
-                continue;
-            }
-            ensure!(
-                attn.len() <= attn_elts,
-                "wrong attn mask size: {} <= {}",
-                attn.len(),
-                attn_elts
-            );
-        }
-
         Ok(res)
     }
 
@@ -379,8 +359,8 @@ impl ModuleInstance {
         }
     }
 
-    fn do_post_process(&mut self, rtarg: RtPostProcessArg) -> Result<AiciPostProcessResultInner> {
-        self.store.data_mut().set_post_process_data(rtarg.op);
+    fn do_post_process(&mut self, rtarg: PostProcessArg) -> Result<AiciPostProcessResultInner> {
+        self.store.data_mut().set_post_process_data(rtarg);
         self.call_func::<WasmAici, ()>("aici_post_process", self.handle)?;
         let res: PostProcessResult = self.proc_result()?;
         Ok(AiciPostProcessResultInner { stop: res.stop })
@@ -420,14 +400,14 @@ impl ModuleInstance {
         }
     }
 
-    pub fn pre_process(&mut self, op: RtPreProcessArg) -> RtPreProcessResult {
+    pub fn pre_process(&mut self, op: PreProcessArg) -> RtPreProcessResult {
         let t0 = Instant::now();
         match self.do_pre_process(op) {
             Err(e) => RtPreProcessResult::just_json(self.json_result("pre0", t0, Err(e))),
             Ok(res) => RtPreProcessResult {
                 json: self.json_result("pre", t0, Ok(None)),
                 suspend: res.suspend,
-                attn_masks: res.attention_masks,
+                num_forks: res.num_forks,
                 ff_tokens: res.ff_tokens,
             },
         }
@@ -446,7 +426,7 @@ impl ModuleInstance {
 
     pub fn post_process(
         &mut self,
-        op: RtPostProcessArg,
+        op: PostProcessArg,
     ) -> SequenceResult<AiciPostProcessResultInner> {
         let t0 = Instant::now();
         let res = self.do_post_process(op);

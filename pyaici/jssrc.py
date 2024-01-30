@@ -1,4 +1,4 @@
-tsconfig_json = """{
+tsconfig_json = r"""{
   "compilerOptions": {
     /* Visit https://aka.ms/tsconfig to read more about this file */
     "target": "ES2020",
@@ -17,7 +17,7 @@ tsconfig_json = """{
   }
 }"""
 
-aici_types_d_t = """// Top-level symbols
+aici_types_d_t = r"""// Top-level symbols
 
 type Token = number;
 type Buffer = Uint8Array;
@@ -319,7 +319,7 @@ export class MidProcessResult {
 export class PreProcessResult {
     _n_suspended: boolean;
     _n_ff_tokens: Token[];
-    _n_attention_masks: number[][];
+    _n_num_forks: number;
     constructor();
     static continue_(): PreProcessResult;
     static suspend(): PreProcessResult;
@@ -498,7 +498,7 @@ export const helpers: {
 }
 """
 
-hello_js = """async function main() {
+hello_js = r"""async function main() {
     await $`Ultimate answer is to the life, universe and everything is `
     await gen({ regex: /\d\d/ })
 }

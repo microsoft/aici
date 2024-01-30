@@ -28,7 +28,7 @@ use std::{
     sync::{Arc, Mutex},
     time::{Duration, Instant},
 };
-use worker::{RtPostProcessArg, RtPreProcessArg, SeqWorkerHandle};
+use worker::{RtPostPreProcessArg, SeqWorkerHandle};
 
 // percentage of available cores
 const BG_THREADS_FRACTION: usize = 50;
@@ -513,124 +513,80 @@ impl Stepper {
     }
 
     fn mk_instance(&mut self, op: &AiciPreOp) -> Result<()> {
-        if let Some(req_id) = op.req_id.clone() {
-            let e = { self.req_instances.lock().unwrap().remove(&req_id) };
-            ensure!(e.is_some(), "invalid req_id {req_id}");
-            let id = op.id;
-            ensure!(!self.instances.contains_key(&id), "duplicate id {id}");
-            let h = e.unwrap();
-            log::debug!("prompt {} ({})", id, req_id);
-            h.set_id(id)?;
-            self.instances.insert(id, h);
-        }
+        let req_id = op.req_id.clone();
+        let e = { self.req_instances.lock().unwrap().remove(&req_id) };
+        ensure!(e.is_some(), "invalid req_id {req_id}");
+        let id = op.id;
+        ensure!(!self.instances.contains_key(&id), "duplicate id {id}");
+        let h = e.unwrap();
+        log::debug!("prompt {} ({})", id, req_id);
+        h.set_id(id)?;
+        self.instances.insert(id, h);
         Ok(())
     }
 
-    fn aici_pre_process(
-        &mut self,
-        is_all: bool,
-        req: AiciPreProcessReq,
-    ) -> Result<AiciPreProcessResp> {
-        for id in req.freed {
-            log::debug!("free module {}", id);
-            self.instances.remove(&id);
-        }
+    fn aici_pre_process(&mut self, req: AiciPostPreProcessReq) -> Result<AiciPostPreProcessResp> {
+        let mut post_ops = self.aici_post_process(&req)?;
 
         // first, start instances and link clones
-        for op in req.ops.iter() {
+        for op in req.pre_ops.iter() {
             self.mk_instance(&op)?;
         }
 
-        let op_ids: Vec<ModuleInstId> = if is_all {
-            self.instances.keys().map(|x| *x).collect()
-        } else {
-            req.ops.iter().map(|op| op.id).collect()
-        };
+        let op_ids: Vec<ModuleInstId> = self.instances.keys().map(|x| *x).collect();
 
         let mut used_ids = Vec::new();
         let mut outputs = HashMap::default();
-        let block_elts = req.max_context_len;
-        let mut idx = 0;
+        let mut post_outputs = HashMap::default();
 
         for instid in op_ids {
             if let Ok(h) = self.get_worker(instid) {
-                let op = RtPreProcessArg {
-                    op: PreProcessArg {},
-                    max_context_size: req.max_context_len,
-                    allow_ff_tokens: is_all,
+                let op = RtPostPreProcessArg {
+                    post_op: post_ops.remove(&instid),
+                    pre_op: PreProcessArg {},
                 };
-                match h.start_pre_process(op) {
-                    Ok(_) => used_ids.push((idx, instid)),
+                match h.start_post_process(op) {
+                    Ok(_) => used_ids.push(instid),
                     Err(e) => self.worker_error(instid, &mut outputs, e),
                 };
             } else {
                 log::warn!("invalid id {}", instid);
             }
-            idx += 1;
         }
 
         let deadline =
             Instant::now() + std::time::Duration::from_millis(self.limits.max_pre_step_ms);
 
-        let mut all_masks = Vec::new();
-        let mut curr_req_masks = Vec::new();
-        let mut curr_req_id = "".to_string();
-        let mut suspend_ids = Vec::new();
-
-        for (op_idx, id) in used_ids {
+        for id in used_ids {
             let h = self.get_worker(id).unwrap();
-            if h.req_id != curr_req_id {
-                all_masks.append(&mut curr_req_masks);
-                curr_req_id = h.req_id.clone();
-            }
             let timeout = deadline.saturating_duration_since(Instant::now());
             match h.check_pre_process(timeout, &self.pre_recv_timer) {
-                Ok(mut data) => {
+                Ok((post, data)) => {
+                    post_outputs.insert(id, post);
                     outputs.insert(
                         id,
                         data.json.clone_with(Some(AiciPreProcessResultInner {
                             suspend: data.suspend,
-                            num_forks: data.attn_masks.len(),
+                            num_forks: data.num_forks,
                             ff_tokens: data.ff_tokens,
                         })),
                     );
-                    let len = data.attn_masks.len();
                     if data.suspend {
-                        suspend_ids.push(op_idx);
-                        assert!(len == 1);
-                        assert!(data.attn_masks[0].len() == 0);
-                    } else if len >= 1 {
-                        // first mask goes in place of the current sequence
-                        all_masks.push((op_idx, data.attn_masks.remove(0)));
-
-                        // other masks need to go after all sequences of the current sequence group (req_id)
-                        for e in data.attn_masks {
-                            curr_req_masks.push((op_idx, e));
-                        }
+                        assert!(data.num_forks == 1);
                     }
                 }
                 Err(e) => self.worker_error(id, &mut outputs, e),
             }
         }
 
-        // add masks of the last req
-        all_masks.append(&mut curr_req_masks);
-
-        let mut block_off = 0;
-        let mut fork_map = Vec::<usize>::new();
-        for (op_idx, mask) in &all_masks {
-            let dst = self.shm.slice_at_byte_offset(block_off, block_elts);
-            block_off += block_elts * 4;
-            dst.iter_mut().for_each(|v| *v = 1.0 as f32);
-            let len = std::cmp::min(mask.len(), block_elts);
-            dst[0..len].copy_from_slice(&mask[0..len]);
-            fork_map.push(*op_idx);
+        for id in req.freed {
+            log::debug!("free module {}", id);
+            self.instances.remove(&id);
         }
 
-        Ok(AiciPreProcessResp {
-            seqs: outputs,
-            fork_map,
-            suspend_ids,
+        Ok(AiciPostPreProcessResp {
+            post_seqs: post_outputs,
+            pre_seqs: outputs,
         })
     }
 
@@ -738,81 +694,22 @@ impl Stepper {
         })
     }
 
-    fn aici_post_process(&mut self, req: AiciPostProcessReq) -> Result<AiciPostProcessResp> {
-        let timing = false;
-        let t0 = Instant::now();
-
-        // this if forking due to n= parameter in sampling
-        // in general, we want to avoid that and instead use forking in the program,
-        // as it is executed with a long time limit
-        for op in req.ops.iter() {
-            self.maybe_fork(op.id, op.clone_id)?;
-        }
-
-        let mut used_ids = Vec::new();
-        let mut outputs = HashMap::default();
-
-        let mut all_dur = Vec::new();
-        if timing {
-            all_dur.push(t0.elapsed());
-        }
-
-        let mut prev = Instant::now();
-        for op in req.ops.into_iter() {
-            let instid = op.id;
-            if let Ok(h) = self.get_worker(instid) {
-                let tokens = op.tokens;
-                let op = RtPostProcessArg {
-                    op: PostProcessArg {
-                        tokens,
-                        backtrack: op.backtrack.saturating_sub(1),
-                    },
-                };
-                match h.start_post_process(op) {
-                    Ok(_) => used_ids.push(instid),
-                    Err(e) => self.worker_error(instid, &mut outputs, e),
-                };
-            } else {
-                log::warn!("invalid id {}", instid);
-            }
-            if timing {
-                all_dur.push(prev.elapsed());
-                prev = Instant::now();
-            }
-        }
-
-        let deadline =
-            Instant::now() + std::time::Duration::from_millis(self.limits.max_pre_step_ms);
-
-        for id in used_ids {
-            let h = self.get_worker(id).unwrap();
-            let timeout = deadline.saturating_duration_since(Instant::now());
-            match h.check_post_process(timeout) {
-                Ok(data) => {
-                    outputs.insert(id, data);
-                }
-                Err(e) => self.worker_error(id, &mut outputs, e),
-            }
-            if timing {
-                all_dur.push(prev.elapsed());
-                prev = Instant::now();
-            }
-        }
-
-        let e = t0.elapsed();
-        if e.as_micros() > 200 {
-            log::warn!("post_process time: {:?}", e);
-        }
-
-        if timing {
-            log::warn!(
-                "post_process time: {:?} {:?}",
-                t0.elapsed(),
-                all_dur.iter().map(|x| x.as_micros()).collect::<Vec<_>>()
+    fn aici_post_process(
+        &mut self,
+        req: &AiciPostPreProcessReq,
+    ) -> Result<HashMap<ModuleInstId, PostProcessArg>> {
+        let mut post_ops = HashMap::default();
+        for op in req.post_ops.iter() {
+            let _ = self.get_worker(op.id)?;
+            post_ops.insert(
+                op.id,
+                PostProcessArg {
+                    tokens: op.tokens.clone(),
+                    backtrack: op.backtrack.saturating_sub(1),
+                },
             );
         }
-
-        Ok(AiciPostProcessResp { seqs: outputs })
+        Ok(post_ops)
     }
 
     fn logit_bias_at_byte_offset(&self, off: usize) -> &'static mut [f32] {
@@ -838,23 +735,14 @@ impl Exec for Stepper {
     fn exec(&mut self, json: Value, _auth: AuthInfo) -> Result<Value> {
         match json["op"].as_str() {
             Some("tokens") => Ok(json!({ "vocab_size": self.globals.tokrx_info.vocab_size })),
-            Some("pre_process") => {
+            Some("post_pre_process") => {
                 let json = serde_json::from_value(json)?;
                 with_timer!(self.pre_timer, {
-                    Ok(serde_json::to_value(&self.aici_pre_process(false, json)?)?)
-                })
-            }
-            Some("pre_process_all") => {
-                let json = serde_json::from_value(json)?;
-                with_timer!(self.pre_timer, {
-                    Ok(serde_json::to_value(&self.aici_pre_process(true, json)?)?)
+                    Ok(serde_json::to_value(&self.aici_pre_process(json)?)?)
                 })
             }
             Some("mid_process") => Ok(serde_json::to_value(
                 &self.aici_mid_process(serde_json::from_value(json)?)?,
-            )?),
-            Some("post_process") => Ok(serde_json::to_value(
-                &self.aici_post_process(serde_json::from_value(json)?)?,
             )?),
             _ => return Err(anyhow!("bad op")),
         }

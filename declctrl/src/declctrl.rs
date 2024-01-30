@@ -1227,10 +1227,10 @@ impl AiciCtrl for Runner {
                 .iter()
                 .map(|b| b[0].attention_mask(&self.ctx))
                 .collect::<Vec<_>>();
-            PreProcessResult::new(attention_masks)
+            PreProcessResult::new(attention_masks.len())
         } else {
             let mask = self.curr_state().attention_mask(&self.ctx);
-            PreProcessResult::new(vec![mask])
+            PreProcessResult::new(vec![mask].len())
         }
     }
 
