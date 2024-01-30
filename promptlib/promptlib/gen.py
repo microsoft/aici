@@ -1,8 +1,7 @@
-from .prompt import PromptNode
-from .model import ModelNode, ChatModelNode
-from .constrain import ConstraintNode
+from .prompt import PromptNode, TextNode
 
 from typing import List
+from pyaici import ast
 
 class GenNode(PromptNode):
 
@@ -22,30 +21,6 @@ class GenNode(PromptNode):
     def set_parent(self, parent): 
         super().set_parent(parent)
 
-    def _generate_text(self, prefix):
-        model = self.get_parent_of_type(ModelNode)
-        constraint_nodes = self.get_all_ancestors_of_type(ConstraintNode, stop_at_type=ModelNode)
-        constraints = [c.constraint for c in constraint_nodes]
-        if model is None:
-            raise Exception("Gen must be a child of Model")
-        return model.generate(prefix, self.max_tokens, constraints=constraints, **self.genargs)
-
-    def get_text(self):
-        assert self.parent is not None, "Gen must have a parent"
-
-        if self.generated_text is None:            
-            if self.is_chat:            
-                prefix = self.parent.get_partial_chat_text()
-                # prefix is a list of dicts with keys "content" and "role"
-            else:
-                prefix = self.parent.get_all_text()
-                # prefix is a string
-        
-            self.generated_text = self._generate_text(prefix)
-
-        return self.generated_text
-
-
 
     def _get_plan_step(self):
         dict = {"max_tokens": self.max_tokens}
@@ -58,6 +33,11 @@ class GenNode(PromptNode):
             id_ignore = self.parent._get_predecessor_matches(self.ignore)
             # find the index of the first True in the list
             idx = _find_first_match_index(id_ignore, lambda x: x[1] == True)
+
+        # if there's no stop_at set, and there's only one child and it's a text node, then we can use the beginning of that text as the stop_at
+        if self.genargs.get("stop_at") is None and len(self.children) == 1 and isinstance(self.children[0], TextNode):
+            ## TODO: I should get the first token of the string, instead I'm getting the first character as a string.
+            self.genargs["stop_at"] = self.children[0].get_text()[0]
 
         # if nothing needs to be ignored, just continue as normal
         if idx is None:
@@ -93,14 +73,18 @@ class GenNode(PromptNode):
 
     
     def _get_attributes(self):
-        attr = super()._get_attributes()
+        attr = {} #super()._get_attributes()
         attr.update(self.genargs)
-        #if self.ignore is not None:
-        #    attr.update({"mask_tags": self.ignore})
+        stmts = []
+        if attr.get("stmts") is not None:
+            stmts = attr["stmts"]
+
         if self.append_var is not None:
-            attr.update({"append_to_var": self.append_var})
+            stmts.append(ast.stmt_set(self.append_var, ast.e_concat(ast.e_var(self.append_var), ast.e_current())))
         if self.set_var is not None:
-            attr.update({"set_var": self.set_var})
+            stmts.append(ast.stmt_set(self.set_var, ast.e_current()))
+        
+        attr["stmts"] = stmts
         return attr
 
 
