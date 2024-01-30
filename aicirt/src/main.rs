@@ -415,11 +415,13 @@ impl ModuleRegistry {
             let msg = ch.recv();
             let mut s2 = self.clone();
 
+            //println!("exec side: {}", &String::from_utf8_lossy(&msg));
             match &ch {
                 CmdRespChannel::Futex { resp_ch, .. } => {
                     let resp_ch = resp_ch.clone();
                     rayon::spawn(move || {
                         let r = s2.exec_wrapped(&msg);
+                        //println!("resp side: {}", serde_json::to_string(&r).unwrap());
                         resp_ch
                             .lock()
                             .unwrap()
@@ -924,7 +926,9 @@ impl CmdRespChannel {
     pub fn dispatch_loop(&mut self, mut exec: impl Exec) -> ! {
         loop {
             let msg = self.recv();
+            //println!("exec main: {}", String::from_utf8_lossy(&msg));
             let val = exec.exec_wrapped(&msg);
+            //println!("resp main: {}", serde_json::to_string(&val).unwrap());
             self.respond(val)
         }
     }

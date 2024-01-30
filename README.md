@@ -27,6 +27,7 @@ This repository contains:
 - [aicirt](aicirt) - an implementation of a runtime for running controllers,
   built on top Wasmtime;
   LLM inference engines talk to aicirt via shared memory and semaphores
+- [aicirt protocol definition](./aicirt/aicirt-proto.md) - for communication between LLM inference engine and aicirt
 - [rLLM](rllm) - a reference implementation of an LLM inference engine built on libtorch, inspired by vLLM
 - [rLLM-llama-cpp](cpp-rllm) - rLLM running on top of llama.cpp instead of libtorch
 - [pyaici](pyaici) - a Python package for interacting with aicirt and running controllers;

@@ -83,6 +83,7 @@
         "futex",
         "gguf",
         "isatty",
+        "jsctrl",
         "jsonformer",
         "layernorm",
         "llamacpp",
