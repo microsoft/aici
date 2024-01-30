@@ -551,7 +551,7 @@ impl SeqWorkerHandle {
         timeout: Duration,
         timer: &TimerRef,
     ) -> Result<(
-        SequenceResult<AiciPostProcessResultInner>,
+        Option<SequenceResult<AiciPostProcessResultInner>>,
         RtPreProcessResult,
     )> {
         let r = timer.with(|| self.handle.seq_recv_with_timeout("r-pre_process", timeout));
@@ -563,7 +563,11 @@ impl SeqWorkerHandle {
                 num_forks,
                 ff_tokens,
             }) => Ok((
-                serde_json::from_str(&post_json)?,
+                if post_json.len() > 0 {
+                    Some(serde_json::from_str(&post_json)?)
+                } else {
+                    None
+                },
                 RtPreProcessResult {
                     json: serde_json::from_str(&pre_json)?,
                     suspend,

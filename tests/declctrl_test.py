@@ -59,7 +59,7 @@ def expect(expected: Union[list[str], str], prompt: str, steps: list):
 
 def test_hello():
     expect(
-        ", I am",
+        "Hello, I am",
         "Hello",
         [ast.gen(max_tokens=3)],
     )
@@ -81,13 +81,13 @@ def test_gen_num():
 
 def test_grammar():
     expect(
-        """```
+        """<...>```
 int fib(int n) {
-    if (n == 0) {
-        return 0;
-    }
     if (n == 1) {
         return 1;
+    }
+    if (n == 2) {
+        return 2;
     }
     return fib(n - 1) + fib(n - 2);
 }""",
@@ -117,7 +117,8 @@ json_template = {
 
 def test_json():
     expect(
-        """{
+        """<...>assistant
+{
 "name":"J. Random Hacker",
 "valid":true,
 "description":"J. Random Hacker is a talented and creative individual based in Seattle, Washington. With a passion for technology and a kn",
@@ -148,7 +149,7 @@ def test_json():
 
 def test_ff_0():
     expect(
-        ", 3 + 8 = 11",
+        "Hello, 3 + 8 = 11",
         "Hello",
         [
             {"Gen": {"rx": ", ", "max_tokens": 10}},
@@ -160,7 +161,7 @@ def test_ff_0():
 
 def test_ff_1():
     expect(
-        ", 7 + 8 = 15",
+        "Hello, 7 + 8 = 15",
         "Hello",
         [
             ast.gen(rx=", "),
@@ -172,7 +173,7 @@ def test_ff_1():
 
 def test_ff_2():
     expect(
-        ", 7 + 8 = 15",
+        "Hello, 7 + 8 = 15",
         "Hello",
         [
             ast.gen(rx=", "),

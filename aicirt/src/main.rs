@@ -562,7 +562,9 @@ impl Stepper {
             let timeout = deadline.saturating_duration_since(Instant::now());
             match h.check_pre_process(timeout, &self.pre_recv_timer) {
                 Ok((post, data)) => {
-                    post_outputs.insert(id, post);
+                    if let Some(post) = post {
+                        post_outputs.insert(id, post);
+                    }
                     outputs.insert(
                         id,
                         data.json.clone_with(Some(AiciPreProcessResultInner {

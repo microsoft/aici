@@ -272,11 +272,21 @@ pub struct SequenceGroup {
     pub request_id: String,
     pub prompt: String,
     pub seqs: Vec<Sequence>,
+    pub deadlock_steps: usize,
     pub sampling_params: SamplingParams,
     pub arrival_time: std::time::Instant,
     pub logits_processor: LogitsProcessor,
     pub max_index: usize,
     pub usage: TokenUsage,
+}
+
+impl Debug for SequenceGroup {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("SequenceGroup")
+            .field("request_id", &self.request_id)
+            .field("seqs", &self.seqs)
+            .finish()
+    }
 }
 
 impl SequenceGroup {
@@ -329,6 +339,12 @@ impl SequenceGroup {
     /// Checks if all sequences are finished.
     pub fn is_finished(&self) -> bool {
         self.seqs.iter().all(|seq| seq.is_finished())
+    }
+
+    pub fn is_suspended(&self) -> bool {
+        self.seqs
+            .iter()
+            .all(|seq| seq.sched_phase == SchedulingPhase::Suspended || seq.is_finished())
     }
 }
 

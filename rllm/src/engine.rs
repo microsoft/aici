@@ -323,6 +323,7 @@ impl RllmEngine {
             prompt,
             seqs: vec![seq],
             sampling_params: req.sampling_params,
+            deadlock_steps: 0,
             arrival_time: Instant::now(),
             logits_processor,
             max_index: 0,
@@ -505,11 +506,21 @@ impl RllmEngine {
     }
 
     fn dropped_outputs(&mut self, sched_out: &mut SchedulerOutputs) -> Vec<RequestOutput> {
+        let mut res = Vec::new();
+
+        // in addition to dropped, we also add suspended/deadlocked
+        self.scheduler.for_each_ongpu_sg(|sg| {
+            if sg.deadlock_steps > 0 {
+                res.push(self.req_output(sg, false));
+            }
+        });
+
         sched_out
             .dropped_seq_groups
             .iter_mut()
-            .map(|sg| self.req_output(sg, true))
-            .collect()
+            .for_each(|sg| res.push(self.req_output(sg, true)));
+
+        res
     }
 
     fn empty_outputs(&mut self, sched_out: &mut SchedulerOutputs) -> Result<Vec<RequestOutput>> {
@@ -782,9 +793,14 @@ impl RllmEngine {
             }
 
             if num_running == 0 && num_susp > 0 {
-                for seq in sg.seqs.iter_mut() {
-                    self.scheduler.finish_seq(seq, FinishReason::Deadlock);
+                sg.deadlock_steps += 1;
+                if sg.deadlock_steps > 3 {
+                    for seq in sg.seqs.iter_mut() {
+                        self.scheduler.finish_seq(seq, FinishReason::Deadlock);
+                    }
                 }
+            } else {
+                sg.deadlock_steps = 0;
             }
         });
 

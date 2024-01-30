@@ -6,6 +6,8 @@ REL=--release
 LOOP=
 BUILD=
 ADD_ARGS=
+R_LOG=info,rllm=debug,aicirt=info
+
 
 mkdir -p "$WS/target"
 BIN="$WS/target"
@@ -30,6 +32,11 @@ if [ "$CPP" = 1 ] ; then
   VER="--no-default-features"
 else
   VER=
+fi
+
+if [ "$1" = "--trace" ] ; then
+    R_LOG=info,rllm=trace,aicirt=info
+    shift
 fi
 
 if [ "$1" = "--loop" ] ; then
@@ -157,7 +164,7 @@ if [ "$CPP" != "1" ] && [ `uname` = Darwin ] ; then
 fi
 
 export RUST_BACKTRACE=1
-export RUST_LOG=info,rllm=debug,aicirt=info
+export RUST_LOG=$R_LOG
 
 echo "running $BIN_SERVER $ARGS $@"
 

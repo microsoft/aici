@@ -132,6 +132,10 @@ impl Scheduler {
         self.q_for_each(Queue::Waiting, f)
     }
 
+    pub fn for_each_ongpu_sg(&self, f: impl FnMut(&mut SequenceGroup)) {
+        self.q_for_each(Queue::OnGpu, f)
+    }
+
     pub fn for_each_sg(&self, mut f: impl FnMut(&mut SequenceGroup)) {
         self.queues
             .lock()
@@ -300,7 +304,13 @@ impl Scheduler {
         let mut did_preempt = false;
         self.sort_by_priority(Queue::OnGpu);
 
+        let mut suspended = Vec::new();
+
         while let Some(mut seq_group) = self.q_pop(Queue::OnGpu) {
+            if seq_group.is_suspended() {
+                suspended.push(seq_group);
+                continue;
+            }
             while !self.block_manager.can_append_slot(&seq_group) {
                 did_preempt = true;
                 if self.q_len(Queue::OnGpu) > 0 {
@@ -317,6 +327,11 @@ impl Scheduler {
             self._append_slots(&mut seq_group, outputs);
             outputs.next_seq_groups.push(seq_group);
         }
+
+        if suspended.len() > 0 {
+            self.q_with(Queue::OnGpu, |q| q.append(&mut suspended));
+        }
+
         return did_preempt;
     }
 
