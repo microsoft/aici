@@ -88,8 +88,14 @@ def run_ctrl(
     max_tokens: Optional[int] = None,
     print_response: bool = True,
 ):
-    max_tokens = getattr(cmd_args, "max_tokens", max_tokens)
-    temperature = getattr(cmd_args, "temperature", temperature)
+    def attr(name: str, default: Any):
+        r = getattr(cmd_args, name)
+        if r is not None:
+            return r
+        return default
+
+    max_tokens = attr("max_tokens", max_tokens)
+    temperature = attr("temperature", temperature)
     res = rest.run_controller(
         controller=controller,
         controller_arg=controller_arg,
@@ -113,7 +119,9 @@ def infer_args(cmd: argparse.ArgumentParser):
         "--max-tokens", "-t", type=int, help="maximum number of tokens to generate"
     )
     cmd.add_argument(
-        "--temperature", "-T", type=float, help="temperature for sampling; deflaut 0.0 (argmax)"
+        "--temperature",
+        type=float,
+        help="temperature for sampling; deflaut 0.0 (argmax)",
     )
 
 
