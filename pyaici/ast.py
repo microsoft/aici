@@ -98,7 +98,7 @@ def gen(
     }
 
 
-def fork(*branches: list[dict]):
+def fork(*branches: List[dict]):
     return {
         "Fork": {
             "branches": list(branches),
@@ -173,7 +173,7 @@ def label(label: str, step: dict) -> dict:
     return step
 
 
-def choose(options: Union[dict, list[str]]):
+def choose(options: Union[dict, List[str]]):
     """
     Constrain output to one of the options.
     """

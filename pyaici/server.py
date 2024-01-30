@@ -4,7 +4,7 @@
 # It will not work with the standard Python interpreter.
 #
 
-from typing import Any, Optional, Coroutine, Union, Callable
+from typing import Any, Optional, Coroutine, Union, Callable, List, Union, Dict
 
 # these are to provide re-exports
 from pyaici.server_native import (
@@ -26,7 +26,7 @@ Token = int
 SeqId = int
 
 
-def get_tokens() -> list[Token]:
+def get_tokens() -> List[Token]:
     """
     Get list of tokens in the current sequence, including the prompt.
     """
@@ -40,7 +40,7 @@ class MidProcessResult:
         self.skip_me = skip_me
         self.logit_bias: Optional[TokenSet] = None
         self.backtrack = 0
-        self.ff_tokens: list[Token] = []
+        self.ff_tokens: List[Token] = []
 
     @classmethod
     def bias(cls, bias: TokenSet):
@@ -49,7 +49,7 @@ class MidProcessResult:
         return res
 
     @classmethod
-    def splice(cls, backtrack: int, tokens: list[Token]):
+    def splice(cls, backtrack: int, tokens: List[Token]):
         res = cls()
         assert backtrack >= 0
         assert isinstance(tokens, list)
@@ -61,8 +61,8 @@ class MidProcessResult:
 class PreProcessResult:
     def __init__(self, *, suspended=False):
         self.suspended = suspended
-        self.ff_tokens: list[Token] = []
-        self.attention_masks: list[list[float]] = [[]]
+        self.ff_tokens: List[Token] = []
+        self.attention_masks: List[List[float]] = [[]]
 
     @classmethod
     def continue_(cls):
@@ -79,7 +79,7 @@ class PreProcessResult:
         return res
 
     @classmethod
-    def ff_tokens_pre(cls, toks: list[Token]):
+    def ff_tokens_pre(cls, toks: List[Token]):
         res = cls()
         res.ff_tokens = toks
         return res
@@ -98,7 +98,7 @@ class PostProcessResult:
         return cls(stop_seq=True)
 
     @classmethod
-    def from_tokens(cls, tokens: list[int]):
+    def from_tokens(cls, tokens: List[int]):
         return cls(stop_seq=(eos_token() in tokens))
 
 
@@ -124,7 +124,7 @@ class NextToken:
         """
         return MidProcessResult.bias(TokenSet())
 
-    def post_process(self, tokens: list[Token]):
+    def post_process(self, tokens: List[Token]):
         """
         This can be overridden to do something with generated tokens.
         ~1ms time limit.
@@ -137,18 +137,18 @@ class NextToken:
         self._reset()
 
     def _reset(self):
-        self.curr_tokens: Optional[list[Token]] = None
-        self.fork_group: list[SeqId] = []
+        self.curr_tokens: Optional[List[Token]] = None
+        self.fork_group: List[SeqId] = []
 
     def _pre_process(self) -> PreProcessResult:
         self._reset()
         return self.pre_process()
 
-    def _mid_process(self, fork_group: list[SeqId]) -> MidProcessResult:
+    def _mid_process(self, fork_group: List[SeqId]) -> MidProcessResult:
         self.fork_group = fork_group
         return self.mid_process()
 
-    def _post_process(self, backtrack: int, tokens: list[Token]):
+    def _post_process(self, backtrack: int, tokens: List[Token]):
         # 'backtrack' is not very useful - it's just what we passed in MidProcessResult
         self.curr_tokens = tokens
         self.finished = eos_token() in tokens
@@ -161,13 +161,13 @@ class NextToken:
 
 
 class FixedTokens(NextToken):
-    def __init__(self, text: str | bytes, following: Optional["Label"] = None):
+    def __init__(self, text: Union[str, bytes], following: Optional["Label"] = None):
         """
         Forces next tokens to be exactly the given text.
         If following is given, the text replaces everything that follows the label.
         """
         super().__init__()
-        self.fixed_tokens: list[Token] = tokenize(text)
+        self.fixed_tokens: List[Token] = tokenize(text)
         print("FIXED", repr(detokenize(self.fixed_tokens).decode(errors="replace")))
         self.following = following
 
@@ -195,7 +195,7 @@ class StopToken(NextToken):
     def mid_process(self) -> MidProcessResult:
         return MidProcessResult(stop=True)
 
-    def post_process(self, tokens: list[Token]):
+    def post_process(self, tokens: List[Token]):
         self.finished = False  # we're never finished, just keep yelling STOP!
         return PostProcessResult.stop()
 
@@ -218,7 +218,7 @@ class ConstrainedToken(NextToken):
         self._constraint.allow_tokens(bias)
         return MidProcessResult.bias(bias)
 
-    def post_process(self, tokens: list[Token]):
+    def post_process(self, tokens: List[Token]):
         assert self._constraint is not None
         for t in tokens:
             self._constraint.append_token(t)
@@ -256,10 +256,10 @@ async def fork(num_forks: int):
 
 
 class _WaitVars(PreToken):
-    def __init__(self, vars: list[str]):
+    def __init__(self, vars: List[str]):
         super().__init__()
         self.vars = vars
-        self.values: list[bytes] = []
+        self.values: List[bytes] = []
 
     def pre_process(self) -> PreProcessResult:
         values = [get_var(v) for v in self.vars]
@@ -269,7 +269,7 @@ class _WaitVars(PreToken):
         return PreProcessResult.continue_()
 
 
-async def wait_vars(*vars: str) -> list[bytes]:
+async def wait_vars(*vars: str) -> List[bytes]:
     """
     Suspends execution until all variables are available.
     Returns values of the variables.
@@ -285,16 +285,16 @@ class AiciCallbacks:
     Use pyaici.server.start() to wrap a coroutine.
     """
 
-    def init_prompt(self, prompt: list[Token]):
+    def init_prompt(self, prompt: List[Token]):
         pass
 
     def pre_process(self) -> PreProcessResult:
         return PreProcessResult()
 
-    def mid_process(self, fork_group: list[SeqId]) -> MidProcessResult:
+    def mid_process(self, fork_group: List[SeqId]) -> MidProcessResult:
         return MidProcessResult.bias(TokenSet())
 
-    def post_process(self, backtrack: int, tokens: list[Token]):
+    def post_process(self, backtrack: int, tokens: List[Token]):
         return PostProcessResult.from_tokens(tokens)
 
 
@@ -309,9 +309,9 @@ class AiciAsync(AiciCallbacks):
         AiciAsync.instance = self
 
         self._coro = f
-        self._tokens: list[Token] = []
+        self._tokens: List[Token] = []
         self._pending_cb: Optional[CbType] = None
-        self._fork_group: list[SeqId] = []
+        self._fork_group: List[SeqId] = []
         _aici.register(self)
         self.step()
         assert isinstance(self._cb, NextToken)
@@ -332,7 +332,7 @@ class AiciAsync(AiciCallbacks):
 
             self._coro = _stop()
 
-    def init_prompt(self, prompt: list[Token]):
+    def init_prompt(self, prompt: List[Token]):
         assert not self._tokens
         self._tokens.extend(prompt)
         assert isinstance(self._cb, NextToken)
@@ -345,7 +345,7 @@ class AiciAsync(AiciCallbacks):
         assert isinstance(r, PreProcessResult)
         return r
 
-    def mid_process(self, fork_group: list[SeqId]) -> MidProcessResult:
+    def mid_process(self, fork_group: List[SeqId]) -> MidProcessResult:
         assert isinstance(self._cb, NextToken)
 
         r = self._cb._mid_process(fork_group)
@@ -369,7 +369,7 @@ class AiciAsync(AiciCallbacks):
         assert isinstance(r.ff_tokens, list)
         return r
 
-    def post_process(self, backtrack: int, tokens: list[Token]):
+    def post_process(self, backtrack: int, tokens: List[Token]):
         if backtrack > 0:
             del self._tokens[-backtrack:]
         self._tokens.extend(tokens)
@@ -409,7 +409,7 @@ class Label:
         """
         self.ptr = len(get_tokens())
 
-    def tokens_since(self) -> list[Token]:
+    def tokens_since(self) -> List[Token]:
         """
         Return tokens generated since the label.
         """
@@ -423,7 +423,7 @@ class Label:
 
 
 class ChooseConstraint(Constraint):
-    def __init__(self, options: list[str]):
+    def __init__(self, options: List[str]):
         # super().__init__()
         self.ptr = 0
         self.options = [tokenize(o) for o in options]
@@ -456,18 +456,18 @@ async def gen_tokens(
     yacc: Optional[str] = None,
     substring: Optional[str] = None,
     substring_end: str = '"',
-    options: Optional[list[str]] = None,
+    options: Optional[List[str]] = None,
     store_var: Optional[str] = None,
     stop_at: Optional[str] = None,
     max_tokens=20,
-) -> list[Token]:
+) -> List[Token]:
     """
     Generates tokens with the given constraint.
     If `stop_at` is given, the generation stops when the given text is generated. The stop text is included in result.
     If `store_var` is given, the generated tokens are stored in the variable.
     `regex` and `options` are mutually exclusive.
     """
-    res: list[Token] = []
+    res: List[Token] = []
     assert len([x for x in [regex, options, yacc, substring] if x is not None]) <= 1
     if regex is not None:
         next_token = ConstrainedToken(lambda: RegexConstraint(regex))
@@ -521,7 +521,7 @@ def check_var(name: str, value: str):
         raise AssertionError(f"Variable {name}: {repr(v)} != {repr(value)}")
 
 
-def check_vars(d: dict[str, str]):
+def check_vars(d: Dict[str, str]):
     """
     Check if all the variables have the given values.
     """

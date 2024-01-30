@@ -440,7 +440,7 @@ class AiciRunner:
 
         Args:
             id (int): The ID of the batch-entry - needs to match a previous ID from step_add_prompt(), unless clone_id is set.
-            tokens (list[int]): The tokens to add.
+            tokens (List[int]): The tokens to add.
             clone_id (int, optional): The ID of the batch entry to clone if any.
         """
         obj: dict = {"id": id}
@@ -455,7 +455,7 @@ class AiciRunner:
         self.gen_q.append(obj)
 
     def step_add_post(
-        self, id: int, backtrack: int, tokens: list[int], clone_id: Optional[int] = None
+        self, id: int, backtrack: int, tokens: List[int], clone_id: Optional[int] = None
     ):
         obj = {"id": id, "tokens": tokens, "backtrack": backtrack}
         if clone_id is not None:
@@ -524,8 +524,8 @@ class AiciRunner:
         return mask
 
     def _process_forks(self, response):
-        fork_map: list[int] = response["fork_map"]
-        suspend_ids: list[int] = response["suspend_ids"]
+        fork_map: List[int] = response["fork_map"]
+        suspend_ids: List[int] = response["suspend_ids"]
         self.last_pre_response = response["seqs"]
         n = len(fork_map)
         if self.disable_attn_mask:

@@ -5,7 +5,7 @@ import urllib.parse
 import sys
 import time
 import re
-from typing import Optional
+from typing import Optional, List
 
 BASE_URL_ENV = "AICI_API_BASE"
 
@@ -139,7 +139,7 @@ def list_tags():
         raise response_error("module tag", resp)
 
 
-def tag_module(module_id: str, tags: list[str]):
+def tag_module(module_id: str, tags: List[str]):
     resp = req("post", "controllers/tags", json={"module_id": module_id, "tags": tags})
     if resp.status_code == 200:
         dd = resp.json()
@@ -166,7 +166,7 @@ def run_controller(
     }
     resp = req("post", "run", json=_clear_none(data), stream=True)
     if resp.status_code != 200:
-        raise response_error("completions", resp)
+        raise response_error("run", resp)
     texts = [""]
     logs = [""]
     full_resp = []

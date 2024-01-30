@@ -1,7 +1,7 @@
 # Type stubs
 
 from __future__ import annotations
-from typing import Any, Sequence
+from typing import Any, Sequence, List
 import pyaici.server as aici
 
 
@@ -12,14 +12,14 @@ def register(cb: aici.AiciCallbacks):
     ...
 
 
-def tokenize(text: bytes | str) -> list[int]:
+def tokenize(text: bytes | str) -> List[int]:
     """
     Return token indices for a given string (or byte sequence).
     """
     ...
 
 
-def detokenize(tokens: list[int]) -> bytes:
+def detokenize(tokens: List[int]) -> bytes:
     """
     Return byte (~string) representation of a given list of token indices.
     """

@@ -38,7 +38,7 @@ def install(runner: AiciRunner):
         max_context_len = 0
         num_gen = 0
 
-        steps: list[tuple[SequenceGroup, Sequence]] = []
+        steps: List[tuple[SequenceGroup, Sequence]] = []
         for seq_group in scheduler_outputs.scheduled_seq_groups:
             seqs = seq_group.get_seqs(status=SequenceStatus.RUNNING)
             ff_seqs = [seq for seq in seqs if seq.data.num_pending_ff_tokens > 0]
