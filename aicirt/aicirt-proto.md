@@ -2,29 +2,30 @@
 
 The LLM inference engine (LLM) and AICI-runtime (AICIrt) communicate via a
 JSON messages sent over POSIX shared memory (SHM).
+The function of AICIrt is to spin processes for each sequence, start Wasm controllers inside them,
+and collect the results for the LLM.
+
 There are two alternative synchronization mechanisms for the SHM region:
 
 - POSIX named semaphores
 - `futex` on Linux/`__ulock` on macOS/`WaitOnAddress` on Windows ([issue](https://github.com/microsoft/aici/issues/42));
   this requires `--futex` flag to be passed to AICIrt
-  Regardless of the chosen synchronization mechanism, the message format is the same.
+
+Regardless of the chosen synchronization mechanism, the message format is the same.
 
 The LLM side of the interface is implemented in [comms.py](../pyaici/comms.py)
 and in [iface.rs](../rllm/src/iface.rs).
 The Python interface is outdated: [tracking issue](https://github.com/microsoft/aici/issues/43).
 
-Two bi-direction message channels are used:
+Two bi-directional message channels are used:
 
 - the main channel - synchronous
 - the side channel - asynchronous
 
 The generation of text in an LLM occurs in steps.
 At each step, there is zero or more active sequences being processed.
-The LLM computes logits (later turned into probabilities) for every possible token for each sequence.
+The LLM computes logits (scores, later turned into probabilities) for every possible token for each sequence.
 Then a single token is sampled for each of these sequences and appended.
-
-The function of AICIrt is to spin processes for each sequence, start Wasm controllers inside them,
-and collect the results for the LLM.
 
 The main channel is used synchronously with steps:
 
@@ -268,7 +269,7 @@ The last two correspond to `controller` and `controller_arg` REST API fields.
 }
 ```
 
-The response is pretty much empty, but not the matching `$rid`.
+The response is pretty much empty, but note the matching `$rid`.
 
 ```json
 { "type": "ok", "data": {}, "$rid": "0aae92c8-e415-4efd-947b-361a8573020c" }
