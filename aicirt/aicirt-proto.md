@@ -58,7 +58,7 @@ The side channel is used for:
 
 The `ping` command is used to check if the AICIrt is alive.
 
-```json5
+```json
 {"op":"ping"}
 // response
 {"type":"ok","data":{"pong":1}}
@@ -69,7 +69,7 @@ which is either `"ok"` or `"error"`, as well as a `data` field.
 
 The `tokens` command gives the size of the vocabulary of the loaded tokenizer.
 
-```json5
+```json
 {"op":"tokens"}
 // response
 {"type":"ok","data":{"vocab_size":32003}}
@@ -234,7 +234,7 @@ Eventually, the `post_pre_process` will indicate that the sequence `2` should be
 
 In the next round, the LLM will tell AICIrt to dispose of the sequence `2`:
 
-```json5
+```json
 {
   "op": "post_pre_process",
   "post_ops": [...],
