@@ -46,16 +46,20 @@ def _parse_base_url(base_url: str):
     return r, key
 
 
-def _headers() -> dict:
-    _, key = _parse_base_url(base_url)
+def _headers(arg_base_url: Optional[str] = None) -> dict:
+    if not arg_base_url:
+        arg_base_url = base_url
+    _, key = _parse_base_url(arg_base_url)
     if key:
         return {"api-key": key}
     else:
         return {}
 
 
-def _mk_url(path: str) -> str:
-    pref, _ = _parse_base_url(base_url)
+def _mk_url(path: str, arg_base_url: Optional[str] = None) -> str:
+    if not arg_base_url:
+        arg_base_url = base_url
+    pref, _ = _parse_base_url(arg_base_url)
     return pref + path
 
 
@@ -79,11 +83,11 @@ def strip_url_path(url):
     return match.group(1)
 
 
-def req(tp: str, path: str, **kwargs):
-    url = _mk_url(path)
+def req(tp: str, path: str, base_url: Optional[str] = None, **kwargs):
+    url = _mk_url(path, arg_base_url=base_url)
     if path == "/proxy/info":
         url = strip_url_path(url) + path
-    headers = _headers()
+    headers = _headers(arg_base_url=base_url)
     if log_level >= 4:
         print(f"{tp.upper()} {url} headers={headers}")
         if "json" in kwargs:
@@ -157,6 +161,7 @@ def run_controller(
     controller_arg="",
     temperature: Optional[float] = None,
     max_tokens: Optional[int] = 200,
+    base_url: Optional[str] = None,
 ):
     data = {
         "controller": controller,
@@ -164,7 +169,7 @@ def run_controller(
         "max_tokens": max_tokens,
         "temperature": temperature,
     }
-    resp = req("post", "run", json=_clear_none(data), stream=True)
+    resp = req("post", "run", json=_clear_none(data), stream=True, base_url=base_url)
     if resp.status_code != 200:
         raise response_error("run", resp)
     texts = [""]

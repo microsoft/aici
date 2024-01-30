@@ -1,5 +1,8 @@
+import re
 from typing import List
 from .aici import AICI
+
+from pyaici import ast
 
 class PromptNode:
     """
@@ -29,39 +32,6 @@ class PromptNode:
     
     def set_parent(self, parent):
         self.parent = parent
-
-    def _get_attributes(self):
-        dict = {}
-        if self.id is not None:
-            dict["tag"] = self.id  ## NOTE: this is confusing but the ast runner tag is the promptlib ID.
-            dict["label"] = self.id ## NOTE: the ast runner label is also the promptlib ID
-        return dict
-
-    def get_text(self):
-        # this function should be overriden
-        return ""
-
-    def get_all_text(self, stop_at=None):
-        if stop_at is not None and self is stop_at:
-            return ""
-        t = self.get_text()
-        if self.parent is not None:
-            t = self.parent.get_all_text() + t
-        return t
-
-    def get_all_chat_text(self):
-        if self.parent is not None:
-            return self.parent.get_all_chat_text()
-
-        # only begin blocks will actually create chat text
-        return []
-
-    def get_partial_chat_text(self):
-        if self.parent is not None:
-            partial = self.parent.get_partial_chat_text()
-            partial[0]["content"] += self.get_text()
-
-        return None
 
     def get_parent_of_type(self, type):
         if self.parent is None:
@@ -107,21 +77,6 @@ class PromptNode:
                 steps.extend(self.children[0]._get_plan_steps_descending(stopNode=stopNode)),
         return [s for s in steps if s is not None]
     
-    def _get_plan_steps_ascending(self, includeSelf=True):
-        if self.parent is None:
-            steps = []
-        else:
-            steps = self.parent._get_plan_steps_ascending()
-        if includeSelf:
-            plan_step = self._get_plan_step()
-            if( plan_step is None):
-                pass
-            elif( isinstance(plan_step, list)):
-                steps.extend(plan_step)
-            else:
-                steps.append(plan_step)
-        return steps
-
     def _get_match_content(self):
         return "{{" + self.id + "}}"
 
@@ -137,12 +92,6 @@ class PromptNode:
         else:
             id_match.append((self.id, False, match_content))
         return id_match
-
-
-    #def build_linear_plan(self):
-    #    steps = self._get_plan_steps_ascending()
-    #    steps = [s for s in steps if s is not None]
-    #    return {"steps": steps}
 
     # This builds a plan to execute all the children starting at self
     def build_tree_plan(self):
@@ -176,9 +125,16 @@ class TextNode(PromptNode):
         return self.get_text()
     
     def _get_plan_step(self):
-        dict = {"text": {"String": {"str": self.text}}}
-        dict.update(self._get_attributes())
-        return {"Fixed": dict}
+        varnames = re.findall(r'{{(.*?)}}', self.text)
+        if len(varnames) > 0:
+            return [
+                ast.wait_vars(*varnames),
+                ast.label(self.id, ast.fixed(self.text, expand_vars=True, tag=self.id))
+            ]
+        else:
+            return [
+                ast.label(self.id,ast.fixed(self.text, expand_vars=False, tag=self.id))
+            ]
 
 
 def append(prompt_code:PromptNode, text:str, attrs:List[str]=None) -> PromptNode:
@@ -189,65 +145,26 @@ def append(prompt_code:PromptNode, text:str, attrs:List[str]=None) -> PromptNode
 
 class BeginBlockNode(PromptNode):
 
-    def __init__(self, **args):
+    def __init__(self, hidden=False, **args):
         super().__init__(**args)
+        self.hidden = hidden
 
     def set_end_block(self, end_block):
         self._end_block = end_block
 
     def _get_plan_steps_descending(self, stopNode=None, includeSelf=True):
-        block_steps = super()._get_plan_steps_descending(stopNode=self._end_block, includeSelf=includeSelf)
-        block_dict = {"steps": block_steps}
-        block_dict.update(self._get_attributes())
-        steps = [{"block":block_dict}]
-        steps.extend(self._end_block._get_plan_steps_descending())
+        steps = super()._get_plan_steps_descending(stopNode=self._end_block, includeSelf=includeSelf)
+
+        if self.hidden:
+            steps[0]["label"] = self.id
+            steps.extend(ast.fixed("", following=self.id))
+
+        steps.extend(self._end_block._get_plan_steps_descending(stopNode=stopNode, includeSelf=True))
         return steps
 
 
-def begin(prompt_code:PromptNode, tag:str=None) -> PromptNode:
-    node = BeginBlockNode(tag=tag)
-    prompt_code.add_child(node)
-    return node
-
-
-class BeginChatBlockNode(BeginBlockNode):
-
-    def __init__(self, role:str, **args):
-        super().__init__(**args)
-        self.role = role
-
-    def get_all_chat_text(self):
-        if( self.role is None):
-            raise Exception("BeginChatBlock must have a role before calling get_all_chat_text")
-        
-        if( self._end_block is None):
-            raise Exception("BeginChatBlock must have a matching EndBlock before calling get_all_chat_text")
-        
-        block_text = self._end_block.get_all_text(stop_at=self)
-        chat_text = self._get_prev_chat_text()
-        chat_text.append({"role":self.role, "content":block_text})
-        return chat_text
-
-    def _get_prev_chat_text(self):
-        prev_begin_block = self.get_parent_of_type(BeginChatBlockNode)
-        if prev_begin_block is not None:
-            chat_text = prev_begin_block.get_all_chat_text()
-        else:
-            chat_text = []
-        return chat_text        
-
-    def get_partial_chat_text(self):
-        assert self.role is not None, "BeginChatBlock must have a role before calling get_partial_chat_text"
-        chat_text = self._get_prev_chat_text()
-        chat_text.append({"role":self.role, "content":""})
-        return chat_text
-
-    def _get_attributes(self):
-        return {"role": self.role}
-
-
-def begin_chat(prompt_code:PromptNode, role:str, id:str=None, tag:str=None) -> PromptNode:
-    node = BeginChatBlockNode(role, id=id, tag=tag)
+def begin(prompt_code:PromptNode, hidden=False) -> PromptNode:
+    node = BeginBlockNode(hidden=hidden)
     prompt_code.add_child(node)
     return node
 
@@ -280,8 +197,8 @@ class EndBlockNode(PromptNode):
     
     def _get_plan_steps_ascending(self):
         steps = self.begin_block._get_plan_steps_ascending(includeSelf=False)
-        block_steps = self.begin_block._get_plan_steps_descending(stopNode=self)
-        steps.append({"block":{"steps": block_steps}})
+        block_steps = self.begin_block._get_plan_steps_descending(stopNode=self)    
+        steps.append(block_steps)
         return steps
         
 
