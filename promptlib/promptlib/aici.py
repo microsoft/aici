@@ -56,5 +56,5 @@ def _upload_wasm(base_url, wasm_runner_path):
             )
 
 
-def _submit_program(base_url, aici_module, aici_arg, temperature=0, max_tokens=200, n=1, log=False):
-    return aici_rest.completion("", aici_module, aici_arg, temperature, max_tokens, n, ignore_eos=False, base_url=base_url)
+def _submit_program(base_url, aici_module, aici_arg, temperature=0, max_tokens=200, log=False):
+    return aici_rest.run_controller(controller=aici_module, controller_arg=aici_arg, temperature=temperature, max_tokens=max_tokens, base_url=base_url)
