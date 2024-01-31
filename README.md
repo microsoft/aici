@@ -22,81 +22,47 @@ AICI is:
 - [Flexible](#flexibility): Controllers can be written in any language that can compile to Wasm (Rust, C, C++, ...),
   or be interpreted inside Wasm (Python, JavaScript, ...)
 
-This repository contains:
-
-- [definition](aici_abi/README.md#low-level-interface) of the AICI binary interface
-- [REST API definition](REST.md) for AICI Server
-- [aici_abi](aici_abi) - a Rust crate for easily implementing controllers (Wasm modules adhering to AICI)
-- [aicirt](aicirt) - an implementation of a runtime for running controllers,
-  built on top Wasmtime;
-  LLM inference engines talk to aicirt via shared memory and semaphores
-- [aicirt protocol definition](./aicirt/aicirt-proto.md) - for communication between LLM inference engine and aicirt
-- [rLLM](rllm) - a reference implementation of an LLM inference engine built on libtorch, inspired by vLLM
-- [rLLM-llama-cpp](cpp-rllm) - rLLM running on top of llama.cpp instead of libtorch
-- [pyaici](pyaici) - a Python package for interacting with aicirt and running controllers;
-  includes `aici` command-line tool
-- [promptlib](promptlib) - a Python package that exposes API for easily creating and running DeclCtrl ASTs
-  (will change to generate PyCtrl programs in the future)
-
-And a number of sample/reference controllers:
-
-- [uppercase](uppercase) - a sample/starter project for aici_abi
-- [PyCtrl](pyctrl) - an embedded Python 3 interpreter (using RustPython),
-  which lets you write controllers in Python
-- [JsCtrl](jsctrl) - an embedded JavaScript interpreter (using QuickJS),
-  which lets you write controllers in JavaScript
-- [DeclCtrl](declctrl) - a controller that interprets a simple JSON AST (Abstract Syntax Tree) to specify constraints
-
-Everything above implemented in Rust, unless otherwise stated,
-and all controllers compile to [Wasm](https://webassembly.org/).
-
-AICI abstracts LLM inference engine from the controller and vice-versa, as in the picture below.
-The rounded nodes are aspirational.
-Additional layers can be built on top - we provide [promptlib](promptlib),
-but we strongly believe that
-[Guidance](https://github.com/guidance-ai/guidance),
-[LMQL](https://lmql.ai/),
-[Outlines](https://github.com/outlines-dev/outlines),
-[jsonformer](https://github.com/1rgs/jsonformer),
-[LMFE](https://github.com/noamgat/lm-format-enforcer),
-etc.
-can also run on top of AICI (either with custom controllers or utilizing PyCtrl or JsCtrl).
-
-```mermaid
-graph TD
-    PyCtrl -- AICI --> aicirt[AICI-runtime]
-    JsCtrl -- AICI --> aicirt
-    guidance([GuidanceCtrl]) -- AICI --> aicirt
-    lmql([LMQL Ctrl]) -- AICI --> aicirt
-    aicirt -- POSIX SHM --> rLLM
-    aicirt -- POSIX SHM --> llama[llama.cpp]
-    aicirt -- POSIX SHM --> pyaici
-    pyaici -- Python --> vLLM(vLLM)
-    pyaici -- Python --> hf(HF Transformers)
-```
-
-The [pyaici](pyaici) package makes it easier to integrate AICI with Python-based LLM inference engines.
-The support for [HuggingFace Transformers](harness/run_hf.py)
-and [vLLM REST server](harness/vllm_server.py) is currently out of date.
-Please use the [rLLM](rllm) or [rLLM-llama-cpp](cpp-rllm) for now.
-
 ## Getting started
 
-There are several levels at which you can use AICI.
+This repository contains a number of components, and which ones you need depends on your use case.
 
-- you can use the provided PyCtrl, JsCtrl or DeclCtrl on a remote server;
-  no devcontainer is required in that case; [more info](proxy.md)
-- you can modify one of the provided controllers or build a new one;
-  this typically requires Rust, and the preferred way to work with it is to use the
-  provided **AICI Client-side** devcontainer - it should work on any machine with Docker and VSCode
-- you can also build the [rLLM-llama-cpp](cpp-rllm) and run it locally;
-  the same **AICI Client-side** devcontainer should work
-- if you want to run the CUDA version of inference server [rllm](rllm) locally, use the **AICI with CUDA** container;
+You can **use an existing controller module**.
+We provide [PyCtrl](./pyctrl) and [JsCtrl](./jsctrl)
+that let you script controllers using server-side Python and JavaScript, respectively.
+The [pyaici](./pyaici) package contains `aici` command line tool that lets you 
+[upload and run scripts](./proxy.md) with any controller
+(we also provide [REST API definition](./REST.md) for the curious).
+
+We anticipate [libraries](#architecture) will be built on top of controllers.
+We provide an example in [promptlib](./promptlib) - a client-side Python library
+that generates interacts with [DeclCtrl](./declctrl) via the pyaici package,
+see [example notebooks](./tutorials/promptlib_examples/).
+
+The controllers can be run in a cloud or local AICI-enabled LLM inference engine.
+You can **run the provided reference engine (rLLM) locally** with either
+[libtorch+CUDA](./rllm) or [llama.cpp backend](./cpp-rllm).
+
+To **develop a new controller**, use a Rust [starter project](./uppercase) that shows usage of [aici_abi](./aici_abi)
+library, which simplifies implementing the [low-level AICI interface](aici_abi/README.md#low-level-interface).
+
+To **add AICI support to a new LLM inference engine**,
+you will need to implement LLM-side of the [protocol](aicirt/aicirt-proto.md)
+that talks to [AICI runtime](aicirt).
+
+Finally, you may want to modify any of the provided components - PRs are most welcome!
+
+### Devcontainers
+
+All of the use cases above, except for running an existing controller on remote server,
+require a working [Rust compiler](https://www.rust-lang.org/tools/install),
+while compiling rllm also requires libtorch and CUDA.
+
+- **AICI Client-side** has Rust and C/C++ compilers for developing controllers,
+  [rLLM on llama.cpp](./cpp-rllm) and [aicirt](./aicirt)
+- **AICI with CUDA** has all of the above, plus CUDA and libtorch for 
+  [rLLM on libtorch](./rllm);
   this requires a CUDA-capable GPU (currently only 8.0 (A100) is supported)
-- finally, if you want to try the AICI integration with vLLM, use the
-  **AICI with CUDA and vLLM (experimental)** container
-
-Each of the above containers takes longer than the previous one to build.
+- **AICI with CUDA and vLLM (experimental)** is for our outdated vLLM integration
 
 If you're not familiar with [devcontainers](https://containers.dev/),
 you need to install the [Dev Containers VSCode extension](https://marketplace.visualstudio.com/items?itemName=ms-vscode-remote.remote-containers)
@@ -151,12 +117,11 @@ Install rustup as per the [Linux instructions](#build-setup-on-linux-including-w
 
 Build the `cpp-rllm`; it should auto-detect and use Metal acceleration on Apple Silicon.
 
-### Building on Windows
+### Build setup on Windows
 
 Please use a devcontainer or WSL2, as per the [Linux instructions](#build-setup-on-linux-including-wsl2) above.
 
 [Tracking issue](https://github.com/microsoft/aici/issues/42) for native Windows support.
-
 
 ### Running local server
 
@@ -169,8 +134,6 @@ Both of these commands first compile aicirt and the inference engine,
 and then run it.
 You can also try other models, see README.md files for [rllm](rllm/README.md) and
 [cpp-rllm](cpp-rllm/README.md) as well as the shell scripts themselves for details.
-
-The command line 
 
 ### Interacting with server
 
@@ -194,6 +157,39 @@ Run `./aici.sh -h` to see usage info.
 
 If the server is running with Orca-2 13B model,
 you can also run tests with `pytest` for the DeclCtrl, or with `./scripts/test-pyctrl.sh` for PyCtrl.
+
+
+## Architecture
+
+AICI abstracts LLM inference engine from the controller and vice-versa, as in the picture below.
+The rounded nodes are aspirational.
+Additional layers can be built on top - we provide [promptlib](promptlib),
+but we strongly believe that
+[Guidance](https://github.com/guidance-ai/guidance),
+[LMQL](https://lmql.ai/),
+[Outlines](https://github.com/outlines-dev/outlines),
+[jsonformer](https://github.com/1rgs/jsonformer),
+[LMFE](https://github.com/noamgat/lm-format-enforcer),
+etc.
+can also run on top of AICI (either with custom controllers or utilizing PyCtrl or JsCtrl).
+
+```mermaid
+graph TD
+    PyCtrl -- AICI --> aicirt[AICI-runtime]
+    JsCtrl -- AICI --> aicirt
+    guidance([GuidanceCtrl]) -- AICI --> aicirt
+    lmql([LMQL Ctrl]) -- AICI --> aicirt
+    aicirt -- POSIX SHM --> rLLM
+    aicirt -- POSIX SHM --> llama[llama.cpp]
+    aicirt -- POSIX SHM --> pyaici
+    pyaici -- Python --> vLLM(vLLM)
+    pyaici -- Python --> hf(HF Transformers)
+```
+
+The [pyaici](pyaici) package makes it easier to integrate AICI with Python-based LLM inference engines.
+The support for [HuggingFace Transformers](harness/run_hf.py)
+and [vLLM REST server](harness/vllm_server.py) is currently out of date.
+Please use the [rLLM](rllm) or [rLLM-llama-cpp](cpp-rllm) for now.
 
 ## Security
 
