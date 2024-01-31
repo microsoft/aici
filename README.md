@@ -29,7 +29,7 @@ This repository contains a number of components, and which ones you need depends
 You can **use an existing controller module**.
 We provide [PyCtrl](./pyctrl) and [JsCtrl](./jsctrl)
 that let you script controllers using server-side Python and JavaScript, respectively.
-The [pyaici](./pyaici) package contains `aici` command line tool that lets you 
+The [pyaici](./pyaici) package contains `aici` command line tool that lets you
 [upload and run scripts](./proxy.md) with any controller
 (we also provide [REST API definition](./REST.md) for the curious).
 
@@ -51,7 +51,10 @@ that talks to [AICI runtime](aicirt).
 
 Finally, you may want to modify any of the provided components - PRs are most welcome!
 
-### Devcontainers
+To continue, follow one of the build setups below, and continue
+with [running the server](#running-local-server) and [interacting with the server](#interacting-with-server) afterwards.
+
+### Build setup with devcontainers
 
 All of the use cases above, except for running an existing controller on remote server,
 require a working [Rust compiler](https://www.rust-lang.org/tools/install),
@@ -59,7 +62,7 @@ while compiling rllm also requires libtorch and CUDA.
 
 - **AICI Client-side** has Rust and C/C++ compilers for developing controllers,
   [rLLM on llama.cpp](./cpp-rllm) and [aicirt](./aicirt)
-- **AICI with CUDA** has all of the above, plus CUDA and libtorch for 
+- **AICI with CUDA** has all of the above, plus CUDA and libtorch for
   [rLLM on libtorch](./rllm);
   this requires a CUDA-capable GPU (currently only 8.0 (A100) is supported)
 - **AICI with CUDA and vLLM (experimental)** is for our outdated vLLM integration
@@ -157,7 +160,6 @@ Run `./aici.sh -h` to see usage info.
 
 If the server is running with Orca-2 13B model,
 you can also run tests with `pytest` for the DeclCtrl, or with `./scripts/test-pyctrl.sh` for PyCtrl.
-
 
 ## Architecture
 
