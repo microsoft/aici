@@ -11,7 +11,8 @@ Guidance, LMQL, and other LLM control libraries are expected to run on top of AI
 
 AICI is a prototype, designed and built at [Microsoft Research](https://www.microsoft.com/en-us/research/).
 
-We are [looking for an intern](https://jobs.careers.microsoft.com/us/en/job/1659267). You have to be in a PhD program.
+> [!TIP]
+> We are [looking for an intern](https://jobs.careers.microsoft.com/us/en/job/1659267). You have to be in a PhD program.
 
 AICI is:
 
