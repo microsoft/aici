@@ -110,6 +110,9 @@ Otherwise, build `cpp-rllm`, which uses llama.cpp instead of libtorch.
 
 ### Build setup on macOS
 
+Make sure you have XCode command line tools installed
+by running `xcode-select -p` and if not installed, run `xcode-select --install`.
+
 Install cmake and git via brew:
 
 ```bash
