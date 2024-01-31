@@ -136,6 +136,28 @@ rustup target add wasm32-wasi
 rustup component add rustfmt
 ```
 
+If you have CUDA-enabled GPU, you can build `rllm`.
+Otherwise, build `cpp-rllm`, which uses llama.cpp instead of libtorch.
+
+### Build setup on macOS
+
+Install cmake and git via brew:
+
+```bash
+brew install cmake git
+```
+
+Install rustup as per the [Linux instructions](#build-setup-on-linux-including-wsl2) above.
+
+Build the `cpp-rllm`; it should auto-detect and use Metal acceleration on Apple Silicon.
+
+### Building on Windows
+
+Please use a devcontainer or WSL2, as per the [Linux instructions](#build-setup-on-linux-including-wsl2) above.
+
+[Tracking issue](https://github.com/microsoft/aici/issues/42) for native Windows support.
+
+
 ### Running local server
 
 If you have CUDA, go to `rllm/` and run `./server.sh orca`.
