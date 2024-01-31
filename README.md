@@ -266,6 +266,9 @@ All of these can be easily extended.
 - [llama.rs](rllm/src/llm/llama.rs), [phi.rs](rllm/src/llm/phi.rs)
   and [logits.rs](rllm/src/logits.rs) are based on
   [candle-transformers](https://github.com/huggingface/candle/tree/main/candle-transformers)
+- specific [Python library](./pyctrl/Lib/) files are copied from
+  [RustPython](https://github.com/RustPython/RustPython)
+  (as we only use a subset of them)
 - the [example ANSI C grammar](aici_abi/grammars/c.y) is based on
   https://www.lysator.liu.se/c/ANSI-C-grammar-y.html by Jeff Lee (from 1985)
 
