@@ -19,7 +19,7 @@ else
 fi
 
 if [ "X$CUDA_VISIBLE_DEVICES" = "X" ] ; then
-  P=`ps -ax|grep 'aicir[t]\|rllm-serve[r]|cpp-rll[m]' | awk '{print $1}' | xargs echo`
+  P=`ps -ax|grep 'aicir[t]\|rllm-serve[r]|rll[m]-cpp' | awk '{print $1}' | xargs echo`
   if [ "X$P" != "X" ] ; then 
     echo "KILL $P"
     kill $P
@@ -86,7 +86,7 @@ if [ "$CPP" = 1 ] ; then
   esac
 else
   BIN_NAME=rllm-server
-  FOLDER_NAME=rllm
+  FOLDER_NAME=rllm-cuda
   case "$1" in
     phi )
       ARGS="-m microsoft/phi-1_5@refs/pr/66 -t phi -w $EXPECTED/phi-1_5/cats.safetensors"
