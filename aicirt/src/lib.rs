@@ -24,7 +24,7 @@ pub use fxhash::FxHashSet as HashSet;
 pub enum LogMode {
     Normal,
     Test,
-    Deamon,
+    Daemon,
 }
 
 fn daemon_format(
@@ -47,7 +47,7 @@ pub fn init_log(mode: LogMode) -> Result<()> {
         LogMode::Test => {
             Logger::try_with_env_or_str("debug")?.write_mode(WriteMode::SupportCapture)
         }
-        LogMode::Deamon => Logger::try_with_env_or_str("info")?
+        LogMode::Daemon => Logger::try_with_env_or_str("info")?
             .format(daemon_format)
             .log_to_stdout(),
     };

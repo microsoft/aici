@@ -1,6 +1,6 @@
 # aici_abi
 
-This crate specifies the application binary inferface (ABI) for the AICI Controllers.
+This crate specifies the application binary interface (ABI) for the AICI Controllers.
 It also provides higher-level interfaces for implementing controllers.
 
 ## Low-level interface

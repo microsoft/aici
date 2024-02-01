@@ -66,7 +66,7 @@ def eos_token() -> int:
 class TokenSet(Sequence[bool]):
     """
     Represents a set of tokens.
-    The value is true at indicies corresponding to tokens in the set.
+    The value is true at indices corresponding to tokens in the set.
     """
 
     def __init__(self):

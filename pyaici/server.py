@@ -404,7 +404,7 @@ def test(f: Coroutine[CbType, None, None]):
 class Label:
     def __init__(self):
         """
-        Create a new label the indictes the current position in the sequence.
+        Create a new label the indicates the current position in the sequence.
         Can be passed as `following=` argument to `FixedTokens()`.
         """
         self.ptr = len(get_tokens())

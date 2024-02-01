@@ -774,7 +774,7 @@ impl StepState {
         let sidx = runner.bytes.len() - nbytes;
 
         for idx in sidx.saturating_sub(1)..runner.bytes.len().saturating_sub(1) {
-            if !is_boundry(runner.bytes[idx]) && is_boundry(runner.bytes[idx + 1]) {
+            if !is_boundary(runner.bytes[idx]) && is_boundary(runner.bytes[idx + 1]) {
                 self.num_words += 1;
                 break;
             }
@@ -828,7 +828,7 @@ impl StepState {
 
         return None;
 
-        fn is_boundry(b: u8) -> bool {
+        fn is_boundary(b: u8) -> bool {
             b == b' ' || b == b'\n' || b == b'\t'
         }
     }
