@@ -38,11 +38,11 @@ jobs:
 
       - name: Build rLLM
         run: cargo build --verbose --release
-        working-directory: rllm
+        working-directory: rllm-cuda
 
       - run: strip target/release/rllm-server
       - name: Artifact upload
         uses: actions/upload-artifact@v4
         with:
-          name: cuda-rllm
+          name: rllm-cuda
           path: target/release/rllm-server
