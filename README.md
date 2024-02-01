@@ -128,7 +128,7 @@ brew install cmake git ccache
 
 Install rustup as per the [Linux instructions](#build-setup-on-linux-including-wsl2) above.
 
-Build the `cpp-rllm`; it should auto-detect and use Metal acceleration on Apple Silicon.
+[Build](#running-local-server) the `cpp-rllm`; it should auto-detect and use Metal acceleration on Apple Silicon.
 
 ### Build setup on Windows
 
