@@ -14,7 +14,7 @@ TOK=llama16
 
 RUST_LOG=info \
 PYTHONPATH=.:vllm \
-python harness/vllm_server.py \
+python3 harness/vllm_server.py \
     --aici-rt ./aicirt/target/release/aicirt \
     --aici-tokenizer $TOK \
     --aici-trace tmp/trace.jsonl \

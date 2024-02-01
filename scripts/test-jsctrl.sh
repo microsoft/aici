@@ -6,5 +6,5 @@ HERE=`pwd`
 cd $HERE/../jsctrl
 tsc -p samples
 PYTHONPATH=$HERE/.. \
-python ../pyctrl/driver.py samples/dist/test.js
+python3 ../pyctrl/driver.py samples/dist/test.js
 

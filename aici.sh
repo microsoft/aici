@@ -5,4 +5,4 @@ if [ "X$AICI_API_BASE" = "X" ] ; then
 fi
 
 PYTHONPATH=`dirname $0` \
-python -m pyaici.cli "$@"
+python3 -m pyaici.cli "$@"

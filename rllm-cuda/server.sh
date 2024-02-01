@@ -156,7 +156,7 @@ if [ "$CPP" != "1" ] && [ `uname` = Darwin ] ; then
   if test -f $TP ; then
     :
   else
-    python -c "from torch.utils import cpp_extension; print(cpp_extension.library_paths()[0])" > $TP
+    python3 -c "from torch.utils import cpp_extension; print(cpp_extension.library_paths()[0])" > $TP
   fi
   TP=`cat $TP`
   echo "Updating torch RPATH: $TP on $BIN_SERVER"
