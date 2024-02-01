@@ -163,8 +163,8 @@ Now, use query the model with or without AICI Controller:
 
 ```bash
 ./aici.sh infer "The answer to the ultimate question of life"
-./aici.sh run pyctrl/samples/test.py
-./aici.sh run declctrl/arg2.json
+./aici.sh run --build pyctrl pyctrl/samples/test.py
+./aici.sh run --build jsctrl jsctrl/samples/hello.js
 ./aici.sh run --build aici_abi::yesno
 ```
 
