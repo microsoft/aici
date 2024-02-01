@@ -105,9 +105,6 @@ rustup target add wasm32-wasi
 rustup component add rustfmt
 ```
 
-If you have CUDA-enabled GPU, you can build `rllm`.
-Otherwise, build `cpp-rllm`, which uses llama.cpp instead of libtorch.
-
 ### Build setup on macOS
 
 Make sure you have XCode command line tools installed
@@ -134,7 +131,9 @@ Please use a devcontainer or WSL2, as per the [Linux instructions](#build-setup-
 If you have CUDA, go to `rllm/` and run `./server.sh orca`.
 This will run the inference server with Orca-2 13B model (which is expected by testcases).
 
-If you don't have CUDA, go to `cpp-rllm/` and run `./cpp-server.sh phi2`.
+If you don't have CUDA, go to `cpp-rllm/` and run `./cpp-server.sh phi2`
+(phi2 is small enough to run on a CPU).
+You can also pass GGUF URL on HuggingFace.
 
 Both of these commands first compile aicirt and the inference engine,
 and then run it.
@@ -162,7 +161,9 @@ Now, use query the model with or without AICI Controller:
 Run `./aici.sh -h` to see usage info.
 
 If the server is running with Orca-2 13B model,
-you can also run tests with `pytest` for the DeclCtrl, or with `./scripts/test-pyctrl.sh` for PyCtrl.
+you can also run tests with `pytest` for the DeclCtrl, 
+with `./scripts/test-pyctrl.sh` for PyCtrl,
+or with `./scripts/test-jsctrl.sh` for JsCtrl.
 
 ## Architecture
 
