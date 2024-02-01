@@ -11,11 +11,11 @@ tokenizer.json
 perf.data
 tokenizer.bin
 log.txt
-rllm/*.safetensor
-rllm/report*.sqlite
+rllm-cuda/*.safetensor
+rllm-cuda/report*.sqlite
 *.ncu-rep
 *.nsys-rep
-rllm/logs
+rllm-cuda/logs
 .DS_Store
 build/
 dist/

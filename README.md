@@ -40,7 +40,7 @@ see [example notebooks](./tutorials/promptlib_examples/).
 
 The controllers can be run in a cloud or local AICI-enabled LLM inference engine.
 You can **run the provided reference engine (rLLM) locally** with either
-[libtorch+CUDA](./rllm) or [llama.cpp backend](./cpp-rllm).
+[libtorch+CUDA](./rllm-cuda) or [llama.cpp backend](./rllm-cpp).
 
 To **develop a new controller**, use a Rust [starter project](./uppercase) that shows usage of [aici_abi](./aici_abi)
 library, which simplifies implementing the [low-level AICI interface](aici_abi/README.md#low-level-interface).
@@ -58,12 +58,12 @@ with [running the server](#running-local-server) and [interacting with the serve
 
 All of the use cases above, except for running an existing controller on remote server,
 require a working [Rust compiler](https://www.rust-lang.org/tools/install),
-while compiling rllm also requires libtorch and CUDA.
+while compiling rllm-cuda also requires libtorch and CUDA.
 
 - **AICI Client-side** has Rust and C/C++ compilers for developing controllers,
-  [rLLM on llama.cpp](./cpp-rllm) and [aicirt](./aicirt)
+  [rLLM on llama.cpp](./rllm-cpp) and [aicirt](./aicirt)
 - **AICI with CUDA** has all of the above, plus CUDA and libtorch for
-  [rLLM on libtorch](./rllm);
+  [rLLM on libtorch](./rllm-cuda);
   this requires a CUDA-capable GPU (currently only 8.0 (A100) is supported)
 - **AICI with CUDA and vLLM (experimental)** is for our outdated vLLM integration
 
@@ -128,7 +128,7 @@ brew install cmake git ccache
 
 Install rustup as per the [Linux instructions](#build-setup-on-linux-including-wsl2) above.
 
-[Build](#running-local-server) the `cpp-rllm`; it should auto-detect and use Metal acceleration on Apple Silicon.
+[Build](#running-local-server) the `rllm-cpp`; it should auto-detect and use Metal acceleration on Apple Silicon.
 
 ### Build setup on Windows
 
@@ -138,17 +138,17 @@ Please use a devcontainer or WSL2, as per the [Linux instructions](#build-setup-
 
 ### Running local server
 
-If you have CUDA, go to `rllm/` and run `./server.sh orca`.
+If you have CUDA, go to `rllm-cuda/` and run `./server.sh orca`.
 This will run the inference server with Orca-2 13B model (which is expected by testcases).
 
-If you don't have CUDA, go to `cpp-rllm/` and run `./cpp-server.sh phi2`
+If you don't have CUDA, go to `rllm-cpp/` and run `./cpp-server.sh phi2`
 (phi2 is small enough to run on a CPU).
 You can also pass GGUF URL on HuggingFace.
 
 Both of these commands first compile aicirt and the inference engine,
 and then run it.
-You can also try other models, see README.md files for [rllm](rllm/README.md) and
-[cpp-rllm](cpp-rllm/README.md) as well as the shell scripts themselves for details.
+You can also try other models, see README.md files for [rllm-cuda](rllm-cuda/README.md) and
+[rllm-cpp](rllm-cpp/README.md) as well as the shell scripts themselves for details.
 
 ### Interacting with server
 
@@ -205,7 +205,7 @@ graph TD
 The [pyaici](pyaici) package makes it easier to integrate AICI with Python-based LLM inference engines.
 The support for [HuggingFace Transformers](harness/run_hf.py)
 and [vLLM REST server](harness/vllm_server.py) is currently out of date.
-Please use the [rLLM](rllm) or [rLLM-llama-cpp](cpp-rllm) for now.
+Please use the [rLLM-cuda](rllm-cuda) or [rLLM-llama-cpp](rllm-cpp) for now.
 
 ## Security
 
@@ -290,15 +290,15 @@ All of these can be easily extended.
 - [Paged Attention kernels](tch-cuda/kernels/vllm/) are copied from
   [vLLM repo](https://github.com/vllm-project/vllm);
   see [Apache LICENSE](tch-cuda/kernels/vllm/LICENSE)
-- [OpenAI API definitions](rllm/src/server/openai/) are copied and modified from
+- [OpenAI API definitions](rllm-cuda/src/server/openai/) are copied and modified from
   [candle-vllm](https://github.com/EricLBuehler/candle-vllm);
-  see [MIT LICENSE](rllm/src/server/openai/LICENSE)
-- [cache_engine.rs](rllm/src/paged/cache_engine.rs),
-  [config.rs](rllm/src/config.rs),
-  and [scheduler.rs](rllm/src/paged/scheduler.rs)
+  see [MIT LICENSE](rllm-cuda/src/server/openai/LICENSE)
+- [cache_engine.rs](rllm-cuda/src/paged/cache_engine.rs),
+  [config.rs](rllm-cuda/src/config.rs),
+  and [scheduler.rs](rllm-cuda/src/paged/scheduler.rs)
   are loosely based on [vLLM](https://github.com/vllm-project/vllm)
-- [llama.rs](rllm/src/llm/llama.rs), [phi.rs](rllm/src/llm/phi.rs)
-  and [logits.rs](rllm/src/logits.rs) are based on
+- [llama.rs](rllm-cuda/src/llm/llama.rs), [phi.rs](rllm-cuda/src/llm/phi.rs)
+  and [logits.rs](rllm-cuda/src/logits.rs) are based on
   [candle-transformers](https://github.com/huggingface/candle/tree/main/candle-transformers)
 - specific [Python library](./pyctrl/Lib/) files are copied from
   [RustPython](https://github.com/RustPython/RustPython)

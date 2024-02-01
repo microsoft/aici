@@ -1,6 +1,6 @@
 # rLLM for llama.cpp
 
-This is similar to the [CUDA-based rLLM](../rllm/)
+This is similar to the [CUDA-based rLLM](../rllm-cuda/)
 but built on top of [llama.cpp](https://github.com/ggerganov/llama.cpp).
 
 ## Building

@@ -7,8 +7,8 @@ members = [
     "pyctrl",
     "jsctrl",
     "uppercase",
-    "rllm",
-    "cpp-rllm",
+    "rllm-cuda",
+    "rllm-cpp",
     "tch-cuda",
     "llama-cpp-low",
 ]

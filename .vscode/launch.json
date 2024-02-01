@@ -7,9 +7,9 @@
         {
             "type": "lldb",
             "request": "launch",
-            "name": "cpp-rllm orca",
-            "cwd": "rllm",
-            "program": "${workspaceFolder}/target/debug/cpp-rllm",
+            "name": "rllm-cpp orca",
+            "cwd": "rllm-cpp",
+            "program": "${workspaceFolder}/target/debug/rllm-cpp",
             "env": {
                 "RUST_LOG": "info,rllm=debug,aicirt=info"
             },

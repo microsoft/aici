@@ -54,11 +54,11 @@ if [ "$1" = "--debug" ] ; then
     shift
 fi
 
-EXPECTED=$WS/rllm/expected
+EXPECTED=$WS/rllm-cuda/expected
 
 if [ "$CPP" = 1 ] ; then
-  BIN_NAME=cpp-rllm
-  FOLDER_NAME=cpp-rllm
+  BIN_NAME=rllm-cpp
+  FOLDER_NAME=rllm-cpp
   case "$1" in
     phi2 )
       ARGS="-m https://huggingface.co/TheBloke/phi-2-GGUF/blob/main/phi-2.Q8_0.gguf -t phi -w $EXPECTED/phi-2/cats.safetensors -s test_maxtol=0.8 -s test_avgtol=0.3"
