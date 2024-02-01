@@ -1,4 +1,4 @@
-name: rLLM
+name: rLLM with CUDA
 
 on:
   push:
