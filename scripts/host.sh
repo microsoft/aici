@@ -67,7 +67,7 @@ if [ "$INNER" = "model" ] ; then
     PREF="cd $FOLDER && CUDA_VISIBLE_DEVICES=$CUDA_VISIBLE_DEVICES"
     ARGS="--port $FWD_PORT --shm-prefix /aici-${MODEL}-"
     if [ "$CPP" -eq 1 ] ; then
-        docker_cmd "$PREF /workspaces/aici/rllm-cpp/cpp-server.sh --loop --cuda $MODEL $ARGS"
+        docker_cmd "$PREF /workspaces/aici/rllm-cpp/cpp-server.sh --loop --cuda $MODEL $ARGS --gpu-layers 1000"
     else
         docker_cmd "$PREF /workspaces/aici/rllm-cuda/server.sh --loop $MODEL $ARGS"
     fi
