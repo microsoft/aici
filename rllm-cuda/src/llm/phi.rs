@@ -216,8 +216,14 @@ impl TModelInner for MixFormerSequentialForCausalLM {
 
         // it should approximately match...
         let tok_size = self.config.tok_vocab_size as i64;
-        assert!(r.size()[1] >= tok_size);
-        assert!(r.size()[1] < tok_size + 1000);
+        if r.size()[1] < tok_size || r.size()[1] > tok_size + 1000 {
+            panic!(
+                "unexpected logits size: {:?} ({}/{})",
+                r.size(),
+                tok_size,
+                self.config.vocab_size
+            );
+        }
 
         let r = r.i((.., 0..tok_size));
         batch_info.extract_positions(&r)

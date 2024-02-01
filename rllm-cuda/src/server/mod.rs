@@ -601,13 +601,11 @@ pub async fn server_main(mut args: RllmCliArgs) -> () {
         loader_args.dtype = dtype;
     }
 
-    if args.test.len() > 0 {
-        run_tests(&args, loader_args);
-        return;
-    }
-
     match &args.tokenizer {
-        Some(v) => loader_args.tokenizer = v.clone(),
+        Some(v) => {
+            log::info!("explicit tokenizer: {}", v);
+            loader_args.tokenizer = v.clone();
+        }
         None => match guess_tokenizer(&loader_args.model_id) {
             Some(v) => {
                 log::info!("guessed tokenizer: {}", v);
@@ -619,6 +617,11 @@ pub async fn server_main(mut args: RllmCliArgs) -> () {
                 std::process::exit(10);
             }
         },
+    }
+
+    if args.test.len() > 0 {
+        run_tests(&args, loader_args);
+        return;
     }
 
     let (tokenizer, tok_trie) =
