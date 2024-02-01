@@ -42,10 +42,12 @@ pub struct LoaderArgs {
     pub model_id: String,
     pub revision: Option<String>,
     pub local_weights: Option<String>,
-    pub gguf: Option<String>,
     pub alt: usize,
     pub aici: AiciConfig,
 
+    // llama.cpp-specific
+    pub gguf: Option<String>,
+    pub n_gpu_layers: Option<usize>,
     #[cfg(not(feature = "tch"))]
     pub(crate) cached_model: Option<llamacpp::Model>,
 
@@ -78,6 +80,7 @@ impl Default for LoaderArgs {
             alt: 0,
             dtype,
             device,
+            n_gpu_layers: None,
             #[cfg(not(feature = "tch"))]
             cached_model: None,
         }

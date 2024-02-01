@@ -22,9 +22,9 @@ use std::{
 };
 use tokio::sync::mpsc::{channel, error::TryRecvError, Receiver, Sender};
 
+mod api;
 mod completion;
 mod openai;
-mod api;
 
 #[derive(Debug)]
 pub struct APIError {
@@ -206,6 +206,8 @@ pub struct RllmCliArgs {
     // these are copied from command-specific parsers
     #[arg(skip)]
     pub gguf: Option<String>,
+    #[arg(skip)]
+    pub n_gpu_layers: Option<usize>,
 }
 
 #[actix_web::get("/v1/controllers/tags")]
@@ -594,6 +596,7 @@ pub async fn server_main(mut args: RllmCliArgs) -> () {
     loader_args.revision = args.revision.clone();
     loader_args.local_weights = args.local_weights.clone();
     loader_args.gguf = args.gguf.clone();
+    loader_args.n_gpu_layers = args.n_gpu_layers;
     if dtype.is_some() {
         loader_args.dtype = dtype;
     }
