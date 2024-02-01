@@ -105,15 +105,25 @@ rustup target add wasm32-wasi
 rustup component add rustfmt
 ```
 
+- if you already had rust installed, or are getting complaints from cargo about outdated version,
+run:
+
+```bash
+rustup update
+rustup target add wasm32-wasi
+```
+
+- now, [build and run local server](#running-local-server)
+
 ### Build setup on macOS
 
 Make sure you have XCode command line tools installed
 by running `xcode-select -p` and if not installed, run `xcode-select --install`.
 
-Install cmake and git via brew:
+Install required packages via brew:
 
 ```bash
-brew install cmake git
+brew install cmake git ccache
 ```
 
 Install rustup as per the [Linux instructions](#build-setup-on-linux-including-wsl2) above.
