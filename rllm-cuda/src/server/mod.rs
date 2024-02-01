@@ -155,7 +155,7 @@ pub struct RllmCliArgs {
     pub dtype: String,
 
     /// Port to serve on (localhost:port)
-    #[arg(long, default_value_t = 8080, help_heading = "Server")]
+    #[arg(long, default_value_t = 4242, help_heading = "Server")]
     pub port: u16,
 
     /// Set verbose mode (print all requests)

@@ -9,7 +9,7 @@ from typing import Optional, List
 
 BASE_URL_ENV = "AICI_API_BASE"
 
-base_url = os.environ.get(BASE_URL_ENV, "http://127.0.0.1:8080/v1/")
+base_url = os.environ.get(BASE_URL_ENV, "http://127.0.0.1:4242/v1/")
 log_level = 1
 ast_module = ""
 

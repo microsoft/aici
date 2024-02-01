@@ -21,7 +21,7 @@ python3 harness/vllm_server.py \
     --model $MODEL \
     --aici-rtarg="--wasm-max-pre-step-time=10" \
     --tokenizer hf-internal-testing/llama-tokenizer \
-    --port 8080 --host 127.0.0.1
+    --port 4242 --host 127.0.0.1
 
 #    --aici-rtarg="--wasm-max-step-time=50" \
 #    --aici-rtarg="--wasm-max-pre-step-time=2" \

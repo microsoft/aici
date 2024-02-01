@@ -15,7 +15,6 @@
             },
             "args": [
                 "--verbose",
-                "--port=8080",
                 "--aicirt=${workspaceFolder}/target/release/aicirt",
                 "--model=https://huggingface.co/TheBloke/Orca-2-13B-GGUF/blob/main/orca-2-13b.Q8_0.gguf",
                 "--tokenizer=orca"
