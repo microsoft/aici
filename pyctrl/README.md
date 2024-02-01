@@ -8,7 +8,7 @@ Python code is typically only used lightly, for gluing the primitives together,
 and thus is not performance critical.
 
 There are [several sample scripts](samples/) available.
-The scripts use the [pyaici.server module](pyaici/server.py) to communicate with the AICI runtime
+The scripts use the [pyaici.server module](../pyaici/server.py) to communicate with the AICI runtime
 and use the native constraints.
 
 This is quite similar to [jsctrl](../jsctrl/README.md) but with Python instead of JavaScript.

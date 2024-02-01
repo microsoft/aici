@@ -16,5 +16,5 @@ jobs:
     - name: Run link check
       uses: gaurav-nelson/github-action-markdown-link-check@v1
       with:
-          use-quiet-mode: 'no'
-          use-verbose-mode: 'yes'
+          use-quiet-mode: 'yes'
+          use-verbose-mode: 'no'

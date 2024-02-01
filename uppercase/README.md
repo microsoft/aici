@@ -44,7 +44,7 @@ upload module... 192kB -> 671kB id:c65e78e9
 Yes
 ```
 
-A similar effect can be achieved with PyCtrl and [10x less lines of code](pyctrl/samples/yesno.py),
+A similar effect can be achieved with PyCtrl and [10x less lines of code](../pyctrl/samples/yesno.py),
 but it illustrates the raw token APIs.
 
 

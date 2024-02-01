@@ -41,7 +41,7 @@ The actual binary interface is a bit more complicated, due
 to limitations in passing values to and from Wasm.
 A Wasm module instance is created for each token sequence.
 Also, when the sequence forks (as in beam search), the module instance is cloned.
-See the [AiciCtrl Rust trait](aici_abi/src/lib.rs) for details.
+See the [AiciCtrl Rust trait](src/lib.rs) for details.
 
 A number of functions are exposed to the Wasm module.
 
@@ -89,7 +89,7 @@ To compute the set of tokens that match a string constraint, one needs go throug
 and apply the constraint.
 An efficient way to do this is walk a prefix tree (trie) of all tokens.
 The `aici_abi` library implements this trie and exposes a way of filtering when provided with a constraints
-implementing the [following interface](aici_abi/src/toktree.rs):
+implementing the [following interface](src/toktree.rs):
 
 ```rust
 pub trait Recognizer {
