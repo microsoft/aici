@@ -36,7 +36,7 @@ The [pyaici](./pyaici) package contains `aici` command line tool that lets you
 We anticipate [libraries](#architecture) will be built on top of controllers.
 We provide an example in [promptlib](./promptlib) - a client-side Python library
 that generates interacts with [DeclCtrl](./declctrl) via the pyaici package,
-see [example notebooks](./tutorials/promptlib_examples/).
+see [example notebooks](./promptlib/notebooks/).
 
 The controllers can be run in a cloud or local AICI-enabled LLM inference engine.
 You can **run the provided reference engine (rLLM) locally** with either
