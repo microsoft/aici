@@ -1,21 +1,24 @@
 # Artificial Intelligence Controller Interface (AICI)
 
-The Artificial Intelligence Controller Interface (AICI)
-lets you build Controllers that constrain and direct output of a Large Language Model (LLM) in real time.
-Controllers are light-weight WebAssembly (Wasm) modules
-which run on the same machine as the LLM inference engine, utilizing the CPU while the GPU is busy
-with token generation.
+The Artificial Intelligence Controller Interface (AICI) lets you build Controllers that constrain and direct output of a Large Language Model (LLM) in real time.
+Controllers are flexible programs capable of implementating constrained decoding, dynamic editing of prompts and generated text, and coordinating execution across multiple, parallel generations.
+Controllers incorporate custom logic during the token-by-token decoding and maintain state during an LLM request. This allows diverse Controller strategies, from programmatic or query-based decoding to multi-agent conversations to execute efficiently in tight integration with the LLM itself.
 
-AICI is meant to run both locally and in the cloud, including (eventually) multi-tenant LLM deployments.
-It is designed to allow control libraries such as Guidance, LMQL, and others to run efficiently and portably across LLM inference and serving engines.
+The core goal of AICI is to make it easy to build and experiment with existing and entirely new Controller strategies for improving LLM generations.
+By abstracting away implementation details of the underlying LLM inference and serving engine, AICI aims to simplify the development of Controllers, make it easier to 
+write fast Controllers, and ease compatibility across LLM inference and serving engines.
+
+AICI is designed for both local and cloud execution, including (eventually) multi-tenant LLM deployments.
+Controllers are implemented as light-weight WebAssembly (Wasm) modules which run on the same machine as the LLM inference engine, utilizing the CPU while the GPU is busy with token generation.
+AICI is one layer in the inference stack, and is designed to allow control libraries such as Guidance, LMQL, and others to run over it and gain both efficiency and performance improvements, as well as portability across LLM inference and serving engines.
 
 AICI is:
 
+- [Flexible](#flexibility): Controllers can be written in any language that can compile to Wasm (Rust, C, C++, ...),
+  or be interpreted inside Wasm (Python, JavaScript, ...)
 - [Secure](#security): Controllers are sandboxed and cannot access the filesystem, network, or any other resources
 - [Fast](#performance): Wasm modules are compiled to native code and run in parallel with the LLM inference engine, inducing only a
   minimal overhead to the generation process
-- [Flexible](#flexibility): Controllers can be written in any language that can compile to Wasm (Rust, C, C++, ...),
-  or be interpreted inside Wasm (Python, JavaScript, ...)
 
 AICI is a prototype, designed and built at [Microsoft Research](https://www.microsoft.com/en-us/research/).
 
