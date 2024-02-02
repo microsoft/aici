@@ -9,11 +9,6 @@ with token generation.
 AICI is meant to run both locally and in the cloud, including (eventually) multi-tenant LLM deployments.
 It is designed to allow control libraries such as Guidance, LMQL, and others to run efficiently and portably across LLM inference and serving engines.
 
-AICI is a prototype, designed and built at [Microsoft Research](https://www.microsoft.com/en-us/research/).
-
-> [!TIP]
-> We are [looking for a research intern](https://jobs.careers.microsoft.com/us/en/job/1659267). You have to be accepted or currently enrolled in a PhD program or an equivalent research-oriented program in Computer Science or related STEM field.
-
 AICI is:
 
 - [Secure](#security): Controllers are sandboxed and cannot access the filesystem, network, or any other resources
@@ -21,6 +16,11 @@ AICI is:
   minimal overhead to the generation process
 - [Flexible](#flexibility): Controllers can be written in any language that can compile to Wasm (Rust, C, C++, ...),
   or be interpreted inside Wasm (Python, JavaScript, ...)
+
+AICI is a prototype, designed and built at [Microsoft Research](https://www.microsoft.com/en-us/research/).
+
+> [!TIP]
+> We are [looking for a research intern](https://jobs.careers.microsoft.com/us/en/job/1659267). You have to be accepted or currently enrolled in a PhD program or an equivalent research-oriented program in Computer Science or related STEM field.
 
 ## Getting started
 
