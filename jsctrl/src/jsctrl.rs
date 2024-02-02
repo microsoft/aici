@@ -114,10 +114,10 @@ impl<'js> Trace<'js> for TokenSet {
 impl TokenSet {
     #[qjs(constructor)]
     pub fn new() -> TokenSet {
-        // TODO set the size
-        let mut inner = SimpleVob::new();
-        inner.resize(32000);
-        TokenSet { inner }
+        let trie = &mut GLOBAL_STATE.lock().unwrap().trie;
+        TokenSet {
+            inner: trie.alloc_token_set(),
+        }
     }
 
     #[qjs(get)]

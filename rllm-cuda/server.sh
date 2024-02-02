@@ -39,6 +39,11 @@ if [ "$1" = "--trace" ] ; then
     shift
 fi
 
+if [ "$1" = "--trace-rt" ] ; then
+    R_LOG=info,rllm=trace,aicirt=trace
+    shift
+fi
+
 if [ "$1" = "--loop" ] ; then
     LOOP=1
     shift
