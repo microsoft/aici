@@ -35,7 +35,7 @@ that let you script controllers using server-side Python and JavaScript, respect
 The [pyaici](./pyaici) package contains `aici` command line tool that lets you
 [upload and run scripts](./proxy.md) with any controller
 (we also provide [REST API definition](./REST.md) for the curious).
-> 🧑‍💻[Python code samples for scripting PyCtrl](./pyctrl) and a [JavaScript Hello World for JSCtrl](.jsctrl/samples/hello.js)
+> 🧑‍💻[Python code samples for scripting PyCtrl](./pyctrl) and a [JavaScript Hello World for JSCtrl](./jsctrl/samples/hello.js)
 
 We anticipate [libraries](#architecture) will be built on top of controllers.
 We provide an example in [promptlib](./promptlib) - a client-side Python library
