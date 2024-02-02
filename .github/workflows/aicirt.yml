@@ -3,8 +3,6 @@ name: AICIrt
 on:
   push:
     branches: [ "main" ]
-    tags:
-      - "v*.*.*"
   pull_request:
     branches: [ "main" ]
 
@@ -47,11 +45,3 @@ jobs:
       with:
         name: aicirt-xz
         path: target/dist/*.tar.xz
-    - name: Release
-      uses: softprops/action-gh-release@v1
-      if: startsWith(github.ref, 'refs/tags/')
-      with:
-        body_path: target/dist/README.md
-        files: |
-          target/dist/*.tar.gz
-          target/dist/*.tar.xz
