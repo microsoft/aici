@@ -4,7 +4,7 @@ The Artificial Intelligence Controller Interface (AICI) lets you build Controlle
 Controllers are flexible programs capable of implementating constrained decoding, dynamic editing of prompts and generated text, and coordinating execution across multiple, parallel generations.
 Controllers incorporate custom logic during the token-by-token decoding and maintain state during an LLM request. This allows diverse Controller strategies, from programmatic or query-based decoding to multi-agent conversations to execute efficiently in tight integration with the LLM itself.
 
-The core goal of AICI is to make it easy to build and experiment with existing and entirely new Controller strategies for improving LLM generations.
+**The purpose of AICI is to make it easy to build and experiment with both existing and entirely new Controller strategies for improving LLM generations.**
 By abstracting away implementation details of the underlying LLM inference and serving engine, AICI aims to simplify the development of Controllers, make it easier to 
 write fast Controllers, and ease compatibility across LLM inference and serving engines.
 
@@ -35,11 +35,12 @@ that let you script controllers using server-side Python and JavaScript, respect
 The [pyaici](./pyaici) package contains `aici` command line tool that lets you
 [upload and run scripts](./proxy.md) with any controller
 (we also provide [REST API definition](./REST.md) for the curious).
+> 🧑‍💻[Python code samples for scripting PyCtrl](./pyctrl) and a [JavaScript Hello World for JSCtrl](.jsctrl/samples/hello.js)
 
 We anticipate [libraries](#architecture) will be built on top of controllers.
 We provide an example in [promptlib](./promptlib) - a client-side Python library
-that generates interacts with [DeclCtrl](./declctrl) via the pyaici package,
-see [example notebooks](./promptlib/notebooks/).
+that generates interacts with [DeclCtrl](./declctrl) via the pyaici package.
+> 🧑‍💻 [Example notebook that uses PromptLib to interact with DeclCtrl](./promptlib/notebooks/basics_tutorial.ipynb).
 
 The controllers can be run in a cloud or local AICI-enabled LLM inference engine.
 You can **run the provided reference engine (rLLM) locally** with either
@@ -47,6 +48,7 @@ You can **run the provided reference engine (rLLM) locally** with either
 
 To **develop a new controller**, use a Rust [starter project](./uppercase) that shows usage of [aici_abi](./aici_abi)
 library, which simplifies implementing the [low-level AICI interface](aici_abi/README.md#low-level-interface).
+> 🧑‍💻[Sample code for a minimal new controller](./uppercase) to get you started
 
 To **add AICI support to a new LLM inference engine**,
 you will need to implement LLM-side of the [protocol](aicirt/aicirt-proto.md)
