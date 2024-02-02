@@ -340,6 +340,9 @@ def main_inner():
         runner_from_cli(args).bench()
         return
 
+    if os.environ.get(rest.BASE_URL_ENV, None) is None:
+        cli_error(f"environment variable {rest.BASE_URL_ENV} not set")
+
     if args.all_prefixes:
         prefixes = rest.detect_prefixes()
         if len(prefixes) <= 1:
