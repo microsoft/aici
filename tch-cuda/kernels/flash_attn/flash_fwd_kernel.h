@@ -1201,7 +1201,7 @@ inline __device__ void combine_attn_seqk_parallel(const Params &params) {
                               Shape<Int<kBlockM>>{}, Stride<_1>{});
     constexpr int kNLsePerThread = (kMaxSplits * kBlockM + kNThreads - 1) / kNThreads;
 
-    // Read the LSE values from gmem and store them in shared memory, then tranpose them.
+    // Read the LSE values from gmem and store them in shared memory, then transpose them.
     constexpr int kRowsPerLoadLSE = kNThreads / kBlockM;
     #pragma unroll
     for (int l = 0; l < kNLsePerThread; ++l) {

@@ -240,7 +240,7 @@ For example, computing allowed token set in the 32000-strong vocabulary of Llama
 
 - about 2.0ms for Yacc grammar of the C programming language
 - about 0.3ms for a regular expression
-- about 0.2ms for a substring contraint, from 4kB string
+- about 0.2ms for a substring constraint, from 4kB string
 
 The above numbers are for a single sequence, however each sequence is processed in separate process,
 and thus if there is more cores than sequences (which is typical), they do not change.

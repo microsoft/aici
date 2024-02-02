@@ -541,7 +541,7 @@ pub async fn server_main(mut args: RllmCliArgs) -> () {
         None => {}
     }
     aicirt::init_log(if args.daemon {
-        aicirt::LogMode::Deamon
+        aicirt::LogMode::Daemon
     } else {
         aicirt::LogMode::Normal
     })

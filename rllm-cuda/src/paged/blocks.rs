@@ -66,7 +66,7 @@ impl BlockRef {
         }
     }
 
-    pub fn is_singlular(&self) -> bool {
+    pub fn is_singular(&self) -> bool {
         let mut alloc = self.allocator.lock().unwrap();
         let blk = &mut alloc.all_blocks[self.block_idx];
         assert!(blk.ref_count > 0);
@@ -206,7 +206,7 @@ impl BlockSpaceManager {
             let block_idx = ptr / self.block_size;
             if block_idx < block_table.len() {
                 let curr_block = &mut block_table[block_idx];
-                if !curr_block.is_singlular() {
+                if !curr_block.is_singular() {
                     let new_block = self.alloc_gpu();
                     let old_block_number = curr_block.block_idx;
                     let new_block_number = new_block.block_idx;

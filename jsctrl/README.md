@@ -15,7 +15,7 @@ and use the native constraints.
 
 This is quite similar to [PyCtrl](../pyctrl/README.md) but with JavaScript instead of Python.
 It is also smaller, at 1.3MiB without regex and CFG, 1.8MiB with regex, and 3.3MiB with regex and CFG.
-For comparision, pyctrl is 14MiB.
+For comparison, pyctrl is 14MiB.
 Also, the [PyCtrl samples](../pyctrl/samples/) translate 1:1 to JsCtrl.
 
 ## Usage

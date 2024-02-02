@@ -121,7 +121,7 @@ def infer_args(cmd: argparse.ArgumentParser):
     cmd.add_argument(
         "--temperature",
         type=float,
-        help="temperature for sampling; deflaut 0.0 (argmax)",
+        help="temperature for sampling; default 0.0 (argmax)",
     )
 
 
@@ -306,8 +306,8 @@ def main_inner():
 
     jsinit_cmd = subparsers.add_parser(
         "jsinit",
-        help="intialize current folder for jsctrl",
-        description="Intialize a JavaScript/TypeScript folder for jsctrl.",
+        help="initialize current folder for jsctrl",
+        description="Initialize a JavaScript/TypeScript folder for jsctrl.",
     )
     jsinit_cmd.add_argument(
         "--force", "-f", action="store_true", help="overwrite existing files"
