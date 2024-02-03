@@ -46,7 +46,7 @@ pub fn tokenizers() -> Vec<TokenizerInfo> {
         TokenizerInfo {
             name: "orca",
             description: "llama",
-            hf_model: "microsoft/Orca-2-13b@refs/pr/10",
+            hf_model: "microsoft/Orca-2-13b@refs/pr/23",
             model_ids: "for microsoft/Orca models; similar to llama, with 3 tokens added for chat",
         },
         TokenizerInfo {
