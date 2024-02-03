@@ -263,8 +263,6 @@ impl RllmEngine {
 
     pub fn load_tokenizer(args: &mut LoaderArgs) -> Result<(Tokenizer, TokTrie)> {
         let byte_tokenizer = aicirt::bintokens::find_tokenizer(&args.tokenizer)?;
-        let hf_bytes = byte_tokenizer.get_hf_bytes();
-        let tokenizer = Tokenizer::from_bytes(&hf_bytes).expect("can't load hf tokenizer");
         let tokens = byte_tokenizer.token_bytes();
         log::info!(
             "TokTrie building: {:?} wl={}",
@@ -273,7 +271,7 @@ impl RllmEngine {
         );
         let trie = TokTrie::from(&byte_tokenizer.tokrx_info(), &tokens);
         trie.check_against(&tokens);
-        Ok((tokenizer, trie))
+        Ok((byte_tokenizer.hf_tokenizer, trie))
     }
 
     pub fn set_aicirt(&mut self, aicirt: AiciRtIface) {

@@ -12,10 +12,7 @@ use aici_abi::{
     PostProcessResult, PreProcessArg, PreProcessResult, TokenId,
 };
 use aicirt::{
-    api::{AiciMidProcessResultInner, AiciPostProcessResultInner, SequenceResult},
-    bail_user,
-    bintokens::BinTokenizer,
-    user_error,
+    api::{AiciMidProcessResultInner, AiciPostProcessResultInner, SequenceResult}, bail_user, bintokens::ByteTokenizer, user_error
 };
 use anyhow::{anyhow, bail, ensure, Result};
 use serde::Deserialize;
@@ -36,7 +33,7 @@ impl WasmContext {
         unsafe { wasmtime::Module::deserialize_file(&self.engine, path) }
     }
 
-    pub fn new(limits: AiciLimits, tokenizer: BinTokenizer) -> Result<Self> {
+    pub fn new(limits: AiciLimits, tokenizer: ByteTokenizer) -> Result<Self> {
         let mut cfg = wasmtime::Config::default();
         // these are defaults as of 13.0.0, but we specify them anyways for stability
         cfg.debug_info(false)
@@ -84,7 +81,7 @@ impl WasmContext {
         let globals = GlobalInfo {
             tokrx_info: tokenizer.tokrx_info(),
             trie_bytes: Arc::new(bytes),
-            hf_tokenizer_bytes: Arc::new(tokenizer.get_hf_bytes()),
+            hf_tokenizer: Arc::new(tokenizer.hf_tokenizer),
         };
 
         Ok(Self {

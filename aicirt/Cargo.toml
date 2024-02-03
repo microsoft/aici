@@ -18,7 +18,7 @@ serde_json = { version = "1.0.108", features = ["preserve_order"] }
 sha2 = "0.10.7"
 wasmtime = { version = "16.0.0", default-features = false, features = ["cranelift", "parallel-compilation", "pooling-allocator"] }
 aici_abi = { path = "../aici_abi" }
-tokenizers = "0.15.0"
+tokenizers = { version = "0.15.0", features = ["http"] }
 thread-priority = "0.15.1"
 ipc-channel = "0.18.0"
 flexi_logger = "0.27.3"

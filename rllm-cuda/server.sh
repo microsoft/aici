@@ -6,7 +6,7 @@ REL=--release
 LOOP=
 BUILD=
 ADD_ARGS=
-R_LOG=info,rllm=debug,aicirt=info
+R_LOG=info,tokenizers=error,rllm=debug,aicirt=info
 
 
 mkdir -p "$WS/target"

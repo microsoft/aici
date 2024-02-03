@@ -53,9 +53,6 @@ struct Cli {
     #[arg(short, long, default_value = "llama")]
     tokenizer: String,
 
-    #[arg(long, default_value = "false")]
-    convert_tokenizers: bool,
-
     /// Save the --tokenizer=... to specified file
     #[arg(long)]
     save_tokenizer: Option<String>,
@@ -1016,11 +1013,6 @@ fn main() -> () {
     setup_log();
 
     let cli = Cli::parse();
-
-    if cli.convert_tokenizers {
-        bintokens::convert_tokenizers();
-        return;
-    }
 
     if !cli.name.starts_with("/") {
         eprintln!("--name must start with /");
