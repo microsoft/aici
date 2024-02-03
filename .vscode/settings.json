@@ -95,6 +95,7 @@
         "logprobs",
         "lstrip",
         "maxtol",
+        "mixtral",
         "mmap",
         "nheads",
         "NOSYS",

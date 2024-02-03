@@ -14,7 +14,7 @@ use aici_abi::{
 use aicirt::{
     api::{AiciMidProcessResultInner, AiciPostProcessResultInner, SequenceResult},
     bail_user,
-    bintokens::Tokenizer,
+    bintokens::BinTokenizer,
     user_error,
 };
 use anyhow::{anyhow, bail, ensure, Result};
@@ -36,7 +36,7 @@ impl WasmContext {
         unsafe { wasmtime::Module::deserialize_file(&self.engine, path) }
     }
 
-    pub fn new(limits: AiciLimits, tokenizer: Tokenizer) -> Result<Self> {
+    pub fn new(limits: AiciLimits, tokenizer: BinTokenizer) -> Result<Self> {
         let mut cfg = wasmtime::Config::default();
         // these are defaults as of 13.0.0, but we specify them anyways for stability
         cfg.debug_info(false)
