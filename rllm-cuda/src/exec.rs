@@ -5,7 +5,7 @@ use crate::{
     config::{ModelMeta, RllmConfig},
     paged::{CacheSize, SchedulerOutputs},
     seq::{Sequence, SequenceGroup},
-    HashMap, LoaderArgs, LogitsProcessor,
+    HashMap, LoaderArgs, LogitsProcessor, RllmEngine,
 };
 
 #[derive(Debug, Clone, Copy)]
@@ -27,9 +27,17 @@ pub trait ModelExec: Sized {
     type BlockSpaceManager: TBlockSpaceManager<Self>;
     type AiciBias: AiciBias<Self::Tensor>;
     type ModelConfig;
+    type ModelLoaderArgs: Send + 'static;
 
-    fn load_model_config(args: &mut LoaderArgs) -> Result<(ModelMeta, Self::ModelConfig)>;
+    fn load_model_config(
+        args: &LoaderArgs,
+        model_args: &mut Self::ModelLoaderArgs,
+    ) -> Result<(ModelMeta, Self::ModelConfig)>;
     fn verify_args(args: &RllmConfig<Self>) -> Result<()>;
+    fn load_rllm_engine(
+        args: LoaderArgs,
+        model_args: Self::ModelLoaderArgs,
+    ) -> Result<RllmEngine<Self>>;
 
     fn run(
         &mut self,

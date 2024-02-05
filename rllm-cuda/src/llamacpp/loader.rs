@@ -5,11 +5,14 @@ use anyhow::{bail, Result};
 
 use llama_cpp_low as cpp;
 
-use super::seqid::SeqIdGen;
+use super::{seqid::SeqIdGen, tmodel::CppLoaderArgs};
 
-pub fn load_rllm_engine(mut args: LoaderArgs) -> Result<RllmEngine<TModel>> {
-    let model = do_load(&mut args)?;
-    let rllm_config = RllmEngine::<TModel>::build_config(&mut args)?;
+pub(super) fn load_rllm_engine(
+    args: LoaderArgs,
+    mut model_args: CppLoaderArgs,
+) -> Result<RllmEngine<TModel>> {
+    let model = do_load(&args, &mut model_args)?;
+    let rllm_config = RllmEngine::<TModel>::build_config(&args, &mut model_args)?;
 
     let mut cparams = cpp::ContextParams::default();
     cparams.n_batch = rllm_config.scheduler.max_num_batched_tokens as u32;
@@ -25,12 +28,12 @@ pub fn load_rllm_engine(mut args: LoaderArgs) -> Result<RllmEngine<TModel>> {
     RllmEngine::build(args, tmodel, rllm_config, cache_size, seq_gen)
 }
 
-fn do_load(args: &mut LoaderArgs) -> Result<cpp::Model> {
-    if args.cached_model.is_none() {
+fn do_load(args: &LoaderArgs, model_args: &mut CppLoaderArgs) -> Result<cpp::Model> {
+    if model_args.cached_model.is_none() {
         let repo = Repo::from(args)?;
         log::info!("loading the model from {}", repo);
 
-        let gguf = match args.gguf.as_ref() {
+        let gguf = match args.file.as_ref() {
             Some(gguf) => gguf,
             None => {
                 bail!("--gguf file.gguf or --model user/model::file.gguf is required for loading the model")
@@ -42,7 +45,7 @@ fn do_load(args: &mut LoaderArgs) -> Result<cpp::Model> {
         let mut mparams = cpp::ModelParams::default();
         // TODO: make this configurable
         mparams.set_split_mode(cpp::SplitMode::None);
-        mparams.n_gpu_layers = args.n_gpu_layers.unwrap_or(0) as i32;
+        mparams.n_gpu_layers = model_args.n_gpu_layers.unwrap_or(0) as i32;
         log::info!("{} layer(s) offloaded to GPU", mparams.n_gpu_layers);
         // don't GPU offload on Intel macs - it just fails there
         #[cfg(all(target_os = "macos", target_arch = "x86_64"))]
@@ -54,15 +57,18 @@ fn do_load(args: &mut LoaderArgs) -> Result<cpp::Model> {
         }
 
         let m = cpp::Model::from_file(file.to_str().unwrap(), mparams)?;
-        args.cached_model = Some(m);
+        model_args.cached_model = Some(m);
     }
 
-    let model = args.cached_model.as_ref().unwrap().clone();
+    let model = model_args.cached_model.as_ref().unwrap().clone();
     Ok(model)
 }
 
-pub(super) fn load_model_config(args: &mut LoaderArgs) -> Result<ModelMeta> {
-    let model = do_load(args)?;
+pub(super) fn load_model_config(
+    args: &LoaderArgs,
+    model_args: &mut CppLoaderArgs,
+) -> Result<ModelMeta> {
+    let model = do_load(args, model_args)?;
 
     let info = model.model_info();
     let vocab_size = info.n_vocab.try_into().unwrap();

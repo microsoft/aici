@@ -3,7 +3,7 @@ use crate::{
     iface::{kill_self, AiciRtIface, AsyncCmdChannel},
     seq::RequestOutput,
     util::apply_settings,
-    AddRequest, DType, HashMap, LoaderArgs, ModelExec, RllmEngine,
+    AddRequest, HashMap, LoaderArgs, ModelExec, RllmEngine,
 };
 use actix_web::{middleware::Logger, web, App, HttpServer};
 use aici_abi::toktree::TokTrie;
@@ -205,9 +205,7 @@ pub struct RllmCliArgs {
 
     // these are copied from command-specific parsers
     #[arg(skip)]
-    pub gguf: Option<String>,
-    #[arg(skip)]
-    pub n_gpu_layers: Option<usize>,
+    pub file: Option<String>,
 }
 
 #[actix_web::get("/v1/controllers/tags")]
@@ -418,9 +416,12 @@ fn inference_loop<ME: ModelExec>(
     }
 }
 
-fn run_tests(args: &RllmCliArgs, loader_args: LoaderArgs) {
-    let mut engine =
-        crate::llm::loader::load_rllm_engine(loader_args).expect("failed to load model");
+fn run_tests<ME: ModelExec>(
+    args: &RllmCliArgs,
+    loader_args: LoaderArgs,
+    model_args: ME::ModelLoaderArgs,
+) {
+    let mut engine = ME::load_rllm_engine(loader_args, model_args).expect("failed to load model");
     let mut tests = args.test.clone();
 
     while tests.len() > 0 || engine.num_pending_requests() > 0 {
@@ -453,9 +454,10 @@ fn run_tests(args: &RllmCliArgs, loader_args: LoaderArgs) {
     }
 }
 
-fn spawn_inference_loop(
+fn spawn_inference_loop<ME: ModelExec>(
     args: &RllmCliArgs,
     loader_args: LoaderArgs,
+    model_args: ME::ModelLoaderArgs,
     iface: AiciRtIface,
     stats: Arc<Mutex<ServerStats>>,
 ) -> Arc<Mutex<InferenceWorker>> {
@@ -474,7 +476,7 @@ fn spawn_inference_loop(
     std::thread::spawn(move || {
         set_max_priority();
         let mut engine =
-            crate::llm::loader::load_rllm_engine(loader_args).expect("failed to load model");
+            ME::load_rllm_engine(loader_args, model_args).expect("failed to load model");
         engine.profile_step_no = profile_step;
         engine.set_aicirt(iface);
         let wid = "warmup".to_string();
@@ -536,7 +538,10 @@ fn guess_aicirt() -> Result<String> {
 }
 
 // #[actix_web::main]
-pub async fn server_main<ME: ModelExec>(mut args: RllmCliArgs) -> () {
+pub async fn server_main<ME: ModelExec>(
+    mut args: RllmCliArgs,
+    mut model_args: ME::ModelLoaderArgs,
+) -> () {
     // we setenv, so that aicirt process also gets it
     match &args.log {
         Some(v) => std::env::set_var("RUST_LOG", v),
@@ -557,14 +562,6 @@ pub async fn server_main<ME: ModelExec>(mut args: RllmCliArgs) -> () {
         }
     }
 
-    let dtype = match args.dtype.as_str() {
-        "bf16" => Some(DType::BFloat16),
-        "f16" => Some(DType::Half),
-        "f32" => Some(DType::Float),
-        "" => None,
-        _ => panic!("invalid dtype; try one of bf16, f16, f32"),
-    };
-
     let hf = "https://huggingface.co/";
     if args.model.starts_with(hf) {
         args.model = args.model[hf.len()..].to_string();
@@ -575,14 +572,14 @@ pub async fn server_main<ME: ModelExec>(mut args: RllmCliArgs) -> () {
 
         if let Some(mut blob_path) = strip_suffix("/blob/", &mut args.model) {
             if let Some(url_rev) = strip_suffix("/", &mut blob_path) {
-                args.gguf = Some(url_decode(&url_rev));
+                args.file = Some(url_decode(&url_rev));
             }
             args.revision = Some(url_decode(&blob_path));
         }
     }
 
-    if let Some(gguf) = strip_suffix("::", &mut args.model) {
-        args.gguf = Some(gguf);
+    if let Some(file) = strip_suffix("::", &mut args.model) {
+        args.file = Some(file);
     }
 
     if let Some(rev) = strip_suffix("@", &mut args.model) {
@@ -597,11 +594,7 @@ pub async fn server_main<ME: ModelExec>(mut args: RllmCliArgs) -> () {
     loader_args.model_id = args.model.clone();
     loader_args.revision = args.revision.clone();
     loader_args.local_weights = args.local_weights.clone();
-    loader_args.gguf = args.gguf.clone();
-    loader_args.n_gpu_layers = args.n_gpu_layers;
-    if dtype.is_some() {
-        loader_args.dtype = dtype;
-    }
+    loader_args.file = args.file.clone();
 
     match &args.tokenizer {
         Some(v) => {
@@ -622,7 +615,7 @@ pub async fn server_main<ME: ModelExec>(mut args: RllmCliArgs) -> () {
     }
 
     if args.test.len() > 0 {
-        run_tests(&args, loader_args);
+        run_tests::<ME>(&args, loader_args, model_args);
         return;
     }
 
@@ -631,8 +624,8 @@ pub async fn server_main<ME: ModelExec>(mut args: RllmCliArgs) -> () {
 
     // make sure we try to load the model before spawning inference thread
     // otherwise, if the model doesn't exist, the inference thread will panic and things get messy
-    let (model_meta, _model_config) =
-        ME::load_model_config(&mut loader_args).expect("failed to load model config");
+    let (model_meta, _model_config) = ME::load_model_config(&mut loader_args, &mut model_args)
+        .expect("failed to load model config");
 
     let aicirt = match &args.aicirt {
         Some(v) => v.clone(),
@@ -660,7 +653,7 @@ pub async fn server_main<ME: ModelExec>(mut args: RllmCliArgs) -> () {
     }));
     let iface = AiciRtIface::start_aicirt(&rt_args, &tok_trie).expect("failed to start aicirt");
     let side_cmd_ch = iface.side_cmd.clone();
-    let handle = spawn_inference_loop(&args, loader_args, iface, stats.clone());
+    let handle = spawn_inference_loop::<ME>(&args, loader_args, model_args, iface, stats.clone());
 
     let app_data = AiciServerData {
         worker: handle.clone(),

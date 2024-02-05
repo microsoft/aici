@@ -1,5 +1,5 @@
 use clap::Parser;
-use rllm::{util::parse_with_settings, TModel};
+use rllm::{llamacpp::tmodel::CppLoaderArgs, util::parse_with_settings, TModel};
 
 /// Serve LLMs with AICI over HTTP with llama.cpp backend.
 #[derive(Parser, Debug)]
@@ -20,7 +20,7 @@ pub struct CppArgs {
 #[actix_web::main]
 async fn main() -> () {
     let mut args = parse_with_settings::<CppArgs>();
-    args.args.gguf = args.gguf;
-    args.args.n_gpu_layers = args.gpu_layers;
-    rllm::server::server_main::<TModel>(args.args).await;
+    args.args.file = args.gguf;
+    let model_args = CppLoaderArgs::new(args.gpu_layers);
+    rllm::server::server_main::<TModel>(args.args, model_args).await;
 }

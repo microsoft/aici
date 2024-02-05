@@ -12,6 +12,8 @@ use llama_cpp_low as cpp;
 use rand::distributions::Distribution as _;
 use std::{sync::Arc, time::Instant};
 
+use super::loader::load_rllm_engine;
+
 pub struct TModel {
     pub(super) model: cpp::Model,
     batch: cpp::Batch,
@@ -21,11 +23,26 @@ pub struct TModel {
     pub nv_profile: bool,
 }
 
+pub struct CppLoaderArgs {
+    pub n_gpu_layers: Option<usize>,
+    pub(crate) cached_model: Option<cpp::Model>,
+}
+
+impl CppLoaderArgs {
+    pub fn new(n_gpu_layers: Option<usize>) -> Self {
+        Self {
+            n_gpu_layers,
+            cached_model: None,
+        }
+    }
+}
+
 impl ModelExec for TModel {
     type Tensor = Tensor;
     type BlockSpaceManager = CppBlockSpaceManager;
     type AiciBias = CppAiciBias;
     type ModelConfig = ();
+    type ModelLoaderArgs = CppLoaderArgs;
 
     fn run(
         &mut self,
@@ -169,13 +186,23 @@ impl ModelExec for TModel {
         Ok(next_token)
     }
 
-    fn load_model_config(args: &mut LoaderArgs) -> Result<(ModelMeta, Self::ModelConfig)> {
-        let meta = load_model_config(args)?;
+    fn load_model_config(
+        args: &LoaderArgs,
+        model_args: &mut Self::ModelLoaderArgs,
+    ) -> Result<(ModelMeta, Self::ModelConfig)> {
+        let meta = load_model_config(args, model_args)?;
         Ok((meta, ()))
     }
 
     fn verify_args(_args: &RllmConfig<Self>) -> Result<()> {
         Ok(())
+    }
+
+    fn load_rllm_engine(
+        args: LoaderArgs,
+        model_args: Self::ModelLoaderArgs,
+    ) -> Result<crate::RllmEngine<Self>> {
+        load_rllm_engine(args, model_args)
     }
 }
 

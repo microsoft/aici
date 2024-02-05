@@ -11,8 +11,8 @@ use crate::{
         SequenceGroup, Token, TokenUsage,
     },
     util::get_setting,
-    AiciBias as _, Device, HashMap, LoaderArgs, LogitsProcessor, ModelExec,
-    TBlockSpaceManager as _, TensorOps,
+    AiciBias as _, HashMap, LoaderArgs, LogitsProcessor, ModelExec, TBlockSpaceManager as _,
+    TensorOps,
 };
 use aici_abi::toktree::TokTrie;
 use aicirt::{
@@ -141,7 +141,6 @@ pub struct RllmEngine<ME: ModelExec> {
     req_id_cnt: usize,
     #[allow(dead_code)]
     pub alt: usize,
-    pub device: Device,
     pub eos_token_id: Token,
     pub space_token_id: Token,
     pub num_errors: usize,
@@ -169,8 +168,11 @@ pub struct RllmEngine<ME: ModelExec> {
 }
 
 impl<ME: ModelExec> RllmEngine<ME> {
-    pub(crate) fn build_config(args: &mut LoaderArgs) -> Result<RllmConfig<ME>> {
-        let (model_meta, model_config) = ME::load_model_config(args)?;
+    pub(crate) fn build_config(
+        args: &LoaderArgs,
+        model_args: &mut ME::ModelLoaderArgs,
+    ) -> Result<RllmConfig<ME>> {
+        let (model_meta, model_config) = ME::load_model_config(args, model_args)?;
         let model_len = model_meta.max_sequence_length;
 
         let mut aici = args.aici.clone();
@@ -209,7 +211,6 @@ impl<ME: ModelExec> RllmEngine<ME> {
         let space_token_id = tok_trie.greedy_tokenize(b" ")[0];
         let repo = Repo::from(&args)?;
 
-        let device = args.device;
         let scheduler = Scheduler::new(rllm_config.clone(), &cache_size);
 
         let timers = TimerSet::new();
@@ -218,7 +219,7 @@ impl<ME: ModelExec> RllmEngine<ME> {
             Some(r) => model_id += &format!("@{}", r),
             None => {}
         }
-        match &args.gguf {
+        match &args.file {
             Some(r) => model_id += &format!("::{}", r),
             None => {}
         }
@@ -234,7 +235,6 @@ impl<ME: ModelExec> RllmEngine<ME> {
             profile_step_no: 0,
             req_id_cnt: 0,
             num_errors: 0,
-            device,
             eos_token_id,
             space_token_id,
             alt: args.alt,
