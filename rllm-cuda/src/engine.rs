@@ -12,7 +12,8 @@ use crate::{
     },
     to_vec1,
     util::get_setting,
-    DType, Device, HashMap, LoaderArgs, LogitsProcessor, TModel, Tensor,
+    AiciBias as _, DType, Device, HashMap, LoaderArgs, LogitsProcessor, ModelExec,
+    TBlockSpaceManager as _, TModel, Tensor, TensorOps,
 };
 use aici_abi::toktree::TokTrie;
 use aicirt::{
@@ -129,12 +130,12 @@ impl Stats {
     }
 }
 
-pub struct RllmEngine {
+pub struct RllmEngine<ME: ModelExec> {
     pub config: Arc<RllmConfig>,
     pub tokenizer: Arc<Tokenizer>,
     pub tok_trie: Arc<TokTrie>,
     pub model_id: String,
-    pub tmodel: TModel,
+    pub tmodel: ME,
     seq_gen: SeqIdGen,
     pub(crate) step_no: usize,
     pub profile_step_no: usize,
@@ -165,13 +166,10 @@ pub struct RllmEngine {
 
     aicirt: Option<AiciRtIface>,
 
-    scheduler: Scheduler,
+    scheduler: Scheduler<ME>,
 }
 
-impl RllmEngine {
-    pub fn load(args: LoaderArgs) -> Result<Self> {
-        llm::loader::load_rllm_engine(args)
-    }
+impl<ME: ModelExec> RllmEngine<ME> {
     pub fn load_model_config(args: &mut LoaderArgs) -> Result<ModelConfig> {
         llm::loader::load_model_config(args)
     }
@@ -206,12 +204,12 @@ impl RllmEngine {
 
     pub(crate) fn build(
         mut args: LoaderArgs,
-        tmodel: TModel,
+        tmodel: ME,
         rllm_config: Arc<RllmConfig>,
         cache_size: CacheSize,
         seq_gen: SeqIdGen,
     ) -> Result<Self> {
-        let (tokenizer, tok_trie) = RllmEngine::load_tokenizer(&mut args)?;
+        let (tokenizer, tok_trie) = RllmEngine::<ME>::load_tokenizer(&mut args)?;
         let eos_token_id = tok_trie.info().tok_eos;
         let space_token_id = tok_trie.greedy_tokenize(b" ")[0];
         let repo = Repo::from(&args)?;
@@ -310,7 +308,7 @@ impl RllmEngine {
             .map(|_| self.seq_gen.next())
             .collect::<Vec<_>>();
 
-        let logits_processor = LogitsProcessor::new(&req.sampling_params, self.tok_trie.clone());
+        let logits_processor = LogitsProcessor::new(&req.sampling_params);
         let prompt = self
             .tokenizer
             .decode(&req.prompt, false)
@@ -365,10 +363,10 @@ impl RllmEngine {
         })
     }
 
-    fn aici_bias(&mut self, sched_out: &mut SchedulerOutputs) -> Result<AiciBias> {
+    fn aici_bias(&mut self, sched_out: &mut SchedulerOutputs) -> Result<ME::AiciBias> {
         let vocab_size = self.tok_trie.vocab_size();
         if self.aicirt.is_none() {
-            return Ok(AiciBias::empty(vocab_size));
+            return Ok(self.tmodel.empty_bias(vocab_size));
         }
 
         let mid_res = self.aicirt.as_mut().unwrap().finish_mid_process()?;
@@ -404,8 +402,8 @@ impl RllmEngine {
 
         let shm = &self.aicirt.as_mut().unwrap().bin_shm;
         let slice = shm.slice_at_byte_offset::<f32>(0, mid_res.num_seqs * vocab_size);
-        Ok(AiciBias::new(
-            self.device,
+        Ok(self.tmodel.new_bias(
+            //    self.device,
             slice,
             mid_res.num_seqs,
             vocab_size,
@@ -415,8 +413,8 @@ impl RllmEngine {
     fn aici_apply_bias(
         &self,
         seq: &mut Sequence,
-        logits: &mut Tensor,
-        aici_bias: &AiciBias,
+        logits: &mut ME::Tensor,
+        aici_bias: &ME::AiciBias,
     ) -> Option<AiciPostOp> {
         match std::mem::take(&mut seq.aici_sampling) {
             AiciSampling::Regular => None,
@@ -571,10 +569,13 @@ impl RllmEngine {
                 }
 
                 let next_token = if seq.expected.is_some() {
-                    let logits = to_vec1(&logits.to_kind(DType::Float));
+                    let logits = logits.to_vec1();
                     self.check_expected(logits, &sg.request_id, seq)
                 } else {
-                    with_timer!(self.tim_logit_sample, sg.logits_processor.sample(&logits)?)
+                    with_timer!(
+                        self.tim_logit_sample,
+                        self.tmodel.sample(&mut sg.logits_processor, &logits)?
+                    )
                 };
 
                 let mut info = "";
@@ -952,56 +953,6 @@ impl RllmEngine {
         Stats {
             free_gpu_blocks: self.scheduler.block_manager.get_num_free_gpu_blocks(),
             free_cpu_blocks: self.scheduler.block_manager.get_num_free_cpu_blocks(),
-        }
-    }
-}
-
-pub struct AiciBias {
-    pub vocab_size: usize,
-    pub bias: Option<Tensor>,
-}
-
-impl AiciBias {
-    pub fn empty(vocab_size: usize) -> Self {
-        Self {
-            bias: None,
-            vocab_size,
-        }
-    }
-
-    pub fn new(device: Device, slice: &'static [f32], num_seqs: usize, vocab_size: usize) -> Self {
-        #[cfg(feature = "tch")]
-        let tensor = Tensor::from_slice(slice)
-            .to(device)
-            .reshape(&[num_seqs as i64, vocab_size as i64]);
-        #[cfg(not(feature = "tch"))]
-        let tensor = {
-            let _ = device;
-            assert!(slice.len() == num_seqs * vocab_size);
-            Tensor::from_slice(slice)
-        };
-        Self {
-            vocab_size,
-            bias: Some(tensor),
-        }
-    }
-
-    pub fn apply(&self, logits: &mut Tensor, seq_id: usize) {
-        let bias = self.bias.as_ref().unwrap();
-        #[cfg(feature = "tch")]
-        {
-            use tch::IndexOp;
-            let bias = bias.i((seq_id as i64, ..));
-            *logits = &*logits + bias;
-        }
-        #[cfg(not(feature = "tch"))]
-        {
-            let sp = seq_id * self.vocab_size;
-            let logits = logits.as_mut_slice();
-            let bias = bias.as_slice();
-            for i in 0..self.vocab_size {
-                logits[i] += bias[sp + i];
-            }
         }
     }
 }

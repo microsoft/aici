@@ -1,5 +1,5 @@
 use clap::Parser;
-use rllm::util::parse_with_settings;
+use rllm::{util::parse_with_settings, TModel};
 
 /// Serve LLMs with AICI over HTTP with tch (torch) backend.
 #[derive(Parser, Debug)]
@@ -12,5 +12,5 @@ pub struct DriverArgs {
 #[actix_web::main]
 async fn main() -> () {
     let args = parse_with_settings::<DriverArgs>();
-    rllm::server::server_main(args.args).await;
+    rllm::server::server_main::<TModel>(args.args).await;
 }

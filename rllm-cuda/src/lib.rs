@@ -9,11 +9,13 @@ mod logits;
 mod expected;
 pub mod util;
 pub mod server;
+mod exec;
 
 use config::AiciConfig;
 use config::CommonModelConfig;
 use config::ModelMeta;
 pub use engine::*;
+pub use exec::*;
 pub use logits::LogitsProcessor;
 use std::sync::atomic::AtomicBool;
 
@@ -28,7 +30,7 @@ cfg_if::cfg_if! {
         pub use llamacpp as llm;
         pub use llm::{Device, DType, Tensor};
         pub(crate) use llamacpp::BlockRef;
-        pub(crate) use llamacpp::blocks::BlockSpaceManager;
+        pub(crate) use llamacpp::blocks::CppBlockSpaceManager;
     }
 }
 

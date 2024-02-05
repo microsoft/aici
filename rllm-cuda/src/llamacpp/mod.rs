@@ -1,3 +1,5 @@
+use crate::TensorOps;
+
 pub mod blocks;
 pub mod loader;
 pub mod tmodel;
@@ -10,6 +12,12 @@ pub type Model = llama_cpp_low::Model;
 pub struct Tensor {
     ptr: *mut f32,
     size: usize,
+}
+
+impl TensorOps for Tensor {
+    fn to_vec1(&self) -> Vec<f32> {
+        self.as_slice().to_vec()
+    }
 }
 
 impl Tensor {

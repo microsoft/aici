@@ -3,7 +3,7 @@ use crate::{
     iface::{kill_self, AiciRtIface, AsyncCmdChannel},
     seq::RequestOutput,
     util::apply_settings,
-    AddRequest, DType, HashMap, LoaderArgs, RllmEngine,
+    AddRequest, DType, HashMap, LoaderArgs, ModelExec, RllmEngine,
 };
 use actix_web::{middleware::Logger, web, App, HttpServer};
 use aici_abi::toktree::TokTrie;
@@ -186,8 +186,8 @@ pub struct RllmCliArgs {
     #[arg(long, default_value = "/aici0-", help_heading = "AICI settings")]
     pub shm_prefix: String,
 
-    /// Enable nvprof profiling for given engine step
-    #[cfg(feature = "cuda")]
+    // TODO: #[cfg(feature = "cuda")] -> causes rust-analyzer error
+    /// Enable nvprof profiling for given engine step (if available)
     #[arg(long, default_value_t = 0, help_heading = "Development")]
     pub profile_step: usize,
 
@@ -339,9 +339,9 @@ impl InferenceWorker {
     }
 }
 
-fn inference_loop(
+fn inference_loop<ME: ModelExec>(
     handle: Arc<Mutex<InferenceWorker>>,
-    mut engine: RllmEngine,
+    mut engine: RllmEngine<ME>,
     mut recv: Receiver<InferenceReq>,
     stats: Arc<Mutex<ServerStats>>,
     warmup_only: bool,
@@ -419,7 +419,8 @@ fn inference_loop(
 }
 
 fn run_tests(args: &RllmCliArgs, loader_args: LoaderArgs) {
-    let mut engine = RllmEngine::load(loader_args).expect("failed to load model");
+    let mut engine =
+        crate::llm::loader::load_rllm_engine(loader_args).expect("failed to load model");
     let mut tests = args.test.clone();
 
     while tests.len() > 0 || engine.num_pending_requests() > 0 {
@@ -472,7 +473,7 @@ fn spawn_inference_loop(
 
     std::thread::spawn(move || {
         set_max_priority();
-        let mut engine = RllmEngine::load(loader_args).expect("failed to load model");
+        let mut engine = crate::llm::loader::load_rllm_engine(loader_args).expect("failed to load model");
         engine.profile_step_no = profile_step;
         engine.set_aicirt(iface);
         let wid = "warmup".to_string();
@@ -534,7 +535,7 @@ fn guess_aicirt() -> Result<String> {
 }
 
 // #[actix_web::main]
-pub async fn server_main(mut args: RllmCliArgs) -> () {
+pub async fn server_main<ME: ModelExec>(mut args: RllmCliArgs) -> () {
     // we setenv, so that aicirt process also gets it
     match &args.log {
         Some(v) => std::env::set_var("RUST_LOG", v),
@@ -625,12 +626,12 @@ pub async fn server_main(mut args: RllmCliArgs) -> () {
     }
 
     let (tokenizer, tok_trie) =
-        RllmEngine::load_tokenizer(&mut loader_args).expect("failed to load tokenizer");
+        RllmEngine::<ME>::load_tokenizer(&mut loader_args).expect("failed to load tokenizer");
 
     // make sure we try to load the model before spawning inference thread
     // otherwise, if the model doesn't exist, the inference thread will panic and things get messy
     let model_config =
-        RllmEngine::load_model_config(&mut loader_args).expect("failed to load model config");
+        RllmEngine::<ME>::load_model_config(&mut loader_args).expect("failed to load model config");
 
     let aicirt = match &args.aicirt {
         Some(v) => v.clone(),

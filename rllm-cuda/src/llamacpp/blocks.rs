@@ -1,21 +1,15 @@
 use crate::{
     config::RllmConfig,
-    paged::{SchedulerOutputs, CacheSize},
+    paged::{CacheSize, SchedulerOutputs},
     seq::{Sequence, SequenceGroup},
-    HashMap,
+    TBlockSpaceManager,
 };
 
-#[derive(Debug, Clone, Copy)]
-pub enum BlockLocation {
-    GPU,
-    CPU,
-}
-
 /// Manages the mapping between logical and physical token blocks.
-pub struct BlockSpaceManager {}
+pub struct CppBlockSpaceManager {}
 
-impl BlockSpaceManager {
-    pub fn new(
+impl TBlockSpaceManager for CppBlockSpaceManager {
+    fn new(
         _block_size: usize,
         _cache_size: &CacheSize,
         _watermark: f32,
@@ -24,11 +18,11 @@ impl BlockSpaceManager {
         Self {}
     }
 
-    pub fn can_allocate(&self, _seq_group: &SequenceGroup) -> bool {
+    fn can_allocate(&self, _seq_group: &SequenceGroup) -> bool {
         true
     }
 
-    pub fn allocate(&mut self, seq_group: &mut SequenceGroup) {
+    fn allocate(&mut self, seq_group: &mut SequenceGroup) {
         let seq = seq_group.only_seq();
         assert!(seq.num_kv_computed == 0);
         assert!(seq.gpu_blocks.is_empty());
@@ -37,33 +31,17 @@ impl BlockSpaceManager {
         //     .collect();
     }
 
-    pub fn can_append_slot(&self, _seq_group: &SequenceGroup) -> bool {
+    fn can_append_slot(&self, _seq_group: &SequenceGroup) -> bool {
         true
     }
 
-    pub fn append_slots(&mut self, _seq: &mut Sequence, _outputs: &mut SchedulerOutputs) {}
+    fn append_slots(&mut self, _seq: &mut Sequence, _outputs: &mut SchedulerOutputs) {}
 
-    pub fn can_swap_in(&self, _seq_group: &SequenceGroup) -> bool {
-        false
-    }
-
-    pub fn swap_in(&mut self, _seq_group: &mut SequenceGroup) -> HashMap<usize, usize> {
-        panic!("llama.cpp swap_in")
-    }
-
-    pub fn swap_out(&mut self, _seq_group: &mut SequenceGroup) -> HashMap<usize, usize> {
-        panic!("llama.cpp swap_out")
-    }
-
-    pub fn can_swap_out(&self, _seq_group: &SequenceGroup) -> bool {
-        false
-    }
-
-    pub fn get_num_free_gpu_blocks(&self) -> usize {
+    fn get_num_free_gpu_blocks(&self) -> usize {
         0
     }
 
-    pub fn get_num_free_cpu_blocks(&self) -> usize {
+    fn get_num_free_cpu_blocks(&self) -> usize {
         0
     }
 }

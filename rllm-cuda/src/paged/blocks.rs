@@ -9,12 +9,6 @@ use std::{
     vec::Vec,
 };
 
-#[derive(Debug, Clone, Copy)]
-pub enum BlockLocation {
-    GPU,
-    CPU,
-}
-
 /// Represents the state of a block in the KV cache.
 #[derive(Debug)]
 pub struct PhysicalTokenBlock {

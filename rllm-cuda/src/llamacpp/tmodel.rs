@@ -1,7 +1,11 @@
-use crate::{config::RllmConfig, paged::SchedulerOutputs, seq::SchedulingPhase, HashMap, Tensor};
+use crate::{
+    config::RllmConfig, paged::SchedulerOutputs, seq::SchedulingPhase, AiciBias,
+    CppBlockSpaceManager, HashMap, LogitsProcessor, ModelExec, Tensor, TensorOps,
+};
 use aicirt::{with_timer, TimerRef};
 use anyhow::Result;
 use llama_cpp_low as cpp;
+use rand::distributions::Distribution as _;
 use std::{sync::Arc, time::Instant};
 
 pub struct TModel {
@@ -13,20 +17,12 @@ pub struct TModel {
     pub nv_profile: bool,
 }
 
-impl TModel {
-    pub fn new(config: Arc<RllmConfig>, model: cpp::Model) -> Self {
-        let batch = cpp::Batch::new(config.scheduler.max_num_batched_tokens);
-        Self {
-            model,
-            batch,
-            nv_profile: false,
-            seq_id_to_idx: HashMap::default(),
-            step_no: 0,
-            t0: Instant::now(),
-        }
-    }
+impl ModelExec for TModel {
+    type Tensor = Tensor;
+    type BlockSpaceManager = CppBlockSpaceManager;
+    type AiciBias = CppAiciBias;
 
-    pub fn run(
+    fn run(
         &mut self,
         _vocab_size: usize,
         tim: &TimerRef,
@@ -79,12 +75,12 @@ impl TModel {
         Ok(())
     }
 
-    pub fn get_logits(&self, seq_id: usize) -> Tensor {
+    fn get_logits(&self, seq_id: usize) -> Tensor {
         let l = self.model.get_logits(self.seq_id_to_idx[&seq_id]);
         Tensor::from_slice(l)
     }
 
-    pub fn finalize_run(&mut self) -> Result<()> {
+    fn finalize_run(&mut self) -> Result<()> {
         let dur = self.t0.elapsed().as_micros() as f64 / 1000.0;
 
         let ntok = self.batch.len();
@@ -98,5 +94,166 @@ impl TModel {
         );
 
         Ok(())
+    }
+
+    fn empty_bias(&self, vocab_size: usize) -> Self::AiciBias {
+        CppAiciBias {
+            vocab_size,
+            bias: None,
+        }
+    }
+
+    fn new_bias(
+        &self,
+        slice: &'static [f32],
+        num_seqs: usize,
+        vocab_size: usize,
+    ) -> Self::AiciBias {
+        #[cfg(feature = "tch")]
+        let tensor = Tensor::from_slice(slice)
+            .to(device)
+            .reshape(&[num_seqs as i64, vocab_size as i64]);
+        #[cfg(not(feature = "tch"))]
+        let tensor = {
+            assert!(slice.len() == num_seqs * vocab_size);
+            Tensor::from_slice(slice)
+        };
+        CppAiciBias {
+            vocab_size,
+            bias: Some(tensor),
+        }
+    }
+
+    fn sample(&self, state: &mut LogitsProcessor, logits: &Tensor) -> Result<u32> {
+        let next_token = match state.temperature {
+            None => self.sample_argmax(state, &logits),
+            Some(temperature) => {
+                #[cfg(feature = "tch")]
+                {
+                    let logits = logits.to_kind(DType::Float);
+                    let logits = logits / (temperature as f64);
+                    let prs = logits.softmax(-1, DType::Float);
+
+                    let top_p = self.top_p;
+                    if top_p <= 0.0 || top_p >= 1.0 {
+                        // simply sample from the predicted probability distribution
+                        prs.multinomial(1, false).int64_value(&[]) as u32
+                    } else {
+                        // top-p (nucleus) sampling, clamping the least likely tokens to zero
+                        let mut prs: Vec<f32> = to_vec1(&prs);
+                        self.sample_topp(&mut prs, top_p as f32)?
+                    }
+                }
+                #[cfg(not(feature = "tch"))]
+                {
+                    let mut prs: Vec<f32> = logits.to_vec1();
+                    let temp = (1.0 / temperature) as f32;
+                    for idx in 0..prs.len() {
+                        prs[idx] *= temp;
+                    }
+                    let top_p = state.top_p;
+                    if top_p <= 0.0 || top_p >= 1.0 {
+                        self.sample_multinomial(state, &prs)?
+                    } else {
+                        // top-p (nucleus) sampling, clamping the least likely tokens to zero
+                        self.sample_topp(state, &mut prs, top_p as f32)?
+                    }
+                }
+            }
+        };
+        Ok(next_token)
+    }
+}
+
+impl TModel {
+    pub fn new(config: Arc<RllmConfig>, model: cpp::Model) -> Self {
+        let batch = cpp::Batch::new(config.scheduler.max_num_batched_tokens);
+        Self {
+            model,
+            batch,
+            nv_profile: false,
+            seq_id_to_idx: HashMap::default(),
+            step_no: 0,
+            t0: Instant::now(),
+        }
+    }
+
+    fn sample_argmax(&self, state: &mut LogitsProcessor, logits: &Tensor) -> u32 {
+        #[cfg(feature = "tch")]
+        {
+            logits.argmax(0, false).int64_value(&[]) as u32
+        }
+        #[cfg(not(feature = "tch"))]
+        {
+            let data = logits.as_slice();
+            let mut top = data[0];
+            let mut top_idx = 0;
+            for (i, x) in data.iter().enumerate() {
+                if *x > top {
+                    top = *x;
+                    top_idx = i;
+                }
+            }
+            top_idx as u32
+        }
+    }
+
+    fn sample_multinomial(&self, state: &mut LogitsProcessor, prs: &Vec<f32>) -> Result<u32> {
+        let distr = rand::distributions::WeightedIndex::new(prs)?;
+        let next_token = distr.sample(&mut state.rng) as u32;
+        Ok(next_token)
+    }
+
+    fn sample_topp(
+        &self,
+        state: &mut LogitsProcessor,
+        prs: &mut Vec<f32>,
+        top_p: f32,
+    ) -> Result<u32> {
+        // top-p sampling (or "nucleus sampling") samples from the smallest set of
+        // tokens that exceed probability top_p. This way we never sample tokens that
+        // have very low probabilities and are less likely to go "off the rails".
+        let mut argsort_indices = (0..prs.len()).collect::<Vec<_>>();
+
+        // Sort by descending probability.
+        argsort_indices.sort_by(|&i, &j| prs[j].partial_cmp(&prs[i]).unwrap());
+
+        // Clamp smaller probabilities to zero.
+        let mut cumsum = 0.;
+        for index in &argsort_indices {
+            if cumsum >= top_p {
+                prs[*index] = 0.0;
+            } else {
+                cumsum += prs[*index];
+            }
+        }
+        // Sample with clamped probabilities.
+        self.sample_multinomial(state, prs)
+    }
+}
+
+pub struct CppAiciBias {
+    pub vocab_size: usize,
+    pub bias: Option<Tensor>,
+}
+
+impl AiciBias<Tensor> for CppAiciBias {
+    fn apply(&self, logits: &mut Tensor, seq_id: usize) {
+        let bias = self.bias.as_ref().unwrap();
+        #[cfg(feature = "tch")]
+        {
+            use tch::IndexOp;
+            let bias = bias.i((seq_id as i64, ..));
+            *logits = &*logits + bias;
+        }
+        #[cfg(not(feature = "tch"))]
+        {
+            let sp = seq_id * self.vocab_size;
+            let logits = logits.as_mut_slice();
+            let bias = bias.as_slice();
+            for i in 0..self.vocab_size {
+                logits[i] += bias[sp + i];
+            }
+        }
     }
 }

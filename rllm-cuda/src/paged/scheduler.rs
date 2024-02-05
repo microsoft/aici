@@ -3,7 +3,7 @@ use crate::{
     paged::CacheSize,
     seq::{FinishReason, SchedulingPhase, Sequence, SequenceGroup},
     util::limit_str,
-    BlockSpaceManager, HashMap,
+    HashMap, ModelExec, TBlockSpaceManager,
 };
 use aicirt::api::SequenceResult;
 use std::{
@@ -93,16 +93,16 @@ enum Queue {
 const NUM_QUEUES: usize = Queue::Swapped as usize + 1;
 
 /// Scheduler.
-pub struct Scheduler {
+pub struct Scheduler<ME: ModelExec> {
     pub(crate) config: Arc<RllmConfig>,
     prompt_limit: usize,
-    pub(crate) block_manager: BlockSpaceManager,
+    pub(crate) block_manager: ME::BlockSpaceManager,
     freed_seq_ids: RefCell<Vec<usize>>,
 
     queues: Mutex<Vec<Vec<SequenceGroup>>>,
 }
 
-impl Scheduler {
+impl<ME: ModelExec> Scheduler<ME> {
     fn q_with<T>(&self, q: Queue, f: impl FnOnce(&mut Vec<SequenceGroup>) -> T) -> T {
         let mut queues = self.queues.lock().unwrap();
         f(&mut queues[q as usize])
@@ -147,16 +147,14 @@ impl Scheduler {
     pub fn for_each_seq(&self, mut f: impl FnMut(&mut Sequence)) {
         self.for_each_sg(|sg| sg.seqs.iter_mut().for_each(&mut f));
     }
-}
 
-impl Scheduler {
     pub fn new(config: Arc<RllmConfig>, cache_size: &CacheSize) -> Self {
         let prompt_limit = std::cmp::min(
             config.scheduler.max_model_len,
             config.scheduler.max_num_batched_tokens,
         );
         let block_manager =
-            BlockSpaceManager::new(config.cache.block_size, cache_size, 0.01, &config);
+            ME::BlockSpaceManager::new(config.cache.block_size, cache_size, 0.01, &config);
 
         Self {
             config,

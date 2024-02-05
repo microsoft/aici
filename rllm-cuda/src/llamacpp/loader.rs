@@ -11,9 +11,9 @@ use llama_cpp_low as cpp;
 
 use super::seqid::SeqIdGen;
 
-pub fn load_rllm_engine(mut args: LoaderArgs) -> Result<RllmEngine> {
+pub fn load_rllm_engine(mut args: LoaderArgs) -> Result<RllmEngine<TModel>> {
     let model = do_load(&mut args)?;
-    let rllm_config = RllmEngine::build_config(&mut args)?;
+    let rllm_config = RllmEngine::<TModel>::build_config(&mut args)?;
 
     let mut cparams = cpp::ContextParams::default();
     cparams.n_batch = rllm_config.scheduler.max_num_batched_tokens as u32;
