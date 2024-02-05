@@ -10,10 +10,9 @@ use crate::{
         AiciSampling, FinishReason, RequestOutput, SchedulingPhase, SeqOutput, Sequence,
         SequenceGroup, Token, TokenUsage,
     },
-    to_vec1,
     util::get_setting,
-    AiciBias as _, DType, Device, HashMap, LoaderArgs, LogitsProcessor, ModelExec,
-    TBlockSpaceManager as _, TModel, Tensor, TensorOps,
+    AiciBias as _, Device, HashMap, LoaderArgs, LogitsProcessor, ModelExec,
+    TBlockSpaceManager as _, TensorOps,
 };
 use aici_abi::toktree::TokTrie;
 use aicirt::{

@@ -126,7 +126,7 @@ impl ModelExec for TModel {
 
     fn sample(&self, state: &mut LogitsProcessor, logits: &Tensor) -> Result<u32> {
         let next_token = match state.temperature {
-            None => self.sample_argmax(state, &logits),
+            None => self.sample_argmax(&logits),
             Some(temperature) => {
                 #[cfg(feature = "tch")]
                 {
@@ -178,7 +178,7 @@ impl TModel {
         }
     }
 
-    fn sample_argmax(&self, state: &mut LogitsProcessor, logits: &Tensor) -> u32 {
+    fn sample_argmax(&self, logits: &Tensor) -> u32 {
         #[cfg(feature = "tch")]
         {
             logits.argmax(0, false).int64_value(&[]) as u32

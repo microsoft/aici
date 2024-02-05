@@ -1,11 +1,7 @@
 // based on https://github.com/huggingface/candle/blob/main/candle-transformers/src/generation/mod.rs
 
-use crate::{
-    config::{SamplingParams, SAMPLING_EPS},
-    to_vec1, DType, Tensor,
-};
-use anyhow::Result;
-use rand::{distributions::Distribution, SeedableRng};
+use crate::config::{SamplingParams, SAMPLING_EPS};
+use rand::SeedableRng;
 
 pub struct LogitsProcessor {
     pub rng: rand::rngs::StdRng,
@@ -27,5 +23,4 @@ impl LogitsProcessor {
             top_p: sampling_params.top_p,
         }
     }
-
 }
