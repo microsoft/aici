@@ -50,7 +50,13 @@ if [ "$1" = "--loop" ] ; then
 fi
 
 if [ "$1" = "--cuda" ] ; then
-    VER="$VER --features cuda"
+    if [ "$CPP" = 1 ] ; then
+      VER="$VER --features cuda"
+      ADD_ARGS="--gpu-layers 1000"
+    else
+       echo "--cuda only valid for llama.cpp"
+       exit 1
+    fi
     shift
 fi
 
