@@ -94,7 +94,7 @@ const NUM_QUEUES: usize = Queue::Swapped as usize + 1;
 
 /// Scheduler.
 pub struct Scheduler<ME: ModelExec> {
-    pub(crate) config: Arc<RllmConfig>,
+    pub(crate) config: Arc<RllmConfig<ME>>,
     prompt_limit: usize,
     pub(crate) block_manager: ME::BlockSpaceManager,
     freed_seq_ids: RefCell<Vec<usize>>,
@@ -148,7 +148,7 @@ impl<ME: ModelExec> Scheduler<ME> {
         self.for_each_sg(|sg| sg.seqs.iter_mut().for_each(&mut f));
     }
 
-    pub fn new(config: Arc<RllmConfig>, cache_size: &CacheSize) -> Self {
+    pub fn new(config: Arc<RllmConfig<ME>>, cache_size: &CacheSize) -> Self {
         let prompt_limit = std::cmp::min(
             config.scheduler.max_model_len,
             config.scheduler.max_num_batched_tokens,

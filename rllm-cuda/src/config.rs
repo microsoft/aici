@@ -1,6 +1,6 @@
 // based on https://github.com/vllm-project/vllm/blob/b9fe4616f98b77b4b9458bce203aa6544cb31ef2/vllm/config.py
 
-use crate::{DType, Device};
+use crate::{DType, Device, ModelExec};
 use aicirt::{bail_user, valid_module_or_tag};
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
@@ -8,57 +8,55 @@ use serde::{Deserialize, Serialize};
 static GB: usize = 1 << 30;
 
 #[derive(Debug)]
-pub struct RllmConfig {
-    pub model: ModelConfig,
+pub struct RllmConfig<ME: ModelExec> {
+    pub model: ME::ModelConfig,
+    pub meta: ModelMeta,
     pub parallel: ParallelConfig,
     pub cache: CacheConfig,
     pub scheduler: SchedulerConfig,
     pub aici: AiciConfig,
-
-    pub dtype: DType,
-    pub device: Device,
 }
 
-impl RllmConfig {
-    pub fn verify_args(&self) -> Result<()> {
-        let model = &self.model;
-        let parallel = &self.parallel;
-        if model.num_hidden_layers % parallel.pipeline_parallel_size != 0 {
-            bail_user!(
-                "Number of hidden layers ({}) must be divisible by the pipeline parallel size ({}).",
-                model.num_hidden_layers,
-                parallel.pipeline_parallel_size
-            );
-        }
-        if model.num_key_value_heads % parallel.tensor_parallel_size != 0 {
-            bail_user!(
-                "Number of key/value heads ({}) must be divisible by the tensor parallel size ({}).",
-                model.num_key_value_heads,
-                parallel.tensor_parallel_size
-            );
-        }
-        if self.aici.max_fuel < 100 {
-            bail_user!("max_fuel not configured");
-        }
-        Ok(())
-    }
+// impl<ME: ModelExec> RllmConfig<ME> {
+//     pub fn verify_args(&self) -> Result<()> {
+//         let model = &self.model;
+//         let parallel = &self.parallel;
+//         if model.num_hidden_layers % parallel.pipeline_parallel_size != 0 {
+//             bail_user!(
+//                 "Number of hidden layers ({}) must be divisible by the pipeline parallel size ({}).",
+//                 model.num_hidden_layers,
+//                 parallel.pipeline_parallel_size
+//             );
+//         }
+//         if model.num_key_value_heads % parallel.tensor_parallel_size != 0 {
+//             bail_user!(
+//                 "Number of key/value heads ({}) must be divisible by the tensor parallel size ({}).",
+//                 model.num_key_value_heads,
+//                 parallel.tensor_parallel_size
+//             );
+//         }
+//         if self.aici.max_fuel < 100 {
+//             bail_user!("max_fuel not configured");
+//         }
+//         Ok(())
+//     }
 
-    pub fn get_hidden_size(&self) -> usize {
-        self.model.hidden_size
-    }
-    pub fn get_head_size(&self) -> usize {
-        self.model.hidden_size / self.model.num_attention_heads
-    }
-    pub fn get_num_heads_parallel(&self) -> usize {
-        self.model.num_key_value_heads / self.parallel.tensor_parallel_size
-    }
-    pub fn get_num_layers_parallel(&self) -> usize {
-        self.model.num_hidden_layers / self.parallel.pipeline_parallel_size
-    }
-    pub fn get_max_model_len(&self) -> usize {
-        self.model.max_sequence_length
-    }
-}
+//     pub fn get_hidden_size(&self) -> usize {
+//         self.model.hidden_size
+//     }
+//     pub fn get_head_size(&self) -> usize {
+//         self.model.hidden_size / self.model.num_attention_heads
+//     }
+//     pub fn get_num_heads_parallel(&self) -> usize {
+//         self.model.num_key_value_heads / self.parallel.tensor_parallel_size
+//     }
+//     pub fn get_num_layers_parallel(&self) -> usize {
+//         self.model.num_hidden_layers / self.parallel.pipeline_parallel_size
+//     }
+//     pub fn get_max_model_len(&self) -> usize {
+//         self.model.max_sequence_length
+//     }
+// }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ModelType {
@@ -76,6 +74,9 @@ pub struct CommonModelConfig {
 #[derive(Debug, Clone)]
 pub struct ModelMeta {
     pub id: String,
+    pub max_sequence_length: usize,
+    pub vocab_size: usize,
+    pub tok_vocab_size: usize,
 }
 
 #[derive(Debug, Clone)]
@@ -87,13 +88,10 @@ pub struct ModelConfig {
     pub hidden_size: usize, // head_dim * num_attention_heads
     pub num_hidden_layers: usize,
     pub num_key_value_heads: usize,
-    pub max_sequence_length: usize,
     pub head_dim: usize,
     pub rotary_dim: usize,
 
     pub intermediate_size: usize,
-    pub vocab_size: usize,
-    pub tok_vocab_size: usize,
 
     pub layer_norm_eps: f64, // default 1e-5
     pub rope_theta: f32,     // default 10000

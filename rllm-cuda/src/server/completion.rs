@@ -29,16 +29,16 @@ fn check_length(
     let max_tokens = if let Some(max_toks) = request.max_tokens {
         max_toks
     } else {
-        data.model_config.max_sequence_length - token_ids.len()
+        data.model_meta.max_sequence_length - token_ids.len()
     };
 
-    if token_ids.len() + max_tokens > data.model_config.max_sequence_length {
+    if token_ids.len() + max_tokens > data.model_meta.max_sequence_length {
         Err(APIError::new(format!(
             "This model's maximum context length is {} tokens. \
             However, you requested {} tokens ({} in the messages, \
             {} in the completion). Please reduce the length of the \
             messages or completion.",
-            data.model_config.max_sequence_length,
+            data.model_meta.max_sequence_length,
             max_tokens + token_ids.len(),
             token_ids.len(),
             max_tokens
@@ -129,7 +129,7 @@ async fn run_controller(
                 id: request_id,
                 object: "initial-run",
                 created: get_unix_time(),
-                model: data.model_config.meta.id.clone(),
+                model: data.model_meta.id.clone(),
             }),
         }));
 }

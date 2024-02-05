@@ -4,7 +4,7 @@ use crate::{
         SchedulerConfig,
     },
     iface::AiciRtIface,
-    llm::{self, seqid::SeqIdGen},
+    llm::seqid::SeqIdGen,
     paged::{CacheSize, Scheduler, SchedulerOutputs},
     seq::{
         AiciSampling, FinishReason, RequestOutput, SchedulingPhase, SeqOutput, Sequence,
@@ -130,7 +130,7 @@ impl Stats {
 }
 
 pub struct RllmEngine<ME: ModelExec> {
-    pub config: Arc<RllmConfig>,
+    pub config: Arc<RllmConfig<ME>>,
     pub tokenizer: Arc<Tokenizer>,
     pub tok_trie: Arc<TokTrie>,
     pub model_id: String,
@@ -169,12 +169,9 @@ pub struct RllmEngine<ME: ModelExec> {
 }
 
 impl<ME: ModelExec> RllmEngine<ME> {
-    pub fn load_model_config(args: &mut LoaderArgs) -> Result<ModelConfig> {
-        llm::loader::load_model_config(args)
-    }
-    pub(crate) fn build_config(args: &mut LoaderArgs) -> Result<RllmConfig> {
-        let model_config = Self::load_model_config(args)?;
-        let model_len = model_config.max_sequence_length;
+    pub(crate) fn build_config(args: &mut LoaderArgs) -> Result<RllmConfig<ME>> {
+        let (model_meta, model_config) = ME::load_model_config(args)?;
+        let model_len = model_meta.max_sequence_length;
 
         let mut aici = args.aici.clone();
         if aici.max_fuel == 0 {
@@ -182,7 +179,8 @@ impl<ME: ModelExec> RllmEngine<ME> {
         }
 
         let rllm_config = RllmConfig {
-            model: model_config.clone(),
+            model: model_config,
+            meta: model_meta,
             parallel: ParallelConfig::single(),
             cache: CacheConfig::default(),
             scheduler: SchedulerConfig {
@@ -192,11 +190,9 @@ impl<ME: ModelExec> RllmEngine<ME> {
                 max_model_len: model_len,
             },
             aici,
-            dtype: model_config.dtype,
-            device: args.device.clone(),
         };
 
-        rllm_config.verify_args()?;
+        ME::verify_args(&rllm_config)?;
 
         Ok(rllm_config)
     }
@@ -204,7 +200,7 @@ impl<ME: ModelExec> RllmEngine<ME> {
     pub(crate) fn build(
         mut args: LoaderArgs,
         tmodel: ME,
-        rllm_config: Arc<RllmConfig>,
+        rllm_config: Arc<RllmConfig<ME>>,
         cache_size: CacheSize,
         seq_gen: SeqIdGen,
     ) -> Result<Self> {

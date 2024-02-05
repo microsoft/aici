@@ -1,5 +1,5 @@
 use crate::{
-    config::{ModelConfig, SamplingParams},
+    config::{ModelMeta, SamplingParams},
     iface::{kill_self, AiciRtIface, AsyncCmdChannel},
     seq::RequestOutput,
     util::apply_settings,
@@ -116,7 +116,7 @@ impl Display for ServerStats {
 #[derive(Clone)]
 pub struct AiciServerData {
     pub worker: Arc<Mutex<InferenceWorker>>,
-    pub model_config: ModelConfig,
+    pub model_meta: ModelMeta,
     pub tokenizer: Arc<tokenizers::Tokenizer>,
     pub tok_trie: Arc<TokTrie>,
     pub side_cmd_ch: AsyncCmdChannel,
@@ -256,7 +256,7 @@ async fn upload_controller(
 async fn models(
     data: web::Data<AiciServerData>,
 ) -> Result<web::Json<openai::responses::List<openai::responses::Model>>, APIError> {
-    let id = data.model_config.meta.id.clone();
+    let id = data.model_meta.id.clone();
     Ok(web::Json(openai::responses::List::new(vec![
         openai::responses::Model {
             object: "model",
@@ -295,7 +295,7 @@ async fn tunnel_info(
         .map_or("(no header)", |v| v.to_str().unwrap_or("(invalid header)"));
     log::info!("user: {:?}", name);
     let url = "https://github.com/microsoft/aici/blob/main/proxy.md";
-    let model = &data.model_config.meta.id;
+    let model = &data.model_meta.id;
     let stats = data.stats.lock().unwrap().clone();
     let msg = format!(
         r#"
@@ -473,7 +473,8 @@ fn spawn_inference_loop(
 
     std::thread::spawn(move || {
         set_max_priority();
-        let mut engine = crate::llm::loader::load_rllm_engine(loader_args).expect("failed to load model");
+        let mut engine =
+            crate::llm::loader::load_rllm_engine(loader_args).expect("failed to load model");
         engine.profile_step_no = profile_step;
         engine.set_aicirt(iface);
         let wid = "warmup".to_string();
@@ -630,8 +631,8 @@ pub async fn server_main<ME: ModelExec>(mut args: RllmCliArgs) -> () {
 
     // make sure we try to load the model before spawning inference thread
     // otherwise, if the model doesn't exist, the inference thread will panic and things get messy
-    let model_config =
-        RllmEngine::<ME>::load_model_config(&mut loader_args).expect("failed to load model config");
+    let (model_meta, _model_config) =
+        ME::load_model_config(&mut loader_args).expect("failed to load model config");
 
     let aicirt = match &args.aicirt {
         Some(v) => v.clone(),
@@ -663,7 +664,7 @@ pub async fn server_main<ME: ModelExec>(mut args: RllmCliArgs) -> () {
 
     let app_data = AiciServerData {
         worker: handle.clone(),
-        model_config,
+        model_meta,
         tokenizer: Arc::new(tokenizer),
         tok_trie: Arc::new(tok_trie),
         side_cmd_ch,

@@ -2,10 +2,10 @@ use aicirt::TimerRef;
 use anyhow::Result;
 
 use crate::{
-    config::RllmConfig,
+    config::{ModelMeta, RllmConfig},
     paged::{CacheSize, SchedulerOutputs},
     seq::{Sequence, SequenceGroup},
-    HashMap, LogitsProcessor,
+    HashMap, LoaderArgs, LogitsProcessor,
 };
 
 #[derive(Debug, Clone, Copy)]
@@ -22,10 +22,14 @@ pub trait AiciBias<T: TensorOps> {
     fn apply(&self, logits: &mut T, seq_id: usize);
 }
 
-pub trait ModelExec {
+pub trait ModelExec: Sized {
     type Tensor: TensorOps;
-    type BlockSpaceManager: TBlockSpaceManager;
+    type BlockSpaceManager: TBlockSpaceManager<Self>;
     type AiciBias: AiciBias<Self::Tensor>;
+    type ModelConfig;
+
+    fn load_model_config(args: &mut LoaderArgs) -> Result<(ModelMeta, Self::ModelConfig)>;
+    fn verify_args(args: &RllmConfig<Self>) -> Result<()>;
 
     fn run(
         &mut self,
@@ -44,12 +48,12 @@ pub trait ModelExec {
     fn sample(&self, processor: &mut LogitsProcessor, logits: &Self::Tensor) -> Result<u32>;
 }
 
-pub trait TBlockSpaceManager {
+pub trait TBlockSpaceManager<ME: ModelExec> {
     fn new(
         _block_size: usize,
         _cache_size: &CacheSize,
         _watermark: f32,
-        _config: &RllmConfig,
+        _config: &RllmConfig<ME>,
     ) -> Self;
 
     fn can_allocate(&self, _seq_group: &SequenceGroup) -> bool;

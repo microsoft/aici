@@ -1,10 +1,6 @@
 use std::sync::Arc;
 
-use crate::{
-    config::{ModelConfig, ModelType},
-    paged::CacheSize,
-    LoaderArgs, Repo, RllmEngine, TModel,
-};
+use crate::{config::ModelMeta, paged::CacheSize, LoaderArgs, Repo, RllmEngine, TModel};
 use anyhow::{bail, Result};
 
 use llama_cpp_low as cpp;
@@ -65,35 +61,26 @@ fn do_load(args: &mut LoaderArgs) -> Result<cpp::Model> {
     Ok(model)
 }
 
-pub fn load_model_config(args: &mut LoaderArgs) -> Result<ModelConfig> {
+pub(super) fn load_model_config(args: &mut LoaderArgs) -> Result<ModelMeta> {
     let model = do_load(args)?;
 
-    let common = args.common_config();
     let info = model.model_info();
     let vocab_size = info.n_vocab.try_into().unwrap();
     let max_sequence_length = info.n_ctx_train.try_into().unwrap();
 
-    let mut v = ModelConfig {
-        model_type: ModelType::LlamaCpp,
-        meta: common.meta,
-        hidden_size: info.n_embd.try_into().unwrap(),
-        intermediate_size: 0,
+    let mut meta = ModelMeta {
+        id: args.model_id.clone(),
+        max_sequence_length,
         vocab_size,
         tok_vocab_size: vocab_size,
-        num_hidden_layers: 0,
-        num_attention_heads: 0,
-        num_key_value_heads: 0,
-        layer_norm_eps: 1e-5,
-        rope_theta: info.rope,
-        max_sequence_length,
-        head_dim: 0,
-        rotary_dim: max_sequence_length,
-        dtype: common.dtype.unwrap_or(crate::DType::Float),
-        device: common.device,
     };
 
-    let tok = aicirt::bintokens::find_tokenizer(&args.tokenizer)?;
-    v.tok_vocab_size = tok.tokrx_info().vocab_size as usize;
+    // hidden_size: info.n_embd.try_into().unwrap(),
+    // rope_theta: info.rope,
+    // rotary_dim: max_sequence_length,
 
-    Ok(v)
+    let tok = aicirt::bintokens::find_tokenizer(&args.tokenizer)?;
+    meta.tok_vocab_size = tok.tokrx_info().vocab_size as usize;
+
+    Ok(meta)
 }

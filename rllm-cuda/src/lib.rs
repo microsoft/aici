@@ -12,8 +12,6 @@ pub mod server;
 mod exec;
 
 use config::AiciConfig;
-use config::CommonModelConfig;
-use config::ModelMeta;
 pub use engine::*;
 pub use exec::*;
 pub use logits::LogitsProcessor;
@@ -85,18 +83,6 @@ impl Default for LoaderArgs {
             n_gpu_layers: None,
             #[cfg(not(feature = "tch"))]
             cached_model: None,
-        }
-    }
-}
-
-impl LoaderArgs {
-    pub fn common_config(&self) -> CommonModelConfig {
-        CommonModelConfig {
-            meta: ModelMeta {
-                id: self.model_id.clone(),
-            },
-            dtype: self.dtype,
-            device: self.device.clone(),
         }
     }
 }

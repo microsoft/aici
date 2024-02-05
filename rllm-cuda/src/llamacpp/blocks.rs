@@ -1,19 +1,16 @@
 use crate::{
-    config::RllmConfig,
-    paged::{CacheSize, SchedulerOutputs},
-    seq::{Sequence, SequenceGroup},
-    TBlockSpaceManager,
+    config::RllmConfig, paged::{CacheSize, SchedulerOutputs}, seq::{Sequence, SequenceGroup}, TBlockSpaceManager, TModel
 };
 
 /// Manages the mapping between logical and physical token blocks.
 pub struct CppBlockSpaceManager {}
 
-impl TBlockSpaceManager for CppBlockSpaceManager {
+impl TBlockSpaceManager<TModel> for CppBlockSpaceManager {
     fn new(
         _block_size: usize,
         _cache_size: &CacheSize,
         _watermark: f32,
-        _config: &RllmConfig,
+        _config: &RllmConfig<TModel>,
     ) -> Self {
         Self {}
     }

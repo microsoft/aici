@@ -1,6 +1,10 @@
 use crate::{
-    config::RllmConfig, paged::SchedulerOutputs, seq::SchedulingPhase, AiciBias,
-    CppBlockSpaceManager, HashMap, LogitsProcessor, ModelExec, Tensor, TensorOps,
+    config::{ModelMeta, RllmConfig},
+    llm::loader::load_model_config,
+    paged::SchedulerOutputs,
+    seq::SchedulingPhase,
+    AiciBias, CppBlockSpaceManager, HashMap, LoaderArgs, LogitsProcessor, ModelExec, Tensor,
+    TensorOps,
 };
 use aicirt::{with_timer, TimerRef};
 use anyhow::Result;
@@ -21,6 +25,7 @@ impl ModelExec for TModel {
     type Tensor = Tensor;
     type BlockSpaceManager = CppBlockSpaceManager;
     type AiciBias = CppAiciBias;
+    type ModelConfig = ();
 
     fn run(
         &mut self,
@@ -163,10 +168,19 @@ impl ModelExec for TModel {
         };
         Ok(next_token)
     }
+
+    fn load_model_config(args: &mut LoaderArgs) -> Result<(ModelMeta, Self::ModelConfig)> {
+        let meta = load_model_config(args)?;
+        Ok((meta, ()))
+    }
+
+    fn verify_args(_args: &RllmConfig<Self>) -> Result<()> {
+        Ok(())
+    }
 }
 
 impl TModel {
-    pub fn new(config: Arc<RllmConfig>, model: cpp::Model) -> Self {
+    pub fn new(config: Arc<RllmConfig<Self>>, model: cpp::Model) -> Self {
         let batch = cpp::Batch::new(config.scheduler.max_num_batched_tokens);
         Self {
             model,
