@@ -18,16 +18,6 @@ else
   (cd $WS && git submodule update --init --recursive)
 fi
 
-if [ "X$CUDA_VISIBLE_DEVICES" = "X" ] ; then
-  P=`ps -ax|grep 'aicir[t]\|rllm-serve[r]|rll[m]-cpp' | awk '{print $1}' | xargs echo`
-  if [ "X$P" != "X" ] ; then 
-    echo "KILL $P"
-    kill $P
-  fi
-else
-  echo "CUDA_VISIBLE_DEVICES=$CUDA_VISIBLE_DEVICES"
-fi
-
 if [ "$CPP" = 1 ] ; then
   VER="--no-default-features"
 else
@@ -50,7 +40,13 @@ if [ "$1" = "--loop" ] ; then
 fi
 
 if [ "$1" = "--cuda" ] ; then
-    VER="$VER --features cuda"
+    if [ "$CPP" = 1 ] ; then
+      VER="$VER --features cuda"
+      ADD_ARGS="--gpu-layers 1000"
+    else
+       echo "--cuda only valid for llama.cpp"
+       exit 1
+    fi
     shift
 fi
 
@@ -84,8 +80,25 @@ if [ "$CPP" = 1 ] ; then
       BUILD=1
       ;;
     * )
-      echo "usage: $0 [--loop] [--cuda] [--debug] [phi2|orca|build] [rllm_args...]"
-      echo "Try $0 phi2 --help to see available rllm_args"
+    SELF="cpp-server.sh"
+    cat <<EOF
+usage: $SELF [--loop] [--cuda] [--debug] [model_name] [rllm_args...]
+
+model_name can a HuggingFace URL pointing to a .gguf file, or one of the following:
+
+  phi2     https://huggingface.co/TheBloke/phi-2-GGUF/blob/main/phi-2.Q8_0.gguf
+  orca     https://huggingface.co/TheBloke/Orca-2-13B-GGUF/blob/main/orca-2-13b.Q8_0.gguf
+  mistral  https://huggingface.co/TheBloke/Mistral-7B-Instruct-v0.2-GGUF/blob/main/mistral-7b-instruct-v0.2.Q5_K_M.gguf
+  mixtral  https://huggingface.co/TheBloke/Mixtral-8x7B-Instruct-v0.1-GGUF/blob/main/mixtral-8x7b-instruct-v0.1.Q6_K.gguf
+
+Additionally, "$SELF build" will just build the server, and not run a model.
+
+  --cuda   try to build llama.cpp against installed CUDA
+  --loop   restart server when it crashes and store logs in ./logs
+  --debug  don't build in --release mode
+
+Try $SELF phi2 --help to see available rllm_args
+EOF
       exit 1
       ;;
   esac
@@ -117,14 +130,42 @@ else
       REL=--release
       ;;
     * )
-      echo "usage: $0 [--loop] [--debug] [phi|phi2|7b|code|orca|build] [rllm_args...]"
-      echo "Try $0 phi2 --help to see available rllm_args"
+    SELF="server.sh"
+    cat <<EOF
+usage: $SELF [--loop] [--debug] [model_name] [rllm_args...]
+
+model_name can a HuggingFace URL model ID (including optinal revision after @), or one of the following:
+
+  orca     microsoft/Orca-2-13b@refs/pr/22
+  phi      microsoft/phi-1_5@refs/pr/66
+  phi2     microsoft/phi-2@d3186761bf5c4409f7679359284066c25ab668ee
+  7b       NousResearch/Llama-2-7b-hf
+  code     codellama/CodeLlama-13b-Instruct-hf
+  code34   codellama/CodeLlama-34b-Instruct-hf
+
+Additionally, "$SELF build" will just build the server, and not run a model.
+
+  --loop   restart server when it crashes and store logs in ./logs
+  --debug  don't build in --release mode
+
+Try $SELF phi2 --help to see available rllm_args
+EOF
       exit 1
       ;;
   esac
 fi
 
 shift
+
+if [ "X$CUDA_VISIBLE_DEVICES" = "X" ] ; then
+  P=`ps -ax|grep 'aicir[t]\|rllm-serve[r]|rll[m]-cpp' | awk '{print $1}' | xargs echo`
+  if [ "X$P" != "X" ] ; then 
+    echo "KILL $P"
+    kill $P
+  fi
+else
+  echo "CUDA_VISIBLE_DEVICES=$CUDA_VISIBLE_DEVICES"
+fi
 
 ARGS="--verbose --aicirt $BIN/release/aicirt $ARGS $ADD_ARGS"
 
