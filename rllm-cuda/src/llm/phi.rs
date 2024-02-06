@@ -1,15 +1,13 @@
-use crate::{
-    config::{CommonModelConfig, ModelConfig, ModelType},
-    engine::RllmModelConfig,
-    llm::{layer_norm, linear, varlen_attn, RotaryEmbedding},
-    paged::BatchInfo,
-    Tensor,
+use super::{
+    config::{CommonModelConfig, ModelConfig, ModelType, RllmModelConfig},
+    layer_norm, linear, varlen_attn, RotaryEmbedding,
 };
+use crate::paged::BatchInfo;
 use serde::Deserialize;
 use std::rc::Rc;
 use tch::{
     nn::{self, Module, Path},
-    IndexOp,
+    IndexOp, Tensor,
 };
 
 use super::tmodel::TModelInner;
@@ -34,19 +32,20 @@ pub struct PhiConfig {
 
 impl RllmModelConfig for PhiConfig {
     fn into_config(self, common: CommonModelConfig) -> ModelConfig {
+        let mut meta = common.meta.clone();
+        meta.vocab_size = self.vocab_size;
+        meta.tok_vocab_size = self.vocab_size;
+        meta.max_sequence_length = self.n_positions;
         ModelConfig {
             model_type: ModelType::Phi,
             meta: common.meta,
             hidden_size: self.n_embd,
             intermediate_size: self.n_inner.unwrap_or(4 * self.n_embd),
-            vocab_size: self.vocab_size,
-            tok_vocab_size: self.vocab_size,
             num_hidden_layers: self.n_layer,
             num_attention_heads: self.n_head,
             num_key_value_heads: self.n_head,
             layer_norm_eps: self.layer_norm_epsilon,
             rope_theta: 10000.0,
-            max_sequence_length: self.n_positions,
             head_dim: self.n_embd / self.n_head,
             rotary_dim: self.rotary_dim,
             dtype: ModelConfig::dtype_from_str(common.dtype, &self.torch_dtype),
@@ -86,7 +85,7 @@ struct CausalLMHead {
 impl CausalLMHead {
     fn new(cfg: &ModelConfig, vb: Path) -> Self {
         let ln = layer_norm(&vb / "ln", cfg);
-        let linear = linear(cfg.hidden_size, cfg.vocab_size, &vb / "linear");
+        let linear = linear(cfg.hidden_size, cfg.meta.vocab_size, &vb / "linear");
         Self { ln, linear }
     }
 }
@@ -187,7 +186,7 @@ impl MixFormerSequentialForCausalLM {
         let vb = &vb0 / "transformer";
         let embedding = nn::embedding(
             &vb / "embd" / "wte",
-            cfg.vocab_size as i64,
+            cfg.meta.vocab_size as i64,
             cfg.hidden_size as i64,
             Default::default(),
         );
@@ -215,13 +214,13 @@ impl TModelInner for MixFormerSequentialForCausalLM {
         let r = self.head.forward(&xs);
 
         // it should approximately match...
-        let tok_size = self.config.tok_vocab_size as i64;
+        let tok_size = self.config.meta.tok_vocab_size as i64;
         if r.size()[1] < tok_size || r.size()[1] > tok_size + 1000 {
             panic!(
                 "unexpected logits size: {:?} ({}/{})",
                 r.size(),
                 tok_size,
-                self.config.vocab_size
+                self.config.meta.vocab_size
             );
         }
 

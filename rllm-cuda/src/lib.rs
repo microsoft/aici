@@ -20,9 +20,7 @@ use std::sync::atomic::AtomicBool;
 cfg_if::cfg_if! {
     if #[cfg(feature = "tch")] {
         pub mod llm;
-        pub use tch::{Device, IndexOp, Kind as DType, Shape, Tensor};
         pub(crate) use paged::BlockRef;
-        pub(crate) use paged::BlockSpaceManager;
     } else {
         pub mod llamacpp;
         pub use llamacpp::BlockRef;
@@ -48,19 +46,6 @@ pub struct LoaderArgs {
 
 impl Default for LoaderArgs {
     fn default() -> Self {
-        // #[cfg(feature = "tch")]
-        // let (device, dtype) = if tch::Cuda::is_available() {
-        //     (Device::Cuda(0), None)
-        // } else {
-        //     // At least on AMD 5500m MPS is 3x slower than CPU
-        //     // #[cfg(target_os = "macos")]
-        //     // let r = (Device::Mps, DType::Half);
-        //     // #[cfg(not(target_os = "macos"))]
-        //     let r = (Device::Cpu, Some(DType::Float));
-        //     r
-        // };
-        // #[cfg(not(feature = "tch"))]
-        // let (device, dtype) = (Device::Cpu, Some(DType::Float));
         Self {
             tokenizer: "llama".to_string(),
             model_id: "NousResearch/Llama-2-7b-hf".to_string(),

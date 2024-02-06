@@ -1,6 +1,5 @@
-use crate::util::get_setting;
-use crate::Tensor;
-use tch::{kind::Element, Device, IndexOp as _};
+use crate::{llm::DType, util::get_setting};
+use tch::{kind::Element, Device, IndexOp as _, Tensor};
 
 #[cfg(feature = "cuda")]
 use tch_cuda::{
@@ -32,7 +31,7 @@ pub fn check_all_close(t1: &Tensor, t2: &Tensor, max_diff: f64) {
         print!("A: {t1:?}\n{t1}\n");
         print!("B: {t2:?}\n{t2}\n");
         print!("D: {diff:?}\n{diff}\n");
-        let avg = diff.mean(Some(crate::DType::Float)).double_value(&[]);
+        let avg = diff.mean(Some(DType::Float)).double_value(&[]);
         panic!("not close {df:.5} (mean={avg:.5})");
     }
 }

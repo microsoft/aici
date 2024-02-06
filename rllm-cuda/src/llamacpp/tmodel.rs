@@ -137,11 +137,6 @@ impl ModelExec for TModel {
         num_seqs: usize,
         vocab_size: usize,
     ) -> Self::AiciBias {
-        #[cfg(feature = "tch")]
-        let tensor = Tensor::from_slice(slice)
-            .to(device)
-            .reshape(&[num_seqs as i64, vocab_size as i64]);
-        #[cfg(not(feature = "tch"))]
         let tensor = {
             assert!(slice.len() == num_seqs * vocab_size);
             Tensor::from_slice(slice)
@@ -156,36 +151,17 @@ impl ModelExec for TModel {
         let next_token = match state.temperature {
             None => self.sample_argmax(&logits),
             Some(temperature) => {
-                #[cfg(feature = "tch")]
-                {
-                    let logits = logits.to_kind(DType::Float);
-                    let logits = logits / (temperature as f64);
-                    let prs = logits.softmax(-1, DType::Float);
-
-                    let top_p = self.top_p;
-                    if top_p <= 0.0 || top_p >= 1.0 {
-                        // simply sample from the predicted probability distribution
-                        prs.multinomial(1, false).int64_value(&[]) as u32
-                    } else {
-                        // top-p (nucleus) sampling, clamping the least likely tokens to zero
-                        let mut prs: Vec<f32> = to_vec1(&prs);
-                        self.sample_topp(&mut prs, top_p as f32)?
-                    }
+                let mut prs: Vec<f32> = logits.to_vec1();
+                let temp = (1.0 / temperature) as f32;
+                for idx in 0..prs.len() {
+                    prs[idx] *= temp;
                 }
-                #[cfg(not(feature = "tch"))]
-                {
-                    let mut prs: Vec<f32> = logits.to_vec1();
-                    let temp = (1.0 / temperature) as f32;
-                    for idx in 0..prs.len() {
-                        prs[idx] *= temp;
-                    }
-                    let top_p = state.top_p;
-                    if top_p <= 0.0 || top_p >= 1.0 {
-                        self.sample_multinomial(state, &prs)?
-                    } else {
-                        // top-p (nucleus) sampling, clamping the least likely tokens to zero
-                        self.sample_topp(state, &mut prs, top_p as f32)?
-                    }
+                let top_p = state.top_p;
+                if top_p <= 0.0 || top_p >= 1.0 {
+                    self.sample_multinomial(state, &prs)?
+                } else {
+                    // top-p (nucleus) sampling, clamping the least likely tokens to zero
+                    self.sample_topp(state, &mut prs, top_p as f32)?
                 }
             }
         };
@@ -293,20 +269,11 @@ pub struct CppAiciBias {
 impl AiciBias<Tensor> for CppAiciBias {
     fn apply(&self, logits: &mut Tensor, seq_id: usize) {
         let bias = self.bias.as_ref().unwrap();
-        #[cfg(feature = "tch")]
-        {
-            use tch::IndexOp;
-            let bias = bias.i((seq_id as i64, ..));
-            *logits = &*logits + bias;
-        }
-        #[cfg(not(feature = "tch"))]
-        {
-            let sp = seq_id * self.vocab_size;
-            let logits = logits.as_mut_slice();
-            let bias = bias.as_slice();
-            for i in 0..self.vocab_size {
-                logits[i] += bias[sp + i];
-            }
+        let sp = seq_id * self.vocab_size;
+        let logits = logits.as_mut_slice();
+        let bias = bias.as_slice();
+        for i in 0..self.vocab_size {
+            logits[i] += bias[sp + i];
         }
     }
 }

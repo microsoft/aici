@@ -1,8 +1,9 @@
 use crate::{
     config::RllmConfig,
+    llm::tmodel::TModel,
     paged::{cache_engine::CacheEngine, scheduler::SchedulerOutputs, CacheSize},
     seq::{SchedulingPhase, Sequence, SequenceGroup},
-    HashMap,
+    BlockLocation, HashMap, TBlockSpaceManager,
 };
 use std::{
     sync::{Arc, Mutex},
@@ -110,29 +111,12 @@ pub struct BlockSpaceManager {
     block_size: usize,
 }
 
-impl BlockSpaceManager {
-    fn new_allocator(
-        location: BlockLocation,
-        block_size: usize,
-        num_blocks: usize,
-        config: &RllmConfig,
-    ) -> Arc<Mutex<BlockAllocator>> {
-        log::info!(
-            "{:?} {} blocks, {} MiB",
-            location,
-            num_blocks,
-            (num_blocks * CacheEngine::get_cache_block_size(config)) >> 20
-        );
-        Arc::new(Mutex::new(BlockAllocator::new(
-            location, block_size, num_blocks,
-        )))
-    }
-
-    pub fn new(
+impl TBlockSpaceManager<TModel> for BlockSpaceManager {
+    fn new(
         block_size: usize,
         cache_size: &CacheSize,
         watermark: f32,
-        config: &RllmConfig,
+        config: &RllmConfig<TModel>,
     ) -> Self {
         assert!(watermark >= 0.0);
         let watermark_blocks = (watermark * cache_size.gpu as f32) as usize;
@@ -157,24 +141,12 @@ impl BlockSpaceManager {
         }
     }
 
-    fn can_alloc_gpu(&self, num_required_blocks: usize) -> bool {
-        self.get_num_free_gpu_blocks() >= num_required_blocks
-    }
-
-    pub fn can_allocate(&self, seq_group: &SequenceGroup) -> bool {
+    fn can_allocate(&self, seq_group: &SequenceGroup) -> bool {
         let num_required_blocks = seq_group.only_seq().num_logical_blocks();
         self.can_alloc_gpu(num_required_blocks + self.watermark_blocks)
     }
 
-    fn alloc_gpu(&mut self) -> BlockRef {
-        allocate_block(&self.gpu_allocator)
-    }
-
-    fn alloc_cpu(&mut self) -> BlockRef {
-        allocate_block(&self.cpu_allocator)
-    }
-
-    pub fn allocate(&mut self, seq_group: &mut SequenceGroup) {
+    fn allocate(&mut self, seq_group: &mut SequenceGroup) {
         let seq = seq_group.only_seq();
         assert!(seq.num_kv_computed == 0);
         assert!(seq.gpu_blocks.is_empty());
@@ -183,13 +155,13 @@ impl BlockSpaceManager {
             .collect();
     }
 
-    pub fn can_append_slot(&self, seq_group: &SequenceGroup) -> bool {
+    fn can_append_slot(&self, seq_group: &SequenceGroup) -> bool {
         let num_seqs = seq_group.num_seqs(Some(SchedulingPhase::Running));
         // TODO this is not correct - more than one token can be appended
         self.can_alloc_gpu(num_seqs)
     }
 
-    pub fn append_slots(&mut self, seq: &mut Sequence, outputs: &mut SchedulerOutputs) {
+    fn append_slots(&mut self, seq: &mut Sequence, outputs: &mut SchedulerOutputs) {
         let block_table = &mut seq.gpu_blocks;
         assert!(block_table.len() > 0); // TODO?
         assert!(block_table.len() * self.block_size >= seq.num_kv_computed);
@@ -217,6 +189,86 @@ impl BlockSpaceManager {
         assert!(seq.gpu_blocks.len() == seq.num_logical_blocks());
     }
 
+    fn can_swap_in(&self, seq_group: &SequenceGroup) -> bool {
+        let blocks = self.num_phys_blocks(seq_group);
+        let num_swapped_seqs = seq_group.num_seqs(Some(SchedulingPhase::Swapped));
+        let num_required_blocks = blocks + num_swapped_seqs;
+        self.can_alloc_gpu(num_required_blocks + self.watermark_blocks)
+    }
+
+    fn swap_in(&mut self, seq_group: &mut SequenceGroup) -> HashMap<usize, usize> {
+        let mut mapping = HashMap::default();
+
+        for seq in &mut seq_group.seqs {
+            if seq.sched_phase == SchedulingPhase::Swapped {
+                assert!(seq.cpu_blocks.is_empty());
+                let bl = std::mem::take(&mut seq.gpu_blocks);
+                seq.cpu_blocks = self.map_blocks(bl, &mut mapping, false);
+                seq.sched_phase = SchedulingPhase::Running;
+            }
+        }
+
+        Self::to_idx_map(mapping)
+    }
+
+    fn swap_out(&mut self, seq_group: &mut SequenceGroup) -> HashMap<usize, usize> {
+        let mut mapping = HashMap::default();
+
+        for seq in &mut seq_group.seqs {
+            if seq.sched_phase == SchedulingPhase::Running {
+                assert!(seq.cpu_blocks.is_empty());
+                let bl = std::mem::take(&mut seq.cpu_blocks);
+                seq.gpu_blocks = self.map_blocks(bl, &mut mapping, true);
+                seq.sched_phase = SchedulingPhase::Swapped;
+            }
+        }
+
+        Self::to_idx_map(mapping)
+    }
+
+    fn can_swap_out(&self, seq_group: &SequenceGroup) -> bool {
+        let blocks = self.num_phys_blocks(seq_group);
+        blocks <= self.get_num_free_cpu_blocks()
+    }
+
+    fn get_num_free_gpu_blocks(&self) -> usize {
+        self.gpu_allocator.lock().unwrap().get_num_free_blocks()
+    }
+
+    fn get_num_free_cpu_blocks(&self) -> usize {
+        self.cpu_allocator.lock().unwrap().get_num_free_blocks()
+    }
+}
+
+impl BlockSpaceManager {
+    fn new_allocator(
+        location: BlockLocation,
+        block_size: usize,
+        num_blocks: usize,
+        config: &RllmConfig<TModel>,
+    ) -> Arc<Mutex<BlockAllocator>> {
+        log::info!(
+            "{:?} {} blocks, {} MiB",
+            location,
+            num_blocks,
+            (num_blocks * CacheEngine::get_cache_block_size(config)) >> 20
+        );
+        Arc::new(Mutex::new(BlockAllocator::new(
+            location, block_size, num_blocks,
+        )))
+    }
+
+    fn can_alloc_gpu(&self, num_required_blocks: usize) -> bool {
+        self.get_num_free_gpu_blocks() >= num_required_blocks
+    }
+
+    fn alloc_gpu(&mut self) -> BlockRef {
+        allocate_block(&self.gpu_allocator)
+    }
+
+    fn alloc_cpu(&mut self) -> BlockRef {
+        allocate_block(&self.cpu_allocator)
+    }
     fn num_phys_blocks(&self, seq_group: &SequenceGroup) -> usize {
         seq_group
             .get_seqs(None)
@@ -231,13 +283,6 @@ impl BlockSpaceManager {
                 }
             })
             .sum()
-    }
-
-    pub fn can_swap_in(&self, seq_group: &SequenceGroup) -> bool {
-        let blocks = self.num_phys_blocks(seq_group);
-        let num_swapped_seqs = seq_group.num_seqs(Some(SchedulingPhase::Swapped));
-        let num_required_blocks = blocks + num_swapped_seqs;
-        self.can_alloc_gpu(num_required_blocks + self.watermark_blocks)
     }
 
     fn to_idx_map(mapping: HashMap<usize, BlockRef>) -> HashMap<usize, usize> {
@@ -268,49 +313,6 @@ impl BlockSpaceManager {
                 }
             })
             .collect()
-    }
-
-    pub fn swap_in(&mut self, seq_group: &mut SequenceGroup) -> HashMap<usize, usize> {
-        let mut mapping = HashMap::default();
-
-        for seq in &mut seq_group.seqs {
-            if seq.sched_phase == SchedulingPhase::Swapped {
-                assert!(seq.cpu_blocks.is_empty());
-                let bl = std::mem::take(&mut seq.gpu_blocks);
-                seq.cpu_blocks = self.map_blocks(bl, &mut mapping, false);
-                seq.sched_phase = SchedulingPhase::Running;
-            }
-        }
-
-        Self::to_idx_map(mapping)
-    }
-
-    pub fn swap_out(&mut self, seq_group: &mut SequenceGroup) -> HashMap<usize, usize> {
-        let mut mapping = HashMap::default();
-
-        for seq in &mut seq_group.seqs {
-            if seq.sched_phase == SchedulingPhase::Running {
-                assert!(seq.cpu_blocks.is_empty());
-                let bl = std::mem::take(&mut seq.cpu_blocks);
-                seq.gpu_blocks = self.map_blocks(bl, &mut mapping, true);
-                seq.sched_phase = SchedulingPhase::Swapped;
-            }
-        }
-
-        Self::to_idx_map(mapping)
-    }
-
-    pub fn can_swap_out(&self, seq_group: &SequenceGroup) -> bool {
-        let blocks = self.num_phys_blocks(seq_group);
-        blocks <= self.get_num_free_cpu_blocks()
-    }
-
-    pub fn get_num_free_gpu_blocks(&self) -> usize {
-        self.gpu_allocator.lock().unwrap().get_num_free_blocks()
-    }
-
-    pub fn get_num_free_cpu_blocks(&self) -> usize {
-        self.cpu_allocator.lock().unwrap().get_num_free_blocks()
     }
 
     #[allow(dead_code)]

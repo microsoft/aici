@@ -1,6 +1,21 @@
+use crate::config::{ModelMeta, RllmConfig};
+use aicirt::bail_user;
+use anyhow::Result;
+use tch::Device;
 
-impl<ME: ModelExec> RllmConfig<ME> {
-    pub fn verify_args(&self) -> Result<()> {
+use super::{tmodel::TModel, DType};
+
+pub trait TchRllmConfig {
+    fn get_hidden_size(&self) -> usize;
+    fn get_head_size(&self) -> usize;
+    fn get_num_heads_parallel(&self) -> usize;
+    fn get_num_layers_parallel(&self) -> usize;
+    fn get_max_model_len(&self) -> usize;
+    fn verify_args(&self) -> Result<()>;
+}
+
+impl TchRllmConfig for RllmConfig<TModel> {
+    fn verify_args(&self) -> Result<()> {
         let model = &self.model;
         let parallel = &self.parallel;
         if model.num_hidden_layers % parallel.pipeline_parallel_size != 0 {
@@ -23,20 +38,20 @@ impl<ME: ModelExec> RllmConfig<ME> {
         Ok(())
     }
 
-    pub fn get_hidden_size(&self) -> usize {
+    fn get_hidden_size(&self) -> usize {
         self.model.hidden_size
     }
-    pub fn get_head_size(&self) -> usize {
+    fn get_head_size(&self) -> usize {
         self.model.hidden_size / self.model.num_attention_heads
     }
-    pub fn get_num_heads_parallel(&self) -> usize {
+    fn get_num_heads_parallel(&self) -> usize {
         self.model.num_key_value_heads / self.parallel.tensor_parallel_size
     }
-    pub fn get_num_layers_parallel(&self) -> usize {
+    fn get_num_layers_parallel(&self) -> usize {
         self.model.num_hidden_layers / self.parallel.pipeline_parallel_size
     }
-    pub fn get_max_model_len(&self) -> usize {
-        self.model.max_sequence_length
+    fn get_max_model_len(&self) -> usize {
+        self.meta.max_sequence_length
     }
 }
 
@@ -90,4 +105,3 @@ impl ModelConfig {
 pub trait RllmModelConfig {
     fn into_config(self, common: CommonModelConfig) -> ModelConfig;
 }
-

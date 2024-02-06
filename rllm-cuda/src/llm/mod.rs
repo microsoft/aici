@@ -1,23 +1,28 @@
+pub mod config;
 pub mod kernels;
 pub mod llama;
+pub mod loader;
 pub mod phi;
 pub mod refkernels;
-pub mod loader;
-pub mod util;
-pub mod tmodel;
 pub mod seqid;
+pub mod tmodel;
+pub mod util;
 
+use self::config::ModelConfig;
 use crate::{
-    config::ModelConfig,
-    paged::BatchInfo,
     llm::util::{check_all_close, check_all_close_attn},
-    DType, IndexOp, Tensor,
+    paged::BatchInfo,
 };
 use std::rc::Rc;
-use tch::nn::{self, Module, Path};
+use tch::{
+    nn::{self, Module, Path},
+    IndexOp, Tensor,
+};
 
 // note that this doesn't work for phi-2 - it seems particularly numerically unstable
 const CHECK: bool = false;
+
+pub type DType = tch::Kind;
 
 #[derive(Debug)]
 pub struct RotaryEmbedding {
@@ -43,7 +48,7 @@ impl RotaryEmbedding {
             .map(|i| 1f32 / config.rope_theta.powf(i as f32 / rotary_dim as f32))
             .collect();
         let theta = Tensor::from_slice(theta.as_slice()).to(config.device);
-        let len = config.max_sequence_length as i64;
+        let len = config.meta.max_sequence_length as i64;
         let idx_theta = Tensor::arange(len, (DType::Float, config.device))
             .reshape(&[len, 1])
             .matmul(&theta.reshape(&[1, theta.numel() as i64]));

@@ -1,16 +1,14 @@
 // based on https://github.com/huggingface/candle/blob/main/candle-transformers/src/models/llama.rs
 
-use crate::{
-    config::{CommonModelConfig, ModelConfig, ModelType},
-    engine::RllmModelConfig,
-    llm::{linear_no_bias, varlen_attn, RmsNorm, RotaryEmbedding},
-    paged::BatchInfo,
-    Tensor,
+use super::{
+    config::{CommonModelConfig, ModelConfig, ModelType, RllmModelConfig},
+    linear_no_bias, varlen_attn, RmsNorm, RotaryEmbedding,
 };
+use crate::paged::BatchInfo;
 use anyhow::Result;
 use serde::Deserialize;
 use std::rc::Rc;
-use tch::nn::{self, Module, Path};
+use tch::{nn::{self, Module, Path}, Tensor};
 
 use super::tmodel::TModelInner;
 
@@ -36,19 +34,20 @@ fn default_rope() -> f32 {
 impl RllmModelConfig for LlamaConfig {
     fn into_config(self, common: CommonModelConfig) -> ModelConfig {
         let head_dim = self.hidden_size / self.num_attention_heads;
+        let mut meta = common.meta.clone();
+        meta.vocab_size = self.vocab_size;
+        meta.tok_vocab_size = self.vocab_size;
+        meta.max_sequence_length = self.max_position_embeddings;
         ModelConfig {
             model_type: ModelType::Llama,
-            meta: common.meta,
+            meta,
             hidden_size: self.hidden_size,
             intermediate_size: self.intermediate_size,
-            vocab_size: self.vocab_size,
-            tok_vocab_size: self.vocab_size,
             num_hidden_layers: self.num_hidden_layers,
             num_attention_heads: self.num_attention_heads,
             num_key_value_heads: self.num_key_value_heads.unwrap_or(self.num_attention_heads),
             layer_norm_eps: self.rms_norm_eps,
             rope_theta: self.rope_theta,
-            max_sequence_length: self.max_position_embeddings,
             head_dim,
             rotary_dim: head_dim,
             dtype: ModelConfig::dtype_from_str(common.dtype, &self.torch_dtype),
@@ -211,11 +210,11 @@ impl Llama {
     pub fn load(vs: Path, cfg: &Rc<ModelConfig>) -> Result<Self> {
         let rotary = RotaryEmbedding::new(cfg);
 
-        let lm_head = linear_no_bias(cfg.hidden_size, cfg.vocab_size, &vs / "lm_head");
+        let lm_head = linear_no_bias(cfg.hidden_size, cfg.meta.vocab_size, &vs / "lm_head");
 
         let wte = nn::embedding(
             &vs / "model" / "embed_tokens",
-            cfg.vocab_size as i64,
+            cfg.meta.vocab_size as i64,
             cfg.hidden_size as i64,
             Default::default(),
         );

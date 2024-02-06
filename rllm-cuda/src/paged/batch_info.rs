@@ -1,6 +1,9 @@
 use super::{cache_engine::CacheEngine, scheduler::SchedulerOutputs};
 use crate::{
-    config::RllmConfig, llm::kernels::to_offsets, seq::SchedulingPhase, util::pad_to_multiple,
+    config::RllmConfig,
+    llm::{kernels::to_offsets, tmodel::TModel},
+    seq::SchedulingPhase,
+    util::pad_to_multiple,
     HashMap,
 };
 use aicirt::api::Token;
@@ -94,7 +97,7 @@ impl Debug for BatchInfo {
 
 pub struct BatchInfoBuilder {
     entries: Vec<BatchEntry>,
-    config: Arc<RllmConfig>,
+    config: Arc<RllmConfig<TModel>>,
 }
 
 struct BatchEntry {
@@ -104,7 +107,7 @@ struct BatchEntry {
 }
 
 impl BatchInfoBuilder {
-    pub fn new(config: Arc<RllmConfig>) -> Self {
+    pub fn new(config: Arc<RllmConfig<TModel>>) -> Self {
         Self {
             entries: Vec::new(),
             config,
@@ -256,7 +259,7 @@ impl BatchInfoBuilder {
 
         assert!(seqlens_q.len() + paged_context_lens.len() > 0);
 
-        let device = self.config.device;
+        let device = self.config.model.device;
         let (max_seqlen_q, seqlens_q) = to_offsets(seqlens_q.into_iter(), device);
         let (max_seqlen_k, seqlens_k) = to_offsets(seqlens_k.into_iter(), device);
 

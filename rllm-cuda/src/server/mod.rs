@@ -150,10 +150,6 @@ pub struct RllmCliArgs {
     #[arg(short, long, help_heading = "Model")]
     pub tokenizer: Option<String>,
 
-    /// Specify which type to use in the model (bf16, f16, f32)
-    #[arg(long, default_value = "", help_heading = "Model")]
-    pub dtype: String,
-
     /// Port to serve on (localhost:port)
     #[arg(long, default_value_t = 4242, help_heading = "Server")]
     pub port: u16,

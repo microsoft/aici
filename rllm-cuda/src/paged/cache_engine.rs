@@ -2,10 +2,15 @@
 
 #[cfg(not(feature = "cuda"))]
 use super::cuda_stub::{CudaEvent, CudaStream};
+use tch::{Device, Tensor};
 #[cfg(feature = "cuda")]
 use tch_cuda::{CudaEvent, CudaStream};
 
-use crate::{config::RllmConfig, llm::kernels, Device, HashMap, Tensor};
+use crate::{
+    config::RllmConfig,
+    llm::{config::TchRllmConfig, kernels, tmodel::TModel},
+    HashMap,
+};
 use std::sync::Arc;
 
 use super::{CacheIface, CacheSize};
@@ -37,13 +42,13 @@ impl CacheIface for MyCacheAwaiter {
 }
 
 impl CacheEngine {
-    pub fn new(config: Arc<RllmConfig>, num_blocks: &CacheSize) -> Self {
+    pub fn new(config: Arc<RllmConfig<TModel>>, num_blocks: &CacheSize) -> Self {
         let num_layers = config.get_num_layers_parallel();
         let (gpu_cache, cpu_cache) = Self::allocate_caches(&config, num_blocks);
         Self {
             gpu_cache: Arc::new(gpu_cache),
             cpu_cache,
-            cache_stream: CudaStream::new(config.device),
+            cache_stream: CudaStream::new(config.model.device),
             events: Arc::new((0..num_layers).map(|_| CudaEvent::new()).collect()),
             used_events: false,
         }
@@ -77,29 +82,29 @@ impl CacheEngine {
         self.used_events = true;
     }
 
-    fn alloc_key_block(config: &RllmConfig, num_bl: i64, device: Device) -> Tensor {
+    fn alloc_key_block(config: &RllmConfig<TModel>, num_bl: i64, device: Device) -> Tensor {
         let head_size = config.get_head_size() as i64;
         let num_heads = config.get_num_heads_parallel() as i64;
         let block_size = config.cache.block_size as i64;
-        let x = 16 / (config.dtype.elt_size_in_bytes() as i64);
+        let x = 16 / (config.model.dtype.elt_size_in_bytes() as i64);
         Tensor::empty(
             &[num_bl, num_heads, head_size / x, block_size, x],
-            (config.dtype, device),
+            (config.model.dtype, device),
         )
     }
 
-    fn alloc_value_block(config: &RllmConfig, num_bl: i64, device: Device) -> Tensor {
+    fn alloc_value_block(config: &RllmConfig<TModel>, num_bl: i64, device: Device) -> Tensor {
         let head_size = config.get_head_size() as i64;
         let num_heads = config.get_num_heads_parallel() as i64;
         let block_size = config.cache.block_size as i64;
         Tensor::empty(
             &[num_bl, num_heads, head_size, block_size],
-            (config.dtype, device),
+            (config.model.dtype, device),
         )
     }
 
-    pub fn alloc_gpu_cache_layer(config: &RllmConfig, num_bl: i64) -> (Tensor, Tensor) {
-        let device = config.device;
+    pub fn alloc_gpu_cache_layer(config: &RllmConfig<TModel>, num_bl: i64) -> (Tensor, Tensor) {
+        let device = config.model.device;
         (
             Self::alloc_key_block(config, num_bl, device),
             Self::alloc_value_block(config, num_bl, device),
@@ -107,7 +112,7 @@ impl CacheEngine {
     }
 
     fn allocate_caches(
-        config: &RllmConfig,
+        config: &RllmConfig<TModel>,
         num_blocks: &CacheSize,
     ) -> (Vec<KVCache>, Vec<KVCache>) {
         let num_layers = config.get_num_layers_parallel() as i64;
@@ -161,7 +166,7 @@ impl CacheEngine {
         kernels::copy_blocks(&mut key_caches, &mut value_caches, &src_to_dsts);
     }
 
-    pub fn get_cache_block_size(config: &RllmConfig) -> usize {
+    pub fn get_cache_block_size(config: &RllmConfig<TModel>) -> usize {
         let block_size = config.cache.block_size;
         let head_size = config.get_head_size();
         let num_heads = config.get_num_heads_parallel();
@@ -170,6 +175,6 @@ impl CacheEngine {
         let key_cache_block = block_size * num_heads * head_size;
         let value_cache_block = key_cache_block;
         let total = num_layers * (key_cache_block + value_cache_block);
-        config.dtype.elt_size_in_bytes() * total
+        config.model.dtype.elt_size_in_bytes() * total
     }
 }

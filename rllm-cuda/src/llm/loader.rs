@@ -1,20 +1,24 @@
 use crate::{
-    config::{ModelConfig, ModelType, RllmConfig},
+    config::{ModelMeta, RllmConfig},
     llm::{
+        config::ModelType,
         llama, phi,
-        seqid::SeqIdGen,
         tmodel::TModel,
         util::{gpu_memory_size, gpu_peak_allocated_bytes, log_mem_stats, reset_mem_stats},
     },
     paged::{BatchInfoBuilder, CacheEngine, CacheSize},
-    DType, HashSet, LoaderArgs, Repo, RllmEngine, RllmModelConfig,
+    HashSet, LoaderArgs, Repo, RllmEngine,
 };
 use anyhow::{bail, Result};
 use safetensors::Dtype;
 use std::{path::PathBuf, rc::Rc, sync::Arc};
 use tch::{nn::VarStore, Device, Kind, Tensor};
 
-use super::tmodel::TModelInner;
+use super::{
+    config::{CommonModelConfig, ModelConfig, RllmModelConfig},
+    tmodel::{TModelInner, TchLoaderArgs},
+    DType,
+};
 
 fn kind_from_dt(dtype: Dtype) -> Kind {
     match dtype {
@@ -41,8 +45,11 @@ fn read_tensor(s: &safetensors::SafeTensors, name: &str) -> Result<Tensor> {
     Ok(tensor)
 }
 
-fn load_model(rllm_config: &RllmConfig, filenames: Vec<PathBuf>) -> Result<Box<dyn TModelInner>> {
-    let mut vs = VarStore::new(rllm_config.device.clone());
+fn load_model(
+    rllm_config: &RllmConfig<TModel>,
+    filenames: Vec<PathBuf>,
+) -> Result<Box<dyn TModelInner>> {
+    let mut vs = VarStore::new(rllm_config.model.device.clone());
 
     let rc_cfg = Rc::new(rllm_config.model.clone());
     let mut model: Box<dyn TModelInner> = match rllm_config.model.model_type {
@@ -53,7 +60,7 @@ fn load_model(rllm_config: &RllmConfig, filenames: Vec<PathBuf>) -> Result<Box<d
         }
     };
 
-    vs.set_kind(rllm_config.dtype);
+    vs.set_kind(rllm_config.model.dtype);
 
     let mut vars = vs.variables();
 
@@ -142,13 +149,16 @@ fn model_filenames(repo: &Repo) -> Result<Vec<PathBuf>> {
     Ok(filenames)
 }
 
-pub fn load_rllm_engine(mut args: LoaderArgs) -> Result<RllmEngine> {
+pub(super) fn load_rllm_engine(
+    args: LoaderArgs,
+    mut model_args: TchLoaderArgs,
+) -> Result<RllmEngine<TModel>> {
     let _no_grad = tch::no_grad_guard();
 
-    let device = args.device;
+    let device = model_args.device;
     let repo = Repo::from(&args)?;
 
-    let rllm_config = RllmEngine::build_config(&mut args)?;
+    let rllm_config = RllmEngine::<TModel>::build_config(&args, &mut model_args)?;
 
     let filenames = model_filenames(&repo)?;
     log::info!("building the model");
@@ -167,11 +177,11 @@ pub fn load_rllm_engine(mut args: LoaderArgs) -> Result<RllmEngine> {
 
     let tmodel = TModel::new(rllm_config.clone(), cache_engine, model);
 
-    RllmEngine::build(args, tmodel, rllm_config, cache_size, SeqIdGen::new())
+    RllmEngine::build(args, tmodel, rllm_config, cache_size)
 }
 
-fn profile_model(config: Arc<RllmConfig>, model: &Box<dyn TModelInner>) -> CacheSize {
-    let device = config.device.clone();
+fn profile_model(config: Arc<RllmConfig<TModel>>, model: &Box<dyn TModelInner>) -> CacheSize {
+    let device = config.model.device.clone();
     let gpu_mem = gpu_memory_size(device);
 
     let gpu_cache_size = if gpu_mem > 0 {
@@ -219,20 +229,23 @@ fn profile_model(config: Arc<RllmConfig>, model: &Box<dyn TModelInner>) -> Cache
     r
 }
 
-pub fn load_model_config(args: &LoaderArgs) -> Result<ModelConfig> {
+pub(super) fn load_model_config(
+    args: &LoaderArgs,
+    model_args: &mut TchLoaderArgs,
+) -> Result<ModelConfig> {
     let repo = Repo::from(args)?;
     log::info!("loading the model from {}", repo);
 
     let bytes = repo.read("config.json")?;
     let mut err = String::new();
 
-    let cfg = load_one_config::<llama::LlamaConfig>(&mut err, args, "llama", &bytes)
-        .or_else(|| load_one_config::<phi::PhiConfig>(&mut err, args, "phi", &bytes));
+    let cfg = load_one_config::<llama::LlamaConfig>(&mut err, args, model_args, "llama", &bytes)
+        .or_else(|| load_one_config::<phi::PhiConfig>(&mut err, args, model_args, "phi", &bytes));
 
     match cfg {
         Some(mut v) => {
             let tok = aicirt::bintokens::find_tokenizer(&args.tokenizer)?;
-            v.tok_vocab_size = tok.tokrx_info().vocab_size as usize;
+            v.meta.tok_vocab_size = tok.tokrx_info().vocab_size as usize;
             Ok(v)
         }
         None => bail!("failed to load model config:\n{}", err),
@@ -242,13 +255,23 @@ pub fn load_model_config(args: &LoaderArgs) -> Result<ModelConfig> {
 fn load_one_config<T>(
     err: &mut String,
     args: &LoaderArgs,
+    model_args: &TchLoaderArgs,
     name: &str,
     bytes: &[u8],
 ) -> Option<ModelConfig>
 where
     T: RllmModelConfig + serde::de::DeserializeOwned,
 {
-    let common = args.common_config();
+    let common = CommonModelConfig {
+        meta: ModelMeta {
+            id: args.model_id.clone(),
+            vocab_size: 0,
+            tok_vocab_size: 0,
+            max_sequence_length: 0,
+        },
+        dtype: model_args.dtype,
+        device: model_args.device,
+    };
     let json = serde_json::from_slice::<T>(bytes);
     if let Ok(json) = json {
         Some(json.into_config(common))

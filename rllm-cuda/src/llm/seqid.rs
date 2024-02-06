@@ -1,40 +1,30 @@
 use std::sync::Mutex;
 
-pub struct SeqId {
-    num: usize,
-}
+use crate::{SeqId, SequenceManager};
 
-impl SeqId {
-    pub fn to_num(&self) -> usize {
-        self.num
-    }
-
-    pub fn clone_from(&self, _other: &SeqId, _length: usize) {}
-
-    pub fn trim(&self, _length: usize) {}
-}
-
-impl std::fmt::Display for SeqId {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.num)
-    }
-}
-
-pub struct SeqIdGen {
+pub struct TchSeqMgr {
     next: Mutex<usize>,
 }
 
-impl SeqIdGen {
+impl TchSeqMgr {
     pub fn new() -> Self {
         Self {
             next: Mutex::new(1),
         }
     }
+}
 
-    pub fn next(&self) -> SeqId {
+impl SequenceManager for TchSeqMgr {
+    fn new_sequence(&self) -> SeqId {
         let mut l = self.next.lock().unwrap();
-        let r = SeqId { num: *l };
+        let r = SeqId(*l);
         *l = *l + 1;
         r
     }
+
+    fn copy(&self, src: SeqId, dst: SeqId, length: usize) {}
+
+    fn trim(&self, seq: SeqId, length: usize) {}
+
+    fn delete(&self, seq: SeqId) {}
 }
