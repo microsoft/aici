@@ -22,9 +22,9 @@ impl SequenceManager for TchSeqMgr {
         r
     }
 
-    fn copy(&self, src: SeqId, dst: SeqId, length: usize) {}
+    fn copy(&self, _src: SeqId, _dst: SeqId, _length: usize) {}
 
-    fn trim(&self, seq: SeqId, length: usize) {}
+    fn trim(&self, _seq: SeqId, _length: usize) {}
 
-    fn delete(&self, seq: SeqId) {}
+    fn delete(&self, _seq: SeqId) {}
 }
