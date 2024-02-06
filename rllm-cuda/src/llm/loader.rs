@@ -1,13 +1,14 @@
+use super::{
+    config::ModelType,
+    llama,
+    paged::{BatchInfoBuilder, CacheEngine},
+    phi,
+    tmodel::TModel,
+    util::{gpu_memory_size, gpu_peak_allocated_bytes, log_mem_stats, reset_mem_stats},
+};
 use crate::{
     config::{ModelMeta, RllmConfig},
-    llm::{
-        config::ModelType,
-        llama, phi,
-        tmodel::TModel,
-        util::{gpu_memory_size, gpu_peak_allocated_bytes, log_mem_stats, reset_mem_stats},
-    },
-    paged::{BatchInfoBuilder, CacheEngine, CacheSize},
-    HashSet, LoaderArgs, Repo, RllmEngine,
+    CacheSize, HashSet, LoaderArgs, Repo, RllmEngine,
 };
 use anyhow::{bail, Result};
 use safetensors::Dtype;

@@ -1,8 +1,9 @@
 use super::{
     config::{CommonModelConfig, ModelConfig, ModelType, RllmModelConfig},
-    layer_norm, linear, varlen_attn, RotaryEmbedding,
+    layer_norm, linear,
+    paged::BatchInfo,
+    varlen_attn, RotaryEmbedding,
 };
-use crate::paged::BatchInfo;
 use serde::Deserialize;
 use std::rc::Rc;
 use tch::{

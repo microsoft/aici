@@ -1,4 +1,4 @@
-use crate::llm::util::{check_all_close_attn, to_vec1};
+use super::util::{check_all_close_attn, to_vec1};
 use crate::HashMap;
 use tch::{IndexOp, Kind, Tensor};
 

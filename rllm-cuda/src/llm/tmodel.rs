@@ -1,24 +1,20 @@
-use std::{sync::Arc, time::Instant};
-
+use super::{
+    config::{self, TchRllmConfig},
+    loader::load_model_config,
+    loader::load_rllm_engine,
+    paged::{BatchInfo, BatchInfoBuilder, BlockSpaceManager, CacheEngine, CacheIface},
+    seqid::TchSeqMgr,
+    util::synchronize,
+    DType,
+};
+use crate::{
+    config::RllmConfig, AiciBias, LogitsProcessor, ModelExec, SchedulerOutputs, TensorOps,
+};
 use aicirt::{with_timer, TimerRef};
 use anyhow::Result;
 use rand::distributions::Distribution as _;
+use std::{sync::Arc, time::Instant};
 use tch::{Device, IndexOp, Tensor};
-
-use crate::{
-    config::RllmConfig,
-    llm::{loader::load_model_config, util::synchronize, DType},
-    paged::{
-        BatchInfo, BatchInfoBuilder, BlockSpaceManager, CacheEngine, CacheIface, SchedulerOutputs,
-    },
-    AiciBias, LogitsProcessor, ModelExec, TensorOps,
-};
-
-use super::{
-    config::{self, TchRllmConfig},
-    loader::load_rllm_engine,
-    seqid::TchSeqMgr,
-};
 
 pub trait TModelInner {
     fn forward(&self, batch_info: &mut BatchInfo) -> Tensor;

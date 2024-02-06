@@ -1,9 +1,9 @@
+use super::cache_engine::CacheEngine;
 use crate::{
     config::RllmConfig,
     llm::tmodel::TModel,
-    paged::{cache_engine::CacheEngine, scheduler::SchedulerOutputs, CacheSize},
     seq::{SchedulingPhase, Sequence, SequenceGroup},
-    BlockLocation, HashMap, TBlockSpaceManager,
+    BlockLocation, CacheSize, HashMap, SchedulerOutputs, TBlockSpaceManager,
 };
 use std::{
     sync::{Arc, Mutex},

@@ -1,5 +1,8 @@
 use crate::{
-    config::RllmConfig, paged::CacheSize, seq::{FinishReason, SchedulingPhase, Sequence, SequenceGroup}, util::limit_str, HashMap, ModelExec, SequenceManager, TBlockSpaceManager
+    config::RllmConfig,
+    seq::{FinishReason, SchedulingPhase, Sequence, SequenceGroup},
+    util::limit_str,
+    HashMap, ModelExec, SequenceManager, TBlockSpaceManager,
 };
 use aicirt::api::SequenceResult;
 use std::{
@@ -483,4 +486,9 @@ impl<ME: ModelExec> Scheduler<ME> {
             }
         }
     }
+}
+
+pub struct CacheSize {
+    pub gpu: usize,
+    pub cpu: usize,
 }

@@ -1,4 +1,3 @@
-pub mod paged;
 pub mod seq;
 
 // vllm modules
@@ -8,6 +7,7 @@ mod exec;
 mod expected;
 pub mod iface;
 mod logits;
+mod scheduler;
 pub mod server;
 pub mod util;
 
@@ -15,12 +15,13 @@ use config::AiciConfig;
 pub use engine::*;
 pub use exec::*;
 pub use logits::LogitsProcessor;
+pub use scheduler::*;
 use std::sync::atomic::AtomicBool;
 
 cfg_if::cfg_if! {
     if #[cfg(feature = "tch")] {
         pub mod llm;
-        pub(crate) use paged::BlockRef;
+        pub(crate) use llm::paged::BlockRef;
     } else {
         pub mod llamacpp;
         pub use llamacpp::BlockRef;

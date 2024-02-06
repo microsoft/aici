@@ -7,17 +7,16 @@ pub mod refkernels;
 pub mod seqid;
 pub mod tmodel;
 pub mod util;
+pub mod paged;
 
 use self::config::ModelConfig;
-use crate::{
-    llm::util::{check_all_close, check_all_close_attn},
-    paged::BatchInfo,
-};
+use paged::BatchInfo;
 use std::rc::Rc;
 use tch::{
     nn::{self, Module, Path},
     IndexOp, Tensor,
 };
+use util::{check_all_close, check_all_close_attn};
 
 // note that this doesn't work for phi-2 - it seems particularly numerically unstable
 const CHECK: bool = false;

@@ -2,13 +2,17 @@
 
 use super::{
     config::{CommonModelConfig, ModelConfig, ModelType, RllmModelConfig},
-    linear_no_bias, varlen_attn, RmsNorm, RotaryEmbedding,
+    linear_no_bias,
+    paged::BatchInfo,
+    varlen_attn, RmsNorm, RotaryEmbedding,
 };
-use crate::paged::BatchInfo;
 use anyhow::Result;
 use serde::Deserialize;
 use std::rc::Rc;
-use tch::{nn::{self, Module, Path}, Tensor};
+use tch::{
+    nn::{self, Module, Path},
+    Tensor,
+};
 
 use super::tmodel::TModelInner;
 

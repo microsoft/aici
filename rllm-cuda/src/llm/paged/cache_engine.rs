@@ -7,13 +7,11 @@ use tch::{Device, Tensor};
 use tch_cuda::{CudaEvent, CudaStream};
 
 use crate::{
-    config::RllmConfig,
-    llm::{config::TchRllmConfig, kernels, tmodel::TModel},
-    HashMap,
+    config::RllmConfig, llm::{config::TchRllmConfig, kernels, tmodel::TModel}, CacheSize, HashMap
 };
 use std::sync::Arc;
 
-use super::{CacheIface, CacheSize};
+use super::CacheIface;
 
 type KVCache = (Tensor, Tensor);
 

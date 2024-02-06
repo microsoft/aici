@@ -1,10 +1,10 @@
-use super::{cache_engine::CacheEngine, scheduler::SchedulerOutputs};
+use super::cache_engine::CacheEngine;
 use crate::{
     config::RllmConfig,
     llm::{kernels::to_offsets, tmodel::TModel},
     seq::SchedulingPhase,
     util::pad_to_multiple,
-    HashMap,
+    HashMap, SchedulerOutputs,
 };
 use aicirt::api::Token;
 use std::{

@@ -1,4 +1,5 @@
-use crate::{llm::DType, util::get_setting};
+use super::DType;
+use crate::util::get_setting;
 use tch::{kind::Element, Device, IndexOp as _, Tensor};
 
 #[cfg(feature = "cuda")]

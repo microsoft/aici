@@ -5,7 +5,7 @@ use anyhow::Result;
 
 use crate::{
     config::{ModelMeta, RllmConfig},
-    paged::{CacheSize, SchedulerOutputs},
+    scheduler::{CacheSize, SchedulerOutputs},
     seq::{Sequence, SequenceGroup},
     HashMap, LoaderArgs, LogitsProcessor, RllmEngine,
 };
