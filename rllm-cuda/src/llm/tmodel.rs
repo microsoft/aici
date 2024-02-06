@@ -152,7 +152,6 @@ impl ModelExec for TModel {
         num_seqs: usize,
         vocab_size: usize,
     ) -> Self::AiciBias {
-        #[cfg(feature = "tch")]
         let tensor = Tensor::from_slice(slice)
             .to(self.config.model.device)
             .reshape(&[num_seqs as i64, vocab_size as i64]);

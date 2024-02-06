@@ -208,23 +208,16 @@ impl TModel {
     }
 
     fn sample_argmax(&self, logits: &Tensor) -> u32 {
-        #[cfg(feature = "tch")]
-        {
-            logits.argmax(0, false).int64_value(&[]) as u32
-        }
-        #[cfg(not(feature = "tch"))]
-        {
-            let data = logits.as_slice();
-            let mut top = data[0];
-            let mut top_idx = 0;
-            for (i, x) in data.iter().enumerate() {
-                if *x > top {
-                    top = *x;
-                    top_idx = i;
-                }
+        let data = logits.as_slice();
+        let mut top = data[0];
+        let mut top_idx = 0;
+        for (i, x) in data.iter().enumerate() {
+            if *x > top {
+                top = *x;
+                top_idx = i;
             }
-            top_idx as u32
         }
+        top_idx as u32
     }
 
     fn sample_multinomial(&self, state: &mut LogitsProcessor, prs: &Vec<f32>) -> Result<u32> {
