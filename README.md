@@ -69,7 +69,7 @@ while compiling rllm-cuda also requires libtorch and CUDA.
   [rLLM on llama.cpp](./rllm-cpp) and [aicirt](./aicirt)
 - **AICI with CUDA** has all of the above, plus CUDA and libtorch for
   [rLLM on libtorch](./rllm-cuda);
-  this requires a CUDA-capable GPU (currently only 8.0 (A100) is supported)
+  this requires a CUDA-capable GPU (currently only compute capability 8.0 is supported; this includes A100+ or GeForce 30x0/40x0)
 - **AICI with CUDA and vLLM (experimental)** is for our outdated vLLM integration
 
 If you're not familiar with [devcontainers](https://containers.dev/),

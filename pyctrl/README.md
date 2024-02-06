@@ -15,19 +15,28 @@ This is quite similar to [jsctrl](../jsctrl/README.md) but with Python instead o
 
 ## Usage
 
-To run a PyCtrl sample (using controller tagged with `pyctrl-latest`) use:
+You can build, upload, and tag the PyCtrl Wasm module using the `aici.sh` script
+(this assumes a [running server](../README.md#running-local-server)):
 
 ```bash
-../aici.sh run samples/test.py
+../aici.sh build . --tag pyctrl-latest
 ```
 
-If you want to build it yourself, use:
+Then you can run a PyCtrl sample:
+
+```bash
+../aici.sh run --ctrl pyctrl-latest samples/test.py
+```
+
+In fact, `--ctrl pyctrl-latest` is the default when you pass a `.py` file as input,
+so it can be skipped.
+You can also build and run in one step (without tagging):
 
 ```bash
 ../aici.sh run --build . samples/test.py
 ```
 
-You will see the console output of the program.
+Either way, you will see the console output of the program.
 
 The Python interpreter does not include the full Python standard library, however
 [parts are bundled](./Lib).
