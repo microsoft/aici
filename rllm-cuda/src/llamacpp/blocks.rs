@@ -1,6 +1,11 @@
 use crate::{
-    config::RllmConfig, paged::{CacheSize, SchedulerOutputs}, seq::{Sequence, SequenceGroup}, TBlockSpaceManager, TModel
+    config::RllmConfig,
+    paged::{CacheSize, SchedulerOutputs},
+    seq::{Sequence, SequenceGroup},
+    TBlockSpaceManager,
 };
+
+use super::tmodel::TModel;
 
 /// Manages the mapping between logical and physical token blocks.
 pub struct CppBlockSpaceManager {}

@@ -1,18 +1,14 @@
 use crate::{
-    config::{
-        CacheConfig, CommonModelConfig, ModelConfig, ParallelConfig, RllmConfig, SamplingParams,
-        SchedulerConfig,
-    },
+    config::{CacheConfig, ParallelConfig, RllmConfig, SamplingParams, SchedulerConfig},
     iface::AiciRtIface,
-    llm::seqid::SeqIdGen,
     paged::{CacheSize, Scheduler, SchedulerOutputs},
     seq::{
         AiciSampling, FinishReason, RequestOutput, SchedulingPhase, SeqOutput, Sequence,
         SequenceGroup, Token, TokenUsage,
     },
     util::get_setting,
-    AiciBias as _, HashMap, LoaderArgs, LogitsProcessor, ModelExec, TBlockSpaceManager as _,
-    TensorOps,
+    AiciBias as _, HashMap, LoaderArgs, LogitsProcessor, ModelExec, SequenceManager,
+    TBlockSpaceManager as _, TensorOps,
 };
 use aici_abi::toktree::TokTrie;
 use aicirt::{
@@ -28,7 +24,7 @@ use hf_hub::{
     RepoType,
 };
 use serde::{Deserialize, Serialize};
-use std::{fmt::Display, path::PathBuf, sync::Arc, time::Instant};
+use std::{fmt::Display, ops::Deref, path::PathBuf, sync::Arc, time::Instant};
 use tokenizers::Tokenizer;
 
 #[derive(Clone)]
@@ -112,10 +108,6 @@ impl Display for Repo {
     }
 }
 
-pub trait RllmModelConfig {
-    fn into_config(self, common: CommonModelConfig) -> ModelConfig;
-}
-
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Stats {
     pub free_gpu_blocks: usize,
@@ -135,7 +127,6 @@ pub struct RllmEngine<ME: ModelExec> {
     pub tok_trie: Arc<TokTrie>,
     pub model_id: String,
     pub tmodel: ME,
-    seq_gen: SeqIdGen,
     pub(crate) step_no: usize,
     pub profile_step_no: usize,
     req_id_cnt: usize,
@@ -165,6 +156,7 @@ pub struct RllmEngine<ME: ModelExec> {
     aicirt: Option<AiciRtIface>,
 
     scheduler: Scheduler<ME>,
+    seq_mgr: Arc<ME::SequenceManager>,
 }
 
 impl<ME: ModelExec> RllmEngine<ME> {
@@ -204,14 +196,13 @@ impl<ME: ModelExec> RllmEngine<ME> {
         tmodel: ME,
         rllm_config: Arc<RllmConfig<ME>>,
         cache_size: CacheSize,
-        seq_gen: SeqIdGen,
     ) -> Result<Self> {
         let (tokenizer, tok_trie) = RllmEngine::<ME>::load_tokenizer(&mut args)?;
         let eos_token_id = tok_trie.info().tok_eos;
         let space_token_id = tok_trie.greedy_tokenize(b" ")[0];
         let repo = Repo::from(&args)?;
 
-        let scheduler = Scheduler::new(rllm_config.clone(), &cache_size);
+        let scheduler = Scheduler::new(tmodel.sequence_manager(), rllm_config.clone(), &cache_size);
 
         let timers = TimerSet::new();
         let mut model_id = format!("{}", repo);
@@ -229,8 +220,8 @@ impl<ME: ModelExec> RllmEngine<ME> {
             tokenizer: Arc::new(tokenizer),
             tok_trie: Arc::new(tok_trie),
             model_id,
+            seq_mgr: tmodel.sequence_manager(),
             tmodel,
-            seq_gen,
             step_no: 0,
             profile_step_no: 0,
             req_id_cnt: 0,
@@ -294,13 +285,13 @@ impl<ME: ModelExec> RllmEngine<ME> {
 
     pub fn queue_request(&mut self, req: AddRequest) -> Result<()> {
         let mut seq = Sequence::new(
-            self.seq_gen.next(),
+            self.seq_mgr.new_sequence(),
             &req.prompt,
             self.scheduler.config.cache.block_size,
         );
         seq.expected = req.expected;
         seq.pending_fork_ids = (1..req.sampling_params.n)
-            .map(|_| self.seq_gen.next())
+            .map(|_| self.seq_mgr.new_sequence())
             .collect::<Vec<_>>();
 
         let logits_processor = LogitsProcessor::new(&req.sampling_params);
@@ -426,7 +417,7 @@ impl<ME: ModelExec> RllmEngine<ME> {
                     "sample *{}: backtrack:{backtrack} ff_tokens:{ff_tokens:?}",
                     seq.seq_id
                 );
-                seq.splice_tokens(backtrack as usize, &ff_tokens);
+                seq.splice_tokens(self.seq_mgr.deref(), backtrack as usize, &ff_tokens);
                 Some(AiciPostOp {
                     id: seq.seq_id.to_num(),
                     tokens: ff_tokens,
@@ -535,7 +526,7 @@ impl<ME: ModelExec> RllmEngine<ME> {
                 let pending = std::mem::take(&mut seq.pending_fork_ids);
                 for copy_id in pending {
                     seq_id_mapping.insert(copy_id.to_num(), seq.seq_id.to_num());
-                    let copy = seq.fork_as(copy_id, sg.max_index + 1);
+                    let copy = seq.fork_as(self.seq_mgr.deref(), copy_id, sg.max_index + 1);
                     sg.max_index += 1;
                     log::debug!("forked: {:?} -> {:?}", seq, copy);
                     to_add.push(copy);
@@ -762,7 +753,7 @@ impl<ME: ModelExec> RllmEngine<ME> {
                         }
 
                         while seq.pending_fork_ids.len() < r.num_forks - 1 {
-                            seq.pending_fork_ids.push(self.seq_gen.next());
+                            seq.pending_fork_ids.push(self.seq_mgr.new_sequence());
                         }
                     }
                     None => {}

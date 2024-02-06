@@ -1,11 +1,11 @@
 use std::sync::Arc;
 
-use crate::{config::ModelMeta, paged::CacheSize, LoaderArgs, Repo, RllmEngine, TModel};
+use crate::{config::ModelMeta, paged::CacheSize, LoaderArgs, Repo, RllmEngine};
 use anyhow::{bail, Result};
 
 use llama_cpp_low as cpp;
 
-use super::{seqid::SeqIdGen, tmodel::CppLoaderArgs};
+use super::tmodel::{CppLoaderArgs, TModel};
 
 pub(super) fn load_rllm_engine(
     args: LoaderArgs,
@@ -22,10 +22,7 @@ pub(super) fn load_rllm_engine(
     let rllm_config = Arc::new(rllm_config);
     let tmodel = TModel::new(rllm_config.clone(), model);
     let cache_size = CacheSize { gpu: 0, cpu: 0 };
-    let seq_gen = SeqIdGen {
-        model: tmodel.model.clone(),
-    };
-    RllmEngine::build(args, tmodel, rllm_config, cache_size, seq_gen)
+    RllmEngine::build(args, tmodel, rllm_config, cache_size)
 }
 
 fn do_load(args: &LoaderArgs, model_args: &mut CppLoaderArgs) -> Result<cpp::Model> {

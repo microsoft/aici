@@ -1,10 +1,8 @@
 use crate::{
     config::{ModelMeta, RllmConfig},
-    llm::loader::load_model_config,
     paged::SchedulerOutputs,
     seq::SchedulingPhase,
-    AiciBias, CppBlockSpaceManager, HashMap, LoaderArgs, LogitsProcessor, ModelExec, Tensor,
-    TensorOps,
+    AiciBias, HashMap, LoaderArgs, LogitsProcessor, ModelExec, TensorOps,
 };
 use aicirt::{with_timer, TimerRef};
 use anyhow::Result;
@@ -12,10 +10,16 @@ use llama_cpp_low as cpp;
 use rand::distributions::Distribution as _;
 use std::{sync::Arc, time::Instant};
 
-use super::loader::load_rllm_engine;
+use super::{
+    blocks::CppBlockSpaceManager,
+    loader::{load_model_config, load_rllm_engine},
+    seqid::CppSequenceManager,
+    Tensor,
+};
 
 pub struct TModel {
     pub(super) model: cpp::Model,
+    seq_mgr: Arc<CppSequenceManager>,
     batch: cpp::Batch,
     seq_id_to_idx: HashMap<usize, usize>,
     t0: Instant,
@@ -43,6 +47,7 @@ impl ModelExec for TModel {
     type AiciBias = CppAiciBias;
     type ModelConfig = ();
     type ModelLoaderArgs = CppLoaderArgs;
+    type SequenceManager = CppSequenceManager;
 
     fn run(
         &mut self,
@@ -79,9 +84,10 @@ impl ModelExec for TModel {
                         self.seq_id_to_idx
                             .insert(seq.seq_id.to_num(), self.batch.len());
                     }
-                    seq.seq_id.cpp.assert_model(&self.model);
-                    self.batch
-                        .add_token(seq.get_token(idx), idx, &seq.seq_id.cpp, logits);
+                    self.seq_mgr.with_cpp(seq.seq_id, |cpp| {
+                        cpp.assert_model(&self.model);
+                        self.batch.add_token(seq.get_token(idx), idx, &cpp, logits);
+                    });
                 }
 
                 seq.sync_computed_kv();
@@ -204,17 +210,23 @@ impl ModelExec for TModel {
     ) -> Result<crate::RllmEngine<Self>> {
         load_rllm_engine(args, model_args)
     }
+
+    fn sequence_manager(&self) -> Arc<Self::SequenceManager> {
+        self.seq_mgr.clone()
+    }
 }
 
 impl TModel {
     pub fn new(config: Arc<RllmConfig<Self>>, model: cpp::Model) -> Self {
         let batch = cpp::Batch::new(config.scheduler.max_num_batched_tokens);
+        let seq_mgr = Arc::new(CppSequenceManager::new(model.clone()));
         Self {
             model,
             batch,
             nv_profile: false,
             seq_id_to_idx: HashMap::default(),
             step_no: 0,
+            seq_mgr,
             t0: Instant::now(),
         }
     }

@@ -1,3 +1,5 @@
+use std::{fmt::Display, sync::Arc};
+
 use aicirt::TimerRef;
 use anyhow::Result;
 
@@ -22,12 +24,35 @@ pub trait AiciBias<T: TensorOps> {
     fn apply(&self, logits: &mut T, seq_id: usize);
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct SeqId(pub usize);
+
+impl SeqId {
+    pub fn to_num(&self) -> usize {
+        self.0
+    }
+}
+
+impl Display for SeqId {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
+pub trait SequenceManager {
+    fn new_sequence(&self) -> SeqId;
+    fn copy(&self, src: SeqId, dst: SeqId, length: usize);
+    fn trim(&self, seq: SeqId, length: usize);
+    fn delete(&self, seq: SeqId);
+}
+
 pub trait ModelExec: Sized {
     type Tensor: TensorOps;
     type BlockSpaceManager: TBlockSpaceManager<Self>;
     type AiciBias: AiciBias<Self::Tensor>;
     type ModelConfig;
     type ModelLoaderArgs: Send + 'static;
+    type SequenceManager: SequenceManager;
 
     fn load_model_config(
         args: &LoaderArgs,
@@ -38,6 +63,8 @@ pub trait ModelExec: Sized {
         args: LoaderArgs,
         model_args: Self::ModelLoaderArgs,
     ) -> Result<RllmEngine<Self>>;
+
+    fn sequence_manager(&self) -> Arc<Self::SequenceManager>;
 
     fn run(
         &mut self,

@@ -1,5 +1,8 @@
 use clap::Parser;
-use rllm::{llamacpp::tmodel::CppLoaderArgs, util::parse_with_settings, TModel};
+use rllm::{
+    llamacpp::tmodel::{CppLoaderArgs, TModel},
+    util::parse_with_settings,
+};
 
 /// Serve LLMs with AICI over HTTP with llama.cpp backend.
 #[derive(Parser, Debug)]

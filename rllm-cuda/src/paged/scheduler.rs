@@ -1,13 +1,10 @@
 use crate::{
-    config::RllmConfig,
-    paged::CacheSize,
-    seq::{FinishReason, SchedulingPhase, Sequence, SequenceGroup},
-    util::limit_str,
-    HashMap, ModelExec, TBlockSpaceManager,
+    config::RllmConfig, paged::CacheSize, seq::{FinishReason, SchedulingPhase, Sequence, SequenceGroup}, util::limit_str, HashMap, ModelExec, SequenceManager, TBlockSpaceManager
 };
 use aicirt::api::SequenceResult;
 use std::{
     cell::RefCell,
+    ops::Deref,
     sync::{Arc, Mutex},
     vec::Vec,
 };
@@ -98,6 +95,7 @@ pub struct Scheduler<ME: ModelExec> {
     prompt_limit: usize,
     pub(crate) block_manager: ME::BlockSpaceManager,
     freed_seq_ids: RefCell<Vec<usize>>,
+    seq_mgr: Arc<ME::SequenceManager>,
 
     queues: Mutex<Vec<Vec<SequenceGroup>>>,
 }
@@ -148,7 +146,11 @@ impl<ME: ModelExec> Scheduler<ME> {
         self.for_each_sg(|sg| sg.seqs.iter_mut().for_each(&mut f));
     }
 
-    pub fn new(config: Arc<RllmConfig<ME>>, cache_size: &CacheSize) -> Self {
+    pub fn new(
+        seq_mgr: Arc<ME::SequenceManager>,
+        config: Arc<RllmConfig<ME>>,
+        cache_size: &CacheSize,
+    ) -> Self {
         let prompt_limit = std::cmp::min(
             config.scheduler.max_model_len,
             config.scheduler.max_num_batched_tokens,
@@ -158,6 +160,7 @@ impl<ME: ModelExec> Scheduler<ME> {
 
         Self {
             config,
+            seq_mgr,
             prompt_limit,
             block_manager,
             freed_seq_ids: RefCell::new(Vec::new()),
@@ -451,6 +454,7 @@ impl<ME: ModelExec> Scheduler<ME> {
         }
         seq.sched_phase = SchedulingPhase::Finished(reason);
         self.freed_seq_ids.borrow_mut().push(seq.seq_id.to_num());
+        self.seq_mgr.delete(seq.seq_id);
         seq.gpu_blocks.clear();
         seq.cpu_blocks.clear();
     }
@@ -475,7 +479,7 @@ impl<ME: ModelExec> Scheduler<ME> {
             assert!(!seq.is_finished());
             seq.sched_phase = status;
             if to_waiting {
-                seq.clear_computed_kv();
+                seq.clear_computed_kv(self.seq_mgr.deref());
             }
         }
     }

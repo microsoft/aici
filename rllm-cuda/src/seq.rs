@@ -1,11 +1,13 @@
-use crate::{config::SamplingParams, engine::ExpectedGeneration, BlockRef, LogitsProcessor};
+use crate::{
+    config::SamplingParams, engine::ExpectedGeneration, BlockRef, LogitsProcessor, SeqId,
+    SequenceManager,
+};
 use aici_abi::{toktree::TokTrie, TokenId};
 use aicirt::api::SequenceResult;
 use serde::{Deserialize, Serialize};
 use std::fmt::Debug;
 
 pub type Token = u32;
-pub type SeqId = crate::llm::seqid::SeqId;
 
 #[derive(Debug, PartialEq, Eq, Clone, Copy, Serialize, Deserialize)]
 pub enum FinishReason {
@@ -138,21 +140,21 @@ impl Sequence {
         self.num_kv_computed = self.get_len();
     }
 
-    fn trim_computed_kv(&mut self, v: usize) {
+    fn trim_computed_kv(&mut self, v: usize, seq_mgr: &impl SequenceManager) {
         if self.num_kv_computed != v {
             assert!(self.num_kv_computed > v);
-            self.seq_id.trim(v);
+            seq_mgr.trim(self.seq_id, v);
             self.num_kv_computed = v;
         }
     }
 
-    pub(crate) fn clear_computed_kv(&mut self) {
+    pub(crate) fn clear_computed_kv(&mut self, seq_mgr: &impl SequenceManager) {
         self.gpu_blocks.clear();
-        self.trim_computed_kv(0);
+        self.trim_computed_kv(0, seq_mgr);
     }
 
-    fn trim_physical_blocks(&mut self) {
-        self.trim_computed_kv(std::cmp::min(self.num_kv_computed, self.get_len()));
+    fn trim_physical_blocks(&mut self, seq_mgr: &impl SequenceManager) {
+        self.trim_computed_kv(std::cmp::min(self.num_kv_computed, self.get_len()), seq_mgr);
         let num_logical = self.num_logical_blocks();
         if self.gpu_blocks.len() > num_logical {
             self.gpu_blocks.truncate(num_logical);
@@ -162,14 +164,19 @@ impl Sequence {
         }
     }
 
-    pub fn splice_tokens(&mut self, backtrack: usize, tokens: &[Token]) {
+    pub fn splice_tokens(
+        &mut self,
+        seq_mgr: &impl SequenceManager,
+        backtrack: usize,
+        tokens: &[Token],
+    ) {
         self.tokens.truncate(self.get_len() - backtrack);
         self.output_ptr = std::cmp::min(self.output_ptr, self.get_len());
         if backtrack > 0 {
             self.output_pending.clear();
             self.output_pending.extend_from_slice(" ↩ ".as_bytes());
         }
-        self.trim_physical_blocks();
+        self.trim_physical_blocks(seq_mgr);
         self.append_tokens(tokens);
     }
 
@@ -187,8 +194,13 @@ impl Sequence {
         block_index * self.block_size + block_offset
     }
 
-    pub(crate) fn fork_as(&self, seq_id: SeqId, index: usize) -> Self {
-        seq_id.clone_from(&self.seq_id, self.num_kv_computed);
+    pub(crate) fn fork_as(
+        &self,
+        seq_mgr: &impl SequenceManager,
+        seq_id: SeqId,
+        index: usize,
+    ) -> Self {
+        seq_mgr.copy(self.seq_id, seq_id, self.num_kv_computed);
         Self {
             seq_id,
             index,
