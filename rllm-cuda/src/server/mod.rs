@@ -178,9 +178,9 @@ pub struct RllmCliArgs {
     #[arg(long, default_value = "200", help_heading = "AICI settings")]
     pub busy_wait_time: u64,
 
-    /// Shm/semaphore name prefix
-    #[arg(long, default_value = "/aici0-", help_heading = "AICI settings")]
-    pub shm_prefix: String,
+    /// Shm/semaphore name prefix; default /aici-PORT-
+    #[arg(long, help_heading = "AICI settings")]
+    pub shm_prefix: Option<String>,
 
     // TODO: #[cfg(feature = "cuda")] -> causes rust-analyzer error
     /// Enable nvprof profiling for given engine step (if available)
@@ -634,12 +634,23 @@ pub async fn server_main<ME: ModelExec>(
         },
     };
 
+    let shm_prefix = match &args.shm_prefix {
+        Some(v) => {
+            if v.starts_with("/") {
+                v.clone()
+            } else {
+                format!("/{}", v)
+            }
+        }
+        None => format!("/aici-{}-", args.port),
+    };
+
     let rt_args = crate::iface::Args {
         aicirt,
         tokenizer: loader_args.tokenizer.clone(),
         json_size: args.json_size,
         bin_size: args.bin_size,
-        shm_prefix: args.shm_prefix.clone(),
+        shm_prefix,
         busy_wait_time: args.busy_wait_time,
     };
     let stats = Arc::new(Mutex::new(ServerStats {
