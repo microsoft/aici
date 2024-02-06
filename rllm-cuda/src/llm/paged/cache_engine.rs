@@ -1,17 +1,15 @@
 // based on https://github.com/vllm-project/vllm/blob/b9fe4616f98b77b4b9458bce203aa6544cb31ef2/vllm/worker/cache_engine.py
 
+use super::super::{config::TchRllmConfig, kernels, tmodel::TModel};
+use super::CacheIface;
+use crate::{config::RllmConfig, CacheSize, HashMap};
+use std::sync::Arc;
+use tch::{Device, Tensor};
+
 #[cfg(not(feature = "cuda"))]
 use super::cuda_stub::{CudaEvent, CudaStream};
-use tch::{Device, Tensor};
 #[cfg(feature = "cuda")]
 use tch_cuda::{CudaEvent, CudaStream};
-
-use crate::{
-    config::RllmConfig, llm::{config::TchRllmConfig, kernels, tmodel::TModel}, CacheSize, HashMap
-};
-use std::sync::Arc;
-
-use super::CacheIface;
 
 type KVCache = (Tensor, Tensor);
 

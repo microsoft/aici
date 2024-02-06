@@ -1,7 +1,7 @@
+use super::super::tmodel::TModel;
 use super::cache_engine::CacheEngine;
 use crate::{
     config::RllmConfig,
-    llm::tmodel::TModel,
     seq::{SchedulingPhase, Sequence, SequenceGroup},
     BlockLocation, CacheSize, HashMap, SchedulerOutputs, TBlockSpaceManager,
 };

@@ -25,10 +25,6 @@ cfg_if::cfg_if! {
     } else {
         pub mod llamacpp;
         pub use llamacpp::BlockRef;
-        // pub use llamacpp as llm;
-        // pub use llm::{Device, DType, Tensor};
-        // pub(crate) use llamacpp::BlockRef;
-        // pub(crate) use llamacpp::blocks::CppBlockSpaceManager;
     }
 }
 
