@@ -1,7 +1,7 @@
 use super::{
     config::ModelType,
     llama,
-    paged::{BatchInfoBuilder, CacheEngine},
+    paged::{BatchInfoBuilder, BlockSpaceManager, CacheEngine},
     phi,
     tmodel::TModel,
     util::{gpu_memory_size, gpu_peak_allocated_bytes, log_mem_stats, reset_mem_stats},
@@ -176,9 +176,16 @@ pub(super) fn load_rllm_engine(
     let cache_size = profile_model(rllm_config.clone(), &model);
     let cache_engine = CacheEngine::new(rllm_config.clone(), &cache_size);
 
-    let tmodel = TModel::new(rllm_config.clone(), cache_engine, model);
+    let block_mgr = BlockSpaceManager::new(
+        rllm_config.cache.block_size,
+        &cache_size,
+        0.01,
+        &rllm_config,
+    );
+    let seq_mgr = Arc::new(block_mgr.build_seq_mgr());
+    let tmodel = TModel::new(rllm_config.clone(), cache_engine, seq_mgr, model);
 
-    RllmEngine::build(args, tmodel, rllm_config, cache_size)
+    RllmEngine::build(args, tmodel, block_mgr, rllm_config)
 }
 
 fn profile_model(config: Arc<RllmConfig<TModel>>, model: &Box<dyn TModelInner>) -> CacheSize {

@@ -4,7 +4,6 @@ pub mod llama;
 pub mod loader;
 pub mod phi;
 pub mod refkernels;
-pub mod seqid;
 pub mod tmodel;
 pub mod util;
 pub mod paged;

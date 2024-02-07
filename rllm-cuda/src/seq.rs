@@ -1,6 +1,5 @@
 use crate::{
-    config::SamplingParams, engine::ExpectedGeneration, BlockRef, LogitsProcessor, SeqId,
-    SequenceManager,
+    config::SamplingParams, engine::ExpectedGeneration, LogitsProcessor, SeqId, SequenceManager,
 };
 use aici_abi::{toktree::TokTrie, TokenId};
 use aicirt::api::SequenceResult;
@@ -85,8 +84,6 @@ pub struct Sequence {
 
     // state for Scheduler and BlockSpaceManager
     pub(crate) sched_phase: SchedulingPhase,
-    pub(crate) gpu_blocks: Vec<BlockRef>,
-    pub(crate) cpu_blocks: Vec<BlockRef>,
     block_size: usize,
 }
 
@@ -115,8 +112,6 @@ impl Sequence {
             prompt_len,
             output_ptr: prompt_len,
             output_pending: Vec::new(),
-            gpu_blocks: Vec::new(),
-            cpu_blocks: Vec::new(),
             block_size,
             has_aici: false,
             aici_logs: Vec::new(),
@@ -128,10 +123,6 @@ impl Sequence {
 
     pub fn get_len(&self) -> usize {
         self.tokens.len()
-    }
-
-    pub fn num_logical_blocks(&self) -> usize {
-        (self.get_len() + self.block_size - 1) / self.block_size
     }
 
     /// Indicate that the generation will soon run for this sequence and thus
@@ -149,19 +140,11 @@ impl Sequence {
     }
 
     pub(crate) fn clear_computed_kv(&mut self, seq_mgr: &impl SequenceManager) {
-        self.gpu_blocks.clear();
         self.trim_computed_kv(0, seq_mgr);
     }
 
     fn trim_physical_blocks(&mut self, seq_mgr: &impl SequenceManager) {
         self.trim_computed_kv(std::cmp::min(self.num_kv_computed, self.get_len()), seq_mgr);
-        let num_logical = self.num_logical_blocks();
-        if self.gpu_blocks.len() > num_logical {
-            self.gpu_blocks.truncate(num_logical);
-        }
-        if self.cpu_blocks.len() > num_logical {
-            self.cpu_blocks.truncate(num_logical);
-        }
     }
 
     pub fn splice_tokens(
@@ -188,12 +171,6 @@ impl Sequence {
         self.tokens[idx]
     }
 
-    pub fn get_gpu_slot(&self, position: usize) -> usize {
-        let block_index = self.gpu_blocks[position / self.block_size].get_index();
-        let block_offset = position % self.block_size;
-        block_index * self.block_size + block_offset
-    }
-
     pub(crate) fn fork_as(
         &self,
         seq_mgr: &impl SequenceManager,
@@ -210,8 +187,6 @@ impl Sequence {
             output_ptr: self.prompt_len,
             prompt_len: self.prompt_len,
             output_pending: Vec::new(),
-            gpu_blocks: self.gpu_blocks.iter().map(|x| x.fork()).collect(),
-            cpu_blocks: self.cpu_blocks.iter().map(|x| x.fork()).collect(),
             block_size: self.block_size,
             has_aici: self.has_aici,
             aici_logs: Vec::new(),

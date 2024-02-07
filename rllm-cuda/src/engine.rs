@@ -6,8 +6,8 @@ use crate::{
         SequenceGroup, Token, TokenUsage,
     },
     util::get_setting,
-    AiciBias as _, CacheSize, HashMap, LoaderArgs, LogitsProcessor, ModelExec, Scheduler,
-    SchedulerOutputs, SequenceManager, TBlockSpaceManager as _, TensorOps,
+    AiciBias as _, HashMap, LoaderArgs, LogitsProcessor, ModelExec, Scheduler, SchedulerOutputs,
+    SequenceManager, TBlockSpaceManager as _, TensorOps,
 };
 use aici_abi::toktree::TokTrie;
 use aicirt::{
@@ -193,15 +193,19 @@ impl<ME: ModelExec> RllmEngine<ME> {
     pub(crate) fn build(
         mut args: LoaderArgs,
         tmodel: ME,
+        block_space_manager: ME::BlockSpaceManager,
         rllm_config: Arc<RllmConfig<ME>>,
-        cache_size: CacheSize,
     ) -> Result<Self> {
         let (tokenizer, tok_trie) = RllmEngine::<ME>::load_tokenizer(&mut args)?;
         let eos_token_id = tok_trie.info().tok_eos;
         let space_token_id = tok_trie.greedy_tokenize(b" ")[0];
         let repo = Repo::from(&args)?;
 
-        let scheduler = Scheduler::new(tmodel.sequence_manager(), rllm_config.clone(), &cache_size);
+        let scheduler = Scheduler::new(
+            tmodel.sequence_manager(),
+            block_space_manager,
+            rllm_config.clone(),
+        );
 
         let timers = TimerSet::new();
         let mut model_id = format!("{}", repo);

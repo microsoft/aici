@@ -21,10 +21,8 @@ use std::sync::atomic::AtomicBool;
 cfg_if::cfg_if! {
     if #[cfg(feature = "tch")] {
         pub mod llm;
-        pub(crate) use llm::paged::BlockRef;
     } else {
         pub mod llamacpp;
-        pub use llamacpp::BlockRef;
     }
 }
 

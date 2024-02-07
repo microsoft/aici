@@ -35,14 +35,3 @@ impl Tensor {
         unsafe { std::slice::from_raw_parts_mut(self.ptr, self.size) }
     }
 }
-
-pub struct BlockRef {}
-
-impl BlockRef {
-    pub fn get_index(&self) -> usize {
-        0
-    }
-    pub fn fork(&self) -> Self {
-        BlockRef {}
-    }
-}

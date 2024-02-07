@@ -151,16 +151,13 @@ impl<ME: ModelExec> Scheduler<ME> {
 
     pub fn new(
         seq_mgr: Arc<ME::SequenceManager>,
+        block_manager: ME::BlockSpaceManager,
         config: Arc<RllmConfig<ME>>,
-        cache_size: &CacheSize,
     ) -> Self {
         let prompt_limit = std::cmp::min(
             config.scheduler.max_model_len,
             config.scheduler.max_num_batched_tokens,
         );
-        let block_manager =
-            ME::BlockSpaceManager::new(config.cache.block_size, cache_size, 0.01, &config);
-
         Self {
             config,
             seq_mgr,
@@ -458,8 +455,6 @@ impl<ME: ModelExec> Scheduler<ME> {
         seq.sched_phase = SchedulingPhase::Finished(reason);
         self.freed_seq_ids.borrow_mut().push(seq.seq_id.to_num());
         self.seq_mgr.delete(seq.seq_id);
-        seq.gpu_blocks.clear();
-        seq.cpu_blocks.clear();
     }
 
     /// Sets the phase of all sequences in a group.

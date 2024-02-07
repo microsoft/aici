@@ -1,9 +1,7 @@
 use super::{
     config::{self, TchRllmConfig},
-    loader::load_model_config,
-    loader::load_rllm_engine,
-    paged::{BatchInfo, BatchInfoBuilder, BlockSpaceManager, CacheEngine, CacheIface},
-    seqid::TchSeqMgr,
+    loader::{load_model_config, load_rllm_engine},
+    paged::{BatchInfo, BatchInfoBuilder, BlockSpaceManager, CacheEngine, CacheIface, TchSeqMgr},
     util::synchronize,
     DType,
 };
@@ -76,7 +74,7 @@ impl ModelExec for TModel {
         sched_out: &mut SchedulerOutputs,
     ) -> Result<()> {
         let mut info = BatchInfoBuilder::new(self.config.clone())
-            .sched_out(sched_out)
+            .sched_out(sched_out, self.seq_mgr.get_gpu_allocator())
             .finish(step_no, self.cache_iface(sched_out));
         log::trace!("batch_info #{}: {:?}", info.step_no, info);
 
@@ -194,6 +192,7 @@ impl TModel {
     pub fn new(
         config: Arc<RllmConfig<TModel>>,
         cache_engine: CacheEngine,
+        seq_mgr: Arc<TchSeqMgr>,
         model: Box<dyn TModelInner>,
     ) -> Self {
         Self {
@@ -203,7 +202,7 @@ impl TModel {
             model,
             batch_info: None,
             logits: None,
-            seq_mgr: Arc::new(TchSeqMgr::new()),
+            seq_mgr,
             t0: Instant::now(),
         }
     }

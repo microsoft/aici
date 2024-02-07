@@ -5,7 +5,7 @@ use anyhow::Result;
 
 use crate::{
     config::{ModelMeta, RllmConfig},
-    scheduler::{CacheSize, SchedulerOutputs},
+    scheduler::SchedulerOutputs,
     seq::{Sequence, SequenceGroup},
     HashMap, LoaderArgs, LogitsProcessor, RllmEngine,
 };
@@ -84,13 +84,6 @@ pub trait ModelExec: Sized {
 }
 
 pub trait TBlockSpaceManager<ME: ModelExec> {
-    fn new(
-        _block_size: usize,
-        _cache_size: &CacheSize,
-        _watermark: f32,
-        _config: &RllmConfig<ME>,
-    ) -> Self;
-
     fn can_allocate(&self, _seq_group: &SequenceGroup) -> bool;
     fn allocate(&mut self, seq_group: &mut SequenceGroup);
 

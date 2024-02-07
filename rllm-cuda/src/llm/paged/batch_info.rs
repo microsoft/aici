@@ -1,5 +1,6 @@
 use super::super::{kernels::to_offsets, tmodel::TModel};
 use super::cache_engine::CacheEngine;
+use super::BlockAllocator;
 use crate::{
     config::RllmConfig, seq::SchedulingPhase, util::pad_to_multiple, HashMap, SchedulerOutputs,
 };
@@ -111,7 +112,11 @@ impl BatchInfoBuilder {
         }
     }
 
-    pub fn sched_out(&mut self, sched_out: &mut SchedulerOutputs) -> &mut Self {
+    pub fn sched_out(
+        &mut self,
+        sched_out: &mut SchedulerOutputs,
+        alloc: &BlockAllocator,
+    ) -> &mut Self {
         assert!(sched_out.next_seq_groups.len() > 0);
         for sg in sched_out.next_seq_groups.iter_mut() {
             for seq in sg.seqs.iter_mut() {
@@ -136,7 +141,7 @@ impl BatchInfoBuilder {
                     query_pos_token: (off..off + q_len)
                         .map(|idx| (idx, seq.get_token(idx)))
                         .collect(),
-                    kv_slots: (0..k_len).map(|idx| seq.get_gpu_slot(idx)).collect(),
+                    kv_slots: alloc.get_block_idxes(seq.seq_id, k_len),
                 });
 
                 seq.sync_computed_kv();
