@@ -3,6 +3,7 @@ use core::slice;
 use std::{
     ffi::CString,
     fmt::{Debug, Formatter},
+    os::raw::c_char,
     sync::{Arc, Mutex},
 };
 
@@ -239,7 +240,7 @@ impl Model {
                 llama_token_to_piece(
                     model,
                     token as i32,
-                    res.as_mut_ptr() as *mut i8,
+                    res.as_mut_ptr() as *mut c_char,
                     res.len() as i32,
                 )
             });
@@ -261,7 +262,7 @@ impl Model {
         let ntok = self.with_model(|model| unsafe {
             llama_tokenize(
                 model,
-                data.as_ptr() as *mut i8,
+                data.as_ptr() as *mut c_char,
                 data.len() as i32,
                 res.as_mut_ptr() as *mut i32,
                 res.len() as i32,
