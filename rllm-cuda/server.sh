@@ -7,7 +7,7 @@ LOOP=
 BUILD=
 ADD_ARGS=
 R_LOG=info,tokenizers=error,rllm=debug,aicirt=info
-
+VER=
 
 mkdir -p "$WS/target"
 BIN="$WS/target"
@@ -28,11 +28,6 @@ else
   echo "CUDA_VISIBLE_DEVICES=$CUDA_VISIBLE_DEVICES"
 fi
 
-if [ "$CPP" = 1 ] ; then
-  VER="--no-default-features"
-else
-  VER=
-fi
 
 if [ "$1" = "--trace" ] ; then
     R_LOG=info,rllm=trace,aicirt=info
