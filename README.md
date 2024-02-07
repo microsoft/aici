@@ -295,15 +295,15 @@ All of these can be easily extended.
 - [Paged Attention kernels](tch-cuda/kernels/vllm/) are copied from
   [vLLM repo](https://github.com/vllm-project/vllm);
   see [Apache LICENSE](tch-cuda/kernels/vllm/LICENSE)
-- [OpenAI API definitions](rllm-cuda/src/server/openai/) are copied and modified from
+- [OpenAI API definitions](rllm-lib/src/server/openai/) are copied and modified from
   [candle-vllm](https://github.com/EricLBuehler/candle-vllm);
-  see [MIT LICENSE](rllm-cuda/src/server/openai/LICENSE)
-- [cache_engine.rs](rllm-cuda/src/paged/cache_engine.rs),
-  [config.rs](rllm-cuda/src/config.rs),
-  and [scheduler.rs](rllm-cuda/src/paged/scheduler.rs)
+  see [MIT LICENSE](rllm-lib/src/server/openai/LICENSE)
+- [cache_engine.rs](rllm-cuda/src/llm/paged/cache_engine.rs),
+  [config.rs](rllm-lib/src/config.rs),
+  and [scheduler.rs](rllm-lib/src/scheduler.rs)
   are loosely based on [vLLM](https://github.com/vllm-project/vllm)
 - [llama.rs](rllm-cuda/src/llm/llama.rs), [phi.rs](rllm-cuda/src/llm/phi.rs)
-  and [logits.rs](rllm-cuda/src/logits.rs) are based on
+  and [logits.rs](rllm-lib/src/logits.rs) are based on
   [candle-transformers](https://github.com/huggingface/candle/tree/main/candle-transformers)
 - specific [Python library](./pyctrl/Lib/) files are copied from
   [RustPython](https://github.com/RustPython/RustPython)

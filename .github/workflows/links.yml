@@ -13,8 +13,4 @@ jobs:
 
     steps:
     - uses: actions/checkout@v3
-    - name: Run link check
-      uses: gaurav-nelson/github-action-markdown-link-check@v1
-      with:
-          use-quiet-mode: 'yes'
-          use-verbose-mode: 'no'
+    - run: ./scripts/checklinks.sh

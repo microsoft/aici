@@ -14,7 +14,7 @@ There are two alternative synchronization mechanisms for the SHM region:
 Regardless of the chosen synchronization mechanism, the message format is the same.
 
 The LLM side of the interface is implemented in [comms.py](../pyaici/comms.py)
-and in [iface.rs](../rllm-cuda/src/iface.rs).
+and in [iface.rs](../rllm-lib/src/iface.rs).
 The Python interface is outdated: [tracking issue](https://github.com/microsoft/aici/issues/43).
 
 Two bi-directional message channels are used:
