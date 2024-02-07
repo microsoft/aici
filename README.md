@@ -1,7 +1,7 @@
 # Artificial Intelligence Controller Interface (AICI)
 
 The Artificial Intelligence Controller Interface (AICI) lets you build Controllers that constrain and direct output of a Large Language Model (LLM) in real time.
-Controllers are flexible programs capable of implementating constrained decoding, dynamic editing of prompts and generated text, and coordinating execution across multiple, parallel generations.
+Controllers are flexible programs capable of implementing constrained decoding, dynamic editing of prompts and generated text, and coordinating execution across multiple, parallel generations.
 Controllers incorporate custom logic during the token-by-token decoding and maintain state during an LLM request. This allows diverse Controller strategies, from programmatic or query-based decoding to multi-agent conversations to execute efficiently in tight integration with the LLM itself.
 
 **The purpose of AICI is to make it easy to build and experiment with both existing and entirely new Controller strategies for improving LLM generations.**
@@ -25,7 +25,277 @@ AICI is a prototype, designed and built at [Microsoft Research](https://www.micr
 > [!TIP]
 > We are [looking for a research intern](https://jobs.careers.microsoft.com/us/en/job/1659267). You have to be accepted or currently enrolled in a PhD program or an equivalent research-oriented program in Computer Science or related STEM field.
 
-## Getting started
+# Table of Contents
+
+- [Artificial Intelligence Controller Interface (AICI)](#artificial-intelligence-controller-interface-aici)
+- [QuickStart: Example Walkthrough](#quickstart-example-walkthrough)
+  - [Development Environment Setup](#development-environment-setup)
+  - [Build and start rLLM server and AICI Runtime](#build-and-start-rllm-server-and-aici-runtime)
+  - [Control AI output using AICI controllers](#control-ai-output-using-aici-controllers)
+- [Comprehensive Guide: Exploring Further](#comprehensive-guide-exploring-further)
+- [Architecture](#architecture)
+- [Security](#security)
+- [Performance](#performance)
+- [Flexibility](#flexibility)
+- [Acknowledgements](#acknowledgements)
+- [Contributing](#contributing)
+- [Trademarks](#trademarks)
+
+# QuickStart: Example Walkthrough
+
+In this quickstart, we'll guide you through the following steps:
+
+* Setting up **rLLM Server** and **AICI Runtime**.
+* Building and deploying a **Controller**.
+* Utilizing AICI to control LLM output, enabling the customization of an LLM to **generate text adhering to specific rules**.
+
+## Development Environment Setup
+
+Begin by preparing your development environment for compiling AICI components, primarily coded in Rust. Additionally, ensure that Python 3.11 or later is installed, as it is essential for crafting controllers.
+
+### Windows WSL / Linux / macOS
+
+> [!NOTE]
+> **Windows users**: please use WSL2 or a [devcontainer](https://containers.dev). Adding native Windows support [is tracked here](https://github.com/microsoft/aici/issues/42).
+> 
+> **MacOS users**: please make sure you have XCode command line tools installed by running `xcode-select -p` and if not installed, run `xcode-select --install`.
+
+Using the system package manager, install the necessary tools for building code in the repository, including `git`, `cmake` and `ccache`. 
+
+For instance in WSL / Ubuntu using `apt`:
+
+    sudo apt-get install -y --no-install-recommends build-essential cmake ccache pkg-config libssl-dev libclang-dev clang llvm-dev git-lfs
+
+or using Homebrew on macOS:
+
+    brew install git
+    brew install cmake
+    brew install ccache
+
+Then install **Rust, Rustup and Cargo** following the instructions provided [here](https://doc.rust-lang.org/cargo/getting-started/installation.html) and [here](https://www.rust-lang.org/learn/get-started).
+
+    curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+
+After installation, verify that the `rustup --version` command is accessible by running it from the terminal. If the command isn't recognized, try opening a new terminal session.
+  
+Next install wasm32-wasi component:
+    
+    rustup target add wasm32-wasi
+
+If you already had Rust installed, or are getting complaints from cargo about outdated versions, run:
+
+    rustup update
+
+Finally, if you plan working with **Python** controllers and scripts, install these packages:
+
+    pip install pytest pytest-forked ujson posix_ipc numpy requests
+
+
+## Build and start rLLM server and AICI Runtime
+
+Clone the AICI repository and proceed with the next steps outlined below.
+
+### Using CUDA (rllm-cuda)
+
+If your platform has a CUDA-capable GPU (currently only compute capability 8.0 is supported; this includes A100+ or GeForce 30x0/40x0), navigate to the `rllm-cuda` folder and run the command below. This folder contains specific implementations tailored for CUDA-supported platforms.
+
+    cd rllm-cuda/
+    ./server.sh build
+
+After completing the build process, you can start it, specifying a model name, URL, or path as a parameter:
+
+    ./server.sh phi2
+
+If you prefer using Orca-2 13B model run this command:
+
+    ./server.sh orca
+
+You can find more details about `rllm-cuda` [here](rllm-cuda/README.md).
+
+### Using llama.cpp (rllm-cpp)
+
+For those utilizing Apple ARM-based M series processors or lacking CUDA capabilities but still aiming to run models on the CPU, use the following command from the `rllm-cpp` folder, which is derived from the llama.cpp project:
+
+    cd rllm-cpp
+    ./cpp-server.sh phi2
+
+After completing the build process, you can start it, specifying a model name, URL, or path as a parameter:
+
+    ./cpp-server.sh phi2
+
+You can find more details about `rllm-cpp` [here](rllm-cpp/README.md).
+
+### Server overview
+
+At this stage, your rLLM server instance should be up and running, nearly prepared to handle incoming requests. The following diagram illustrates how AICI and LLMs utilize CPU and GPU resources:
+
+```mermaid
+erDiagram
+    Host    ||--|{ CPU : ""
+    Host    ||--|{ GPU : ""
+    
+    CPU     ||--|| "rLMM Server" : execute
+    CPU     ||--|{ "AICI Runtime" : execute
+
+    GPU     ||--|{ "LLM token generation" : execute
+```
+
+The rLLM server provides an HTTP interface, utilized for both configuration tasks and sending requests. You can also utilize this interface to promptly verify its status. For instance, if you open http://127.0.0.1:4242/v1/models, you should see:
+
+```json
+{
+  "object": "list",
+  "data": [
+    {
+      "object": "model",
+      "id": "TheBloke/phi-2-GGUF",
+      "created": 946810800,
+      "owned_by": "owner"
+    }
+  ]
+}
+```
+
+confirming that the selected model is loaded.
+
+## Control AI output using AICI controllers
+
+AICI provides the capability to host custom logic known as **Controllers**, enabling the initiation, termination, and interaction with LLMs token generation. Each controller accepts input arguments, processes them, and returns a result comprising logs, LLM tokens, and variables.
+
+The repository includes some examples, in particular:
+
+* **jsctrl**: a controller that accepts JavaScript code as input for execution. This code can interact with the model to generate text and tokens.
+* **pyctrl**: a controller that accepts Python code as input for execution. This code can also interact with the model to generate text and tokens.
+
+In this example we'll utilize **pyctrl** to manage token generation using a simple **Python script**. It's important to note that controllers require building and deployment, while scripts are sent with each request.
+
+### Build and Upload pyctrl controller
+
+Execute the following command to build and upload the controller to the rLLM server:
+
+    ./aici.sh build pyctrl/ --tag pyctrl-latest
+
+The command utilizes the `aici.sh` utility to build the code in the `pyctrl/` folder, assigning a tag to the deployment. You can view all the deployed tags at http://127.0.0.1:4242/v1/controllers/tags or running with `aici.sh` command:
+
+    ./aici.sh tags
+
+output:
+
+> pyctrl-latest -> 68488575...; 13.3MiB/37.6MiB (2024-02-06 15:16:47 by localhost)
+
+
+At this point, you should have an rLLM server instance running with your controller, fully prepared to handle incoming requests. The following diagram integrates the controller just uploaded:
+
+```mermaid
+erDiagram
+    Host    ||--|{ CPU : ""
+    Host    ||--|{ GPU : ""
+    
+    CPU     ||--|| "rLMM Server" : execute
+    CPU     ||--|{ "AICI Runtime" : execute
+
+    "AICI Runtime" ||--|| "Controller" : instantiate
+
+    GPU     ||--|{ "LLM token generation" : execute
+```
+
+### Controlling the LLM token generation
+
+Suppose we aim for a model to generate a list, adhering to a specific format and containing only five items.
+
+Typically, achieving this involves prompt engineering, crafting the prompt precisely with clear instructions, such as:
+
+
+> 📝 What are the **five** most popular types of vehicles?
+> **Return the result as a numbered list.**
+> **Do not add explanations, only the list.**
+
+The prompt would also vary depending on the model in use, given that each model tend to add explanations and understand instructions in different ways.
+
+With AICI, we shift control back to code, and we can simplify the prompt to:
+
+> 📝 What are the most popular types of vehicles?
+
+using code to:
+
+1. Prevent the model from adding some initial explanation
+2. Limit the list to 5 items
+3. Format to a numbered list
+4. Stop the model from adding some text after the list.
+
+Let's create a `list-of-five.py` python file with the following content:
+
+```python
+import pyaici.server as aici
+
+# Force the model to generate a well formatted list of 5 items, e.g.
+#   1. name 1
+#   2. name 2
+#   3. name 3
+#   4. name 4
+#   5. name 5
+async def main():
+    
+    # This is the prompt we want to run. Note that the prompt doesn't mention a number of vehicles.
+    prompt = "What are the most popular types of vehicles?\n"
+
+    # Tell the model to generate the prompt string, ie. let's start with the prompt "to complete"
+    await aici.FixedTokens(prompt)
+
+    # Store the current position in the token generation process
+    marker = aici.Label()
+
+    for i in range(1,6):
+      # Tell the model to generate the list number
+      await aici.FixedTokens(f"{i}.")
+
+      # Wait for the model to generate a vehicle name and end with a new line
+      await aici.gen_text(stop_at = "\n")
+
+    await aici.FixedTokens("\n")
+
+    # Store the tokens generated in a result variable
+    aici.set_var("result", marker.text_since())
+
+aici.start(main())
+```
+
+Running the script is not too different from sending a prompt. In this case, we're sending control logic and instructions all together.
+
+To see the final result, execute the following command:
+
+    ./aici.sh run list-of-five.py
+
+Result:
+```
+Running with tagged AICI Controller: pyctrl-latest
+[0]: FIXED 'What are the most popular types of vehicles?\n'
+[0]: FIXED '1.'
+[0]: GEN ' Sedans\n'
+[0]: FIXED '2.'
+[0]: GEN ' SUVs\n'
+[0]: FIXED '3.'
+[0]: GEN ' Trucks\n'
+[0]: FIXED '4.'
+[0]: GEN ' Sports cars\n'
+[0]: FIXED '5.'
+[0]: GEN ' Minivans\n'
+[0]: FIXED '\n'
+[DONE]
+[Response] What are the most popular types of vehicles?
+1. Sedans
+2. SUVs
+3. Trucks
+4. Sports cars
+5. Minivans
+
+
+response saved to tmp/response.json
+Usage: {'sampled_tokens': 17, 'ff_tokens': 38, 'cost': 72}
+Storage: {'result': '1. Sedans\n2. SUVs\n3. Trucks\n4. Sports cars\n5. Minivans\n\n'}
+```
+
+# Comprehensive Guide: Exploring Further
 
 This repository contains a number of components, and which ones you need depends on your use case.
 
@@ -56,131 +326,7 @@ that talks to [AICI runtime](aicirt).
 
 Finally, you may want to modify any of the provided components - PRs are most welcome!
 
-To continue, follow one of the build setups below, and continue
-with [running the server](#running-local-server) and [interacting with the server](#interacting-with-server) afterwards.
-
-### Build setup with devcontainers
-
-All of the use cases above, except for running an existing controller on remote server,
-require a working [Rust compiler](https://www.rust-lang.org/tools/install),
-while compiling rllm-cuda also requires libtorch and CUDA.
-
-- **AICI Client-side** has Rust and C/C++ compilers for developing controllers,
-  [rLLM on llama.cpp](./rllm-cpp) and [aicirt](./aicirt)
-- **AICI with CUDA** has all of the above, plus CUDA and libtorch for
-  [rLLM on libtorch](./rllm-cuda);
-  this requires a CUDA-capable GPU (currently only compute capability 8.0 is supported; this includes A100+ or GeForce 30x0/40x0)
-- **AICI with CUDA and vLLM (experimental)** is for our outdated vLLM integration
-
-If you're not familiar with [devcontainers](https://containers.dev/),
-you need to install the [Dev Containers VSCode extension](https://marketplace.visualstudio.com/items?itemName=ms-vscode-remote.remote-containers)
-and from the command palette in VSCode select **Dev Containers: Reopen in Container...**.
-It pops a list of available devcontainers, select the one you want to use.
-
-### Build setup on Linux (including WSL2)
-
-This should be roughly equivalent to the **AICI Client-side** devcontainer.
-See also [common.dockerfile](.devcontainer/common.dockerfile).
-
-- install required packages; it's likely you already have some or all of these
-  but the list should be exhaustive for fresh Ubuntu-22.04 install in WSL
-
-```bash
-sudo apt-get install -y --no-install-recommends \
-    build-essential ca-certificates ccache \
-    cmake curl libjpeg-dev libpng-dev \
-    strace linux-tools-common linux-tools-generic \
-    llvm-dev libclang-dev clang ccache apache2-utils git-lfs \
-    screen bsdmainutils pip python3-dev python-is-python3 \
-    nodejs npm pkg-config
-
-pip install pytest pytest-forked ujson posix_ipc numpy requests
-```
-
-- [install](https://www.rust-lang.org/tools/install) rustup and restart current shell
-
-```bash
-curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
-```
-
-- install rustup components:
-
-```bash
-rustup target add wasm32-wasi
-rustup component add rustfmt
-```
-
-- if you already had rust installed, or are getting complaints from cargo about outdated version,
-run:
-
-```bash
-rustup update
-rustup target add wasm32-wasi
-```
-
-- now, [build and run local server](#running-local-server)
-
-### Build setup on macOS
-
-Make sure you have XCode command line tools installed
-by running `xcode-select -p` and if not installed, run `xcode-select --install`.
-
-Install required packages via brew:
-
-```bash
-brew install cmake git ccache
-```
-
-Install rustup as per the [Linux instructions](#build-setup-on-linux-including-wsl2) above.
-
-[Build](#running-local-server) the `rllm-cpp`; it should auto-detect and use Metal acceleration on Apple Silicon.
-
-### Build setup on Windows
-
-Please use a devcontainer or WSL2, as per the [Linux instructions](#build-setup-on-linux-including-wsl2) above.
-
-[Tracking issue](https://github.com/microsoft/aici/issues/42) for native Windows support.
-
-### Running local server
-
-If you have CUDA, go to `rllm-cuda/` and run `./server.sh orca`.
-This will run the inference server with Orca-2 13B model (which is expected by testcases).
-
-If you don't have CUDA, go to `rllm-cpp/` and run `./cpp-server.sh phi2`
-(phi2 is small enough to run on a CPU).
-You can also pass GGUF URL on HuggingFace.
-
-Both of these commands first compile aicirt and the inference engine,
-and then run it.
-You can also try other models, see README.md files for [rllm-cuda](rllm-cuda/README.md) and
-[rllm-cpp](rllm-cpp/README.md) as well as the shell scripts themselves for details.
-
-### Interacting with server
-
-To get started interacting with a cloud AICI server first export the API key.
-If running local server, leave `AICI_API_BASE` unset.
-
-```bash
-export AICI_API_BASE="https://inference.example.com/v1/#key=wht_..."
-```
-
-Now, use query the model with or without AICI Controller:
-
-```bash
-./aici.sh infer "The answer to the ultimate question of life"
-./aici.sh run --build pyctrl pyctrl/samples/test.py
-./aici.sh run --build jsctrl jsctrl/samples/hello.js
-./aici.sh run --build aici_abi::yesno
-```
-
-Run `./aici.sh -h` to see usage info.
-
-If the server is running with Orca-2 13B model,
-you can also run tests with `pytest` for the DeclCtrl, 
-with `./scripts/test-pyctrl.sh` for PyCtrl,
-or with `./scripts/test-jsctrl.sh` for JsCtrl.
-
-## Architecture
+# Architecture
 
 AICI abstracts LLM inference engine from the controller and vice-versa, as in the picture below.
 The rounded nodes are aspirational.
@@ -212,7 +358,7 @@ The support for [HuggingFace Transformers](harness/run_hf.py)
 and [vLLM REST server](harness/vllm_server.py) is currently out of date.
 Please use the [rLLM-cuda](rllm-cuda) or [rLLM-llama-cpp](rllm-cpp) for now.
 
-## Security
+# Security
 
 - `aicirt` runs in a separate process, and can run under a different user than the LLM engine
 - Wasm modules are [sandboxed by Wasmtime](https://docs.wasmtime.dev/security.html)
@@ -226,7 +372,7 @@ Please use the [rLLM-cuda](rllm-cuda) or [rLLM-llama-cpp](rllm-cpp) for now.
 In particular, Wasm modules cannot access the filesystem, network, or any other resources.
 They also cannot spin threads or access any timers (this is relevant for Spectre/Meltdown attacks).
 
-## Performance
+# Performance
 
 Most of computation in AICI Controllers occurs on the CPU, in parallel with the logit generation on the GPU.
 The generation occurs in steps, where logits are generated in parallel for a new token for each sequence in a batch
@@ -265,7 +411,7 @@ This is 10-100x better than JavaScript or Python.
 
 All measurements done on AMD EPYC 7V13 with nVidia A100 GPU with 80GB of VRAM.
 
-## Flexibility
+# Flexibility
 
 The low-level interface that AICI runtime provides allows for:
 
@@ -287,7 +433,7 @@ We also provide [Python](pyctrl) and [JavaScript](jsctrl) interpreters
 that allow to glue these constraints together.
 All of these can be easily extended.
 
-## Acknowledgements
+# Acknowledgements
 
 - [Flash Attention kernels](tch-cuda/kernels/flash_attn/) are copied from
   [flash-attention repo](https://github.com/Dao-AILab/flash-attention);
@@ -311,7 +457,7 @@ All of these can be easily extended.
 - the [example ANSI C grammar](aici_abi/grammars/c.y) is based on
   https://www.lysator.liu.se/c/ANSI-C-grammar-y.html by Jeff Lee (from 1985)
 
-## Contributing
+# Contributing
 
 This project welcomes contributions and suggestions. Most contributions require you to agree to a
 Contributor License Agreement (CLA) declaring that you have the right to, and actually do, grant us
@@ -325,7 +471,7 @@ This project has adopted the [Microsoft Open Source Code of Conduct](https://ope
 For more information see the [Code of Conduct FAQ](https://opensource.microsoft.com/codeofconduct/faq/) or
 contact [opencode@microsoft.com](mailto:opencode@microsoft.com) with any additional questions or comments.
 
-## Trademarks
+# Trademarks
 
 This project may contain trademarks or logos for projects, products, or services. Authorized use of Microsoft
 trademarks or logos is subject to and must follow
