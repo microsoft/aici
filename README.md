@@ -205,21 +205,20 @@ Suppose we aim for a model to generate a list, adhering to a specific format and
 
 Typically, achieving this involves prompt engineering, crafting the prompt precisely with clear instructions, such as:
 
-
-> 📝 What are the **five** most popular types of vehicles?
-> **Return the result as a numbered list.**
-> **Do not add explanations, only the list.**
+    What are the five most popular types of vehicles?
+    Return the result as a numbered list.
+    Do not add explanations, only the list.
 
 The prompt would also vary depending on the model in use, given that each model tend to add explanations and understand instructions in different ways.
 
 With AICI, we shift control back to code, and we can simplify the prompt to:
 
-> 📝 What are the most popular types of vehicles?
+    What are the most popular types of vehicles?
 
 using code to:
 
-1. Prevent the model from adding some initial explanation
-2. Limit the list to 5 items
+1. Limit the list to 5 items
+2. Prevent the model from adding some initial explanation
 3. Format to a numbered list
 4. Stop the model from adding some text after the list.
 
