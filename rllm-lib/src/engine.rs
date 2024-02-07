@@ -7,7 +7,7 @@ use crate::{
     },
     util::get_setting,
     AiciBias as _, HashMap, LoaderArgs, LogitsProcessor, ModelExec, Scheduler, SchedulerOutputs,
-    SequenceManager, TBlockSpaceManager as _, TensorOps,
+    SequenceManager, TBlockSpaceManager as _,
 };
 use aici_abi::toktree::TokTrie;
 use aicirt::{
@@ -47,7 +47,7 @@ pub struct AddRequest {
     pub expected: Option<ExpectedGeneration>,
 }
 
-pub(crate) enum Repo {
+pub enum Repo {
     Api(ApiRepo),
     Local(String),
 }
@@ -158,7 +158,7 @@ pub struct RllmEngine<ME: ModelExec> {
 }
 
 impl<ME: ModelExec> RllmEngine<ME> {
-    pub(crate) fn build_config(
+    pub fn build_config(
         args: &LoaderArgs,
         model_args: &mut ME::ModelLoaderArgs,
     ) -> Result<RllmConfig<ME>> {
@@ -188,7 +188,7 @@ impl<ME: ModelExec> RllmEngine<ME> {
         Ok(rllm_config)
     }
 
-    pub(crate) fn build(
+    pub fn build(
         mut args: LoaderArgs,
         tmodel: ME,
         block_space_manager: ME::BlockSpaceManager,
@@ -284,10 +284,7 @@ impl<ME: ModelExec> RllmEngine<ME> {
     }
 
     pub fn queue_request(&mut self, req: AddRequest) -> Result<()> {
-        let mut seq = Sequence::new(
-            self.seq_mgr.new_sequence(),
-            &req.prompt,
-        );
+        let mut seq = Sequence::new(self.seq_mgr.new_sequence(), &req.prompt);
         seq.expected = req.expected;
         seq.pending_fork_ids = (1..req.sampling_params.n)
             .map(|_| self.seq_mgr.new_sequence())
@@ -554,7 +551,7 @@ impl<ME: ModelExec> RllmEngine<ME> {
                 }
 
                 let next_token = if seq.expected.is_some() {
-                    let logits = logits.to_vec1();
+                    let logits = ME::tensor_to_vec1(&logits);
                     self.check_expected(logits, &sg.request_id, seq)
                 } else {
                     with_timer!(

@@ -16,11 +16,7 @@ pub enum BlockLocation {
     CPU,
 }
 
-pub trait TensorOps {
-    fn to_vec1(&self) -> Vec<f32>;
-}
-
-pub trait AiciBias<T: TensorOps> {
+pub trait AiciBias<T> {
     fn apply(&self, logits: &mut T, seq_id: usize);
 }
 
@@ -47,12 +43,14 @@ pub trait SequenceManager {
 }
 
 pub trait ModelExec: Sized {
-    type Tensor: TensorOps;
+    type Tensor;
     type BlockSpaceManager: TBlockSpaceManager<Self>;
     type AiciBias: AiciBias<Self::Tensor>;
     type ModelConfig;
     type ModelLoaderArgs: Send + 'static;
     type SequenceManager: SequenceManager;
+
+    fn tensor_to_vec1(tensor: &Self::Tensor) -> Vec<f32>;
 
     fn load_model_config(
         args: &LoaderArgs,

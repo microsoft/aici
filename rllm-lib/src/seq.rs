@@ -83,7 +83,7 @@ pub struct Sequence {
     pub(crate) expected: Option<ExpectedGeneration>,
 
     // state for Scheduler and BlockSpaceManager
-    pub(crate) sched_phase: SchedulingPhase,
+    pub sched_phase: SchedulingPhase,
 }
 
 impl Debug for Sequence {
@@ -125,7 +125,7 @@ impl Sequence {
 
     /// Indicate that the generation will soon run for this sequence and thus
     /// all the tokens will have KV computed.
-    pub(crate) fn sync_computed_kv(&mut self) {
+    pub fn sync_computed_kv(&mut self) {
         self.num_kv_computed = self.get_len();
     }
 

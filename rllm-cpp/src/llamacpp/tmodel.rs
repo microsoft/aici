@@ -1,10 +1,12 @@
-use rllm::{
-    config::{ModelMeta, RllmConfig}, seq::SchedulingPhase, AiciBias, HashMap, LoaderArgs, LogitsProcessor, ModelExec, SchedulerOutputs, TensorOps
-};
 use aicirt::{with_timer, TimerRef};
 use anyhow::Result;
 use llama_cpp_low as cpp;
 use rand::distributions::Distribution as _;
+use rllm::{
+    config::{ModelMeta, RllmConfig},
+    seq::SchedulingPhase,
+    AiciBias, HashMap, LoaderArgs, LogitsProcessor, ModelExec, SchedulerOutputs,
+};
 use std::{sync::Arc, time::Instant};
 
 use super::{
@@ -185,6 +187,10 @@ impl ModelExec for TModel {
 
     fn sequence_manager(&self) -> Arc<Self::SequenceManager> {
         self.seq_mgr.clone()
+    }
+
+    fn tensor_to_vec1(tensor: &Self::Tensor) -> Vec<f32> {
+        tensor.to_vec1()
     }
 }
 

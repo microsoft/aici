@@ -2,15 +2,13 @@ use super::{
     config::{self, TchRllmConfig},
     loader::{load_model_config, load_rllm_engine},
     paged::{BatchInfo, BatchInfoBuilder, BlockSpaceManager, CacheEngine, CacheIface, TchSeqMgr},
-    util::synchronize,
+    util::{synchronize, to_vec1},
     DType,
-};
-use rllm::{
-    config::RllmConfig, AiciBias, LogitsProcessor, ModelExec, SchedulerOutputs, TensorOps,
 };
 use aicirt::{with_timer, TimerRef};
 use anyhow::Result;
 use rand::distributions::Distribution as _;
+use rllm::{config::RllmConfig, AiciBias, LogitsProcessor, ModelExec, SchedulerOutputs};
 use std::{sync::Arc, time::Instant};
 use tch::{Device, IndexOp, Tensor};
 
@@ -187,18 +185,16 @@ impl ModelExec for TModel {
                     prs.multinomial(1, false).int64_value(&[]) as u32
                 } else {
                     // top-p (nucleus) sampling, clamping the least likely tokens to zero
-                    let mut prs: Vec<f32> = prs.to_vec1();
+                    let mut prs: Vec<f32> = to_vec1(&prs);
                     self.sample_topp(state, &mut prs, top_p as f32)?
                 }
             }
         };
         Ok(next_token)
     }
-}
 
-impl TensorOps for Tensor {
-    fn to_vec1(&self) -> Vec<f32> {
-        super::util::to_vec1(&self.to_kind(DType::Float))
+    fn tensor_to_vec1(tensor: &Self::Tensor) -> Vec<f32> {
+        to_vec1(tensor)
     }
 }
 

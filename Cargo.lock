@@ -2970,9 +2970,12 @@ name = "rllm-cpp"
 version = "0.1.0"
 dependencies = [
  "actix-web",
+ "aicirt",
  "anyhow",
  "clap",
  "llama_cpp_low",
+ "log",
+ "rand",
  "rllm",
 ]
 

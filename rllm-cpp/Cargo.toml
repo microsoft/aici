@@ -9,7 +9,10 @@ actix-web = "4.4.0"
 anyhow = "1.0.79"
 clap = { version = "4.4.18", features = ["derive"] }
 llama_cpp_low = { path = "../llama-cpp-low" }
+log = "0.4.20"
 rllm = { path = "../rllm-lib" }
+aicirt = { path = "../aicirt" }
+rand = "0.8.5"
 
 [[bin]]
 name = "rllm-cpp"
