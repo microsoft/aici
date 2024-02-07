@@ -24,7 +24,12 @@ jobs:
           submodules: true
       - run: sudo apt-get install ccache
 
+      - run: sudo df -h
+      - run: sudo rm -rf /usr/share/dotnet /opt/ghc /usr/local/share/boost
+      - run: sudo df -h
+
       - run: pip install torch==2.1.0
+      - run: sudo df -h
 
       - uses: Jimver/cuda-toolkit@v0.2.13
         id: cuda-toolkit
