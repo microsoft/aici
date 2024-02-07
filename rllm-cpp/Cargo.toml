@@ -6,9 +6,10 @@ rust-version = "1.75.0"
 
 [dependencies]
 actix-web = "4.4.0"
+anyhow = "1.0.79"
 clap = { version = "4.4.18", features = ["derive"] }
 llama_cpp_low = { path = "../llama-cpp-low" }
-rllm = { path = "../rllm-cuda", default-features = false, features = ["llamacpp"] }
+rllm = { path = "../rllm-lib" }
 
 [[bin]]
 name = "rllm-cpp"

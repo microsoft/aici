@@ -1,5 +1,5 @@
 use super::util::{check_all_close_attn, to_vec1};
-use crate::HashMap;
+use rllm::HashMap;
 use tch::{IndexOp, Kind, Tensor};
 
 pub fn reshape_and_cache(

@@ -1,11 +1,11 @@
+mod llm;
+
 use clap::Parser;
-use rllm::{
-    llm::{
-        tmodel::{TModel, TchLoaderArgs},
-        DType,
-    },
-    util::parse_with_settings,
+use llm::{
+    tmodel::{TModel, TchLoaderArgs},
+    DType,
 };
+use rllm::util::parse_with_settings;
 use tch::Device;
 
 /// Serve LLMs with AICI over HTTP with tch (torch) backend.
@@ -48,6 +48,10 @@ async fn main() -> () {
         _ => panic!("invalid dtype; try one of bf16, f16, f32"),
     };
 
-    let model_args = TchLoaderArgs { device, dtype, profile_step_no: args.profile_step };
+    let model_args = TchLoaderArgs {
+        device,
+        dtype,
+        profile_step_no: args.profile_step,
+    };
     rllm::server::server_main::<TModel>(args.args, model_args).await;
 }

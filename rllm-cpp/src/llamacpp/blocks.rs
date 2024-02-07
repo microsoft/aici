@@ -1,4 +1,4 @@
-use crate::{
+use rllm::{
     seq::{Sequence, SequenceGroup},
     SchedulerOutputs, TBlockSpaceManager,
 };

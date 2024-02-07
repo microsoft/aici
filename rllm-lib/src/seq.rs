@@ -75,7 +75,7 @@ pub struct Sequence {
     pub prompt_len: usize,
     pub(crate) output_ptr: usize,
     pub(crate) output_pending: Vec<u8>,
-    pub(crate) num_kv_computed: usize,
+    pub num_kv_computed: usize,
     pub(crate) has_aici: bool,
     pub(crate) aici_sampling: AiciSampling,
     pub aici_logs: Vec<SequenceResult>,

@@ -1,6 +1,6 @@
 use std::sync::Mutex;
 
-use crate::{HashMap, SeqId, SequenceManager};
+use rllm::{HashMap, SeqId, SequenceManager};
 use llama_cpp_low as cpp;
 
 pub struct CppSequenceManager {

@@ -1,4 +1,4 @@
-use crate::{
+use rllm::{
     config::{ModelMeta, RllmConfig}, seq::SchedulingPhase, AiciBias, HashMap, LoaderArgs, LogitsProcessor, ModelExec, SchedulerOutputs, TensorOps
 };
 use aicirt::{with_timer, TimerRef};
@@ -179,7 +179,7 @@ impl ModelExec for TModel {
     fn load_rllm_engine(
         args: LoaderArgs,
         model_args: Self::ModelLoaderArgs,
-    ) -> Result<crate::RllmEngine<Self>> {
+    ) -> Result<rllm::RllmEngine<Self>> {
         load_rllm_engine(args, model_args)
     }
 

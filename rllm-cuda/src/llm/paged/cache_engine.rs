@@ -2,7 +2,7 @@
 
 use super::super::{config::TchRllmConfig, kernels, tmodel::TModel};
 use super::CacheIface;
-use crate::{config::RllmConfig, CacheSize, HashMap};
+use rllm::{config::RllmConfig, CacheSize, HashMap};
 use std::sync::Arc;
 use tch::{Device, Tensor};
 

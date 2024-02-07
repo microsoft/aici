@@ -7,6 +7,7 @@ members = [
     "pyctrl",
     "jsctrl",
     "uppercase",
+    "rllm-lib",
     "rllm-cuda",
     "rllm-cpp",
     "tch-cuda",

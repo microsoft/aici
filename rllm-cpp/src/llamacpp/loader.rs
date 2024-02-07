@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use crate::{config::ModelMeta, LoaderArgs, Repo, RllmEngine};
+use rllm::{config::ModelMeta, LoaderArgs, Repo, RllmEngine};
 use anyhow::{bail, Result};
 
 use llama_cpp_low as cpp;

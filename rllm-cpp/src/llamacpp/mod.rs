@@ -1,4 +1,4 @@
-use crate::TensorOps;
+use rllm::TensorOps;
 
 pub mod blocks;
 pub mod loader;

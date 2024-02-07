@@ -1,7 +1,7 @@
 use super::super::{kernels::to_offsets, tmodel::TModel};
 use super::cache_engine::CacheEngine;
 use super::BlockAllocator;
-use crate::{
+use rllm::{
     config::RllmConfig, seq::SchedulingPhase, util::pad_to_multiple, HashMap, SchedulerOutputs,
 };
 use aicirt::api::Token;

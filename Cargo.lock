@@ -2945,6 +2945,48 @@ dependencies = [
  "base64 0.21.5",
  "cfg-if",
  "clap",
+ "derive_more",
+ "futures",
+ "fxhash",
+ "half 2.3.1",
+ "hf-hub",
+ "indicatif",
+ "lazy_static",
+ "libc",
+ "log",
+ "memmap2",
+ "percent-encoding",
+ "rand",
+ "safetensors 0.4.1",
+ "serde",
+ "serde_json",
+ "tokenizers",
+ "tokio",
+ "uuid",
+]
+
+[[package]]
+name = "rllm-cpp"
+version = "0.1.0"
+dependencies = [
+ "actix-web",
+ "anyhow",
+ "clap",
+ "llama_cpp_low",
+ "rllm",
+]
+
+[[package]]
+name = "rllm-cuda"
+version = "0.1.0"
+dependencies = [
+ "actix-web",
+ "aici_abi",
+ "aicirt",
+ "anyhow",
+ "base64 0.21.5",
+ "cfg-if",
+ "clap",
  "cudarc",
  "derive_more",
  "futures",
@@ -2954,11 +2996,11 @@ dependencies = [
  "indicatif",
  "lazy_static",
  "libc",
- "llama_cpp_low",
  "log",
  "memmap2",
  "percent-encoding",
  "rand",
+ "rllm",
  "safetensors 0.4.1",
  "serde",
  "serde_json",
@@ -2968,16 +3010,6 @@ dependencies = [
  "tokio",
  "torch-sys",
  "uuid",
-]
-
-[[package]]
-name = "rllm-cpp"
-version = "0.1.0"
-dependencies = [
- "actix-web",
- "clap",
- "llama_cpp_low",
- "rllm",
 ]
 
 [[package]]

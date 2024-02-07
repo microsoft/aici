@@ -5,7 +5,7 @@ use super::{
     util::synchronize,
     DType,
 };
-use crate::{
+use rllm::{
     config::RllmConfig, AiciBias, LogitsProcessor, ModelExec, SchedulerOutputs, TensorOps,
 };
 use aicirt::{with_timer, TimerRef};
@@ -45,9 +45,9 @@ impl ModelExec for TModel {
     type SequenceManager = TchSeqMgr;
 
     fn load_model_config(
-        args: &crate::LoaderArgs,
+        args: &rllm::LoaderArgs,
         model_args: &mut Self::ModelLoaderArgs,
-    ) -> Result<(crate::config::ModelMeta, Self::ModelConfig)> {
+    ) -> Result<(rllm::config::ModelMeta, Self::ModelConfig)> {
         let m = load_model_config(args, model_args)?;
         Ok((m.meta.clone(), m))
     }
@@ -57,9 +57,9 @@ impl ModelExec for TModel {
     }
 
     fn load_rllm_engine(
-        args: crate::LoaderArgs,
+        args: rllm::LoaderArgs,
         model_args: Self::ModelLoaderArgs,
-    ) -> Result<crate::RllmEngine<Self>> {
+    ) -> Result<rllm::RllmEngine<Self>> {
         load_rllm_engine(args, model_args)
     }
 

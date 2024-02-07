@@ -1,8 +1,7 @@
 [package]
-name = "rllm-cuda"
+name = "rllm"
 version = "0.1.0"
 edition = "2021"
-default-run = "rllm-server"
 
 [dependencies]
 anyhow = "1.0.75"
@@ -20,13 +19,6 @@ futures = "0.3.29"
 uuid = { version = "1.6.1", features = ["v4"] }
 derive_more = "0.99.17"
 
-tch = { version = "0.14.0" }
-torch-sys = { version = "0.14.0" }
-
-cudarc = { version = "0.10.0", features = ["f16"], optional = true }
-tch-cuda = { path = "../tch-cuda", optional = true }
-
-rllm = { path = "../rllm-lib" }
 aicirt = { path = "../aicirt" }
 aici_abi = { path = "../aici_abi" }
 libc = "0.2.150"
@@ -38,11 +30,3 @@ lazy_static = "1.4.0"
 fxhash = "0.2.1"
 cfg-if = "1.0.0"
 percent-encoding = "2.3.1"
-
-[[bin]]
-name = "rllm-server"
-path = "src/rllm-cuda.rs"
-
-[features]
-default = ["cuda"]
-cuda = ["dep:tch-cuda", "dep:cudarc"]

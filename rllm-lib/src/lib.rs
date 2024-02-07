@@ -18,14 +18,6 @@ pub use logits::LogitsProcessor;
 pub use scheduler::*;
 use std::sync::atomic::AtomicBool;
 
-cfg_if::cfg_if! {
-    if #[cfg(feature = "tch")] {
-        pub mod llm;
-    } else {
-        pub mod llamacpp;
-    }
-}
-
 pub use fxhash::FxHashMap as HashMap;
 pub use fxhash::FxHashSet as HashSet;
 

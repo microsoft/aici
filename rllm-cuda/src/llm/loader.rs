@@ -6,7 +6,7 @@ use super::{
     tmodel::TModel,
     util::{gpu_memory_size, gpu_peak_allocated_bytes, log_mem_stats, reset_mem_stats},
 };
-use crate::{
+use rllm::{
     config::{ModelMeta, RllmConfig},
     CacheSize, HashSet, LoaderArgs, Repo, RllmEngine,
 };

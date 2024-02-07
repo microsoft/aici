@@ -1,4 +1,4 @@
-use crate::config::{ModelMeta, RllmConfig};
+use rllm::config::{ModelMeta, RllmConfig};
 use aicirt::bail_user;
 use anyhow::Result;
 use tch::Device;
