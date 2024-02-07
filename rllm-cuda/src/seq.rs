@@ -84,7 +84,6 @@ pub struct Sequence {
 
     // state for Scheduler and BlockSpaceManager
     pub(crate) sched_phase: SchedulingPhase,
-    block_size: usize,
 }
 
 impl Debug for Sequence {
@@ -101,7 +100,7 @@ impl Debug for Sequence {
 }
 
 impl Sequence {
-    pub(crate) fn new(seq_id: SeqId, tokens: &[Token], block_size: usize) -> Self {
+    pub(crate) fn new(seq_id: SeqId, tokens: &[Token]) -> Self {
         let prompt_len = tokens.len();
         Self {
             seq_id,
@@ -112,7 +111,6 @@ impl Sequence {
             prompt_len,
             output_ptr: prompt_len,
             output_pending: Vec::new(),
-            block_size,
             has_aici: false,
             aici_logs: Vec::new(),
             aici_sampling: AiciSampling::Regular,
@@ -187,7 +185,6 @@ impl Sequence {
             output_ptr: self.prompt_len,
             prompt_len: self.prompt_len,
             output_pending: Vec::new(),
-            block_size: self.block_size,
             has_aici: self.has_aici,
             aici_logs: Vec::new(),
             pending_fork_ids: Vec::new(),

@@ -5,14 +5,11 @@ use aicirt::{bail_user, valid_module_or_tag};
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
 
-static GB: usize = 1 << 30;
-
 #[derive(Debug)]
 pub struct RllmConfig<ME: ModelExec> {
     pub model: ME::ModelConfig,
     pub meta: ModelMeta,
     pub parallel: ParallelConfig,
-    pub cache: CacheConfig,
     pub scheduler: SchedulerConfig,
     pub aici: AiciConfig,
 }
@@ -38,67 +35,6 @@ impl ParallelConfig {
             tensor_parallel_size: 1,
         }
     }
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-pub struct CacheConfig {
-    /// Size of a cache block in number of tokens.
-    pub block_size: usize,
-    /// Fraction of GPU memory to use for the vLLM execution.
-    pub gpu_memory_utilization: f64,
-    ///  Size of the CPU swap space per GPU (in GiB).
-    pub swap_space: usize,
-
-    /// 0 - don't use paged_attention_v1/2(), otherwise version
-    pub paged_attn_kernel_v: usize,
-
-    #[serde(skip)]
-    pub swap_space_bytes: usize,
-}
-
-impl Default for CacheConfig {
-    fn default() -> Self {
-        Self::new(16, 0.9, 4).unwrap()
-    }
-}
-
-impl CacheConfig {
-    pub fn new(block_size: usize, gpu_memory_utilization: f64, swap_space: usize) -> Result<Self> {
-        if gpu_memory_utilization > 1.0 {
-            bail_user!(
-                "GPU memory utilization must be less than 1.0. Got {}.",
-                gpu_memory_utilization
-            );
-        }
-        let total_cpu_memory = get_cpu_memory();
-        let swap_space_bytes = swap_space * GB;
-        let msg = format!(
-            "{:.2} GiB out of the {:.2} GiB total CPU memory is allocated for the swap space.",
-            swap_space_bytes as f64 / GB as f64,
-            total_cpu_memory as f64 / GB as f64
-        );
-        if swap_space_bytes > (total_cpu_memory * 7 / 10) {
-            bail_user!("Too large swap space. {}", msg);
-        } else if swap_space_bytes > (total_cpu_memory * 4 / 10) {
-            log::warn!("Possibly too large swap space. {}", msg);
-        }
-        #[cfg(feature = "cuda")]
-        let paged_attn_kernel_v = 1;
-        #[cfg(not(feature = "cuda"))]
-        let paged_attn_kernel_v = 0;
-        Ok(Self {
-            block_size,
-            gpu_memory_utilization,
-            swap_space,
-            swap_space_bytes,
-            paged_attn_kernel_v,
-        })
-    }
-}
-
-fn get_cpu_memory() -> usize {
-    // TODO
-    64 * GB
 }
 
 #[derive(Debug, Serialize, Deserialize)]

@@ -1,5 +1,5 @@
 use crate::{
-    config::{CacheConfig, ParallelConfig, RllmConfig, SamplingParams, SchedulerConfig},
+    config::{ParallelConfig, RllmConfig, SamplingParams, SchedulerConfig},
     iface::AiciRtIface,
     seq::{
         AiciSampling, FinishReason, RequestOutput, SchedulingPhase, SeqOutput, Sequence,
@@ -174,7 +174,6 @@ impl<ME: ModelExec> RllmEngine<ME> {
             model: model_config,
             meta: model_meta,
             parallel: ParallelConfig::single(),
-            cache: CacheConfig::default(),
             scheduler: SchedulerConfig {
                 max_num_batched_tokens: model_len,
                 max_num_kv_tokens: model_len * 10,
@@ -288,7 +287,6 @@ impl<ME: ModelExec> RllmEngine<ME> {
         let mut seq = Sequence::new(
             self.seq_mgr.new_sequence(),
             &req.prompt,
-            self.scheduler.config.cache.block_size,
         );
         seq.expected = req.expected;
         seq.pending_fork_ids = (1..req.sampling_params.n)
@@ -841,8 +839,6 @@ impl<ME: ModelExec> RllmEngine<ME> {
     }
 
     pub fn step(&mut self) -> Result<Vec<RequestOutput>> {
-        #[cfg(feature = "tch")]
-        let _no_grad = tch::no_grad_guard();
         let r = with_timer!(self.tim_step, self.step_inner());
 
         if self.step_no % 20 == 0 {

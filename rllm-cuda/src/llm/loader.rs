@@ -177,7 +177,7 @@ pub(super) fn load_rllm_engine(
     let cache_engine = CacheEngine::new(rllm_config.clone(), &cache_size);
 
     let block_mgr = BlockSpaceManager::new(
-        rllm_config.cache.block_size,
+        rllm_config.model.cache.block_size,
         &cache_size,
         0.01,
         &rllm_config,
@@ -199,7 +199,7 @@ fn profile_model(config: Arc<RllmConfig<TModel>>, model: &Box<dyn TModelInner>) 
         let _logits = model.forward(&mut info);
         log_mem_stats("after model profile", device);
 
-        let frac = config.cache.gpu_memory_utilization;
+        let frac = config.model.cache.gpu_memory_utilization;
         let peak = gpu_peak_allocated_bytes(device) as isize;
         let left = (gpu_mem as f64 * frac) as isize - peak;
         if left < 0 {
@@ -220,7 +220,7 @@ fn profile_model(config: Arc<RllmConfig<TModel>>, model: &Box<dyn TModelInner>) 
         gpu: gpu_cache_size / elt_size,
     };
 
-    let token_kv_size = elt_size / config.cache.block_size;
+    let token_kv_size = elt_size / config.model.cache.block_size;
 
     const G: f64 = 1024.0 * 1024.0 * 1024.0;
     log::info!(
@@ -229,8 +229,8 @@ fn profile_model(config: Arc<RllmConfig<TModel>>, model: &Box<dyn TModelInner>) 
         cpu_cache_size as f64 / G,
         r.gpu,
         r.cpu,
-        r.gpu * config.cache.block_size,
-        r.cpu * config.cache.block_size,
+        r.gpu * config.model.cache.block_size,
+        r.cpu * config.model.cache.block_size,
         token_kv_size / 1024,
     );
 

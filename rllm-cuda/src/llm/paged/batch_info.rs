@@ -206,7 +206,7 @@ impl BatchInfoBuilder {
         let mut paged_block_tables: Vec<Vec<i32>> = Vec::new();
         let mut paged_context_lens: Vec<i32> = Vec::new();
 
-        let num_multitoken = if self.config.cache.paged_attn_kernel_v > 0 {
+        let num_multitoken = if self.config.model.cache.paged_attn_kernel_v > 0 {
             // sort single-token entries to the back
             let (single, multi) = std::mem::take(&mut self.entries)
                 .into_iter()
@@ -244,7 +244,7 @@ impl BatchInfoBuilder {
             } else {
                 let ctx_size = e.kv_slots.len();
                 paged_context_lens.push(ctx_size as i32);
-                let bl_size = self.config.cache.block_size;
+                let bl_size = self.config.model.cache.block_size;
                 paged_block_tables.push(
                     (0..ctx_size)
                         .step_by(bl_size)
@@ -307,7 +307,7 @@ impl BatchInfoBuilder {
             seq_id_to_idx,
             infer_log: Mutex::new(Vec::new()),
             step_no,
-            paged_block_size: self.config.cache.block_size,
+            paged_block_size: self.config.model.cache.block_size,
             paged_max_context_len,
             paged_block_tables,
             paged_context_lens,

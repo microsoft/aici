@@ -56,6 +56,8 @@ impl RllmModelConfig for LlamaConfig {
             rotary_dim: head_dim,
             dtype: ModelConfig::dtype_from_str(common.dtype, &self.torch_dtype),
             device: common.device,
+            profile_step_no: 0,
+            cache: Default::default(),
         }
     }
 }

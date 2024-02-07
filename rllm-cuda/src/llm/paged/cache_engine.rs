@@ -81,7 +81,7 @@ impl CacheEngine {
     fn alloc_key_block(config: &RllmConfig<TModel>, num_bl: i64, device: Device) -> Tensor {
         let head_size = config.get_head_size() as i64;
         let num_heads = config.get_num_heads_parallel() as i64;
-        let block_size = config.cache.block_size as i64;
+        let block_size = config.model.cache.block_size as i64;
         let x = 16 / (config.model.dtype.elt_size_in_bytes() as i64);
         Tensor::empty(
             &[num_bl, num_heads, head_size / x, block_size, x],
@@ -92,7 +92,7 @@ impl CacheEngine {
     fn alloc_value_block(config: &RllmConfig<TModel>, num_bl: i64, device: Device) -> Tensor {
         let head_size = config.get_head_size() as i64;
         let num_heads = config.get_num_heads_parallel() as i64;
-        let block_size = config.cache.block_size as i64;
+        let block_size = config.model.cache.block_size as i64;
         Tensor::empty(
             &[num_bl, num_heads, head_size, block_size],
             (config.model.dtype, device),
@@ -163,7 +163,7 @@ impl CacheEngine {
     }
 
     pub fn get_cache_block_size(config: &RllmConfig<TModel>) -> usize {
-        let block_size = config.cache.block_size;
+        let block_size = config.model.cache.block_size;
         let head_size = config.get_head_size();
         let num_heads = config.get_num_heads_parallel();
         let num_layers = config.get_num_layers_parallel();

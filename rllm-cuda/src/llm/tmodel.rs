@@ -74,6 +74,8 @@ impl ModelExec for TModel {
         step_no: usize,
         sched_out: &mut SchedulerOutputs,
     ) -> Result<()> {
+        let _no_grad = tch::no_grad_guard();
+
         if step_no == self.config.model.profile_step_no {
             self.nv_profile = true;
         }
@@ -115,11 +117,14 @@ impl ModelExec for TModel {
     }
 
     fn get_logits(&self, seq_id: usize) -> Tensor {
+        let _no_grad = tch::no_grad_guard();
         let idx = self.batch_info.as_ref().unwrap().seq_id_to_idx[&seq_id];
         self.logits.as_ref().unwrap().i((idx as i64, ..))
     }
 
     fn finalize_run(&mut self) -> Result<()> {
+        let _no_grad = tch::no_grad_guard();
+
         let dur = self.t0.elapsed().as_micros() as f64 / 1000.0;
         let info = self.batch_info.as_ref().unwrap();
 
@@ -155,6 +160,8 @@ impl ModelExec for TModel {
         num_seqs: usize,
         vocab_size: usize,
     ) -> Self::AiciBias {
+        let _no_grad = tch::no_grad_guard();
+
         let tensor = Tensor::from_slice(slice)
             .to(self.config.model.device)
             .reshape(&[num_seqs as i64, vocab_size as i64]);
@@ -165,6 +172,8 @@ impl ModelExec for TModel {
     }
 
     fn sample(&self, state: &mut LogitsProcessor, logits: &Tensor) -> Result<u32> {
+        let _no_grad = tch::no_grad_guard();
+
         let next_token = match state.temperature {
             None => self.sample_argmax(&logits),
             Some(temperature) => {
