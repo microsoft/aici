@@ -16,7 +16,7 @@ This is quite similar to [jsctrl](../jsctrl/README.md) but with Python instead o
 ## Usage
 
 You can build, upload, and tag the PyCtrl Wasm module using the `aici.sh` script
-(this assumes a [running server](../README.md#running-local-server)):
+(this assumes a [running server](../README.md#build-and-start-rllm-server-and-aici-runtime)):
 
 ```bash
 ../aici.sh build . --tag pyctrl-latest
