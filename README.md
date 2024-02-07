@@ -56,9 +56,13 @@ Begin by preparing your development environment for compiling AICI components, p
 ### Windows WSL / Linux / macOS
 
 > [!NOTE]
-> **Windows users**: please use WSL2 or a [devcontainer](https://containers.dev). Adding native Windows support [is tracked here](https://github.com/microsoft/aici/issues/42).
+> **Windows users**: please use WSL2 or the included [devcontainer](https://containers.dev). Adding native Windows support [is tracked here](https://github.com/microsoft/aici/issues/42).
 > 
 > **MacOS users**: please make sure you have XCode command line tools installed by running `xcode-select -p` and if not installed, run `xcode-select --install`.
+>
+> **CUDA**: the CUDA build relies on specific libtorch installation. It's highly recommended you use the included devcontainer.
+
+If you're using devcontainer, you can skip to the [next section](#build-and-start-rllm-server-and-aici-runtime).
 
 Using the system package manager, install the necessary tools for building code in the repository, including `git`, `cmake` and `ccache`. 
 
@@ -68,9 +72,7 @@ For instance in WSL / Ubuntu using `apt`:
 
 or using Homebrew on macOS:
 
-    brew install git
-    brew install cmake
-    brew install ccache
+    brew install git cmake ccache
 
 Then install **Rust, Rustup and Cargo** following the instructions provided [here](https://doc.rust-lang.org/cargo/getting-started/installation.html) and [here](https://www.rust-lang.org/learn/get-started).
 
