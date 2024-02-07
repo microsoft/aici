@@ -209,6 +209,7 @@ pub fn rotary_embedding(
     key0.copy_(&key_rot.reshape(key0.size()));
 }
 
+#[allow(dead_code)]
 pub fn copy_blocks(
     _key_caches: &mut Vec<Tensor>,
     _value_caches: &mut Vec<Tensor>,
@@ -217,6 +218,7 @@ pub fn copy_blocks(
     todo!()
 }
 
+#[allow(dead_code)]
 pub fn swap_blocks(
     _src: &Tensor,
     _dst: &Tensor,

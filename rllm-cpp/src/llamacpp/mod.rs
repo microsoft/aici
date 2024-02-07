@@ -3,8 +3,6 @@ pub mod loader;
 pub mod tmodel;
 pub mod seqid;
 
-pub type Model = llama_cpp_low::Model;
-
 #[derive(Clone)]
 pub struct Tensor {
     ptr: *mut f32,

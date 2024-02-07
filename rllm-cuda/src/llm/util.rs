@@ -44,6 +44,7 @@ pub fn to_vec1<T: Element>(t: &Tensor) -> Vec<T> {
     dst
 }
 
+#[allow(dead_code)]
 pub fn to_vec2<T: Element>(t: &Tensor) -> Vec<Vec<T>> {
     let (d0, d2) = t.size2().unwrap();
     (0..d0)
@@ -57,6 +58,7 @@ pub fn to_vec2<T: Element>(t: &Tensor) -> Vec<Vec<T>> {
         .collect::<Vec<_>>()
 }
 
+#[allow(dead_code)]
 pub fn to_vec3<T: Element>(t: &Tensor) -> Vec<Vec<Vec<T>>> {
     let (d0, d1, d2) = t.size3().unwrap();
     (0..d0)
@@ -128,6 +130,7 @@ pub fn synchronize(device: Device) {
     }
 }
 
+#[allow(dead_code)]
 pub fn scalar_tensor<T>(v: T, d: Device) -> Tensor
 where
     T: Element,

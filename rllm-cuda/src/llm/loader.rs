@@ -6,11 +6,11 @@ use super::{
     tmodel::TModel,
     util::{gpu_memory_size, gpu_peak_allocated_bytes, log_mem_stats, reset_mem_stats},
 };
+use anyhow::{bail, Result};
 use rllm::{
     config::{ModelMeta, RllmConfig},
     CacheSize, HashSet, LoaderArgs, Repo, RllmEngine,
 };
-use anyhow::{bail, Result};
 use safetensors::Dtype;
 use std::{path::PathBuf, rc::Rc, sync::Arc};
 use tch::{nn::VarStore, Device, Kind, Tensor};
@@ -56,9 +56,6 @@ fn load_model(
     let mut model: Box<dyn TModelInner> = match rllm_config.model.model_type {
         ModelType::Llama => Box::new(llama::Llama::load(vs.root(), &rc_cfg).unwrap()),
         ModelType::Phi => Box::new(phi::MixFormerSequentialForCausalLM::new(&rc_cfg, vs.root())),
-        ModelType::LlamaCpp => {
-            panic!("LlamaCpp model type is not supported by the Rust loader")
-        }
     };
 
     vs.set_kind(rllm_config.model.dtype);

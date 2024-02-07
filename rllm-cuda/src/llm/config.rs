@@ -61,7 +61,6 @@ impl TchRllmConfig for RllmConfig<TModel> {
 pub enum ModelType {
     Llama,
     Phi,
-    LlamaCpp,
 }
 
 pub struct CommonModelConfig {
