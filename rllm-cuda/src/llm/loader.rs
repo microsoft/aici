@@ -254,6 +254,7 @@ pub(super) fn load_model_config(
         Some(mut v) => {
             let tok = aicirt::bintokens::find_tokenizer(&args.tokenizer)?;
             v.meta.tok_vocab_size = tok.tokrx_info().vocab_size as usize;
+            v.profile_step_no = model_args.profile_step_no;
             Ok(v)
         }
         None => bail!("failed to load model config:\n{}", err),

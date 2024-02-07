@@ -182,11 +182,6 @@ pub struct RllmCliArgs {
     #[arg(long, help_heading = "AICI settings")]
     pub shm_prefix: Option<String>,
 
-    // TODO: #[cfg(feature = "cuda")] -> causes rust-analyzer error
-    /// Enable nvprof profiling for given engine step (if available)
-    #[arg(long, default_value_t = 0, help_heading = "Development")]
-    pub profile_step: usize,
-
     /// Specify test-cases (expected/*/*.safetensors)
     #[arg(long, help_heading = "Development")]
     pub test: Vec<String>,
@@ -461,11 +456,6 @@ fn spawn_inference_loop<ME: ModelExec>(
     let handle_res = Arc::new(Mutex::new(handle));
     let handle = handle_res.clone();
 
-    // prep for move
-    #[cfg(feature = "cuda")]
-    let profile_step = args.profile_step;
-    #[cfg(not(feature = "cuda"))]
-    let profile_step = 0;
     let warmup = args.warmup.clone();
     let warmup_only = args.warmup_only.clone();
 
@@ -473,7 +463,6 @@ fn spawn_inference_loop<ME: ModelExec>(
         set_max_priority();
         let mut engine =
             ME::load_rllm_engine(loader_args, model_args).expect("failed to load model");
-        engine.profile_step_no = profile_step;
         engine.set_aicirt(iface);
         let wid = "warmup".to_string();
         match warmup {

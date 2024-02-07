@@ -44,11 +44,6 @@ percent-encoding = "2.3.1"
 name = "rllm-server"
 path = "src/driver.rs"
 
-[build-dependencies]
-anyhow = { version = "1", features = ["backtrace"] }
-num_cpus = "1.15.0"
-rayon = "1.7.0"
-
 [features]
 #default = ["llamacpp"]
 default = ["tch", "cuda"]

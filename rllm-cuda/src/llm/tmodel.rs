@@ -31,6 +31,7 @@ pub struct TModel {
 }
 
 pub struct TchLoaderArgs {
+    pub profile_step_no: usize,
     pub device: Device,
     pub dtype: Option<DType>,
 }
@@ -73,6 +74,10 @@ impl ModelExec for TModel {
         step_no: usize,
         sched_out: &mut SchedulerOutputs,
     ) -> Result<()> {
+        if step_no == self.config.model.profile_step_no {
+            self.nv_profile = true;
+        }
+
         let mut info = BatchInfoBuilder::new(self.config.clone())
             .sched_out(sched_out, self.seq_mgr.get_gpu_allocator())
             .finish(step_no, self.cache_iface(sched_out));

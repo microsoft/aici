@@ -127,7 +127,6 @@ pub struct RllmEngine<ME: ModelExec> {
     pub model_id: String,
     pub tmodel: ME,
     pub(crate) step_no: usize,
-    pub profile_step_no: usize,
     req_id_cnt: usize,
     #[allow(dead_code)]
     pub alt: usize,
@@ -226,7 +225,6 @@ impl<ME: ModelExec> RllmEngine<ME> {
             seq_mgr: tmodel.sequence_manager(),
             tmodel,
             step_no: 0,
-            profile_step_no: 0,
             req_id_cnt: 0,
             num_errors: 0,
             eos_token_id,
@@ -858,11 +856,6 @@ impl<ME: ModelExec> RllmEngine<ME> {
     fn step_inner(&mut self) -> Result<Vec<RequestOutput>> {
         self.step_no += 1;
 
-        #[cfg(feature = "cuda")]
-        if self.step_no == self.profile_step_no {
-            cudarc::driver::safe::profiler_start()?;
-        }
-
         let post_ops = std::mem::take(&mut self.post_ops);
         with_timer!(self.tim_aici_post, self.aici_post_pre(post_ops)?);
 
@@ -886,11 +879,6 @@ impl<ME: ModelExec> RllmEngine<ME> {
         let outputs = with_timer!(self.tim_run_model, self.run_model(&mut sched_out));
         // we run step_finished() regardless if model failed
         self.scheduler.step_finished(sched_out);
-
-        #[cfg(feature = "cuda")]
-        if self.step_no == self.profile_step_no {
-            cudarc::driver::safe::profiler_stop()?;
-        }
 
         let (outputs, post_ops) = outputs?;
         if outputs.is_empty() {

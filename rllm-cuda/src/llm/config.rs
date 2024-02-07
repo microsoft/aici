@@ -87,6 +87,7 @@ pub struct ModelConfig {
 
     pub device: Device,
     pub dtype: DType,
+    pub profile_step_no: usize,
 }
 
 impl ModelConfig {

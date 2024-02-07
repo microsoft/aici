@@ -18,6 +18,10 @@ pub struct DriverArgs {
     /// Specify which type to use in the model (bf16, f16, f32)
     #[arg(long, default_value = "", help_heading = "Model")]
     pub dtype: String,
+
+    /// Enable nvprof profiling for given engine step (if available)
+    #[arg(long, default_value_t = 0, help_heading = "Development")]
+    pub profile_step: usize,
 }
 
 #[actix_web::main]
@@ -44,6 +48,6 @@ async fn main() -> () {
         _ => panic!("invalid dtype; try one of bf16, f16, f32"),
     };
 
-    let model_args = TchLoaderArgs { device, dtype };
+    let model_args = TchLoaderArgs { device, dtype, profile_step_no: args.profile_step };
     rllm::server::server_main::<TModel>(args.args, model_args).await;
 }

@@ -21,7 +21,6 @@ pub struct TModel {
     seq_id_to_idx: HashMap<usize, usize>,
     t0: Instant,
     step_no: usize,
-    pub nv_profile: bool,
 }
 
 pub struct CppLoaderArgs {
@@ -196,7 +195,6 @@ impl TModel {
         Self {
             model,
             batch,
-            nv_profile: false,
             seq_id_to_idx: HashMap::default(),
             step_no: 0,
             seq_mgr,
