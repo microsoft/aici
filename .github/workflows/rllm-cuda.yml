@@ -40,9 +40,9 @@ jobs:
         run: cargo build --verbose --release
         working-directory: rllm-cuda
 
-      - run: strip target/release/rllm-server
+      - run: strip target/release/rllm-cuda
       - name: Artifact upload
         uses: actions/upload-artifact@v4
         with:
           name: rllm-cuda
-          path: target/release/rllm-server
+          path: target/release/rllm-cuda

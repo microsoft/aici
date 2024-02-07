@@ -91,7 +91,7 @@ if [ "$CPP" = 1 ] ; then
       ;;
   esac
 else
-  BIN_NAME=rllm-server
+  BIN_NAME=rllm-cuda
   FOLDER_NAME=rllm-cuda
   case "$1" in
     phi )

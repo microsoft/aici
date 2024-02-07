@@ -35,8 +35,7 @@ for A in $FILES ; do
     done
     RUST_BACKTRACE=1 \
     RUST_LOG=info,rllm=$RLLM_LOG,aicirt=info \
-        cargo run $REL --bin rllm-server -- \
-        $ARGS
+        cargo run $REL -- $ARGS
 done
 
 echo "All OK!"

@@ -2,7 +2,6 @@
 name = "rllm-cuda"
 version = "0.1.0"
 edition = "2021"
-default-run = "rllm-server"
 
 [dependencies]
 anyhow = "1.0.75"
@@ -40,7 +39,7 @@ cfg-if = "1.0.0"
 percent-encoding = "2.3.1"
 
 [[bin]]
-name = "rllm-server"
+name = "rllm-cuda"
 path = "src/rllm-cuda.rs"
 
 [features]
