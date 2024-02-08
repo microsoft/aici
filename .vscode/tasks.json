@@ -1,0 +1,17 @@
+{
+	"version": "2.0.0",
+	"tasks": [
+		{
+			"type": "cargo",
+			"command": "build",
+			"options": {
+				"cwd": "${workspaceFolder}/rllm-cpp"
+			},
+			"problemMatcher": [
+				"$rustc"
+			],
+			"group": "build",
+			"label": "rllm-cpp: build"
+		}
+	]
+}

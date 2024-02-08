@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
-use rllm::{config::ModelMeta, LoaderArgs, Repo, RllmEngine};
 use anyhow::{bail, Result};
+use rllm::{config::ModelMeta, LoaderArgs, Repo, RllmEngine};
 
 use llama_cpp_low as cpp;
 
@@ -44,15 +44,21 @@ fn do_load(args: &LoaderArgs, model_args: &mut CppLoaderArgs) -> Result<cpp::Mod
 
         let mut mparams = cpp::ModelParams::default();
         // TODO: make this configurable
-        mparams.set_split_mode(cpp::SplitMode::None);
+        mparams.set_split_mode(cpp::SplitMode::Layer);
         mparams.n_gpu_layers = model_args.n_gpu_layers.unwrap_or(0) as i32;
         log::info!("{} layer(s) offloaded to GPU", mparams.n_gpu_layers);
-        // don't GPU offload on Intel macs - it just fails there
-        #[cfg(all(target_os = "macos", target_arch = "x86_64"))]
+        #[cfg(target_os = "macos")]
         {
+            // don't GPU offload on Intel macs - it just fails there
+            #[cfg(target_arch = "x86_64")]
             if mparams.n_gpu_layers > 0 {
                 log::warn!("disabling GPU (Intel macOS)");
                 mparams.n_gpu_layers = 0;
+            }
+            #[cfg(target_arch = "aarch64")]
+            {
+                log::info!("disabling mmap");
+                mparams.use_mmap = false;
             }
         }
 
