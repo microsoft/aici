@@ -2,9 +2,9 @@ name: rLLM with CUDA
 
 on:
   push:
-    branches: [ "main" ]
+    branches: [ "disabled-main" ]
   pull_request:
-    branches: [ "main" ]
+    branches: [ "disabled-main" ]
 
 env:
   CARGO_TERM_COLOR: always
