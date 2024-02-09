@@ -8,7 +8,7 @@ and extends the "completion" REST APIs to allow for running the controllers.
 To upload a controller, POST it to `/v1/controllers`.
 Note that the body is the raw binary `.wasm` file, not JSON-encoded.
 The `module_id` is just the SHA256 hash of the `.wasm` file.
-The other fields are optional:
+The other fields in the response may or may not be returned:
 the `wasm_size` is the input size in bytes, and `compiled_size` is the size of the compiled
 Wasm file, `time` is the time it took to compile the Wasm file in milliseconds.
 
@@ -59,7 +59,7 @@ Each `run` entry contains:
 - `usage` - information about the number of tokens processed and generated
 
 Each fork contains:
-- `text` - the result of the LLM; note that it will get confusing if use backtracking 
+- `text` - the result of the LLM; note that it will get confusing if you use backtracking 
   (AICI inserts additional `↩` characters to indicate backtracking)
 - `logs` - console output of the controller
 - `storage` - list of storage operations (that's one way of extracting the result of the controller);
