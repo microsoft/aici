@@ -31,3 +31,4 @@ jobs:
           files: |
             target/dist/*.tar.gz
             target/dist/*.tar.xz
+            target/dist/*.wasm

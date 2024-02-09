@@ -56,8 +56,12 @@ if [ "$SUFF" = "wasm32-wasi" ] ; then
     WASM=
     for B in $BN ; do
         case $B in
+            aici_uppercase.wasm)
+                # skip
+                ;;
             aici_*.wasm)
-                WASM="$WASM $(basename $B .wasm | sed -e 's/aici_//; s/uppercase//')"
+                cp $T/$B target/dist/
+                WASM="$WASM $(basename $B .wasm | sed -e 's/aici_//')"
                 ;;
         esac
     done
