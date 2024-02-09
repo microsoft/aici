@@ -95,35 +95,29 @@ Finally, if you plan working with **Python** controllers and scripts, install th
 
 ## Build and start rLLM server and AICI Runtime
 
-Clone the AICI repository and proceed with the next steps outlined below.
+After [dev env setup](#development-environment-setup) above,
+clone the AICI repository and proceed with the next steps outlined below.
 
-### Using CUDA (rllm-cuda)
+The rLLM server has two backends, one based on `libtorch` and CUDA
+(`rllm-cuda`), and the other based on `llama.cpp` (`rllm-llamacpp`).
 
-If your platform has a CUDA-capable GPU (currently only compute capability 8.0 is supported; this includes A100+ or GeForce 30x0/40x0), navigate to the `rllm/rllm-cuda` folder and run the command below. This folder contains specific implementations tailored for CUDA-supported platforms.
+The `rllm-cuda` backend only works with NVidia GPUs with compute capability 8.0 or later
+(A100 and later; RTX 30x0 and later) and requires a fiddly setup of libtorch
+-- it's strongly recommended to use the included devcontainer.
 
-    cd rllm/rllm-cuda/
-    ./server.sh build
+While this guide focuses on the `rllm-llamacpp` backend,
+the build steps are the same for `rllm-cuda`, modulo the folder name.
 
-After completing the build process, you can start it, specifying a model name, URL, or path as a parameter:
-
-    ./server.sh phi2
-
-If you prefer using Orca-2 13B model run this command:
-
-    ./server.sh orca
-
-You can find more details about `rllm-cuda` [here](rllm/rllm-cuda/README.md).
-
-### Using llama.cpp (rllm-llamacpp)
-
-For those utilizing Apple ARM-based M series processors or lacking CUDA capabilities but still aiming to run models on the CPU, use the following command from the `rllm/rllm-llamacpp` folder, which is derived from the llama.cpp project:
+Use the following command to build and run `aicirt` and `rllm-llamacpp`:
 
     cd rllm/rllm-llamacpp
     ./server.sh phi2
 
-After completing the build process, you can start it, specifying a model name, URL, or path as a parameter:
+You can pass other model name as argument (run `./server.sh` without arguments to see available models).
+You can also use a HuggingFace URL to `.gguf` file or a local path to a `.gguf` file.
+(For `rllm-cuda` use HuggingFace model id or path to folder).
 
-    ./server.sh phi2
+    ./server.sh orca
 
 You can find more details about `rllm-llamacpp` [here](rllm/rllm-llamacpp/README.md).
 
@@ -175,9 +169,9 @@ In this example we'll utilize **pyctrl** to manage token generation using a simp
 
 Execute the following command to build and upload the controller to the rLLM server:
 
-    ./aici.sh build pyctrl/ --tag pyctrl-latest
+    ./aici.sh build controllers/pyctrl/ --tag pyctrl-latest
 
-The command utilizes the `aici.sh` utility to build the code in the `pyctrl/` folder, assigning a tag to the deployment. You can view all the deployed tags at http://127.0.0.1:4242/v1/controllers/tags or running with `aici.sh` command:
+The command utilizes the `aici.sh` utility to build the code in the `controllers/pyctrl/` folder, assigning a tag to the deployment. You can view all the deployed tags at http://127.0.0.1:4242/v1/controllers/tags or running with `aici.sh` command:
 
     ./aici.sh tags
 
