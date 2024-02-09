@@ -1,10 +1,10 @@
 [submodule "vllm"]
-	path = vllm
+	path = py/vllm
 	url = https://github.com/mmoskal/vllm
 	branch = hooks
 [submodule "tch-cuda/cutlass"]
-	path = tch-cuda/cutlass
+	path = rllm/tch-cuda/cutlass
 	url = https://github.com/NVIDIA/cutlass.git
 [submodule "llama-cpp-low/llama.cpp"]
-	path = llama-cpp-low/llama.cpp
+	path = rllm/llama-cpp-low/llama.cpp
 	url = https://github.com/ggerganov/llama.cpp
