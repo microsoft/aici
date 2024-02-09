@@ -18,36 +18,38 @@ else
   (cd $WS && git submodule update --init --recursive)
 fi
 
-if [ "$1" = "--trace" ] ; then
-    R_LOG=info,tokenizers=error,rllm=trace,aicirt=info,llama_cpp_low=trace
+while [ "$1" != "" ] ; do
+    case "$1" in
+        --release )
+            REL=--release
+            ;;
+        --debug )
+            REL=
+            ;;
+        --loop )
+            LOOP=1
+            ;;
+        --cuda )
+            if [ "$CPP" = 1 ] ; then
+              VER="$VER --features cuda"
+              ADD_ARGS="--gpu-layers 1000"
+            else
+              echo "--cuda only valid for llama.cpp"
+              exit 1
+            fi
+            ;;
+        --trace )
+            R_LOG=info,tokenizers=error,rllm=trace,aicirt=info,llama_cpp_low=trace
+            ;;
+        --trace-rt )
+            R_LOG=info,tokenizers=error,rllm=trace,aicirt=trace,llama_cpp_low=trace
+            ;;
+        * )
+            break
+            ;;
+    esac
     shift
-fi
-
-if [ "$1" = "--trace-rt" ] ; then
-    R_LOG=info,tokenizers=error,rllm=trace,aicirt=trace,llama_cpp_low=trace
-    shift
-fi
-
-if [ "$1" = "--loop" ] ; then
-    LOOP=1
-    shift
-fi
-
-if [ "$1" = "--cuda" ] ; then
-    if [ "$CPP" = 1 ] ; then
-      VER="$VER --features cuda"
-      ADD_ARGS="--gpu-layers 1000"
-    else
-       echo "--cuda only valid for llama.cpp"
-       exit 1
-    fi
-    shift
-fi
-
-if [ "$1" = "--debug" ] ; then
-    REL=
-    shift
-fi
+done
 
 EXPECTED=$WS/rllm/rllm-cuda/expected
 
