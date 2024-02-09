@@ -74,7 +74,7 @@ if [ "$CPP" = 1 ] ; then
       BUILD=1
       ;;
     * )
-    SELF="cpp-server.sh"
+    SELF="server.sh"
     cat <<EOF
 usage: $SELF [--loop] [--cuda] [--debug] [model_name] [rllm_args...]
 

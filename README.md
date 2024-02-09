@@ -119,11 +119,11 @@ You can find more details about `rllm-cuda` [here](rllm/rllm-cuda/README.md).
 For those utilizing Apple ARM-based M series processors or lacking CUDA capabilities but still aiming to run models on the CPU, use the following command from the `rllm/rllm-llamacpp` folder, which is derived from the llama.cpp project:
 
     cd rllm/rllm-llamacpp
-    ./cpp-server.sh phi2
+    ./server.sh phi2
 
 After completing the build process, you can start it, specifying a model name, URL, or path as a parameter:
 
-    ./cpp-server.sh phi2
+    ./server.sh phi2
 
 You can find more details about `rllm-llamacpp` [here](rllm/rllm-llamacpp/README.md).
 
