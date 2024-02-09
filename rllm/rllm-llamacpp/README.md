@@ -14,4 +14,8 @@ To compile and run first aicirt and then the rllm server, run:
 ./server.sh phi2
 ```
 
-You can also try passing `--cuda` before `phi2`.
+Run `./server.sh --help` for more options.
+
+You can also try passing `--cuda` before `phi2`, which will enable cuBLASS in llama.cpp.
+Note that this is different from [rllm-cuda](../rllm-cuda/),
+which may give you better performance when doing batched inference.
