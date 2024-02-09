@@ -169,6 +169,7 @@ def run_controller(
         "max_tokens": max_tokens,
         "temperature": temperature,
     }
+    t0 = time.time()
     resp = req("post", "run", json=_clear_none(data), stream=True, base_url=base_url)
     if resp.status_code != 200:
         raise response_error("run", resp)
@@ -184,6 +185,10 @@ def run_controller(
         "raw_storage": storage,
         "error": None,
         "usage": {},
+        "timing": {
+            "http_response": time.time() - t0,
+        },
+        "tps": {},
     }
 
     for line in resp.iter_lines():
@@ -199,8 +204,14 @@ def run_controller(
             full_resp.append(d)
             if "usage" in d:
                 res["usage"] = d["usage"]
+            if "data0" not in res["timing"]:
+                res["timing"]["data0"] = time.time() - t0
             if "forks" not in d:
                 continue
+            if "first_token" not in res["timing"]:
+                res["timing"]["first_token"] = time.time() - t0
+                prompt_time = res["timing"]["first_token"] - res["timing"]["http_response"]
+                res["tps"]["prompt"] = d["usage"]["ff_tokens"] / prompt_time
             for ch in d["forks"]:
                 if "Previous WASM Error" in ch["logs"]:
                     res["error"] = "WASM error"
@@ -238,6 +249,8 @@ def run_controller(
         else:
             raise RuntimeError(f"bad response line: {decoded_line}")
 
+    res["timing"]["last_token"] = time.time() - t0
+    res["tps"]["sampling"] = res["usage"]["sampled_tokens"] / res["timing"]["last_token"]
     # convert hex bytes in storage to strings
     s = {}
     res["storage"] = s

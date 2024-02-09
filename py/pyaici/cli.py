@@ -113,6 +113,8 @@ def run_ctrl(
         json.dump(res, f, indent=1)
     print(f"response saved to {path}")
     print("Usage:", res["usage"])
+    print("Timing:", res["timing"])
+    print("Tokens/sec:", res["tps"])
     print("Storage:", res["storage"])
 
 
