@@ -9,8 +9,8 @@ set -x
 mod=`cat tmp/runlog.txt |grep '^[a-f0-9]\{64\}$'`
 
 RUST_LOG=debug \
-PYTHONPATH=. \
-python3 harness/run_hf.py \
+PYTHONPATH=py \
+python3 scripts/py/run_hf.py \
     --aici-rt ./aicirt/target/release/aicirt \
     --aici-module $mod \
     --aici-module-arg declctrl/arg.json \

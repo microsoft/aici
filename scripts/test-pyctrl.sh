@@ -4,5 +4,5 @@ set -x
 cd `dirname $0`
 HERE=`pwd`
 cd $HERE/../pyctrl
-PYTHONPATH=$HERE/.. \
+PYTHONPATH=$HERE/../py \
 python3 driver.py samples/test*.py

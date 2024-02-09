@@ -13,8 +13,8 @@ TOK=llama16
 (cd aicirt && cargo build --release)
 
 RUST_LOG=info \
-PYTHONPATH=.:vllm \
-python3 harness/vllm_server.py \
+PYTHONPATH=py:py/vllm \
+python3 scripts/py/vllm_server.py \
     --aici-rt ./aicirt/target/release/aicirt \
     --aici-tokenizer $TOK \
     --aici-trace tmp/trace.jsonl \

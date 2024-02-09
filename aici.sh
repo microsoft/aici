@@ -4,5 +4,5 @@ if [ "X$AICI_API_BASE" = "X" ] ; then
   export AICI_API_BASE="http://127.0.0.1:4242/v1/"
 fi
 
-PYTHONPATH=`dirname $0` \
+PYTHONPATH=`dirname $0`/py \
 python3 -m pyaici.cli "$@"

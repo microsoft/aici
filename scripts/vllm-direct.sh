@@ -6,8 +6,8 @@ set -x
 mod=`cat tmp/runlog.txt |grep '^[a-f0-9]\{64\}$'`
 
 RUST_LOG=info \
-PYTHONPATH=.:vllm \
-python3 harness/run_vllm.py \
+PYTHONPATH=py:py/vllm \
+python3 scripts/py/run_vllm.py \
     --aici-rt ./aicirt/target/release/aicirt \
     --aici-module $mod \
     --aici-module-arg declctrl/arg2.json \

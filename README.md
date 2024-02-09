@@ -355,8 +355,8 @@ graph TD
 ```
 
 The [pyaici](pyaici) package makes it easier to integrate AICI with Python-based LLM inference engines.
-The support for [HuggingFace Transformers](harness/run_hf.py)
-and [vLLM REST server](harness/vllm_server.py) is currently out of date.
+The support for [HuggingFace Transformers](scripts/py/run_hf.py)
+and [vLLM REST server](scripts/py/vllm_server.py) is currently out of date.
 Please use the [rLLM-cuda](rllm-cuda) or [rLLM-llama-cpp](rllm-cpp) for now.
 
 # Security
