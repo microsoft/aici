@@ -2963,20 +2963,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "rllm-cpp"
-version = "0.1.0"
-dependencies = [
- "actix-web",
- "aicirt",
- "anyhow",
- "clap",
- "llama_cpp_low",
- "log",
- "rand",
- "rllm",
-]
-
-[[package]]
 name = "rllm-cuda"
 version = "0.1.0"
 dependencies = [
@@ -2995,6 +2981,20 @@ dependencies = [
  "serde_json",
  "tch",
  "tch-cuda",
+]
+
+[[package]]
+name = "rllm-llamacpp"
+version = "0.1.0"
+dependencies = [
+ "actix-web",
+ "aicirt",
+ "anyhow",
+ "clap",
+ "llama_cpp_low",
+ "log",
+ "rand",
+ "rllm",
 ]
 
 [[package]]

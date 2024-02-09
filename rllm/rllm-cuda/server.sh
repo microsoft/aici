@@ -1,7 +1,7 @@
 #!/bin/bash
 
 set -e
-WS=`cd $(dirname $0)/.. && pwd`
+WS=`cd $(dirname $0)/../.. && pwd`
 REL=--release
 LOOP=
 BUILD=
@@ -12,7 +12,7 @@ VER=
 mkdir -p "$WS/target"
 BIN="$WS/target"
 
-if [ -f "$WS/tch-cuda/cutlass/README.md" ] ; then
+if [ -f "$WS/rllm/tch-cuda/cutlass/README.md" ] ; then
   :
 else
   (cd $WS && git submodule update --init --recursive)

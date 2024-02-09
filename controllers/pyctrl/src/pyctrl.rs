@@ -311,7 +311,7 @@ impl Runner {
             vm.add_frozen(rustpython_vm::py_freeze!(dir = "Lib"));
 
             let code = rustpython_vm::py_compile!(
-                file = "../pyaici/server.py",
+                file = "../../py/pyaici/server.py",
                 module_name = "pyaici.server",
                 mode = "exec"
             );

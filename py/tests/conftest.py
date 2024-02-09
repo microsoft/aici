@@ -2,15 +2,15 @@ import sys
 import os
 import subprocess
 
-prj_dir = os.path.dirname(os.path.abspath(__file__)) + "/.."
-sys.path.append(prj_dir)
+prj_dir = os.path.dirname(os.path.abspath(__file__)) + "/../.."
+sys.path.append(prj_dir + "/py")
 
 ast_module_path = prj_dir + "/tmp/ast_module.txt"
 
 
 def upload_wasm():
     import pyaici.rest
-    prog = prj_dir + "/declctrl"
+    prog = prj_dir + "/controllers/declctrl"
     r = subprocess.run(
         ["cargo", "build", "--release"],
         cwd=prog,
