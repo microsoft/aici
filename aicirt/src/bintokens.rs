@@ -213,6 +213,8 @@ impl ByteTokenizer {
         }
 
         if let Some(d) = hft.get_decoder() {
+            // DecoderWrapper::Sequence() doesn't let one access the decoders
+            // so we resort to json munching
             let v = serde_json::to_value(d).unwrap();
             if v["type"].as_str() == Some("ByteLevel") {
                 is_byte_level = true;
