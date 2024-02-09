@@ -3,7 +3,14 @@
 # This is run from the GitHub Action, but can be also run locally to see if everything builds correctly.
 #
 
-FOLDERS="aici_abi uppercase pyctrl jsctrl declctrl aicirt"
+FOLDERS="
+controllers/aici_abi
+controllers/declctrl
+controllers/jsctrl
+controllers/pyctrl
+controllers/uppercase
+aicirt
+"
 NATIVE="$(uname -s | tr 'A-Z' 'a-z')-$(uname -m)"
 D=`date +%Y%m%d-%H%M`
 TAG=`git describe --dirty --tags --match 'v[0-9]*' --always | sed -e 's/^v//; s/-dirty/-'"$D/"`
@@ -20,7 +27,7 @@ set -e
 
 for f in $FOLDERS ; do
     echo "Build $f..."
-    (cd controllers/$f && cargo build --release)
+    (cd $f && cargo build --release)
 done
 
 function release() {
