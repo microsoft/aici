@@ -45,22 +45,18 @@ fn do_load(args: &LoaderArgs, model_args: &mut CppLoaderArgs) -> Result<cpp::Mod
         let mut mparams = cpp::ModelParams::default();
         // TODO: make this configurable
         mparams.set_split_mode(cpp::SplitMode::Layer);
-        mparams.n_gpu_layers = model_args.n_gpu_layers.unwrap_or(0) as i32;
-        log::info!("{} layer(s) offloaded to GPU", mparams.n_gpu_layers);
-        #[cfg(target_os = "macos")]
-        {
-            // don't GPU offload on Intel macs - it just fails there
-            #[cfg(target_arch = "x86_64")]
-            if mparams.n_gpu_layers > 0 {
-                log::warn!("disabling GPU (Intel macOS)");
-                mparams.n_gpu_layers = 0;
-            }
-            #[cfg(target_arch = "aarch64")]
-            {
-                log::info!("disabling mmap");
-                mparams.use_mmap = false;
+        match model_args.n_gpu_layers {
+            Some(n) => mparams.n_gpu_layers = n as i32,
+            None => {
+                mparams.n_gpu_layers = 999;
+                // by default, don't GPU offload on Intel macs - it's much slower than CPU
+                #[cfg(all(target_os = "macos", target_arch = "x86_64"))]
+                {
+                    mparams.n_gpu_layers = 0;
+                }
             }
         }
+        log::info!("{} layer(s) offloaded to GPU", mparams.n_gpu_layers);
 
         let m = cpp::Model::from_file(file.to_str().unwrap(), mparams)?;
         model_args.cached_model = Some(m);

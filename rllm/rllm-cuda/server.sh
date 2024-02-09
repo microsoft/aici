@@ -19,12 +19,12 @@ else
 fi
 
 if [ "$1" = "--trace" ] ; then
-    R_LOG=info,rllm=trace,aicirt=info
+    R_LOG=info,tokenizers=error,rllm=trace,aicirt=info,llama_cpp_low=trace
     shift
 fi
 
 if [ "$1" = "--trace-rt" ] ; then
-    R_LOG=info,rllm=trace,aicirt=trace
+    R_LOG=info,tokenizers=error,rllm=trace,aicirt=trace,llama_cpp_low=trace
     shift
 fi
 
@@ -219,3 +219,4 @@ while : ; do
     echo "restarting..."
     sleep 2
 done
+

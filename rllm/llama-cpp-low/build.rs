@@ -57,6 +57,7 @@ fn main() {
         //         println!("cargo:rustc-env=MACOSX_DEPLOYMENT_TARGET={}", line);
         //     });
         println!("cargo:rustc-link-lib=framework=Metal");
+        println!("cargo:rustc-link-lib=framework=MetalKit");
         println!("cargo:rustc-link-lib=framework=Accelerate");
         println!("cargo:rustc-link-lib=framework=Foundation");
     }
@@ -83,4 +84,9 @@ fn main() {
     bindings
         .write_to_file(out_path.join("bindings.rs"))
         .expect("Couldn't write bindings!");
+
+    std::fs::copy(
+        submodule_dir.join("ggml-metal.metal"),
+        out_path.join("../../../ggml-metal.metal"),
+    ).expect("Couldn't copy ggml-metal.metal");
 }
