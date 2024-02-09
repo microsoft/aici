@@ -1,2 +1,2 @@
 #!/bin/sh
-./aici.sh run --build uppercase
+./aici.sh run --build controllers/uppercase
