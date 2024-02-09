@@ -21,6 +21,8 @@ def build_rust(folder: str):
     if len(spl) > 1:
         folder = spl[0]
         bin_file = spl[1]
+    if not os.path.exists(folder + "/Cargo.toml"):
+        cli_error(f"{folder}/Cargo.toml not found")
     r = subprocess.run(
         [
             "cargo",
