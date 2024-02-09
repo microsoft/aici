@@ -2999,8 +2999,8 @@ dependencies = [
 
 [[package]]
 name = "rquickjs"
-version = "0.4.0"
-source = "git+https://github.com/mmoskal/rquickjs?rev=5b0e3b24d5021d3cd4981d3693fd7bd1a106314c#5b0e3b24d5021d3cd4981d3693fd7bd1a106314c"
+version = "0.4.3"
+source = "git+https://github.com/DelSkayn/rquickjs?rev=343b21b742d3bb052710dc53144b79dc61bb592d#343b21b742d3bb052710dc53144b79dc61bb592d"
 dependencies = [
  "rquickjs-core",
  "rquickjs-macro",
@@ -3008,8 +3008,8 @@ dependencies = [
 
 [[package]]
 name = "rquickjs-core"
-version = "0.4.0"
-source = "git+https://github.com/mmoskal/rquickjs?rev=5b0e3b24d5021d3cd4981d3693fd7bd1a106314c#5b0e3b24d5021d3cd4981d3693fd7bd1a106314c"
+version = "0.4.3"
+source = "git+https://github.com/DelSkayn/rquickjs?rev=343b21b742d3bb052710dc53144b79dc61bb592d#343b21b742d3bb052710dc53144b79dc61bb592d"
 dependencies = [
  "relative-path",
  "rquickjs-sys",
@@ -3017,8 +3017,8 @@ dependencies = [
 
 [[package]]
 name = "rquickjs-macro"
-version = "0.4.0"
-source = "git+https://github.com/mmoskal/rquickjs?rev=5b0e3b24d5021d3cd4981d3693fd7bd1a106314c#5b0e3b24d5021d3cd4981d3693fd7bd1a106314c"
+version = "0.4.3"
+source = "git+https://github.com/DelSkayn/rquickjs?rev=343b21b742d3bb052710dc53144b79dc61bb592d#343b21b742d3bb052710dc53144b79dc61bb592d"
 dependencies = [
  "convert_case 0.6.0",
  "fnv",
@@ -3034,8 +3034,8 @@ dependencies = [
 
 [[package]]
 name = "rquickjs-sys"
-version = "0.4.0"
-source = "git+https://github.com/mmoskal/rquickjs?rev=5b0e3b24d5021d3cd4981d3693fd7bd1a106314c#5b0e3b24d5021d3cd4981d3693fd7bd1a106314c"
+version = "0.4.3"
+source = "git+https://github.com/DelSkayn/rquickjs?rev=343b21b742d3bb052710dc53144b79dc61bb592d#343b21b742d3bb052710dc53144b79dc61bb592d"
 dependencies = [
  "cc",
 ]

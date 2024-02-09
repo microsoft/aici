@@ -14,9 +14,8 @@ lazy_static = "1.4.0"
 num-traits = "0.2.17"
 once_cell = "1.18.0"
 indexmap = { version = "2.1.0", features = ["std"] }
-# waiting on https://github.com/DelSkayn/rquickjs/pull/245
-rquickjs-sys = { git = "https://github.com/mmoskal/rquickjs", rev = "5b0e3b24d5021d3cd4981d3693fd7bd1a106314c" }
-rquickjs = { git = "https://github.com/mmoskal/rquickjs", rev = "5b0e3b24d5021d3cd4981d3693fd7bd1a106314c", features = ["array-buffer", "macro"] }
+rquickjs-sys = { git = "https://github.com/DelSkayn/rquickjs", rev = "343b21b742d3bb052710dc53144b79dc61bb592d" }
+rquickjs = { git = "https://github.com/DelSkayn/rquickjs", rev = "343b21b742d3bb052710dc53144b79dc61bb592d", features = ["array-buffer", "macro"] }
 
 [[bin]]
 name = "aici_jsctrl"
