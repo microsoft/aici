@@ -6,7 +6,7 @@ but built on top of [llama.cpp](https://github.com/ggerganov/llama.cpp).
 ## Building
 
 If you're not using the supplied docker container follow the
-[build setup instructions](../README.md#development-environment-setup).
+[build setup instructions](../../README.md#development-environment-setup).
 
 To compile and run first aicirt and then the rllm server, run:
 

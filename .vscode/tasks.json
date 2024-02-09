@@ -5,13 +5,13 @@
 			"type": "cargo",
 			"command": "build",
 			"options": {
-				"cwd": "${workspaceFolder}/rllm-cpp"
+				"cwd": "${workspaceFolder}/rllm/rllm-llamacpp"
 			},
 			"problemMatcher": [
 				"$rustc"
 			],
 			"group": "build",
-			"label": "rllm-cpp: build"
+			"label": "rllm-llamacpp: build"
 		}
 	]
 }

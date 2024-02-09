@@ -20,7 +20,7 @@ set -e
 
 for f in $FOLDERS ; do
     echo "Build $f..."
-    (cd $f && cargo build --release)
+    (cd controllers/$f && cargo build --release)
 done
 
 function release() {

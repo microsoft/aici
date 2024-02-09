@@ -11,7 +11,7 @@ function gen() {
     aici = native + aici
     fs.writeFileSync("./samples/aici-types.d.ts", aici)
 
-    let jssrc = fs.readFileSync("../pyaici/jssrc.py", 'utf8')
+    let jssrc = fs.readFileSync("../../py/pyaici/jssrc.py", 'utf8')
     jssrc = jssrc.replace(/(aici_types_d_t = r""")[^]*?"""/g, (_, pre) => pre + aici + '"""')
 
     const tsconfig = fs.readFileSync("./samples/tsconfig.json", "utf-8")
@@ -20,7 +20,7 @@ function gen() {
     const hello = fs.readFileSync("./samples/hello.js", "utf-8")
     jssrc = jssrc.replace(/(hello_js = r""")[^]*?"""/g, (_, pre) => pre + hello + '"""')
 
-    fs.writeFileSync("../pyaici/jssrc.py", jssrc)
+    fs.writeFileSync("../../py/pyaici/jssrc.py", jssrc)
 }
 
 gen()

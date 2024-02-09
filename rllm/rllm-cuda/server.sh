@@ -49,11 +49,11 @@ if [ "$1" = "--debug" ] ; then
     shift
 fi
 
-EXPECTED=$WS/rllm-cuda/expected
+EXPECTED=$WS/rllm/rllm-cuda/expected
 
 if [ "$CPP" = 1 ] ; then
-  BIN_NAME=rllm-cpp
-  FOLDER_NAME=rllm-cpp
+  BIN_NAME=rllm-llamacpp
+  FOLDER_NAME=rllm-llamacpp
   case "$1" in
     phi2 )
       ARGS="-m https://huggingface.co/TheBloke/phi-2-GGUF/blob/main/phi-2.Q8_0.gguf -t phi -w $EXPECTED/phi-2/cats.safetensors -s test_maxtol=0.8 -s test_avgtol=0.3"
@@ -164,7 +164,7 @@ fi
 ARGS="--verbose --aicirt $BIN/release/aicirt $ARGS $ADD_ARGS"
 
 (cd $WS/aicirt && cargo build --release)
-(cd $WS/$FOLDER_NAME && cargo build $REL $VER)
+(cd $WS/rllm/$FOLDER_NAME && cargo build $REL $VER)
 
 if [ "X$REL" = "X" ] ; then
     BIN_SERVER=$BIN/debug/$BIN_NAME

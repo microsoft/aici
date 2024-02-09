@@ -43,7 +43,7 @@ jobs:
 
       - name: Build rLLM
         run: cargo build --verbose --release
-        working-directory: rllm-cuda
+        working-directory: rllm/rllm-cuda
 
       - run: strip target/release/rllm-cuda
       - name: Artifact upload

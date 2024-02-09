@@ -99,9 +99,9 @@ Clone the AICI repository and proceed with the next steps outlined below.
 
 ### Using CUDA (rllm-cuda)
 
-If your platform has a CUDA-capable GPU (currently only compute capability 8.0 is supported; this includes A100+ or GeForce 30x0/40x0), navigate to the `rllm-cuda` folder and run the command below. This folder contains specific implementations tailored for CUDA-supported platforms.
+If your platform has a CUDA-capable GPU (currently only compute capability 8.0 is supported; this includes A100+ or GeForce 30x0/40x0), navigate to the `rllm/rllm-cuda` folder and run the command below. This folder contains specific implementations tailored for CUDA-supported platforms.
 
-    cd rllm-cuda/
+    cd rllm/rllm-cuda/
     ./server.sh build
 
 After completing the build process, you can start it, specifying a model name, URL, or path as a parameter:
@@ -112,20 +112,20 @@ If you prefer using Orca-2 13B model run this command:
 
     ./server.sh orca
 
-You can find more details about `rllm-cuda` [here](rllm-cuda/README.md).
+You can find more details about `rllm-cuda` [here](rllm/rllm-cuda/README.md).
 
-### Using llama.cpp (rllm-cpp)
+### Using llama.cpp (rllm-llamacpp)
 
-For those utilizing Apple ARM-based M series processors or lacking CUDA capabilities but still aiming to run models on the CPU, use the following command from the `rllm-cpp` folder, which is derived from the llama.cpp project:
+For those utilizing Apple ARM-based M series processors or lacking CUDA capabilities but still aiming to run models on the CPU, use the following command from the `rllm/rllm-llamacpp` folder, which is derived from the llama.cpp project:
 
-    cd rllm-cpp
+    cd rllm/rllm-llamacpp
     ./cpp-server.sh phi2
 
 After completing the build process, you can start it, specifying a model name, URL, or path as a parameter:
 
     ./cpp-server.sh phi2
 
-You can find more details about `rllm-cpp` [here](rllm-cpp/README.md).
+You can find more details about `rllm-llamacpp` [here](rllm/rllm-llamacpp/README.md).
 
 ### Server overview
 
@@ -301,28 +301,28 @@ Storage: {'result': '1. Sedans\n2. SUVs\n3. Trucks\n4. Sports cars\n5. Minivans\
 This repository contains a number of components, and which ones you need depends on your use case.
 
 You can **use an existing controller module**.
-We provide [PyCtrl](./pyctrl) and [JsCtrl](./jsctrl)
+We provide [PyCtrl](./controllers/pyctrl) and [JsCtrl](./controllers/jsctrl)
 that let you script controllers using server-side Python and JavaScript, respectively.
-The [pyaici](./pyaici) package contains `aici` command line tool that lets you
-[upload and run scripts](./proxy.md) with any controller
-(we also provide [REST API definition](./REST.md) for the curious).
-> 🧑‍💻[Python code samples for scripting PyCtrl](./pyctrl) and a [JavaScript Hello World for JSCtrl](./jsctrl/samples/hello.js)
+The [pyaici](./py/pyaici) package contains `aici` command line tool that lets you
+[upload and run scripts](./docs/proxy.md) with any controller
+(we also provide [REST API definition](./docs/REST.md) for the curious).
+> 🧑‍💻[Python code samples for scripting PyCtrl](./controllers/pyctrl) and a [JavaScript Hello World for JSCtrl](./controllers/jsctrl/samples/hello.js)
 
 We anticipate [libraries](#architecture) will be built on top of controllers.
-We provide an example in [promptlib](./promptlib) - a client-side Python library
-that generates interacts with [DeclCtrl](./declctrl) via the pyaici package.
-> 🧑‍💻 [Example notebook that uses PromptLib to interact with DeclCtrl](./promptlib/notebooks/basics_tutorial.ipynb).
+We provide an example in [promptlib](./py/promptlib) - a client-side Python library
+that generates interacts with [DeclCtrl](./controllers/declctrl) via the pyaici package.
+> 🧑‍💻 [Example notebook that uses PromptLib to interact with DeclCtrl](./py/promptlib/notebooks/basics_tutorial.ipynb).
 
 The controllers can be run in a cloud or local AICI-enabled LLM inference engine.
 You can **run the provided reference engine (rLLM) locally** with either
-[libtorch+CUDA](./rllm-cuda) or [llama.cpp backend](./rllm-cpp).
+[libtorch+CUDA](./rllm/rllm-cuda) or [llama.cpp backend](./rllm/rllm-llamacpp).
 
-To **develop a new controller**, use a Rust [starter project](./uppercase) that shows usage of [aici_abi](./aici_abi)
-library, which simplifies implementing the [low-level AICI interface](aici_abi/README.md#low-level-interface).
-> 🧑‍💻[Sample code for a minimal new controller](./uppercase) to get you started
+To **develop a new controller**, use a Rust [starter project](./controllers/uppercase) that shows usage of [aici_abi](./controllers/aici_abi)
+library, which simplifies implementing the [low-level AICI interface](controllers/aici_abi/README.md#low-level-interface).
+> 🧑‍💻[Sample code for a minimal new controller](./controllers/uppercase) to get you started
 
 To **add AICI support to a new LLM inference engine**,
-you will need to implement LLM-side of the [protocol](aicirt/aicirt-proto.md)
+you will need to implement LLM-side of the [protocol](docs/aicirt-proto.md)
 that talks to [AICI runtime](aicirt).
 
 Finally, you may want to modify any of the provided components - PRs are most welcome!
@@ -331,7 +331,7 @@ Finally, you may want to modify any of the provided components - PRs are most we
 
 AICI abstracts LLM inference engine from the controller and vice-versa, as in the picture below.
 The rounded nodes are aspirational.
-Additional layers can be built on top - we provide [promptlib](promptlib),
+Additional layers can be built on top - we provide [promptlib](py/promptlib),
 but we strongly believe that
 [Guidance](https://github.com/guidance-ai/guidance),
 [LMQL](https://lmql.ai/),
@@ -354,16 +354,16 @@ graph TD
     pyaici -- Python --> hf(HF Transformers)
 ```
 
-The [pyaici](pyaici) package makes it easier to integrate AICI with Python-based LLM inference engines.
+The [pyaici](py/pyaici) package makes it easier to integrate AICI with Python-based LLM inference engines.
 The support for [HuggingFace Transformers](scripts/py/run_hf.py)
 and [vLLM REST server](scripts/py/vllm_server.py) is currently out of date.
-Please use the [rLLM-cuda](rllm-cuda) or [rLLM-llama-cpp](rllm-cpp) for now.
+Please use the [rLLM-cuda](rllm/rllm-cuda) or [rLLM-llama.cpp](rllm/rllm-llamacpp) for now.
 
 # Security
 
 - `aicirt` runs in a separate process, and can run under a different user than the LLM engine
 - Wasm modules are [sandboxed by Wasmtime](https://docs.wasmtime.dev/security.html)
-- Wasm only have access to [`aici_host_*` functions](aici_abi/src/host.rs),
+- Wasm only have access to [`aici_host_*` functions](controllers/aici_abi/src/host.rs),
   implemented in [hostimpl.rs](aicirt/src/hostimpl.rs)
 - `aicirt` also exposes a partial WASI interface; however almost all the functions are no-op, except
   for `fd_write` which shims file descriptors 1 and 2 (stdout and stderr) to print debug messages
@@ -405,7 +405,7 @@ when executing 10 sequences in parallel (this is irrespective of the constraint 
 The overhead goes up to around 0.7ms for 40 sequences (though it has not been fully optimized yet).
 
 WebAssembly is designed to have minimal overhead, compared to native code.
-In our experience, [highly optimized](aici_abi/implementation.md#token-trie)
+In our experience, [highly optimized](controllers/aici_abi/implementation.md#token-trie)
 Rust code is less than 2x slower when run in
 [Wasmtime](https://wasmtime.dev/) than native.
 This is 10-100x better than JavaScript or Python.
@@ -427,35 +427,35 @@ The low-level interface that AICI runtime provides allows for:
 It can be utilized from any language that compiles to Wasm.
 
 This repository provides a Rust library that makes it easy to implement controllers in Rust,
-and provides [efficient implementations](aici_abi/implementation.md)
-of specific constraints ([regular expressions](aici_abi/README.md#regular-expressions),
-[yacc grammars](aici_abi/README.md#lr1-grammars), substrings).
-We also provide [Python](pyctrl) and [JavaScript](jsctrl) interpreters
+and provides [efficient implementations](controllers/aici_abi/implementation.md)
+of specific constraints ([regular expressions](controllers/aici_abi/README.md#regular-expressions),
+[yacc grammars](controllers/aici_abi/README.md#lr1-grammars), substrings).
+We also provide [Python](controllers/pyctrl) and [JavaScript](controllers/jsctrl) interpreters
 that allow to glue these constraints together.
 All of these can be easily extended.
 
 # Acknowledgements
 
-- [Flash Attention kernels](tch-cuda/kernels/flash_attn/) are copied from
+- [Flash Attention kernels](rllm/tch-cuda/kernels/flash_attn/) are copied from
   [flash-attention repo](https://github.com/Dao-AILab/flash-attention);
-  see [BSD LICENSE](tch-cuda/kernels/flash_attn/LICENSE)
-- [Paged Attention kernels](tch-cuda/kernels/vllm/) are copied from
+  see [BSD LICENSE](rllm/tch-cuda/kernels/flash_attn/LICENSE)
+- [Paged Attention kernels](rllm/tch-cuda/kernels/vllm/) are copied from
   [vLLM repo](https://github.com/vllm-project/vllm);
-  see [Apache LICENSE](tch-cuda/kernels/vllm/LICENSE)
-- [OpenAI API definitions](rllm-lib/src/server/openai/) are copied and modified from
+  see [Apache LICENSE](rllm/tch-cuda/kernels/vllm/LICENSE)
+- [OpenAI API definitions](rllm/rllm-base/src/server/openai/) are copied and modified from
   [candle-vllm](https://github.com/EricLBuehler/candle-vllm);
-  see [MIT LICENSE](rllm-lib/src/server/openai/LICENSE)
-- [cache_engine.rs](rllm-cuda/src/llm/paged/cache_engine.rs),
-  [config.rs](rllm-lib/src/config.rs),
-  and [scheduler.rs](rllm-lib/src/scheduler.rs)
+  see [MIT LICENSE](rllm/rllm-base/src/server/openai/LICENSE)
+- [cache_engine.rs](rllm/rllm-cuda/src/llm/paged/cache_engine.rs),
+  [config.rs](rllm/rllm-base/src/config.rs),
+  and [scheduler.rs](rllm/rllm-base/src/scheduler.rs)
   are loosely based on [vLLM](https://github.com/vllm-project/vllm)
-- [llama.rs](rllm-cuda/src/llm/llama.rs), [phi.rs](rllm-cuda/src/llm/phi.rs)
-  and [logits.rs](rllm-lib/src/logits.rs) are based on
+- [llama.rs](rllm/rllm-cuda/src/llm/llama.rs), [phi.rs](rllm/rllm-cuda/src/llm/phi.rs)
+  and [logits.rs](rllm/rllm-base/src/logits.rs) are based on
   [candle-transformers](https://github.com/huggingface/candle/tree/main/candle-transformers)
-- specific [Python library](./pyctrl/Lib/) files are copied from
+- specific [Python library](./controllers/pyctrl/Lib/) files are copied from
   [RustPython](https://github.com/RustPython/RustPython)
   (as we only use a subset of them)
-- the [example ANSI C grammar](aici_abi/grammars/c.y) is based on
+- the [example ANSI C grammar](controllers/aici_abi/grammars/c.y) is based on
   https://www.lysator.liu.se/c/ANSI-C-grammar-y.html by Jeff Lee (from 1985)
 
 # Contributing

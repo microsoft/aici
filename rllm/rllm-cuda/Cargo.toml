@@ -16,7 +16,7 @@ tch = { version = "0.14.0" }
 cudarc = { version = "0.10.0", features = ["f16"], optional = true }
 tch-cuda = { path = "../tch-cuda", optional = true }
 
-rllm = { path = "../rllm-lib" }
+rllm = { path = "../rllm-base" }
 aicirt = { path = "../aicirt" }
 indicatif = "0.17.7"
 memmap2 = "0.9.0"

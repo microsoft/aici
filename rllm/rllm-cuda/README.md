@@ -57,4 +57,4 @@ In general all Llama models should work.
 
 ## Acknowledgements
 
-See [top-level README.md](../README.md#acknowledgements).
+See [top-level README.md](../../README.md#acknowledgements).

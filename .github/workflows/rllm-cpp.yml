@@ -22,12 +22,12 @@ jobs:
     - uses: Swatinem/rust-cache@v2
       with:
         cache-on-failure: true
-    - name: Build rllm-cpp
+    - name: Build rllm-llamacpp
       run: cargo build --verbose --release --no-default-features
-      working-directory: rllm-cpp
-    - run: strip target/release/rllm-cpp
+      working-directory: rllm/rllm-llamacpp
+    - run: strip target/release/rllm-llamacpp
     - name: Artifact upload
       uses: actions/upload-artifact@v4
       with:
-        name: rllm-cpp
-        path: target/release/rllm-cpp
+        name: rllm-llamacpp
+        path: target/release/rllm-llamacpp

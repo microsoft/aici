@@ -7,10 +7,10 @@
         {
             "type": "lldb",
             "request": "launch",
-            "name": "rllm-cpp phi",
-            "cwd": "rllm-cpp",
-            "preLaunchTask": "rllm-cpp: build",
-            "program": "${workspaceFolder}/target/debug/rllm-cpp",
+            "name": "rllm-llamacpp phi",
+            "cwd": "rllm/rllm-llamacpp",
+            "preLaunchTask": "rllm-llamacpp: build",
+            "program": "${workspaceFolder}/target/debug/rllm-llamacpp",
             "env": {
                 "RUST_LOG": "info,tokenizers=error,rllm=trace,aicirt=info,llama_cpp_low=trace"
             },

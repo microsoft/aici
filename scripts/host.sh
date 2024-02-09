@@ -67,9 +67,9 @@ if [ "$INNER" = "model" ] ; then
     PREF="cd $FOLDER && CUDA_VISIBLE_DEVICES=$CUDA_VISIBLE_DEVICES"
     ARGS="--port $FWD_PORT --shm-prefix /aici-${MODEL}-"
     if [ "$CPP" -eq 1 ] ; then
-        docker_cmd "$PREF /workspaces/aici/rllm-cpp/cpp-server.sh --loop --cuda $MODEL $ARGS"
+        docker_cmd "$PREF /workspaces/aici/rllm/rllm-llamacpp/cpp-server.sh --loop --cuda $MODEL $ARGS"
     else
-        docker_cmd "$PREF /workspaces/aici/rllm-cuda/server.sh --loop $MODEL $ARGS"
+        docker_cmd "$PREF /workspaces/aici/rllm/rllm-cuda/server.sh --loop $MODEL $ARGS"
     fi
     exit 0
 fi
@@ -122,7 +122,7 @@ echo "Stopping inner servers..."
 docker_cmd "./scripts/kill-server.sh"
 
 echo "Building ..."
-docker_cmd "cd rllm-cuda && ./server.sh build"
+docker_cmd "cd rllm/rllm-cuda && ./server.sh build"
 
 screen -wipe >/dev/null || :
 

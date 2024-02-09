@@ -1,5 +1,5 @@
 [package]
-name = "rllm-cpp"
+name = "rllm-llamacpp"
 version = "0.1.0"
 edition = "2021"
 rust-version = "1.75.0"
@@ -10,13 +10,13 @@ anyhow = "1.0.79"
 clap = { version = "4.4.18", features = ["derive"] }
 llama_cpp_low = { path = "../llama-cpp-low" }
 log = "0.4.20"
-rllm = { path = "../rllm-lib" }
-aicirt = { path = "../aicirt" }
+rllm = { path = "../rllm-base" }
+aicirt = { path = "../../aicirt" }
 rand = "0.8.5"
 
 [[bin]]
-name = "rllm-cpp"
-path = "src/rllm-cpp.rs"
+name = "rllm-llamacpp"
+path = "src/rllm-llamacpp.rs"
 
 [features]
 default = []

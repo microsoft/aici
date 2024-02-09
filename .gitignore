@@ -11,13 +11,13 @@ tokenizer.json
 perf.data
 tokenizer.bin
 log.txt
-rllm-cuda/*.safetensor
-rllm-cuda/report*.sqlite
+rllm/rllm-cuda/*.safetensor
+rllm/rllm-cuda/report*.sqlite
 *.ncu-rep
 *.nsys-rep
-rllm-cuda/logs
 .DS_Store
 build/
 dist/
 *.egg-info
 .vscode/c_cpp_properties.json
+logs

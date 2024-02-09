@@ -1,3 +1,3 @@
 #!/bin/sh
 
-node scripts/checklinks.js *.md */*.md
+node scripts/checklinks.js *.md */*.md */*/*.md

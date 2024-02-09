@@ -1,20 +1,19 @@
 [workspace]
 exclude = ["tch-rs"]
 members = [
-    "aici_abi",
-    "declctrl",
     "aicirt",
-    "pyctrl",
-    "jsctrl",
-    "uppercase",
-    "rllm-lib",
-    "rllm-cuda",
-    "rllm-cpp",
-    "tch-cuda",
-    "llama-cpp-low",
+    "controllers/aici_abi",
+    "controllers/declctrl",
+    "controllers/pyctrl",
+    "controllers/jsctrl",
+    "controllers/uppercase",
+    "rllm/rllm-base",
+    "rllm/rllm-cuda",
+    "rllm/rllm-llamacpp",
+    "rllm/tch-cuda",
+    "rllm/llama-cpp-low",
 ]
 resolver = "2"
-
 
 [profile.release]
 debug = 1

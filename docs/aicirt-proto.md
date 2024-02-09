@@ -13,8 +13,8 @@ There are two alternative synchronization mechanisms for the SHM region:
 
 Regardless of the chosen synchronization mechanism, the message format is the same.
 
-The LLM side of the interface is implemented in [comms.py](../pyaici/comms.py)
-and in [iface.rs](../rllm-lib/src/iface.rs).
+The LLM side of the interface is implemented in [comms.py](../py/pyaici/comms.py)
+and in [iface.rs](../rllm/rllm-base/src/iface.rs).
 The Python interface is outdated: [tracking issue](https://github.com/microsoft/aici/issues/43).
 
 Two bi-directional message channels are used:
@@ -102,7 +102,7 @@ it should not fork, and which tokens should be added.
 The `logs` field contains the console output of the Wasm controller,
 and the `micros` field contains the time it took to run the controller.
 The `storage` field contains a list of executed storage commands.
-This closely mirrors [REST API responses](../REST.md).
+This closely mirrors [REST API responses](REST.md).
 
 ```json
 {

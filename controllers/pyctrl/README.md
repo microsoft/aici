@@ -8,7 +8,7 @@ Python code is typically only used lightly, for gluing the primitives together,
 and thus is not performance critical.
 
 There are [several sample scripts](samples/) available.
-The scripts use the [pyaici.server module](../pyaici/server.py) to communicate with the AICI runtime
+The scripts use the [pyaici.server module](../../py/pyaici/server.py) to communicate with the AICI runtime
 and use the native constraints.
 
 This is quite similar to [jsctrl](../jsctrl/README.md) but with Python instead of JavaScript.
@@ -16,7 +16,7 @@ This is quite similar to [jsctrl](../jsctrl/README.md) but with Python instead o
 ## Usage
 
 You can build, upload, and tag the PyCtrl Wasm module using the `aici.sh` script
-(this assumes a [running server](../README.md#build-and-start-rllm-server-and-aici-runtime)):
+(this assumes a [running server](../../README.md#build-and-start-rllm-server-and-aici-runtime)):
 
 ```bash
 ../aici.sh build . --tag pyctrl-latest
@@ -40,7 +40,7 @@ Either way, you will see the console output of the program.
 
 The Python interpreter does not include the full Python standard library, however
 [parts are bundled](./Lib).
-In addition to regular Python modules, the `pyaici.server` module is also [bundled](../pyaici/server.py).
+In addition to regular Python modules, the `pyaici.server` module is also [bundled](../../py/pyaici/server.py).
 It defines `AiciCallbacks` interface, which closely reflects the structure of native AICI interface.
 `AiciAsync`, takes a async method and turns it into `AiciCallbacks` implementation;
 this is typically invoked via `aici.start()`.

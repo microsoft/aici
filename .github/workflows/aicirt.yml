@@ -22,19 +22,19 @@ jobs:
         cache-on-failure: true
     - name: Build aici_abi
       run: cargo build --verbose --release
-      working-directory: aici_abi
+      working-directory: controllers/aici_abi
     - name: Build uppercase
       run: cargo build --verbose --release
-      working-directory: uppercase
+      working-directory: controllers/uppercase
     - name: Build pyctrl
       run: cargo build --verbose --release
-      working-directory: pyctrl
+      working-directory: controllers/pyctrl
     - name: Build jsctrl
       run: cargo build --verbose --release
-      working-directory: jsctrl
+      working-directory: controllers/jsctrl
     - name: Build declctrl
       run: cargo build --verbose --release
-      working-directory: declctrl
+      working-directory: controllers/declctrl
     - name: Build aicirt
       run: cargo build --verbose --release
       working-directory: aicirt

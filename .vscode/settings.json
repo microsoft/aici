@@ -54,7 +54,8 @@
         "regex": "cpp"
     },
     "python.analysis.extraPaths": [
-        "./vllm"
+        "./vllm",
+        "./py"
     ],
     "spellright.language": [
         "en"
