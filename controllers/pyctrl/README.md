@@ -28,8 +28,6 @@ Then you can run a PyCtrl sample:
 ../aici.sh run --ctrl pyctrl-latest samples/test.py
 ```
 
-In fact, `--ctrl pyctrl-latest` is the default when you pass a `.py` file as input,
-so it can be skipped.
 You can also build and run in one step (without tagging):
 
 ```bash

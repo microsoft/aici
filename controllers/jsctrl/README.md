@@ -20,7 +20,7 @@ Also, the [PyCtrl samples](../pyctrl/samples/) translate 1:1 to JsCtrl.
 
 ## Usage
 
-To run a JsCtrl sample (using controller tagged with `jsctrl-latest`) use:
+To run a JsCtrl sample use:
 
 ```bash
 ../aici.sh run samples/hello.js

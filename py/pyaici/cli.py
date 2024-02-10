@@ -190,11 +190,11 @@ def main_rest(args):
             controller_arg = open(fn).read()
             if not controller:
                 if fn.endswith(".py"):
-                    controller = "pyctrl-latest"
+                    controller = "gh:microsoft/aici/pyctrl"
                 elif fn.endswith(".js"):
-                    controller = "jsctrl-latest"
+                    controller = "gh:microsoft/aici/jsctrl"
                 elif fn.endswith(".json"):
-                    controller = "declctrl-latest"
+                    controller = "gh:microsoft/aici/declctrl"
                 else:
                     cli_error(
                         "Can't determine AICI Controller type from file name: " + fn
@@ -236,8 +236,12 @@ def main_inner():
         help="run model inference via an AICI Controller",
         description="Run model inference via an AICI Controller.",
         epilog="""
-        If FILE ends with .py, --ctrl defaults to 'pyctrl-latest'.
-        Similarly, it's 'jsctrl-latest' for .js and 'declctrl-latest' for .json.
+        Using --ctrl gh:user/repo/ctrl instructs the server to find *.wasm file containing string 'ctrl' in the latest release
+        of user/repo on GitHub. The /ctrl part is optional if there is only one controller in the release.
+        You can specify release with --ctrl gh:user/repo/ctrl/v1.2.3.
+
+        If FILE ends with .py, --ctrl defaults to 'gh:microsoft/aici/pyctrl'.
+        Similarly, it's 'gh:microsoft/aici/jsctrl' for .js and 'gh:microsoft/aici/declctrl' for .json.
         """,
     )
     run_cmd.add_argument(
@@ -252,7 +256,7 @@ def main_inner():
         "-c",
         metavar="MODULE_ID",
         type=str,
-        help="tag name or hex module id (sha256 of .wasm file)",
+        help="tag name, module id (sha256 of .wasm file), or gh:user/repo",
     )
     run_cmd.add_argument(
         "--upload",
