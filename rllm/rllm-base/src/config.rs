@@ -158,7 +158,7 @@ impl SamplingParams {
 
     fn _verify_args(&self) -> Result<()> {
         if let Some(mod_id) = self.controller.as_ref() {
-            if !valid_module_or_tag(mod_id) {
+            if !valid_module_or_tag(mod_id) && !mod_id.starts_with("gh:") {
                 bail_user!(
                     "'controller' must be a 64-char hex string or tag name, got {}.",
                     mod_id

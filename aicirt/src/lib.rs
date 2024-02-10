@@ -118,6 +118,15 @@ macro_rules! bail_user {
     };
 }
 
+#[macro_export]
+macro_rules! ensure_user {
+    ($cond:expr, $($tt:tt)*) => {
+        if !$cond {
+            return Err($crate::UserError::anyhow(format!($($tt)*)))
+        }
+    };
+}
+
 pub fn is_hex_string(s: &str) -> bool {
     s.chars().all(|c| c.is_digit(16))
 }
