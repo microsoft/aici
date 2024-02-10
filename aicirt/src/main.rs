@@ -20,13 +20,15 @@ use base64::{self, Engine as _};
 use clap::Parser;
 use hex;
 use hostimpl::GlobalInfo;
+use regex::Regex;
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 use std::{
     fs,
+    ops::Sub,
     path::PathBuf,
     sync::{Arc, Mutex},
-    time::{Duration, Instant},
+    time::{Duration, Instant, SystemTime},
 };
 use worker::{RtPostPreProcessArg, SeqWorkerHandle};
 
@@ -154,6 +156,12 @@ struct Stepper {
     pre_recv_timer: TimerRef,
 }
 
+fn hex_hash_string(s: &str) -> String {
+    let mut hasher = Sha256::new();
+    hasher.update(s);
+    hex::encode(hasher.finalize())
+}
+
 impl ModuleRegistry {
     pub fn new(wasm_ctx: WasmContext, shm: Shm) -> Result<Self> {
         let forker = WorkerForker::new(wasm_ctx.clone(), shm);
@@ -191,6 +199,11 @@ impl ModuleRegistry {
 
     fn wasm_path(&self, module_id: &str) -> PathBuf {
         self.cache_path.join(format!("{}.wasm", module_id))
+    }
+
+    fn url_path(&self, url: &str) -> PathBuf {
+        let hex = hex_hash_string(url);
+        self.cache_path.join(format!("url-{}.json", hex))
     }
 
     fn elf_path(&self, module_id: &str) -> PathBuf {
@@ -382,6 +395,86 @@ impl ModuleRegistry {
         resp.tags.sort_by_key(|e| e.updated_at);
         resp.tags.reverse();
         Ok(json!(resp))
+    }
+
+    fn resolve_gh_module(&self, module_id: &str) -> Result<String> {
+        if !module_id.starts_with("gh:") {
+            return Ok(module_id.to_string());
+        }
+        ensure!(
+            Regex::new(r"^gh:[\./a-zA-Z0-9_-]+$")
+                .unwrap()
+                .is_match(module_id),
+            "invalid gh: module_id"
+        );
+        let mut parts = module_id[3..]
+            .split('/')
+            .map(|s| s.to_string())
+            .collect::<Vec<_>>();
+        ensure!(
+            2 <= parts.len() && parts.len() <= 4,
+            "invalid gh: module_id"
+        );
+        let mut ver = "latest".to_string();
+        let last_part = parts.last().unwrap();
+        let mut selector = "".to_string();
+        if parts.len() > 2
+            && (last_part == "latest"
+                || regex::Regex::new(r"^v\d+\.\d+")
+                    .unwrap()
+                    .is_match(last_part))
+        {
+            ver = format!("tags/{}", parts.pop().unwrap());
+        }
+        if parts.len() > 2 {
+            selector = parts.pop().unwrap();
+        }
+        ensure!(parts.len() == 2, "invalid gh: module_id");
+
+        let url = format!(
+            "https://api.github.com/repos/{}/{}/releases/{}",
+            parts[0], parts[1], ver
+        );
+        let cache_path = self.url_path(&url);
+        let meta = cache_path.metadata();
+        if !(meta.is_ok()
+            && meta.unwrap().modified()? > SystemTime::now().sub(Duration::from_secs(120)))
+        {
+            log::info!("fetching {}", url);
+            let resp = ureq::get(&url)
+                .set("User-Agent", "AICI")
+                .set("Accept", "application/vnd.github+json")
+                .set("X-GitHub-Api-Version", "2022-11-28")
+                .call()
+                .map_err(|e| anyhow!("gh: fetch failed: {}", e))?;
+            std::fs::write(cache_path.clone(), resp.into_string()?)?;
+        }
+        let json: serde_json::Value = serde_json::from_slice(&std::fs::read(cache_path)?)?;
+
+        let wasm_files = json["assets"]
+            .as_array()
+            .ok_or_else(|| anyhow!("no assets"))?
+            .iter()
+            .filter(|a| {
+                a["name"]
+                    .as_str()
+                    .map(|s| s.ends_with(".wasm") && s.contains(&selector))
+                    .unwrap_or(false)
+            })
+            .collect::<Vec<_>>();
+
+        ensure!(wasm_files.len() > 0, "no wasm files found");
+        ensure!(wasm_files.len() == 1, "too many wasm files found");
+
+        let wasm_file = wasm_files[0];
+        let _upd = wasm_file["updated_at"]
+            .as_str()
+            .ok_or_else(|| anyhow!("no updated_at"))?;
+        let _wasm_url = wasm_file["browser_download_url"]
+            .as_str()
+            .ok_or_else(|| anyhow!("no browser_download_url"))?;
+        
+        todo!()
     }
 
     fn instantiate(&mut self, mut req: InstantiateReq) -> Result<Value> {
