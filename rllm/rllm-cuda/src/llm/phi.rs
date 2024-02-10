@@ -39,7 +39,7 @@ impl RllmModelConfig for PhiConfig {
         meta.max_sequence_length = self.n_positions;
         ModelConfig {
             model_type: ModelType::Phi,
-            meta: common.meta,
+            meta,
             hidden_size: self.n_embd,
             intermediate_size: self.n_inner.unwrap_or(4 * self.n_embd),
             num_hidden_layers: self.n_layer,
