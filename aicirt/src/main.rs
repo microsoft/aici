@@ -414,7 +414,7 @@ impl ModuleRegistry {
         if !module_id.starts_with("gh:") {
             return Ok(module_id.to_string());
         }
-        ensure!(
+        ensure_user!(
             Regex::new(r"^gh:[\./a-zA-Z0-9_-]+$")
                 .unwrap()
                 .is_match(module_id),
@@ -424,9 +424,9 @@ impl ModuleRegistry {
             .split('/')
             .map(|s| s.to_string())
             .collect::<Vec<_>>();
-        ensure!(
+        ensure_user!(
             2 <= parts.len() && parts.len() <= 4,
-            "invalid gh: module_id"
+            "invalid gh: module_id (parts)"
         );
         let mut ver = "latest".to_string();
         let last_part = parts.last().unwrap();
@@ -442,7 +442,7 @@ impl ModuleRegistry {
         if parts.len() > 2 {
             selector = parts.pop().unwrap();
         }
-        ensure!(parts.len() == 2, "invalid gh: module_id");
+        ensure_user!(parts.len() == 2, "invalid gh: module_id (parts2)");
 
         let url = format!(
             "https://api.github.com/repos/{}/{}/releases/{}",
@@ -459,7 +459,7 @@ impl ModuleRegistry {
                 .set("Accept", "application/vnd.github+json")
                 .set("X-GitHub-Api-Version", "2022-11-28")
                 .call()
-                .map_err(|e| anyhow!("gh: fetch failed: {}", e))?;
+                .map_err(|e| user_error!("gh: fetch failed: {}", e))?;
             fs::create_dir_all(&self.cache_path)?;
             std::fs::write(cache_path.clone(), resp.into_string()?)?;
         }
@@ -476,8 +476,8 @@ impl ModuleRegistry {
             })
             .collect::<Vec<_>>();
 
-        ensure_user!(wasm_files.len() > 0, "no wasm files found");
-        ensure_user!(wasm_files.len() == 1, "too many wasm files found");
+        ensure_user!(wasm_files.len() > 0, "no wasm files found (selector={:?})", selector);
+        ensure_user!(wasm_files.len() == 1, "too many wasm files found (selector={:?})", selector);
 
         let wasm_file = wasm_files[0];
         let upd = wasm_file["updated_at"]
