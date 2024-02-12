@@ -36,6 +36,10 @@ You can also build and run in one step (without tagging):
 
 Either way, you will see the console output of the program.
 
+By default, if you don't pass `--ctrl` to `aici.sh` but do pass a `.py` file,
+it will download and use `gh:microsoft/aici/pyctrl`,
+which is the [latest release](https://github.com/microsoft/aici/releases/latest) of PyCtrl.
+
 The Python interpreter does not include the full Python standard library, however
 [parts are bundled](./Lib).
 In addition to regular Python modules, the `pyaici.server` module is also [bundled](../../py/pyaici/server.py).

@@ -95,18 +95,17 @@ Finally, if you plan working with **Python** controllers and scripts, install th
 
 ## Build and start rLLM server and AICI Runtime
 
-After [dev env setup](#development-environment-setup) above,
-clone the AICI repository and proceed with the next steps outlined below.
-
 The rLLM server has two backends, one based on `libtorch` and CUDA
 (`rllm-cuda`), and the other based on `llama.cpp` (`rllm-llamacpp`).
 
 The `rllm-cuda` backend only works with NVidia GPUs with compute capability 8.0 or later
 (A100 and later; RTX 30x0 and later) and requires a fiddly setup of libtorch
 -- it's strongly recommended to use the included devcontainer.
-
 While this guide focuses on the `rllm-llamacpp` backend,
 the build steps are the same for `rllm-cuda`, modulo the folder name.
+
+After [dev env setup](#development-environment-setup) above,
+clone the AICI repository and proceed with the next steps outlined below.
 
 Use the following command to build and run `aicirt` and `rllm-llamacpp`:
 
@@ -120,21 +119,6 @@ You can also use a HuggingFace URL to `.gguf` file or a local path to a `.gguf` 
     ./server.sh orca
 
 You can find more details about `rllm-llamacpp` [here](rllm/rllm-llamacpp/README.md).
-
-### Server overview
-
-At this stage, your rLLM server instance should be up and running, nearly prepared to handle incoming requests. The following diagram illustrates how AICI and LLMs utilize CPU and GPU resources:
-
-```mermaid
-erDiagram
-    Host    ||--|{ CPU : ""
-    Host    ||--|{ GPU : ""
-    
-    CPU     ||--|| "rLMM Server" : execute
-    CPU     ||--|{ "AICI Runtime" : execute
-
-    GPU     ||--|{ "LLM token generation" : execute
-```
 
 The rLLM server provides an HTTP interface, utilized for both configuration tasks and sending requests. You can also utilize this interface to promptly verify its status. For instance, if you open http://127.0.0.1:4242/v1/models, you should see:
 
@@ -163,31 +147,21 @@ The repository includes some examples, in particular:
 * **jsctrl**: a controller that accepts JavaScript code as input for execution. This code can interact with the model to generate text and tokens.
 * **pyctrl**: a controller that accepts Python code as input for execution. This code can also interact with the model to generate text and tokens.
 
-In this example we'll utilize **pyctrl** to manage token generation using a simple **Python script**. It's important to note that controllers require building and deployment, while scripts are sent with each request.
+In this example we'll utilize **pyctrl** to manage token generation using a simple **Python script**.
+If you want, you can [build and upload pyctrl](./controllers/pyctrl/README.md),
+however by default the server will automatically
+download the [latest release](https://github.com/microsoft/aici/releases/latest) of pyctrl from GitHub.
 
-### Build and Upload pyctrl controller
+In general, controllers require building and deployment, while scripts (Python or JavaScript) are sent with each request.
 
-Execute the following command to build and upload the controller to the rLLM server:
-
-    ./aici.sh build controllers/pyctrl/ --tag pyctrl-latest
-
-The command utilizes the `aici.sh` utility to build the code in the `controllers/pyctrl/` folder, assigning a tag to the deployment. You can view all the deployed tags at http://127.0.0.1:4242/v1/controllers/tags or running with `aici.sh` command:
-
-    ./aici.sh tags
-
-output:
-
-> pyctrl-latest -> 68488575...; 13.3MiB/37.6MiB (2024-02-06 15:16:47 by localhost)
-
-
-At this point, you should have an rLLM server instance running with your controller, fully prepared to handle incoming requests. The following diagram integrates the controller just uploaded:
+The following illustrates the relationship between the rLLM server, the AICI runtime, and the controller:
 
 ```mermaid
 erDiagram
     Host    ||--|{ CPU : ""
     Host    ||--|{ GPU : ""
     
-    CPU     ||--|| "rLMM Server" : execute
+    CPU     ||--|| "rLLM Server" : execute
     CPU     ||--|{ "AICI Runtime" : execute
 
     "AICI Runtime" ||--|| "Controller" : instantiate
@@ -263,31 +237,32 @@ To see the final result, execute the following command:
 
 Result:
 ```
-Running with tagged AICI Controller: pyctrl-latest
+Running with tagged AICI Controller: gh:microsoft/aici/pyctrl
 [0]: FIXED 'What are the most popular types of vehicles?\n'
 [0]: FIXED '1.'
-[0]: GEN ' Sedans\n'
+[0]: GEN ' Cars\n'
 [0]: FIXED '2.'
-[0]: GEN ' SUVs\n'
+[0]: GEN ' Motorcycles\n'
 [0]: FIXED '3.'
-[0]: GEN ' Trucks\n'
+[0]: GEN ' Bicycles\n'
 [0]: FIXED '4.'
-[0]: GEN ' Sports cars\n'
+[0]: GEN ' Trucks\n'
 [0]: FIXED '5.'
-[0]: GEN ' Minivans\n'
+[0]: GEN ' Boats\n'
 [0]: FIXED '\n'
 [DONE]
 [Response] What are the most popular types of vehicles?
-1. Sedans
-2. SUVs
-3. Trucks
-4. Sports cars
-5. Minivans
-
+1. Cars
+2. Motorcycles
+3. Bicycles
+4. Trucks
+5. Boats
 
 response saved to tmp/response.json
-Usage: {'sampled_tokens': 17, 'ff_tokens': 38, 'cost': 72}
-Storage: {'result': '1. Sedans\n2. SUVs\n3. Trucks\n4. Sports cars\n5. Minivans\n\n'}
+Usage: {'sampled_tokens': 16, 'ff_tokens': 37, 'cost': 69}
+Timing: {'http_response': 0.05193686485290527, 'data0': 0.05199289321899414, 'first_token': 0.0658726692199707, 'last_token': 0.1784682273864746}
+Tokens/sec: {'prompt': 861.0913072488067, 'sampling': 89.65181217019571}
+Storage: {'result': '1. Cars\n2. Motorcycles\n3. Bicycles\n4. Trucks\n5. Boats\n\n'}
 ```
 
 # Comprehensive Guide: Exploring Further
