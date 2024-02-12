@@ -304,6 +304,7 @@ Additional layers can be built on top - we provide [promptlib](py/promptlib),
 but we strongly believe that
 [Guidance](https://github.com/guidance-ai/guidance),
 [LMQL](https://lmql.ai/),
+[SGLang](https://github.com/sgl-project/sglang),
 [Outlines](https://github.com/outlines-dev/outlines),
 [jsonformer](https://github.com/1rgs/jsonformer),
 [LMFE](https://github.com/noamgat/lm-format-enforcer),
