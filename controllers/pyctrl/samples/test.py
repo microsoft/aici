@@ -77,7 +77,7 @@ async def test_main():
 async def test_drugs():
     drug_syn = "\nUse <drug>Drug Name</drug> syntax for any drug name, for example <drug>Advil</drug>.\n\n"
 
-    notes = "The patient should take some tylenol in the evening and aspirin in the morning. Excercise is highly recommended. Get lots of sleep.\n"
+    notes = "The patient should take some tylenol in the evening and aspirin in the morning. Exercise is highly recommended. Get lots of sleep.\n"
     notes = "Start doctor note:\n" + notes + "\nEnd doctor note.\n"
 
     await aici.FixedTokens("[INST] ")

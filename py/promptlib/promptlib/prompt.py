@@ -23,7 +23,7 @@ class PromptNode:
         return f"_{cls.id_counter}"
 
     def add_child(self, child):
-        # this function should be overriden to validate that adding the child is ok
+        # this function should be overridden to validate that adding the child is ok
         child.set_parent(self)
         self.children.append(child)
     
