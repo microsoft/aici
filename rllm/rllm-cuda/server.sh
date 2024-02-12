@@ -130,7 +130,7 @@ else
     cat <<EOF
 usage: $SELF [--loop] [--debug] [model_name] [rllm_args...]
 
-model_name can a HuggingFace URL model ID (including optinal revision after @), or one of the following:
+model_name can a HuggingFace URL model ID (including optional revision after @), or one of the following:
 
   orca     microsoft/Orca-2-13b@refs/pr/22
   phi      microsoft/phi-1_5@refs/pr/66
