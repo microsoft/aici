@@ -45,20 +45,20 @@ AICI is a prototype, designed and built at [Microsoft Research](https://www.micr
 
 In this quickstart, we'll guide you through the following steps:
 
-* Setting up **rLLM Server** and **AICI Runtime**.
-* Building and deploying a **Controller**.
-* Utilizing AICI to control LLM output, enabling the customization of an LLM to **generate text adhering to specific rules**.
+* Set up **rLLM Server** and **AICI Runtime**.
+* Build and deploy a **Controller**.
+* Use AICI to control LLM output, so you can **customize a LLM to follow specific rules** when generating text.
 
 ## Development Environment Setup
 
-Begin by preparing your development environment for compiling AICI components, primarily coded in Rust. Additionally, ensure that Python 3.11 or later is installed, as it is essential for crafting controllers.
+To compile AICI components, you need to set up your development environment for Rust. For this quickstart you also need Python 3.11 or later to create a controller.
 
 ### Windows WSL / Linux / macOS
 
 > [!NOTE]
 > **Windows users**: please use WSL2 or the included [devcontainer](https://containers.dev). Adding native Windows support [is tracked here](https://github.com/microsoft/aici/issues/42).
 > 
-> **MacOS users**: please make sure you have XCode command line tools installed by running `xcode-select -p` and if not installed, run `xcode-select --install`.
+> **MacOS users**: please make sure you have XCode command line tools installed by running `xcode-select -p` and, if not installed, run `xcode-select --install`.
 >
 > **CUDA**: the CUDA build relies on specific libtorch installation. It's highly recommended you use the included devcontainer.
 
@@ -68,27 +68,28 @@ Using the system package manager, install the necessary tools for building code 
 
 For instance in WSL / Ubuntu using `apt`:
 
-    sudo apt-get install -y --no-install-recommends build-essential cmake ccache pkg-config libssl-dev libclang-dev clang llvm-dev git-lfs
+    sudo apt-get install --assume-yes --no-install-recommends \
+        build-essential cmake ccache pkg-config libssl-dev libclang-dev clang llvm-dev git-lfs
 
 or using Homebrew on macOS:
 
     brew install git cmake ccache
 
-Then install **Rust, Rustup and Cargo** following the instructions provided [here](https://doc.rust-lang.org/cargo/getting-started/installation.html) and [here](https://www.rust-lang.org/learn/get-started).
+Then install **Rust, Rustup and Cargo**, following the instructions provided [here](https://doc.rust-lang.org/cargo/getting-started/installation.html) and [here](https://www.rust-lang.org/learn/get-started):
 
     curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
 
 After installation, verify that the `rustup --version` command is accessible by running it from the terminal. If the command isn't recognized, try opening a new terminal session.
   
-Next install wasm32-wasi component:
+Next install wasm32-wasi Rust component:
     
     rustup target add wasm32-wasi
 
-If you already had Rust installed, or are getting complaints from cargo about outdated versions, run:
+If you already had Rust installed, or are getting complaints from Cargo about outdated versions, run:
 
     rustup update
 
-Finally, if you plan working with **Python** controllers and scripts, install these packages:
+Last, to work with **Python** controllers and scripts (like this tutorial), run this command to install the required packages:
 
     pip install pytest pytest-forked ujson posix_ipc numpy requests
 
@@ -112,7 +113,7 @@ Use the following command to build and run `aicirt` and `rllm-llamacpp`:
     cd rllm/rllm-llamacpp
     ./server.sh phi2
 
-You can pass other model name as argument (run `./server.sh` without arguments to see available models).
+You can pass other model names as argument (run `./server.sh` without arguments to see available models).
 You can also use a HuggingFace URL to `.gguf` file or a local path to a `.gguf` file.
 (For `rllm-cuda` use HuggingFace model id or path to folder).
 
@@ -120,7 +121,7 @@ You can also use a HuggingFace URL to `.gguf` file or a local path to a `.gguf` 
 
 You can find more details about `rllm-llamacpp` [here](rllm/rllm-llamacpp/README.md).
 
-The rLLM server provides an HTTP interface, utilized for both configuration tasks and sending requests. You can also utilize this interface to promptly verify its status. For instance, if you open http://127.0.0.1:4242/v1/models, you should see:
+The rLLM server provides a HTTP interface, utilized for configuration tasks and processing requests. You can also use this interface to promptly verify its status. For instance, if you open http://127.0.0.1:4242/v1/models, you should see:
 
 ```json
 {
@@ -140,7 +141,7 @@ confirming that the selected model is loaded.
 
 ## Control AI output using AICI controllers
 
-AICI provides the capability to host custom logic known as **Controllers**, enabling the initiation, termination, and interaction with LLMs token generation. Each controller accepts input arguments, processes them, and returns a result comprising logs, LLM tokens, and variables.
+AICI allows hosting custom logic, called **Controllers**, that initiate, terminate, and interact with LLMs token generation. Controllers take input arguments, process them, and return a result with logs, LLM tokens, and variables.
 
 The repository includes some examples, in particular:
 
@@ -179,7 +180,7 @@ Typically, achieving this involves prompt engineering, crafting the prompt preci
     Return the result as a numbered list.
     Do not add explanations, only the list.
 
-The prompt would also vary depending on the model in use, given that each model tend to add explanations and understand instructions in different ways.
+The prompt would also vary depending on the model in use, given that each model tends to add explanations and understands instructions in different ways.
 
 With AICI, we shift control back to code, and we can simplify the prompt to:
 
@@ -205,7 +206,8 @@ import pyaici.server as aici
 #   5. name 5
 async def main():
     
-    # This is the prompt we want to run. Note that the prompt doesn't mention a number of vehicles.
+    # This is the prompt we want to run.
+    # Note how the prompt doesn't mention a number of vehicles or how to format the result.
     prompt = "What are the most popular types of vehicles?\n"
 
     # Tell the model to generate the prompt string, ie. let's start with the prompt "to complete"
