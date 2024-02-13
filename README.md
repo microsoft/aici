@@ -323,7 +323,7 @@ graph TD
     aicirt -- POSIX SHM --> llama[llama.cpp]
     aicirt -- POSIX SHM --> pyaici
     pyaici -- Python --> vLLM(vLLM)
-    pyaici -- Python --> hf(HF Transformers)
+    pyaici -- Python --> hf[HF Transformers]
 ```
 
 The [pyaici](py/pyaici) package makes it easier to integrate AICI with Python-based LLM inference engines.
