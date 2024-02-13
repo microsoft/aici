@@ -405,7 +405,7 @@ impl SeqCtx {
                     let res = self.mutinst().post_process(req);
                     let json = serde_json::to_string(&res)?;
                     let e = t0.elapsed();
-                    if e.as_micros() > 100 {
+                    if e.as_micros() > 500 {
                         log::warn!("post_process took {:?}", e);
                     }
                     json

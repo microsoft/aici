@@ -1,7 +1,3 @@
-#
-# This is outdated
-#
-
 import argparse
 
 from typing import cast, Optional, Union, List
