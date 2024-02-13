@@ -16,7 +16,7 @@ import threading
 import atexit
 import signal
 
-from typing import List, Union, Dict, Any, Optional
+from typing import List, Union, Dict, Any, Optional, Tuple, Set
 
 # macOS has 31 character name limit, so keep this short
 # (Linux has 255)
@@ -252,8 +252,8 @@ class AiciRunner:
         self,
         rtpath,
         tokenizer="llama",
-        json_size=32,
-        bin_size=32,
+        json_size=128,
+        bin_size=128,
         pref=DEFAULT_SHM_PREF,
         trace_file=None,
         rtargs=[],
@@ -273,11 +273,8 @@ class AiciRunner:
 
         self.vocab_size = -1
         self.batch_size = -1
-        self.last_pre_response = {}
-        self.last_mid_response = {}
-        self.last_post_response = {}
-        self.disable_attn_mask = False
-        self.curr_attn_mask = None
+        self.logs_by_seqid: Dict[str, list[dict]] = {}
+        self.seqs_to_stop: set[int] = set()
         self.space_token = -1
 
         if trace_file:
@@ -286,8 +283,10 @@ class AiciRunner:
             self.trace_file = None
 
         self.logit_pending = False
-        self.last_ops = None
-        self.max_context_len = -1
+
+        self.post_ops = []
+        self.pre_ops = []
+        self.mid_ops = []
         self.freed_seq_ids = []
 
         self.wasm_pre_timer = BenchTimer("wasm_pre")
@@ -329,9 +328,6 @@ class AiciRunner:
         self.cmd.exec("ping")
         resp = self.cmd.exec("tokens")
         self.vocab_size = resp["data"]["vocab_size"]
-        self.recent_seqs = {}
-
-        self.step_reset()
 
         AiciRunner.instance = self
 
@@ -372,9 +368,7 @@ class AiciRunner:
 
     async def upload_module_async(self, wasm: bytes):
         b64 = base64.b64encode(wasm).decode("utf-8")
-        return await self.side_cmd.exec_async(
-            "mk_module", {"binary": b64}
-        )
+        return await self.side_cmd.exec_async("mk_module", {"binary": b64})
 
     async def instantiate_async(
         self,
@@ -405,7 +399,7 @@ class AiciRunner:
     def instantiate(
         self,
         req_id: str,
-        prompt: Union[str, list],
+        prompt: List[int],
         module_id: str,
         module_arg: Union[str, dict, None],
     ):
@@ -428,136 +422,152 @@ class AiciRunner:
             },
         )
 
-    def step_reset(self):
+    def assign_seq_id(self, req_id: str, seq_id: int):
         """
-        Reset any pending state for the step.
+        Assign a sequence ID (number) to a given request ID (passed to .instantiate() before).
         """
-        self.gen_q = []
+        self.pre_ops.append({"req_id": req_id, "id": seq_id})
 
-    def step_add_pre(self, id: int, req_id: Optional[str] = None):
+    def tokens_generated(self, seq_id: int, tokens: List[int], backtrack: int = 0):
         """
-        Adds a generated token to the step.
-
-        Args:
-            id (int): The ID of the batch-entry - needs to match a previous ID from step_add_prompt(), unless clone_id is set.
-            tokens (List[int]): The tokens to add.
-            clone_id (int, optional): The ID of the batch entry to clone if any.
+        Informs aicirt tokens have been generated.
         """
-        obj: dict = {"id": id}
-        if req_id:
-            obj["req_id"] = req_id
-        self.gen_q.append(obj)
+        self.post_ops.append({"id": seq_id, "tokens": tokens, "backtrack": backtrack})
 
-    def step_add_mid(self, id: int, clone_id: Optional[int] = None):
-        obj = {"id": id}
-        if clone_id is not None:
-            obj["clone_id"] = clone_id
-        self.gen_q.append(obj)
-
-    def step_add_post(
-        self, id: int, backtrack: int, tokens: List[int], clone_id: Optional[int] = None
-    ):
-        obj = {"id": id, "tokens": tokens, "backtrack": backtrack}
-        if clone_id is not None:
-            obj["clone_id"] = clone_id
-        self.gen_q.append(obj)
-
-    def step_free_seq(self, id: int):
+    def seq_freed(self, id: Union[int, list[int]]):
         """
         Indicates that a given batch entry won't be used anymore.
         """
-        self.freed_seq_ids.append(id)
+        if isinstance(id, list):
+            self.freed_seq_ids.extend(id)
+        else:
+            self.freed_seq_ids.append(id)
 
-    def step_finish_mid(self):
-        cmd = {
-            "op": "mid_process",
-            "ops": self.gen_q,
-        }
-        self.last_ops = cmd["ops"]
-        self.batch_size = len(self.last_ops)
-        if self.batch_size == 0:
-            # nothing to do
-            self.step_reset()
-            return False
-        assert self.curr_attn_mask is not None
-        assert not self.logit_pending
-        self.logit_pending = True
-        self.cmd.send(cmd)
-        self.step_reset()
-        return True
+    def _add_logs(self, by_seqid: Dict[str, dict]):
+        d = self.logs_by_seqid
+        for k, v in by_seqid.items():
+            r = v.get("result", None) or {}
+            if v["error"] or r.get("stop", False) or r.get("num_forks", 1) == 0:
+                self.seqs_to_stop.add(int(k))
+            if k in d:
+                d[k].append(v)
+            else:
+                d[k] = [v]
 
-    def step_finish_pre(self, max_context_len):
+    def get_seqs_to_stop(self) -> Set[int]:
+        r = self.seqs_to_stop
+        self.seqs_to_stop = set()
+        return r
+
+    def exec_post_pre(self):
         """
         Send step data to the aicirt process.
-        recv_logit_bias() (or flush_logit_bias()) needs to be called after this.
         """
         cmd = {
-            "op": "pre_process",
+            "op": "post_pre_process",
+            "post_ops": self.post_ops,
+            "pre_ops": self.pre_ops,
             "freed": self.freed_seq_ids,
-            "ops": self.gen_q,
-            "max_context_len": max_context_len,
         }
         self.freed_seq_ids = []
-        self.last_ops = cmd["ops"]
-        self.batch_size = len(self.last_ops)
-        self.max_context_len = max_context_len
-        if len(cmd["freed"]) == 0 and self.batch_size == 0:
-            # nothing to do
-            self.step_reset()
-            return None, None
-        assert not self.logit_pending
+        self.pre_ops = []
+        self.post_ops = []
 
-        self.step_reset()
+        assert not self.logit_pending
 
         with self.wasm_pre_timer_send:
             self.cmd.resp_ch.track = True
             self.cmd.send(cmd)
         with self.wasm_pre_timer:
             response = self.cmd.expect("recv")["data"]
+        self._add_logs(response["post_seqs"])
+        self._add_logs(response["pre_seqs"])
+        self.last_resp: Dict[str, dict] = response["pre_seqs"]
 
-        return self._process_forks(response)
+    def pre_status(self, seq_id: int) -> Tuple[bool, int, List[int]]:
+        """
+        Get the status of a given sequence ID after post_pre_process.
+        Returns: (suspend, num_forks, ff_tokens)
+        """
+        r = self.last_resp.get(str(seq_id), {})
+        res = r.get("result", None)
+        if res is not None:
+            return (
+                res.get("suspend", False),
+                res.get("num_forks", 1),
+                res.get("ff_tokens", []),
+            )
+        else:
+            return True, 0, []
 
-    def recv_attention_mask(self):
-        mask = self.curr_attn_mask
-        self.curr_attn_mask = None
-        assert mask is not None
-        return mask
+    def mid_status(self, seq_id: int) -> Tuple[List[int], int]:
+        """
+        Get the status of a given sequence ID after mid_process.
+        Returns: (ff_tokens, backtrack)
+        """
+        r = self.last_resp.get(str(seq_id), {})
+        res = r.get("result", None) or {}
+        return (
+            res.get("ff_tokens", []),
+            res.get("backtrack", 0),
+        )
 
-    def _process_forks(self, response):
-        fork_map: List[int] = response["fork_map"]
-        suspend_ids: List[int] = response["suspend_ids"]
-        self.last_pre_response = response["seqs"]
-        n = len(fork_map)
-        if self.disable_attn_mask:
-            self.disable_attn_mask = False
-            n = 0
-        mask = np.frombuffer(
-            self.bin_shm, dtype=np.float32, offset=0, count=n * self.max_context_len
-        ).reshape([n, self.max_context_len])
-        # need to clone it before sending "mid_process" req
-        self.curr_attn_mask = mask.copy()
-        return fork_map, suspend_ids
-
-    def step_finish_post(self):
-        cmd = {
-            "op": "post_process",
-            "ops": self.gen_q,
+    def seq_logs(self, seq_id: int) -> dict:
+        """
+        Get the logs for a given sequence ID.
+        """
+        ss = str(seq_id)
+        if ss in self.logs_by_seqid:
+            lst = self.logs_by_seqid[ss]
+            del self.logs_by_seqid[ss]
+        else:
+            lst = []
+        r = {
+            "index": seq_id,  # this is not quite right, but close
+            # "finish_reason": None,
+            # "text": "",
+            "error": "\n".join([e["error"] for e in lst if e["error"]]),
+            "logs": "\n".join([e["logs"] for e in lst if e["logs"]]),
+            "storage": [q for e in lst for q in e["storage"]],
         }
-        self.last_ops = cmd["ops"]
-        self.batch_size = len(self.last_ops)
-        self.step_reset()
-        if self.batch_size == 0:
-            # nothing to do
-            self.last_post_response = {}
-            return []
+        return r
+
+    def pending_logs(self):
+        """
+        Get the logs for the last step.
+        """
+        return [int(q) for q in self.logs_by_seqid.keys()]
+    
+    def print_logs(self):   
+        for seq_id in self.pending_logs():
+            r = self.seq_logs(seq_id)
+            lines: str = r["logs"]
+            if lines:
+                for line in lines.split("\n"):
+                    if line:
+                        print(f"[{seq_id}] {line}")
+            lines: str = r["error"]
+            if lines:
+                for line in lines.split("\n"):
+                    if line:
+                        print(f"[{seq_id}] ERR {line}")
+
+    def add_mid(self, id: int, clone_id: Optional[int] = None):
         assert not self.logit_pending
-        self.last_post_response = self.cmd.exec("post_process", cmd)["data"]["seqs"]
-        stop_seqs = []
-        for (k, v) in self.last_post_response.items():
-            v: dict
-            if (v.get("result", None) or {}).get("stop", False):
-                stop_seqs.append(int(k))
-        return stop_seqs
+        obj = {"id": id}
+        if clone_id is not None:
+            obj["clone_id"] = clone_id
+        self.mid_ops.append(obj)
+
+    def exec_mid(self):
+        assert not self.logit_pending
+        cmd = {
+            "op": "mid_process",
+            "ops": self.mid_ops,
+        }
+        self.cmd.send(cmd)
+        self.logit_pending = True
+        return True
 
     def flush_logit_bias(self):
         """
@@ -574,8 +584,12 @@ class AiciRunner:
         """
         assert self.logit_pending
         self.logit_pending = False
-        self.last_mid_response = self.cmd.expect("recv")["data"]["seqs"]
-        n = self.batch_size
+        data = self.cmd.expect("recv")["data"]
+        self.last_resp = data["seqs"]
+        self._add_logs(self.last_resp)
+        n: int = data["num_seqs"]
+        assert len(self.mid_ops) == n
+        self.mid_ops = []
         arr = np.frombuffer(
             self.bin_shm, dtype=np.float32, offset=0, count=n * self.vocab_size
         ).reshape([n, self.vocab_size])
@@ -587,31 +601,3 @@ class AiciRunner:
         """
         self.cmd.send({"op": "stop"})
         self.proc.wait()
-
-    def full_response_by_seq_id(self, seq_id: int) -> Dict[str, Any]:
-        """
-        Get the response for a given batch entry ID.
-        """
-        pre: dict[str, Any] = self.last_pre_response.get(str(seq_id), {})
-        mid: dict[str, Any] = self.last_mid_response.get(str(seq_id), {})
-        post: dict[str, Any] = self.last_post_response.get(str(seq_id), {})
-        logs = pre.get("logs", "") + mid.get("logs", "") + post.get("logs", "")
-        storage = (
-            pre.get("storage", []) + mid.get("storage", []) + post.get("storage", [])
-        )
-        micros = (
-            pre.get("micros", 0.0) + mid.get("micros", 0.0) + post.get("micros", 0.0)
-        )
-        error = pre.get("error", "") + mid.get("error", "") + post.get("error", "")
-        return {
-            "error": error,
-            "storage": storage,
-            "logs": logs,
-            "micros": micros,
-        }
-
-    def response_by_seq_id(self, seq_id: int) -> Dict[str, Any]:
-        """
-        Get the response for a given batch entry ID.
-        """
-        return self.last_mid_response.get(str(seq_id), None)

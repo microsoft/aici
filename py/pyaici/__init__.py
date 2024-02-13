@@ -41,13 +41,13 @@ def add_cli_args(parser: argparse.ArgumentParser, single=False):
 
     if single:
         parser.add_argument(
-            "--aici-module",
+            "--controller",
             type=str,
             required=True,
             help="id of the module to run",
         )
         parser.add_argument(
-            "--aici-module-arg",
+            "--controller-arg",
             type=str,
             default="",
             help="arg passed to module (filename)",

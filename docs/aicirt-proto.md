@@ -139,8 +139,8 @@ in shared memory in the same order as the sequences are passed in.
 { "op": "mid_process", "ops": [{ "id": 2, "clone_id": null }] }
 ```
 
-The response is similar to the one for `post_pre_process`, however there is no specific `result`
-in the JSON, however there is logit bias in the shared memory region.
+The response is similar to the one for `post_pre_process`, however while there is no specific `result`
+in the JSON, there is logit bias in the shared memory region.
 
 ```json
 {
@@ -262,7 +262,7 @@ The last two correspond to `controller` and `controller_arg` REST API fields.
   "$rid": "0aae92c8-e415-4efd-947b-361a8573020c",
   "$auth": { "user": "localhost", "is_admin": true },
   "op": "instantiate",
-  "req_id": "run-1a7bee2e-815d-4fde-8a54-e8ecb5839335",
+  "req_id": "run-062a793f-a83f-4198-a792-9dfc39f623a6",
   "prompt": [1],
   "module_id": "jsctrl-latest",
   "module_arg": "async function main() {\n    await $`Ultimate answer is to the life, universe and everything is `\n    await gen({ regex: /\\d\\d/ })\n}\n\nstart(main)\n"

@@ -1,19 +1,13 @@
 #!/bin/sh
 
-echo "This is outdated."
-exit 1
-
 set -e
 set -x
-(cd declctrl && ./wasm.sh cache)
-mod=`cat tmp/runlog.txt |grep '^[a-f0-9]\{64\}$'`
 
-RUST_LOG=debug \
+RUST_LOG=info,tokenizers=error,rllm=debug,aicirt=info \
 PYTHONPATH=py \
 python3 scripts/py/run_hf.py \
-    --aici-rt ./aicirt/target/release/aicirt \
-    --aici-module $mod \
-    --aici-module-arg declctrl/arg.json \
-    --aici-tokenizer llama \
-    --model NousResearch/Llama-2-7b-chat-hf \
-    --tokenizer hf-internal-testing/llama-tokenizer
+    --aici-rt ./target/release/aicirt \
+    --controller gh:microsoft/aici/pyctrl \
+    --controller-arg controllers/pyctrl/samples/phi.py  \
+    --aici-tokenizer phi \
+    --model microsoft/phi-2

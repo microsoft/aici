@@ -286,7 +286,7 @@ where
     fn recv_with_timeout_inner(&self, timeout: Duration) -> Option<Resp> {
         match self.cmd.lock().unwrap().recv_resp(timeout) {
             Some(r) => {
-                log::trace!("recv t/o {r:?}");
+                log::trace!("recv_with_timeout {r:?}");
                 Some(r)
             }
             None => None,
