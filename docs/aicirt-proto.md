@@ -15,7 +15,6 @@ Regardless of the chosen synchronization mechanism, the message format is the sa
 
 The LLM side of the interface is implemented in [comms.py](../py/pyaici/comms.py)
 and in [iface.rs](../rllm/rllm-base/src/iface.rs).
-The Python interface is outdated: [tracking issue](https://github.com/microsoft/aici/issues/43).
 
 Two bi-directional message channels are used:
 
