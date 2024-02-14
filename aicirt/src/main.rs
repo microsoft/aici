@@ -701,13 +701,13 @@ impl Stepper {
                     outputs.insert(
                         id,
                         data.json.clone_with(Some(AiciPreProcessResultInner {
-                            suspend: data.suspend,
-                            num_forks: data.num_forks,
-                            ff_tokens: data.ff_tokens,
+                            suspend: data.pp.suspend,
+                            num_forks: data.pp.num_forks,
+                            ff_tokens: data.pp.ff_tokens,
                         })),
                     );
-                    if data.suspend {
-                        assert!(data.num_forks == 1);
+                    if data.pp.suspend {
+                        assert!(data.pp.num_forks == 1);
                     }
                 }
                 Err(e) => self.worker_error(id, &mut outputs, e),

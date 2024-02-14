@@ -7,8 +7,8 @@ use crate::{
     with_timer, InstantiateReq, TimerRef, UserError,
 };
 use aici_abi::{
-    InitPromptResult, MidProcessArg, PostProcessArg, PreProcessArg, StorageCmd, StorageOp,
-    StorageResp, TokenId,
+    InitPromptResult, MidProcessArg, PostProcessArg, PreProcessArg, PreProcessResult, StorageCmd,
+    StorageOp, StorageResp, TokenId,
 };
 use aicirt::{
     api::{AiciMidProcessResultInner, AiciPostProcessResultInner, SequenceResult},
@@ -179,18 +179,18 @@ impl SeqCmd {
 #[derive(Serialize, Deserialize, Debug)]
 pub struct RtPreProcessResult {
     pub json: SequenceResult,
-    pub suspend: bool,
-    pub num_forks: usize,
-    pub ff_tokens: Vec<TokenId>,
+    pub pp: PreProcessResult,
 }
 
 impl RtPreProcessResult {
     pub fn just_json(json: SequenceResult) -> Self {
         RtPreProcessResult {
             json,
-            suspend: false,
-            num_forks: 1,
-            ff_tokens: Vec::new(),
+            pp: PreProcessResult {
+                suspend: false,
+                num_forks: 1,
+                ff_tokens: Vec::new(),
+            },
         }
     }
 }
@@ -207,9 +207,7 @@ enum SeqResp {
     PostPreProcess {
         post_json: String,
         pre_json: String,
-        suspend: bool,
-        num_forks: usize,
-        ff_tokens: Vec<TokenId>,
+        pp: PreProcessResult,
     },
     MidProcess {
         json: String,
@@ -416,9 +414,7 @@ impl SeqCtx {
                 Ok(SeqResp::PostPreProcess {
                     post_json,
                     pre_json: serde_json::to_string(&res.json)?,
-                    suspend: res.suspend,
-                    num_forks: res.num_forks,
-                    ff_tokens: res.ff_tokens,
+                    pp: res.pp,
                 })
             }
             SeqCmd::MidProcess { data } => {
@@ -559,9 +555,7 @@ impl SeqWorkerHandle {
             Ok(SeqResp::PostPreProcess {
                 post_json,
                 pre_json,
-                suspend,
-                num_forks,
-                ff_tokens,
+                pp,
             }) => Ok((
                 if post_json.len() > 0 {
                     Some(serde_json::from_str(&post_json)?)
@@ -570,9 +564,7 @@ impl SeqWorkerHandle {
                 },
                 RtPreProcessResult {
                     json: serde_json::from_str(&pre_json)?,
-                    suspend,
-                    num_forks,
-                    ff_tokens,
+                    pp,
                 },
             )),
             Ok(r) => Err(anyhow!("unexpected response (pre_process) {r:?}")),
