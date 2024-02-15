@@ -1,3 +1,4 @@
+use crate::seq::{FinishReason, RequestOutput, SeqOutput};
 use crate::server::{auth_info, APIError, AiciServerData, InferenceResult};
 use crate::{config::SamplingParams, seq::Token, AddRequest};
 use actix_web::{post, web, web::Bytes, HttpResponse};
@@ -75,7 +76,7 @@ async fn run_controller(
     let token_ids = check_length(&request, &data);
     bail_if_error!(token_ids);
 
-    let (max_tokens, token_ids) = token_ids.unwrap();
+    let (max_tokens, mut token_ids) = token_ids.unwrap();
 
     let request_id = format!("run-{}", Uuid::new_v4());
 
@@ -95,7 +96,7 @@ async fn run_controller(
 
     bail_if_error!(sampling_params.verify_args());
 
-    if let Some(mod_id) = sampling_params.controller.as_ref() {
+    let init_result = if let Some(mod_id) = sampling_params.controller.as_ref() {
         let inst = data
             .side_cmd_ch
             .instantiate(
@@ -109,17 +110,53 @@ async fn run_controller(
             )
             .await;
         bail_if_error!(inst);
-    }
+        let inst = inst.unwrap();
+        match &inst.result {
+            Some(r) => {
+                assert!(r.num_forks == 1);
+                assert!(r.suspend == false);
+                token_ids.extend_from_slice(&r.ff_tokens);
+            }
+            None => {}
+        }
+        Some(inst.clone_with(Some(())))
+    } else {
+        None
+    };
 
-    let rx = data.worker.lock().unwrap().add_request(AddRequest {
-        request_id: request_id.clone(),
-        prompt: token_ids,
-        sampling_params,
-        expected: None,
-    });
+    let rx = match init_result {
+        Some(r) if r.error.len() > 0 => {
+            let outp = RequestOutput {
+                request_id: request_id.clone(),
+                usage: Default::default(),
+                seq_outputs: vec![SeqOutput {
+                    seq_id: 0,
+                    index: 0,
+                    new_output_tokens: vec![],
+                    new_text: String::new(),
+                    output_tokens: vec![],
+                    finish_reason: Some(FinishReason::Failed),
+                    aici_logs: vec![r],
+                }],
+                is_final: true,
+            };
+            let (tx, rx) = tokio::sync::mpsc::channel(1);
+            tx.send(Ok(outp)).await.unwrap();
+            rx
+        }
+        _ => {
+            let rx = data.worker.lock().unwrap().add_request(AddRequest {
+                request_id: request_id.clone(),
+                prompt: token_ids,
+                sampling_params,
+                expected: None,
+                init_result,
+            });
 
-    bail_if_error!(rx);
-    let rx = rx.unwrap();
+            bail_if_error!(rx);
+            rx.unwrap()
+        }
+    };
 
     return Ok(HttpResponse::Ok()
         .append_header(("content-type", "text/event-stream"))

@@ -7,8 +7,8 @@ use crate::{
     with_timer, InstantiateReq, TimerRef, UserError,
 };
 use aici_abi::{
-    InitPromptResult, MidProcessArg, PostProcessArg, PreProcessArg, PreProcessResult, StorageCmd,
-    StorageOp, StorageResp, TokenId,
+    MidProcessArg, PostProcessArg, PreProcessArg, PreProcessResult, StorageCmd, StorageOp,
+    StorageResp, TokenId,
 };
 use aicirt::{
     api::{AiciMidProcessResultInner, AiciPostProcessResultInner, SequenceResult},
@@ -177,48 +177,14 @@ impl SeqCmd {
 }
 
 #[derive(Serialize, Deserialize, Debug)]
-pub struct RtPreProcessResult {
-    pub json: SequenceResult,
-    pub pp: PreProcessResult,
-}
-
-impl RtPreProcessResult {
-    pub fn just_json(json: SequenceResult) -> Self {
-        RtPreProcessResult {
-            json,
-            pp: PreProcessResult {
-                suspend: false,
-                num_forks: 1,
-                ff_tokens: Vec::new(),
-            },
-        }
-    }
-}
-
-#[derive(Serialize, Deserialize, Debug)]
 enum SeqResp {
-    Fork {
-        handle: WireSeqHandle,
-    },
+    Fork { handle: WireSeqHandle },
     Ok {},
-    InitPrompt {
-        json: String,
-    },
-    PostPreProcess {
-        post_json: String,
-        pre_json: String,
-        pp: PreProcessResult,
-    },
-    MidProcess {
-        json: String,
-    },
-    Compile {
-        binary: Vec<u8>,
-    },
-    Error {
-        msg: String,
-        is_user_error: bool,
-    },
+    InitPrompt { json: String },
+    PostPreProcess { post_json: String, pre_json: String },
+    MidProcess { json: String },
+    Compile { binary: Vec<u8> },
+    Error { msg: String, is_user_error: bool },
 }
 
 impl<Cmd, Resp> ProcessHandle<Cmd, Resp>
@@ -387,7 +353,7 @@ impl SeqCtx {
                     inst.tokenize(&p)?
                 };
                 self.modinst = Some(inst);
-                let r = self.mutinst().setup(prompt_toks)?;
+                let r = self.mutinst().setup(prompt_toks);
                 Ok(SeqResp::InitPrompt {
                     json: serde_json::to_string(&r)?,
                 })
@@ -413,8 +379,7 @@ impl SeqCtx {
                 let res = with_timer!(self.pre_timer, self.mutinst().pre_process(data.pre_op));
                 Ok(SeqResp::PostPreProcess {
                     post_json,
-                    pre_json: serde_json::to_string(&res.json)?,
-                    pp: res.pp,
+                    pre_json: serde_json::to_string(&res)?,
                 })
             }
             SeqCmd::MidProcess { data } => {
@@ -548,24 +513,20 @@ impl SeqWorkerHandle {
         timer: &TimerRef,
     ) -> Result<(
         Option<SequenceResult<AiciPostProcessResultInner>>,
-        RtPreProcessResult,
+        SequenceResult<PreProcessResult>,
     )> {
         let r = timer.with(|| self.handle.seq_recv_with_timeout("r-pre_process", timeout));
         match r {
             Ok(SeqResp::PostPreProcess {
                 post_json,
                 pre_json,
-                pp,
             }) => Ok((
                 if post_json.len() > 0 {
                     Some(serde_json::from_str(&post_json)?)
                 } else {
                     None
                 },
-                RtPreProcessResult {
-                    json: serde_json::from_str(&pre_json)?,
-                    pp,
-                },
+                serde_json::from_str(&pre_json)?,
             )),
             Ok(r) => Err(anyhow!("unexpected response (pre_process) {r:?}")),
             Err(e) => Err(e.into()),
@@ -788,7 +749,7 @@ impl WorkerForker {
         &self,
         req: InstantiateReq,
         module_path: PathBuf,
-    ) -> Result<(SeqWorkerHandle, InitPromptResult)> {
+    ) -> Result<(SeqWorkerHandle, SequenceResult<PreProcessResult>)> {
         let module_arg = match req.module_arg.as_str() {
             Some(a) => a.to_string(),
             None => serde_json::to_string(&req.module_arg)?,
@@ -834,7 +795,7 @@ impl WorkerForker {
             Duration::from_millis(self.limits.max_init_ms),
         )? {
             SeqResp::InitPrompt { json } => {
-                let r: InitPromptResult = serde_json::from_str(&json)?;
+                let r: SequenceResult<PreProcessResult> = serde_json::from_str(&json)?;
                 Ok((res, r))
             }
             r => Err(anyhow!("unexpected response (init prompt) {r:?}")),

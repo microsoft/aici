@@ -41,7 +41,7 @@ pub struct SeqId(pub u32);
 #[derive(Serialize, Deserialize, Debug)]
 pub struct PreProcessArg {}
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct PreProcessResult {
     /// If 0 - stop the sequence.
     /// If 1 - just continue.
@@ -53,6 +53,16 @@ pub struct PreProcessResult {
     /// If non-empty, the tokens may be appended and post_process() be called immediately,
     /// skipping mid_process(); pre_process() is then typically called again.
     pub ff_tokens: Vec<TokenId>,
+}
+
+impl Default for PreProcessResult {
+    fn default() -> Self {
+        PreProcessResult {
+            num_forks: 1,
+            suspend: false,
+            ff_tokens: vec![],
+        }
+    }
 }
 
 #[derive(Serialize, Deserialize, Debug)]

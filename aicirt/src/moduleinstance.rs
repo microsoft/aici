@@ -4,15 +4,18 @@ use crate::{
         setup_linker, AiciLimits, GlobalInfo, ModuleData, LOGIT_BIAS_ALLOW, LOGIT_BIAS_DISALLOW,
     },
     shm::Shm,
-    worker::{GroupHandle, RtMidProcessArg, RtPreProcessResult},
+    worker::{GroupHandle, RtMidProcessArg},
     TimerSet, UserError,
 };
 use aici_abi::{
-    toktree::TokTrie, InitPromptArg, InitPromptResult, MidProcessResult, PostProcessArg,
-    PostProcessResult, PreProcessArg, PreProcessResult, TokenId,
+    toktree::TokTrie, InitPromptArg, MidProcessResult, PostProcessArg, PostProcessResult,
+    PreProcessArg, PreProcessResult, TokenId,
 };
 use aicirt::{
-    api::{AiciMidProcessResultInner, AiciPostProcessResultInner, SequenceResult}, bail_user, bintokens::ByteTokenizer, user_error
+    api::{AiciMidProcessResultInner, AiciPostProcessResultInner, SequenceResult},
+    bail_user,
+    bintokens::ByteTokenizer,
+    user_error,
 };
 use anyhow::{anyhow, bail, ensure, Result};
 use serde::Deserialize;
@@ -98,6 +101,7 @@ pub struct ModuleInstance {
     store: wasmtime::Store<ModuleData>,
     memory: wasmtime::Memory,
     instance: wasmtime::Instance,
+    pending_pre_result: Option<PreProcessResult>,
     handle: WasmAici,
     #[allow(dead_code)]
     limits: AiciLimits,
@@ -213,6 +217,7 @@ impl ModuleInstance {
             memory,
             instance,
             limits: ctx.limits,
+            pending_pre_result: None,
         })
     }
 
@@ -262,8 +267,11 @@ impl ModuleInstance {
             let mut res = self.do_pre_process_inner(&rtarg)?;
 
             if res.ff_tokens.len() > 0 {
-                ensure!(res.num_forks == 1);
-                ensure!(res.suspend == false);
+                ensure!(res.num_forks == 1, "can't fork when returning ff_tokens");
+                ensure!(
+                    res.suspend == false,
+                    "can't suspend when returning ff_tokens"
+                );
                 ff_tokens.extend_from_slice(&res.ff_tokens);
                 let r_post = self.do_post_process(PostProcessArg {
                     tokens: res.ff_tokens.clone(),
@@ -363,7 +371,7 @@ impl ModuleInstance {
         Ok(AiciPostProcessResultInner { stop: res.stop })
     }
 
-    fn json_result<T>(
+    fn seq_result<T>(
         &mut self,
         lbl: &str,
         t0: Instant,
@@ -397,16 +405,19 @@ impl ModuleInstance {
         }
     }
 
-    pub fn pre_process(&mut self, op: PreProcessArg) -> RtPreProcessResult {
+    pub fn pre_process(&mut self, op: PreProcessArg) -> SequenceResult<PreProcessResult> {
         let t0 = Instant::now();
+        if let Some(pp) = self.pending_pre_result.clone() {
+            return self.seq_result("pre-cached", t0, Ok(Some(pp)));
+        }
         match self.do_pre_process(op) {
-            Err(e) => RtPreProcessResult::just_json(self.json_result("pre0", t0, Err(e))),
-            Ok(res) => RtPreProcessResult {
-                json: self.json_result("pre", t0, Ok(None)),
-                suspend: res.suspend,
-                num_forks: res.num_forks,
-                ff_tokens: res.ff_tokens,
-            },
+            Err(e) => self.seq_result("pre0", t0, Err(e)),
+            Ok(pp) => {
+                if pp.ff_tokens.len() > 0 {
+                    self.pending_pre_result = Some(pp.clone());
+                }
+                self.seq_result("pre", t0, Ok(Some(pp)))
+            }
         }
     }
 
@@ -416,9 +427,10 @@ impl ModuleInstance {
         shm: &Shm,
     ) -> SequenceResult<AiciMidProcessResultInner> {
         let t0 = Instant::now();
+        self.pending_pre_result = None;
         let res = self.do_mid_process(op, shm);
         // log::info!("mid_process: {:?}", t0.elapsed());
-        self.json_result("mid", t0, res)
+        self.seq_result("mid", t0, res)
     }
 
     pub fn post_process(
@@ -426,14 +438,15 @@ impl ModuleInstance {
         op: PostProcessArg,
     ) -> SequenceResult<AiciPostProcessResultInner> {
         let t0 = Instant::now();
+        self.pending_pre_result = None;
         let res = self.do_post_process(op);
         match res {
             Err(e) => {
-                let mut r = self.json_result("post", t0, Err(e));
+                let mut r = self.seq_result("post", t0, Err(e));
                 r.result = Some(AiciPostProcessResultInner { stop: true });
                 r
             }
-            Ok(res) => self.json_result("post", t0, Ok(Some(res))),
+            Ok(res) => self.seq_result("post", t0, Ok(Some(res))),
         }
     }
 
@@ -441,7 +454,7 @@ impl ModuleInstance {
         self.store.data_mut().tokenize(s)
     }
 
-    pub fn setup(&mut self, prompt: Vec<TokenId>) -> Result<InitPromptResult> {
+    fn setup_inner(&mut self, prompt: Vec<TokenId>) -> Result<()> {
         self.run_init()?;
 
         self.handle = self.call_func::<(), WasmAici>("aici_create", ())?;
@@ -451,7 +464,27 @@ impl ModuleInstance {
             .set_process_arg(serde_json::to_vec(&InitPromptArg { prompt })?);
         self.call_func::<WasmAici, ()>("aici_init_prompt", self.handle)?;
 
-        let res: InitPromptResult = self.proc_result()?;
-        Ok(res)
+        Ok(())
+    }
+
+    pub fn setup(&mut self, prompt: Vec<TokenId>) -> SequenceResult<PreProcessResult> {
+        let t0 = Instant::now();
+        match self.setup_inner(prompt) {
+            Err(err) => self.seq_result("setup", t0, Err(err)),
+            Ok(()) => match self.do_pre_process(PreProcessArg {}) {
+                Err(e) => self.seq_result("setup-pre", t0, Err(e)),
+                Ok(pp) if pp.suspend || pp.num_forks == 0 => self.seq_result(
+                    "setup-pre",
+                    t0,
+                    Err(user_error!("setup-pre asked for suspend")),
+                ),
+                Ok(mut pp) => {
+                    // force a single fork; we expect another fork request when pre() runs in its own turn
+                    pp.num_forks = 1;
+                    // don't set self.pending_pre_result -> we assume the results are always handled
+                    self.seq_result("setup-pre", t0, Ok(Some(pp)))
+                }
+            },
+        }
     }
 }
