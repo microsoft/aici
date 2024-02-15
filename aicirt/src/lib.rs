@@ -9,8 +9,11 @@ pub mod shm;
 #[cfg(target_os = "macos")]
 mod macos;
 
+use std::fmt::Write;
+
 use anyhow::Result;
 pub use bench::*;
+use flexi_logger::style;
 use flexi_logger::{DeferredNow, Logger, WriteMode};
 use log::Record;
 use thread_priority::{
@@ -27,6 +30,55 @@ pub enum LogMode {
     Daemon,
 }
 
+struct LimitedWrite {
+    limit: usize,
+    dst: String,
+}
+
+impl Write for LimitedWrite {
+    fn write_str(&mut self, s: &str) -> std::fmt::Result {
+        if self.dst.len() > self.limit {
+            return Err(std::fmt::Error);
+        }
+        if self.dst.len() + s.len() < self.limit {
+            self.dst.push_str(s);
+            Ok(())
+        } else {
+            let remaining = self.limit - self.dst.len();
+            self.dst.push_str(&s[..remaining]);
+            self.dst.push_str(" (...)");
+            Err(std::fmt::Error)
+        }
+    }
+}
+
+fn args_to_str(limit: usize, args: &std::fmt::Arguments) -> String {
+    // let capacity = args.estimated_capacity();
+    let mut output = LimitedWrite {
+        limit,
+        dst: String::with_capacity(128),
+    };
+    if output.write_fmt(*args).is_err() {
+        assert!(output.dst.len() > limit);
+    }
+    output.dst
+}
+
+fn truncated_format(
+    w: &mut dyn std::io::Write,
+    _now: &mut DeferredNow,
+    record: &Record,
+) -> Result<(), std::io::Error> {
+    let level = record.level();
+    write!(
+        w,
+        "{} [{}] {}",
+        style(level).paint(level.to_string()),
+        record.module_path().unwrap_or("<unnamed>"),
+        style(level).paint(args_to_str(1000, record.args()))
+    )
+}
+
 fn daemon_format(
     w: &mut dyn std::io::Write,
     now: &mut DeferredNow,
@@ -34,16 +86,19 @@ fn daemon_format(
 ) -> Result<(), std::io::Error> {
     write!(
         w,
-        "[{}] {} {}",
+        "{} {} [{}] {}",
         now.format("%Y-%m-%d %H:%M:%S%.3f"),
         record.level(),
-        &record.args()
+        record.module_path().unwrap_or("<unnamed>"),
+        args_to_str(5000, record.args())
     )
 }
 
 pub fn init_log(mode: LogMode) -> Result<()> {
     let logger = match mode {
-        LogMode::Normal => Logger::try_with_env_or_str("info")?.log_to_stdout(),
+        LogMode::Normal => Logger::try_with_env_or_str("info")?
+            .format(truncated_format)
+            .log_to_stdout(),
         LogMode::Test => {
             Logger::try_with_env_or_str("debug")?.write_mode(WriteMode::SupportCapture)
         }
