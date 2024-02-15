@@ -569,8 +569,6 @@ class AiciRunner:
             del self.logs_by_seqid[ss]
         else:
             lst = []
-        # this is not quite right, but close
-        index = seq_id
         return self._fork_result(index, lst, text=text, finish_reason=finish_reason)
 
     def pending_logs(self):
@@ -603,6 +601,9 @@ class AiciRunner:
             obj["clone_id"] = clone_id
         self.mid_ops.append(obj)
 
+    def needs_exec_mid(self):
+        return len(self.mid_ops) > 0
+
     def exec_mid(self):
         assert not self.logit_pending
         cmd = {
@@ -611,7 +612,6 @@ class AiciRunner:
         }
         self.cmd.send(cmd)
         self.logit_pending = True
-        return True
 
     def flush_logit_bias(self):
         """
