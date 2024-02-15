@@ -283,7 +283,7 @@ async fn tunnel_info(
         .get("x-user-id")
         .map_or("(no header)", |v| v.to_str().unwrap_or("(invalid header)"));
     log::info!("user: {:?}", name);
-    let url = "https://github.com/microsoft/aici/blob/main/proxy.md";
+    let url = "https://github.com/microsoft/aici/blob/main/docs/proxy.md";
     let model = &data.model_meta.id;
     let stats = data.stats.lock().unwrap().clone();
     let msg = format!(
