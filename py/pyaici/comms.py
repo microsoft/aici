@@ -535,7 +535,7 @@ class AiciRunner:
                 res.get("ff_tokens", []),
             )
         else:
-            return True, 0, []
+            return False, 0, []
 
     def mid_status(self, seq_id: int) -> Tuple[List[int], int]:
         """
