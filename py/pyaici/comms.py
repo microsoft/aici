@@ -159,7 +159,7 @@ class CmdChannel:
         self.cmd_pending = True
         self.cmd_ch.send_json(data)
 
-    async def exec_async(self, op: str, data={}):
+    async def exec_async(self, op: str, data={}, auth_info=None):
         loop = asyncio.get_running_loop()
 
         if self.executor is None:
@@ -181,6 +181,8 @@ class CmdChannel:
         rid = os.urandom(8).hex()
         data["op"] = op
         data["$rid"] = rid
+        if auth_info:
+            data["$auth"] = auth_info
         req = PendingRequest(cmd=data)
         self.pending_reqs[rid] = req
 
@@ -357,9 +359,18 @@ class AiciRunner:
                 ch.send(obj["cmd"])
                 ch.expect("replay")
 
-    async def upload_module_async(self, wasm: bytes):
+    async def upload_module_async(self, wasm: bytes, auth_info = None):
         b64 = base64.b64encode(wasm).decode("utf-8")
-        return await self.side_cmd.exec_async("mk_module", {"binary": b64})
+        return await self.side_cmd.exec_async("mk_module", {"binary": b64}, auth_info=auth_info)
+
+    async def get_tags(self, auth_info = None):
+        return await self.side_cmd.exec_async("get_tags", {}, auth_info=auth_info)
+
+    async def set_tags(self, module_id: str, tags: Union[str, list[str]], auth_info = None):
+        if isinstance(tags, str):
+            tags = [tags]
+        op = {"module_id": module_id, "tags": tags}
+        return await self.side_cmd.exec_async("set_tags", op, auth_info=auth_info)
 
     def usage_json(self, ff_tokens: int, sampled_tokens: int):
         return {
