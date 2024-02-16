@@ -56,20 +56,20 @@ def main(args):
             arg = f.read()
     req_id = "r1"  # arbitrary string
     seq_id = 1  # there can be multiple sequences in a single request
-    runner.instantiate(req_id, empty_tokens, args.controller, arg)
+    res = runner.instantiate(req_id, empty_tokens, args.controller, arg)
+    if isinstance(res, list):
+        ff_tokens = res
+    else:
+        runner.print_logs_for(seq_id, res["forks"][0])
+        exit(1)
+
     runner.assign_seq_id(req_id, seq_id)
     runner.print_logs()
 
-    # we execute first post_pre here, so we get the initial ff_tokens
-    runner.exec_post_pre()
-    runner.print_logs()
-    suspend, num_forks, ff_tokens = runner.pre_status(seq_id)
     to_stop = runner.get_seqs_to_stop()
     if seq_id in to_stop:
         print("AICI decided to stop")
         exit(1)
-    assert not suspend, "forking not implemented"
-    assert num_forks <= 1, "forking not implemented"
 
     prompt = torch.tensor(
         empty_tokens + ff_tokens, dtype=torch.long, device=model.device

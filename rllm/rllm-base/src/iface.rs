@@ -2,12 +2,12 @@ use crate::HashMap;
 use aici_abi::{
     bytes::{limit_bytes, limit_str},
     toktree::TokTrie,
-    InitPromptResult,
 };
 use aicirt::{
     api::{
         AiciMidProcessReq, AiciMidProcessResp, AiciPostPreProcessReq, AiciPostPreProcessResp,
-        AuthInfo, GetTagsResp, InstantiateReq, MkModuleReq, MkModuleResp, SetTagsReq, TokensResp,
+        AiciPreProcessResultInner, AuthInfo, GetTagsResp, InstantiateReq, MkModuleReq,
+        MkModuleResp, SequenceResult, SetTagsReq, TokensResp,
     },
     futexshm::ClientChannel,
     msgchannel::MessageChannel,
@@ -286,7 +286,7 @@ impl AsyncCmdChannel {
         &self,
         req: InstantiateReq,
         authinfo: AuthInfo,
-    ) -> Result<InitPromptResult> {
+    ) -> Result<SequenceResult<AiciPreProcessResultInner>> {
         self.exec("instantiate", req, authinfo).await
     }
 

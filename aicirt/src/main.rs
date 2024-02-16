@@ -476,8 +476,16 @@ impl ModuleRegistry {
             })
             .collect::<Vec<_>>();
 
-        ensure_user!(wasm_files.len() > 0, "no wasm files found (selector={:?})", selector);
-        ensure_user!(wasm_files.len() == 1, "too many wasm files found (selector={:?})", selector);
+        ensure_user!(
+            wasm_files.len() > 0,
+            "no wasm files found (selector={:?})",
+            selector
+        );
+        ensure_user!(
+            wasm_files.len() == 1,
+            "too many wasm files found (selector={:?})",
+            selector
+        );
 
         let wasm_file = wasm_files[0];
         let upd = wasm_file["updated_at"]
@@ -700,15 +708,17 @@ impl Stepper {
                     }
                     outputs.insert(
                         id,
-                        data.json.clone_with(Some(AiciPreProcessResultInner {
-                            suspend: data.suspend,
-                            num_forks: data.num_forks,
-                            ff_tokens: data.ff_tokens,
-                        })),
+                        data.map_result(|pp| {
+                            if pp.suspend {
+                                assert!(pp.num_forks == 1);
+                            }
+                            AiciPreProcessResultInner {
+                                suspend: pp.suspend,
+                                num_forks: pp.num_forks,
+                                ff_tokens: pp.ff_tokens,
+                            }
+                        }),
                     );
-                    if data.suspend {
-                        assert!(data.num_forks == 1);
-                    }
                 }
                 Err(e) => self.worker_error(id, &mut outputs, e),
             }

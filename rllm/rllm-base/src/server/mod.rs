@@ -527,7 +527,7 @@ pub async fn server_main<ME: ModelExec>(
     mut args: RllmCliArgs,
     mut model_args: ME::ModelLoaderArgs,
 ) -> () {
-    // we setenv, so that aicirt process also gets it
+    // we set env, so that aicirt process also gets it
     match &args.log {
         Some(v) => std::env::set_var("RUST_LOG", v),
         None => {}

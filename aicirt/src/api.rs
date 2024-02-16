@@ -100,6 +100,18 @@ impl<T> SequenceResult<T> {
             micros: self.micros,
         }
     }
+    pub fn map_result<S, F>(self, f: F) -> SequenceResult<S>
+    where
+        F: FnOnce(T) -> S,
+    {
+        SequenceResult {
+            error: self.error,
+            result: self.result.map(f),
+            storage: self.storage,
+            logs: self.logs,
+            micros: self.micros,
+        }
+    }
 }
 
 #[derive(Serialize, Deserialize)]

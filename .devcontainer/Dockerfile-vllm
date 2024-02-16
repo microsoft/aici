@@ -1,7 +1,7 @@
 # syntax = edrevo/dockerfile-plus
 # ^^^ this line enables the INCLUDE+ directive
 
-FROM nvcr.io/nvidia/pytorch:23.09-py3
+FROM nvcr.io/nvidia/pytorch:23.10-py3
 
 INCLUDE+ cuda-settings.dockerfile
 INCLUDE+ common.dockerfile
@@ -15,11 +15,9 @@ RUN pip install -r /tmp/requirements.txt
 # RUN pip install -v -U git+https://github.com/facebookresearch/xformers.git@main#egg=xformers
 
 # takes forever!
-RUN pip install git+https://github.com/NVIDIA/TransformerEngine.git@stable
+# RUN pip install git+https://github.com/NVIDIA/TransformerEngine.git@stable
 # RUN pip install typing_extensions==4.5.0
-
-RUN pip install -U flash-attn
-
+# RUN pip install -U flash-attn
 
 # RUN pip install torch==2.1.0 nvidia-cuda-runtime
 # the .so file seems to be missing

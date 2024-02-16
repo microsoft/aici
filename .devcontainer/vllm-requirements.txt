@@ -1,19 +1,25 @@
+# vllm: requirements.txt
 ninja  # For faster builds.
 psutil
-ray >= 2.5.1
-pandas  # Required for Ray data.
+ray >= 2.9
 sentencepiece  # Required for LLaMA tokenizer.
 numpy
-torch == 2.1.0
-transformers >= 4.33.1  # Required for Code Llama.
-xformers >= 0.0.21
+torch == 2.1.2
+transformers >= 4.37.0 # Required for Qwen2
+xformers == 0.0.23.post1  # Required for CUDA 12.1.
 fastapi
-uvicorn
-pydantic < 2  # Required for OpenAI server.
+uvicorn[standard]
+pydantic >= 2.0  # Required for OpenAI server.
+aioprometheus[starlette]
+pynvml == 11.5.0
+triton >= 2.1.0
+cupy-cuda12x == 12.3.0  # Required for CUDA graphs. CUDA 11.8 users should install cupy-cuda11x instead.
 
+# vllm: requirements-dev.txt
 # formatting
 yapf==0.32.0
-pylint==2.8.2
+toml==0.10.2
+ruff==0.1.5
 
 # type checking
 mypy==0.991
@@ -24,7 +30,23 @@ types-setuptools
 # testing
 pytest
 pytest-forked
+pytest-asyncio
+httpx
+einops # required for MPT
+flash_attn # required for HuggingFace's llama implementation
+openai
+requests
+# ray - XXX
 
+# vllm: requirements-build.txt
+# Should be mirrored in pyproject.toml
+ninja
+packaging
+setuptools>=49.4.0
+# torch==2.1.2 - XXX
+wheel
+
+# non-vllm:
 ujson
 posix_ipc
 accelerate

@@ -159,7 +159,7 @@ class CmdChannel:
         self.cmd_pending = True
         self.cmd_ch.send_json(data)
 
-    async def exec_async(self, op: str, data={}):
+    async def exec_async(self, op: str, data={}, auth_info=None):
         loop = asyncio.get_running_loop()
 
         if self.executor is None:
@@ -181,6 +181,8 @@ class CmdChannel:
         rid = os.urandom(8).hex()
         data["op"] = op
         data["$rid"] = rid
+        if auth_info:
+            data["$auth"] = auth_info
         req = PendingRequest(cmd=data)
         self.pending_reqs[rid] = req
 
@@ -238,16 +240,6 @@ class CmdChannel:
 class AiciRunner:
     instance = None
 
-    @staticmethod
-    def from_cli(args):
-        aici = AiciRunner(
-            rtpath=args.aici_rt,
-            tokenizer=args.aici_tokenizer,
-            trace_file=args.aici_trace,
-            rtargs=args.aici_rtarg,
-        )
-        return aici
-
     def __init__(
         self,
         rtpath,
@@ -288,6 +280,7 @@ class AiciRunner:
         self.pre_ops = []
         self.mid_ops = []
         self.freed_seq_ids = []
+        self.pending_instantiate_results = {}
 
         self.wasm_pre_timer = BenchTimer("wasm_pre")
         self.wasm_pre_timer_send = BenchTimer("wasm_pre_send")
@@ -366,9 +359,54 @@ class AiciRunner:
                 ch.send(obj["cmd"])
                 ch.expect("replay")
 
-    async def upload_module_async(self, wasm: bytes):
+    async def upload_module_async(self, wasm: bytes, auth_info = None):
         b64 = base64.b64encode(wasm).decode("utf-8")
-        return await self.side_cmd.exec_async("mk_module", {"binary": b64})
+        return await self.side_cmd.exec_async("mk_module", {"binary": b64}, auth_info=auth_info)
+
+    async def get_tags(self, auth_info = None):
+        return await self.side_cmd.exec_async("get_tags", {}, auth_info=auth_info)
+
+    async def set_tags(self, module_id: str, tags: Union[str, list[str]], auth_info = None):
+        if isinstance(tags, str):
+            tags = [tags]
+        op = {"module_id": module_id, "tags": tags}
+        return await self.side_cmd.exec_async("set_tags", op, auth_info=auth_info)
+
+    def usage_json(self, ff_tokens: int, sampled_tokens: int):
+        return {
+            "sampled_tokens": sampled_tokens,
+            "ff_tokens": ff_tokens,
+            "cost": 2 * sampled_tokens + ff_tokens,
+        }
+
+    def run_json(self, forks: List[dict], usage: dict):
+        return {
+            "object": "run",
+            "forks": forks,
+            "usage": usage,
+        }
+
+    def _save_instantiate_result(self, req_id: str, res: dict):
+        if res["error"]:
+            r = self._fork_result(0, [res], finish_reason="fail")
+            return self.run_json([r], self.usage_json(0, 0))
+        else:
+            self.pending_instantiate_results[req_id] = res
+            return res["result"]["ff_tokens"]
+
+    def initial_json(self, req_id: str, model: str):
+        return {
+            "object": "initial-run",
+            "id": req_id,
+            "created": int(time.monotonic()),
+            "model": model,
+        }
+
+    def final_data(self):
+        return "data: [DONE]\n\n"
+
+    def data_line(self, data: dict):
+        return f"data: {json.dumps(data)}\n\n"
 
     async def instantiate_async(
         self,
@@ -386,14 +424,17 @@ class AiciRunner:
             module_id (str): The ID of the WASM constraint module (SHA256 hash).
             module_arg (str or dict): The argument for the module.
         """
-        return await self.side_cmd.exec_async(
-            "instantiate",
-            {
-                "req_id": req_id,
-                "prompt": prompt,
-                "module_id": module_id,
-                "module_arg": module_arg,
-            },
+        return self._save_instantiate_result(
+            req_id,
+            await self.side_cmd.exec_async(
+                "instantiate",
+                {
+                    "req_id": req_id,
+                    "prompt": prompt,
+                    "module_id": module_id,
+                    "module_arg": module_arg,
+                },
+            ),
         )
 
     def instantiate(
@@ -412,20 +453,27 @@ class AiciRunner:
             module_id (str): The ID of the WASM constraint module (SHA256 hash).
             module_arg (str or dict): The argument for the module.
         """
-        return self.side_cmd.exec(
-            "instantiate",
-            {
-                "req_id": req_id,
-                "prompt": prompt,
-                "module_id": module_id,
-                "module_arg": module_arg,
-            },
+        return self._save_instantiate_result(
+            req_id,
+            self.side_cmd.exec(
+                "instantiate",
+                {
+                    "req_id": req_id,
+                    "prompt": prompt,
+                    "module_id": module_id,
+                    "module_arg": module_arg,
+                },
+            ),
         )
 
     def assign_seq_id(self, req_id: str, seq_id: int):
         """
         Assign a sequence ID (number) to a given request ID (passed to .instantiate() before).
         """
+        if req_id in self.pending_instantiate_results:
+            res = self.pending_instantiate_results[req_id]
+            del self.pending_instantiate_results[req_id]
+            self.logs_by_seqid[str(seq_id)] = [res]
         self.pre_ops.append({"req_id": req_id, "id": seq_id})
 
     def tokens_generated(self, seq_id: int, tokens: List[int], backtrack: int = 0):
@@ -498,7 +546,7 @@ class AiciRunner:
                 res.get("ff_tokens", []),
             )
         else:
-            return True, 0, []
+            return False, 0, []
 
     def mid_status(self, seq_id: int) -> Tuple[List[int], int]:
         """
@@ -512,7 +560,17 @@ class AiciRunner:
             res.get("backtrack", 0),
         )
 
-    def seq_logs(self, seq_id: int) -> dict:
+    def _fork_result(self, index: int, lst: List[dict], text="", finish_reason=None) -> dict:
+        return {
+            "index": index,
+            "finish_reason": finish_reason,
+            "text": text,
+            "error": "\n".join([e["error"] for e in lst if e["error"]]),
+            "logs": "\n".join([e["logs"] for e in lst if e["logs"]]),
+            "storage": [q for e in lst for q in e["storage"]],
+        }
+
+    def seq_logs(self, seq_id: int, index=0, text="", finish_reason=None) -> dict:
         """
         Get the logs for a given sequence ID.
         """
@@ -522,35 +580,30 @@ class AiciRunner:
             del self.logs_by_seqid[ss]
         else:
             lst = []
-        r = {
-            "index": seq_id,  # this is not quite right, but close
-            # "finish_reason": None,
-            # "text": "",
-            "error": "\n".join([e["error"] for e in lst if e["error"]]),
-            "logs": "\n".join([e["logs"] for e in lst if e["logs"]]),
-            "storage": [q for e in lst for q in e["storage"]],
-        }
-        return r
+        return self._fork_result(index, lst, text=text, finish_reason=finish_reason)
 
     def pending_logs(self):
         """
         Get the logs for the last step.
         """
         return [int(q) for q in self.logs_by_seqid.keys()]
-    
-    def print_logs(self):   
+
+    def print_logs_for(self, seq_id:int, r = None):
+        r = r or self.seq_logs(seq_id)
+        lines: str = r["logs"]
+        if lines:
+            for line in lines.split("\n"):
+                if line:
+                    print(f"[{seq_id}] {line}")
+        lines: str = r["error"]
+        if lines:
+            for line in lines.split("\n"):
+                if line:
+                    print(f"[{seq_id}] ERR {line}")
+
+    def print_logs(self):
         for seq_id in self.pending_logs():
-            r = self.seq_logs(seq_id)
-            lines: str = r["logs"]
-            if lines:
-                for line in lines.split("\n"):
-                    if line:
-                        print(f"[{seq_id}] {line}")
-            lines: str = r["error"]
-            if lines:
-                for line in lines.split("\n"):
-                    if line:
-                        print(f"[{seq_id}] ERR {line}")
+            self.print_logs_for(seq_id)
 
     def add_mid(self, id: int, clone_id: Optional[int] = None):
         assert not self.logit_pending
@@ -558,6 +611,9 @@ class AiciRunner:
         if clone_id is not None:
             obj["clone_id"] = clone_id
         self.mid_ops.append(obj)
+
+    def needs_exec_mid(self):
+        return len(self.mid_ops) > 0
 
     def exec_mid(self):
         assert not self.logit_pending
@@ -567,7 +623,6 @@ class AiciRunner:
         }
         self.cmd.send(cmd)
         self.logit_pending = True
-        return True
 
     def flush_logit_bias(self):
         """
@@ -589,11 +644,12 @@ class AiciRunner:
         self._add_logs(self.last_resp)
         n: int = data["num_seqs"]
         assert len(self.mid_ops) == n
+        seq_id_to_idx = {int(q["id"]): i for i, q in enumerate(self.mid_ops)}
         self.mid_ops = []
         arr = np.frombuffer(
             self.bin_shm, dtype=np.float32, offset=0, count=n * self.vocab_size
         ).reshape([n, self.vocab_size])
-        return arr
+        return seq_id_to_idx, arr
 
     def stop(self):
         """

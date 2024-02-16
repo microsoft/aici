@@ -45,6 +45,7 @@ pub struct AddRequest {
     pub prompt: Vec<Token>,
     pub sampling_params: SamplingParams,
     pub expected: Option<ExpectedGeneration>,
+    pub init_result: Option<SequenceResult>,
 }
 
 pub enum Repo {
@@ -285,6 +286,10 @@ impl<ME: ModelExec> RllmEngine<ME> {
 
     pub fn queue_request(&mut self, req: AddRequest) -> Result<()> {
         let mut seq = Sequence::new(self.seq_mgr.new_sequence(), &req.prompt);
+        match req.init_result {
+            Some(r) => seq.aici_logs.push(r.clone()),
+            None => {}
+        }
         seq.expected = req.expected;
         seq.pending_fork_ids = (1..req.sampling_params.n)
             .map(|_| self.seq_mgr.new_sequence())
@@ -327,6 +332,7 @@ impl<ME: ModelExec> RllmEngine<ME> {
                 ..SamplingParams::default()
             },
             expected: Some(exp_gen),
+            init_result: None,
         })
     }
 
@@ -342,6 +348,7 @@ impl<ME: ModelExec> RllmEngine<ME> {
             prompt: tokens,
             sampling_params,
             expected: None,
+            init_result: None,
         })
     }
 
