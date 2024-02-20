@@ -85,11 +85,11 @@ struct Cli {
     futex: bool,
 
     /// Size of JSON comm buffer in megabytes
-    #[arg(long, default_value = "8")]
+    #[arg(long, default_value = "128")]
     json_size: usize,
 
     /// Size of binary comm buffer in megabytes
-    #[arg(long, default_value = "16")]
+    #[arg(long, default_value = "64")]
     bin_size: usize,
 
     /// How many milliseconds to spin-wait for a message over IPC and SHM.
@@ -1118,15 +1118,14 @@ fn save_tokenizer(cli: &Cli) {
 fn install_from_cmdline(cli: &Cli, wasm_ctx: WasmContext, shm: Shm) {
     let name = cli.module.as_deref().unwrap();
     let mut reg = ModuleRegistry::new(wasm_ctx, shm).unwrap();
-    let module_id = if name.len() == 64 && name.chars().all(|c| c.is_digit(16)) {
-        name.to_string()
-    } else {
+    let module_id = if name.ends_with(".wasm") {
         let wasm_bytes = fs::read(name).unwrap();
-
         let json = reg
             .create_module(wasm_bytes, AuthInfo::local_user())
             .unwrap();
         json.module_id
+    } else {
+        name.to_string()
     };
 
     println!("{}", module_id);
@@ -1139,7 +1138,7 @@ fn install_from_cmdline(cli: &Cli, wasm_ctx: WasmContext, shm: Shm) {
         };
         reg.instantiate(InstantiateReq {
             req_id: req_id.clone(),
-            prompt: json!("Hello world!"),
+            prompt: json!(""),
             module_id: module_id.clone(),
             module_arg: arg,
         })
@@ -1192,7 +1191,11 @@ fn main() -> () {
     let bin_shm = Shm::new(
         &MessageChannel::shm_name(&cli.prefixed_name("bin", "")),
         limits.logit_memory_bytes,
-        shm::Unlink::None,
+        if cli.module.is_none() {
+            shm::Unlink::None
+        } else {
+            shm::Unlink::Pre
+        },
     )
     .unwrap();
 
