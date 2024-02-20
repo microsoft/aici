@@ -1,7 +1,8 @@
+import sys
 import pyaici.server as aici
 
 # note that VSCode syntax highlighting is not perfect r""" ... """ (it assumes regexp)
-c_yacc = r"""
+apalache = r"""
 
 %start T
 %%
@@ -17,6 +18,9 @@ typeConst
 
 typeVar
     : "/[a-z]/" ;
+
+aliasName
+    : "/[a-z]+(?:[A-Z][a-z]*)*/" ;
 
 List
     : T
@@ -38,41 +42,60 @@ T
     | "Seq" "(" T ")"
     // tuples
     | "<<" List ">>"
-    // operators
-    | "(" List ")" "=>" T
     // constant types (uninterpreted types)
     | typeConst
     // type variables
     | typeVar
     // parentheses, e.g., to change associativity of functions
     | "(" T ")"
+    // operators
+    | "(" T ")" "=>" T
+    | "(" List ")" "=>" T
+    // type all rules
+    | "$" aliasName
     ;
-
+  
 %%
-"""
-
-sample_apalache = """
-(Str, Bool) => Bool
-Set(Int) -> Set(Int)
 """
 
 async def test_grammar():
     await aici.FixedTokens("Start")
 
-
-tokens = aici.tokenize(sample_apalache)
-print(tokens)
-constr = aici.CfgConstraint(c_yacc)
-outp = []
-for t in tokens:
-    if not constr.token_allowed(t):
-        print(f"Token {t} not allowed")
-        print("OK: " + repr(aici.detokenize(outp).decode("utf-8", "ignore")))
-        print("fail: " + repr(aici.detokenize([t]).decode("utf-8", "ignore")))
-        break
-    outp.append(t)
-    constr.append_token(t)
-print(f"EOS allowed: {constr.eos_allowed()}")
-
 aici.test(test_grammar())
-print("Hello")
+
+
+## define a list of test inputs
+inputs = [
+    "Int",
+    "Int",
+    "Str",
+    "(Int)",
+    "Bool",
+    "Int -> Int",
+    "Set(Int)",
+    "Seq(Int)",
+    "Set(Int) -> Set(Int)",
+    "Set(<<Int, Int>> -> Int)",
+    "<<Int,Int>>",
+    "(Int,Int) => Int",
+    "(Int,Bool) => Int",
+    "((Int,Bool) => Int) => Bool"
+]
+
+## loop over the inputs and test the grammar
+for input in inputs:
+    print(f"Testing input: {input}")
+    tokens = aici.tokenize(input)
+    # print(tokens)
+    constr = aici.CfgConstraint(apalache)
+    outp = []
+    for t in tokens:
+        if not constr.token_allowed(t):
+            ## Abort/terminate if token is not allowed.
+            print(f"Token {t} not allowed")
+            print("OK: " + repr(aici.detokenize(outp).decode("utf-8", "ignore")))
+            print("fail: " + repr(aici.detokenize([t]).decode("utf-8", "ignore")))
+            sys.exit(1)
+        outp.append(t)
+        constr.append_token(t)
+    # print(f"EOS allowed: {constr.eos_allowed()}")
