@@ -1,4 +1,3 @@
-import sys
 import pyaici.server as aici
 
 # note that VSCode syntax highlighting is not perfect r""" ... """ (it assumes regexp)
@@ -77,7 +76,39 @@ T12
 """
 
 
-# async def gen_and_test_grammar():
+async def gen_and_test_grammar():
+    await aici.FixedTokens(
+        """
+            ---- MODULE Counter ----
+            VARIABLE
+                        b
+
+            Init == b = TRUE
+            Next == b' = FALSE
+            ====
+
+            The type of the variable declaration of b in the following TLA+ spec is:
+        """
+    )
+    tokens = await aici.gen_tokens(yacc=apalache, max_tokens=10, store_var="b")
+    print(tokens)
+
+    ## No need to tokenize the input, as it is already tokenized?!
+    # tokens = aici.tokenize(input)
+    constr = aici.CfgConstraint(apalache)
+    outp = []
+    for t in tokens:
+        print(f"Testing token: {t}")
+        if not constr.token_allowed(t):
+            ## Abort/terminate if token is not allowed.
+            print(f"Token {t} not allowed")
+            print("OK: " + repr(aici.detokenize(outp).decode("utf-8", "ignore")))
+            print("fail: " + repr(aici.detokenize([t]).decode("utf-8", "ignore")))
+            break
+        outp.append(t)
+        constr.append_token(t)
+    print(f"EOS allowed: {constr.eos_allowed()}")
+
 
 async def test_grammar():
     await aici.FixedTokens("Start")
