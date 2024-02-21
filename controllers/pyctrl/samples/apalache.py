@@ -81,43 +81,42 @@ T12
 
 async def test_grammar():
     await aici.FixedTokens("Start")
+    ## define a list of test inputs
+    inputs = [
+        "Int",
+        "Int",
+        "Str",
+        "(Int)",
+        "Bool",
+        "Int -> Int",
+        "Set(Int)",
+        "Seq(Int)",
+        "Set(Int) -> Set(Int)",
+        "Set(<<Int, Int>> -> Int)",
+        "<<Int,Int>>",
+        "(Int,Int) => Int",
+        "(Int,Bool) => Int",
+        "((Int,Bool) => Int) => Bool"
+        # "$aalias",
+        # "Variant(va)"
+    ]
+
+    ## loop over the inputs and test the grammar
+    for input in inputs:
+        print(f"Testing input: {input}")
+        tokens = aici.tokenize(input)
+        # print(tokens)
+        constr = aici.CfgConstraint(apalache)
+        outp = []
+        for t in tokens:
+            if not constr.token_allowed(t):
+                ## Abort/terminate if token is not allowed.
+                print(f"Token {t} not allowed")
+                print("OK: " + repr(aici.detokenize(outp).decode("utf-8", "ignore")))
+                print("fail: " + repr(aici.detokenize([t]).decode("utf-8", "ignore")))
+                break
+            outp.append(t)
+            constr.append_token(t)
+        print(f"EOS allowed: {constr.eos_allowed()}")
 
 aici.test(test_grammar())
-
-
-## define a list of test inputs
-inputs = [
-    "Int",
-    "Int",
-    "Str",
-    "(Int)",
-    "Bool",
-    "Int -> Int",
-    "Set(Int)",
-    "Seq(Int)",
-    "Set(Int) -> Set(Int)",
-    "Set(<<Int, Int>> -> Int)",
-    "<<Int,Int>>",
-    "(Int,Int) => Int",
-    "(Int,Bool) => Int",
-    "((Int,Bool) => Int) => Bool",
-    "$aalias",
-]
-
-## loop over the inputs and test the grammar
-for input in inputs:
-    print(f"Testing input: {input}")
-    tokens = aici.tokenize(input)
-    # print(tokens)
-    constr = aici.CfgConstraint(apalache)
-    outp = []
-    for t in tokens:
-        if not constr.token_allowed(t):
-            ## Abort/terminate if token is not allowed.
-            print(f"Token {t} not allowed")
-            print("OK: " + repr(aici.detokenize(outp).decode("utf-8", "ignore")))
-            print("fail: " + repr(aici.detokenize([t]).decode("utf-8", "ignore")))
-            sys.exit(1)
-        outp.append(t)
-        constr.append_token(t)
-    # print(f"EOS allowed: {constr.eos_allowed()}")
