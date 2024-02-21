@@ -10,17 +10,19 @@ apalache = r"""
 SKIP
     : "/\n?[ \t\v\f]*/" ; // white-space, newline, tabs, ...
 
+// Prefix all reguluar expressions to disambiguate them.
+// The tool first tries a regex and only then looks at the grammar. :-(
 field
-    : "/[a-zA-Z_][a-zA-Z0-9_]*/" ;
+    : "/f[a-zA-Z_][a-zA-Z0-9_]*/" ;
 
 typeConst
-    : "/[A-Z_][A-Z0-9_]*/" ;
+    : "/t[A-Z_][A-Z0-9_]*/" ;
 
 typeVar
-    : "/[a-z]/" ;
+    : "/v[a-z]?/" ;
 
 aliasName
-    : "/[a-z]+(?:[A-Z][a-z]*)*/" ;
+    : "/a[a-z]+(?:[A-Z][a-z]*)*/" ;
 
 List
     : T
@@ -79,7 +81,8 @@ inputs = [
     "<<Int,Int>>",
     "(Int,Int) => Int",
     "(Int,Bool) => Int",
-    "((Int,Bool) => Int) => Bool"
+    "((Int,Bool) => Int) => Bool",
+    "$aalias",
 ]
 
 ## loop over the inputs and test the grammar
