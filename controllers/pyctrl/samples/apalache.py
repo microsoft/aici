@@ -10,20 +10,6 @@ apalache = r"""
 SKIP
     : "/\n?[ \t\v\f]*/" ; // white-space, newline, tabs, ...
 
-// Prefix all reguluar expressions to disambiguate them.
-// The tool first tries a regex and only then looks at the grammar. :-(
-field
-    : "/f[a-zA-Z_][a-zA-Z0-9_]*/" ;
-
-typeConst
-    : "/t[A-Z_][A-Z0-9_]*/" ;
-
-typeVar
-    : "/v[a-z]?/" ;
-
-aliasName
-    : "/a[a-z]+(?:[A-Z][a-z]*)*/" ;
-
 List
     : T
     | List "," T
@@ -44,21 +30,54 @@ T
     | "Seq" "(" T ")"
     // tuples
     | "<<" List ">>"
-    // constant types (uninterpreted types)
-    | typeConst
-    // type variables
-    | typeVar
     // parentheses, e.g., to change associativity of functions
     | "(" T ")"
     // operators
     | "(" T ")" "=>" T
     | "(" List ")" "=>" T
+    ;
+%%
+"""
+
+t12 = r"""
+  
+// Prefix all reguluar expressions to disambiguate them.
+// The tool first tries a regex and only then looks at the grammar. :-(
+field
+    : "/f[a-zA-Z_][a-zA-Z0-9_]*/" ;
+
+typeConst
+    : "/t[A-Z_][A-Z0-9_]*/" ;
+
+typeVar
+    : "/v[a-z]?/" ;
+
+aliasName
+    : "/a[a-z]+(?:[A-Z][a-z]*)*/" ;
+
+T12  
     // type all rules
-    | "$" aliasName
+    : "$" aliasName
+    // constant types (uninterpreted types)
+    | typeConst
+    // type variables
+    | typeVar
+    // A new record type with a fully defined structure.
+    // The set of fields may be empty. If typeVar is present,
+    // the record type is parameterized (typeVar must be of the 'row' kind).
+    // | "{" field ":" T "," ..."," field ":" T ["," typeVar] "}"
+    // A variant that contains several options,
+    // optionally parameterized (typeVar must be of the "row" kind).
+    // | variantOption "|" ... "|" variantOption "|" [typeVar]
+    // A purely parameterized variant (typeVar must be of the "row" kind).
+    | "Variant" "(" typeVar ")"
     ;
   
 %%
 """
+
+
+# async def gen_and_test_grammar():
 
 async def test_grammar():
     await aici.FixedTokens("Start")
