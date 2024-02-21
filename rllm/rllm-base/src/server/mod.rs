@@ -150,6 +150,10 @@ pub struct RllmCliArgs {
     #[arg(short, long, help_heading = "Model")]
     pub tokenizer: Option<String>,
 
+    /// Host to serve on
+    #[arg(long, default_value_t = String::from("127.0.0.1"), help_heading = "Server")]
+    pub host: String,
+
     /// Port to serve on (localhost:port)
     #[arg(long, default_value_t = 4242, help_heading = "Server")]
     pub port: u16,
@@ -660,9 +664,8 @@ pub async fn server_main<ME: ModelExec>(
         stats,
     };
     let app_data = web::Data::new(app_data);
-    let host = "127.0.0.1";
 
-    println!("Listening at http://{}:{}", host, args.port);
+    println!("Listening at http://{}:{}", args.host, args.port);
     HttpServer::new(move || {
         App::new()
             .wrap(Logger::default())
@@ -678,7 +681,7 @@ pub async fn server_main<ME: ModelExec>(
             .app_data(app_data.clone())
     })
     .workers(3)
-    .bind((host, args.port))
+    .bind((args.host, args.port))
     .expect("failed to start server (bind)")
     .run()
     .await
