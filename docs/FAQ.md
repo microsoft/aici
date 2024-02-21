@@ -9,7 +9,11 @@ You need to find the model's "Instruction format", typically on model's page on 
 
 For example, the [Orca-2-13b model](https://huggingface.co/microsoft/Orca-2-13b) has the following instruction format:
 ```
-<|im_start|>system\n{system_message}<|im_end|>\n<|im_start|>user\n{user_message}<|im_end|>\n<|im_start|>assistant
+<|im_start|>system
+{system_message}<|im_end|>
+<|im_start|>user
+{user_message}<|im_end|>
+<|im_start|>assistant
 ```
 
 The [Mistral-Instruct](https://huggingface.co/mistralai/Mistral-7B-Instruct-v0.1) and [Mixtral-Instruct](https://huggingface.co/mistralai/Mixtral-8x7B-Instruct-v0.1), as well as [CodeLlama-Instruct](https://huggingface.co/codellama/CodeLlama-7b-Instruct-hf) models use:
@@ -30,7 +34,8 @@ system_message = "You are a helpful assistant."
 
 async def ask(user_message: str):
     prompt = f"<|im_start|>system\n{system_message}<|im_end|>\n"
-    prompt += f"<|im_start|>user\n{user_message}<|im_end|>\n<|im_start|>assistant\n"
+    prompt += f"<|im_start|>user\n{user_message}<|im_end|>\n"
+    prompt += "<|im_start|>assistant\n"
     await aici.FixedTokens(prompt)
 
 async def main():
