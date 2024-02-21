@@ -2,7 +2,7 @@ use crate::{
     config::SamplingParams, engine::ExpectedGeneration, LogitsProcessor, SeqId, SequenceManager,
 };
 use aici_abi::{toktree::TokTrie, TokenId};
-use aicirt::api::SequenceResult;
+use aicirt::api::{AiciPostOp, SequenceResult};
 use serde::{Deserialize, Serialize};
 use std::fmt::Debug;
 
@@ -79,8 +79,8 @@ pub struct Sequence {
     pub(crate) has_aici: bool,
     pub(crate) aici_sampling: AiciSampling,
     pub aici_logs: Vec<SequenceResult>,
-    pub pending_fork_ids: Vec<SeqId>,
     pub(crate) expected: Option<ExpectedGeneration>,
+    pub(crate) pending_post_op: Option<AiciPostOp>,
 
     // state for Scheduler and BlockSpaceManager
     pub sched_phase: SchedulingPhase,
@@ -114,7 +114,7 @@ impl Sequence {
             has_aici: false,
             aici_logs: Vec::new(),
             aici_sampling: AiciSampling::Regular,
-            pending_fork_ids: Vec::new(),
+            pending_post_op: None,
             expected: None,
         }
     }
@@ -187,7 +187,7 @@ impl Sequence {
             output_pending: Vec::new(),
             has_aici: self.has_aici,
             aici_logs: Vec::new(),
-            pending_fork_ids: Vec::new(),
+            pending_post_op: None,
             aici_sampling: AiciSampling::Regular,
             expected: None,
         }

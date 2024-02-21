@@ -1,10 +1,9 @@
 use crate::{
-    api::ModuleInstId,
     hostimpl::{
         setup_linker, AiciLimits, GlobalInfo, ModuleData, LOGIT_BIAS_ALLOW, LOGIT_BIAS_DISALLOW,
     },
     shm::Shm,
-    worker::{GroupHandle, RtMidProcessArg},
+    worker::{AiciSeqId, GroupHandle, RtMidProcessArg},
     TimerSet, UserError,
 };
 use aici_abi::{
@@ -182,7 +181,7 @@ impl ModuleInstance {
 
 impl ModuleInstance {
     pub fn new(
-        id: ModuleInstId,
+        id: AiciSeqId,
         ctx: WasmContext,
         module: wasmtime::Module,
         module_arg: String,
@@ -221,7 +220,7 @@ impl ModuleInstance {
         })
     }
 
-    pub fn set_id(&mut self, id: ModuleInstId) {
+    pub fn set_id(&mut self, id: AiciSeqId) {
         self.store.data_mut().id = id;
     }
 
@@ -305,11 +304,18 @@ impl ModuleInstance {
         &mut self,
         op: RtMidProcessArg,
         shm: &Shm,
-    ) -> Result<Option<AiciMidProcessResultInner>> {
+    ) -> Result<AiciMidProcessResultInner> {
+        let bias_offset = op.logit_offset / op.logit_size;
+        let mut sample = AiciMidProcessResultInner {
+            ff_tokens: vec![],
+            backtrack: 0,
+            bias_offset,
+            stop: false,
+        };
         self.store.data_mut().set_mid_process_data(op, shm);
         self.call_func::<WasmAici, ()>("aici_mid_process", self.handle)?;
         match self.proc_result()? {
-            MidProcessResult::SampleWithBias { .. } => Ok(None),
+            MidProcessResult::SampleWithBias { .. } => Ok(sample),
             MidProcessResult::Stop { .. } => {
                 let eos = self.store.data().globals.tokrx_info.tok_eos;
                 self.store
@@ -318,7 +324,8 @@ impl ModuleInstance {
                     .iter_mut()
                     .for_each(|v| *v = LOGIT_BIAS_DISALLOW);
                 self.store.data_mut().logit_ptr[eos as usize] = LOGIT_BIAS_ALLOW;
-                Ok(None)
+                sample.stop = true;
+                Ok(sample)
             }
             MidProcessResult::Splice {
                 mut backtrack,
@@ -355,10 +362,12 @@ impl ModuleInstance {
                         // backtrack needs to include also the next token to be generated
                         backtrack += 1;
                     }
-                    Ok(Some(AiciMidProcessResultInner {
+                    Ok(AiciMidProcessResultInner {
                         ff_tokens,
                         backtrack,
-                    }))
+                        bias_offset,
+                        stop: false,
+                    })
                 }
             }
         }
@@ -430,7 +439,7 @@ impl ModuleInstance {
         self.pending_pre_result = None;
         let res = self.do_mid_process(op, shm);
         // log::info!("mid_process: {:?}", t0.elapsed());
-        self.seq_result("mid", t0, res)
+        self.seq_result("mid", t0, res.map(Some))
     }
 
     pub fn post_process(

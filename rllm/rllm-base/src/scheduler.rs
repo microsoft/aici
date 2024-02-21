@@ -453,7 +453,9 @@ impl<ME: ModelExec> Scheduler<ME> {
             )))
         }
         seq.sched_phase = SchedulingPhase::Finished(reason);
-        self.freed_seq_ids.borrow_mut().push(seq.seq_id.to_num());
+        if seq.has_aici {
+            self.freed_seq_ids.borrow_mut().push(seq.seq_id.to_num());
+        }
         self.seq_mgr.delete(seq.seq_id);
     }
 

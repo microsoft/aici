@@ -1,6 +1,6 @@
 use crate::{
     shm::Shm,
-    worker::{GroupCmd, GroupHandle, GroupResp, RtMidProcessArg},
+    worker::{AiciSeqId, GroupCmd, GroupHandle, GroupResp, RtMidProcessArg},
 };
 use aici_abi::{
     bytes::{clone_vec_as_bytes, limit_str, vec_from_bytes, TokRxInfo},
@@ -26,11 +26,9 @@ pub struct AiciLimits {
     pub max_forks: usize,
 }
 
-type ModuleInstId = crate::api::ModuleInstId;
-
 // this is available to functions called from wasm
 pub struct ModuleData {
-    pub id: ModuleInstId,
+    pub id: AiciSeqId,
     log: Vec<u8>,
     printed_log: usize,
     pub globals: GlobalInfo,
@@ -69,7 +67,7 @@ impl BlobId {
 
 impl ModuleData {
     pub fn new(
-        id: ModuleInstId,
+        id: AiciSeqId,
         limits: &AiciLimits,
         module: &wasmtime::Module,
         module_arg: String,
@@ -462,7 +460,7 @@ pub fn setup_linker(engine: &wasmtime::Engine) -> Result<Arc<wasmtime::Linker<Mo
     linker.func_wrap(
         "env",
         "aici_host_self_seq_id",
-        |caller: wasmtime::Caller<'_, ModuleData>| caller.data().id as u32,
+        |caller: wasmtime::Caller<'_, ModuleData>| caller.data().id.to_wasm(),
     )?;
 
     linker.func_wrap(

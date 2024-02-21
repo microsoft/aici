@@ -1,7 +1,7 @@
+use crate::HashMap;
 use aici_abi::{StorageCmd, TokenId};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use crate::HashMap;
 
 pub type ModuleInstId = usize;
 
@@ -35,7 +35,7 @@ pub struct AiciMidProcessReq {
 
 #[derive(Serialize, Deserialize)]
 pub struct AiciMidProcessResp {
-    pub seqs: HashMap<ModuleInstId, SequenceResult<AiciMidProcessResultInner>>,
+    pub seqs: HashMap<ModuleInstId, Vec<SequenceResult<AiciMidProcessResultInner>>>,
     pub num_seqs: usize,
 }
 
@@ -43,6 +43,8 @@ pub struct AiciMidProcessResp {
 pub struct AiciMidProcessResultInner {
     pub ff_tokens: Vec<TokenId>,
     pub backtrack: u32,
+    pub bias_offset: usize,
+    pub stop: bool,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -60,12 +62,13 @@ pub struct AiciPreOp {
 #[derive(Clone, Serialize, Deserialize, Debug)]
 pub struct AiciMidOp {
     pub id: ModuleInstId,
-    pub clone_id: Option<ModuleInstId>,
 }
 
 #[derive(Serialize, Deserialize)]
 pub struct AiciPostOp {
     pub id: ModuleInstId,
+    pub fork_parent: ModuleInstId,
+    pub fork_idx: u32,
     pub tokens: Vec<Token>,
     #[serde(default)]
     pub backtrack: u32,

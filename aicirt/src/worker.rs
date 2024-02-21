@@ -21,7 +21,7 @@ use anyhow::{anyhow, Result};
 use libc::pid_t;
 use serde::{Deserialize, Serialize};
 use std::{
-    fmt::Debug,
+    fmt::{Debug, Display},
     path::PathBuf,
     rc::Rc,
     sync::Mutex,
@@ -116,6 +116,7 @@ pub type GroupHandle = ProcessHandle<GroupCmd, GroupResp>;
 #[derive(Serialize, Deserialize, Debug)]
 struct ForkerCmd {
     id: String,
+    aici_id: AiciSeqId,
     for_compile: bool,
 }
 
@@ -145,10 +146,7 @@ enum SeqCmd {
         prompt_toks: Option<Vec<TokenId>>,
     },
     Fork {
-        inst_id: ModuleInstId,
-    },
-    SetId {
-        inst_id: ModuleInstId,
+        inst_id: AiciSeqId,
     },
     PostPreProcess {
         data: RtPostPreProcessArg,
@@ -167,7 +165,6 @@ impl SeqCmd {
         match self {
             SeqCmd::Instantiate { .. } => "instantiate",
             SeqCmd::Fork { .. } => "fork",
-            SeqCmd::SetId { .. } => "set_id",
             SeqCmd::MidProcess { .. } => "process",
             SeqCmd::PostPreProcess { .. } => "post_pre_process",
             SeqCmd::RunMain {} => "run_main",
@@ -314,7 +311,7 @@ impl SeqCtx {
                     ForkResult::Child { server } => {
                         set_max_priority();
                         self.server = server;
-                        self.inst_id = inst_id;
+                        self.aici_id = inst_id;
                         self.mutinst().set_id(inst_id);
                         // note that this is sent over the child channel
                         // we do it this way, so that we come back to dispatch_loop()
@@ -334,7 +331,7 @@ impl SeqCtx {
                 let _ = module_id;
                 let ch = std::mem::take(&mut self.query);
                 let mut inst = ModuleInstance::new(
-                    424242,
+                    self.aici_id,
                     self.wasm_ctx.clone(),
                     module,
                     module_arg,
@@ -357,11 +354,6 @@ impl SeqCtx {
                 Ok(SeqResp::InitPrompt {
                     json: serde_json::to_string(&r)?,
                 })
-            }
-            SeqCmd::SetId { inst_id } => {
-                self.inst_id = inst_id;
-                self.mutinst().set_id(inst_id);
-                ok()
             }
             SeqCmd::PostPreProcess { data } => {
                 let post_json = if let Some(req) = data.post_op {
@@ -445,14 +437,45 @@ struct SeqCtx {
     server: TypedServer<SeqCmd, SeqResp>,
     wasm_ctx: WasmContext,
     query: Option<GroupHandle>,
-    inst_id: ModuleInstId,
+    aici_id: AiciSeqId,
     modinst: Option<ModuleInstance>,
     shm: Rc<Shm>,
     pre_timer: TimerRef,
 }
 
+#[repr(transparent)]
+#[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct AiciSeqId(usize);
+
+impl AiciSeqId {
+    pub fn first() -> AiciSeqId {
+        AiciSeqId(1000) // make them visually distinct from vLLM/rLLM seq ids
+    }
+    pub fn next(&mut self) -> AiciSeqId {
+        self.0 = self.0.checked_add(1).expect("overflow");
+        self.clone()
+    }
+    pub fn to_wasm(&self) -> u32 {
+        self.0 as u32
+    }
+}
+
+impl Debug for AiciSeqId {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "~{}", self.0)
+    }
+}
+
+impl Display for AiciSeqId {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "~{}", self.0)
+    }
+}
+
 pub struct SeqWorkerHandle {
     pub req_id: String,
+    pub aici_id: AiciSeqId,
+    pub iface_id: Option<ModuleInstId>,
     handle: SeqHandle,
 }
 
@@ -463,26 +486,21 @@ impl Drop for SeqWorkerHandle {
 }
 
 impl SeqWorkerHandle {
-    pub fn set_id(&self, id: ModuleInstId) -> Result<()> {
-        self.handle.send_cmd_expect_ok(
-            SeqCmd::SetId { inst_id: id },
-            Duration::from_millis(QUICK_OP_MS),
-        )
-    }
-
     pub fn run_main(&self) -> Result<()> {
         self.handle
             .send_cmd_expect_ok(SeqCmd::RunMain {}, Duration::from_secs(120))
     }
 
-    pub fn fork(&self, target_id: ModuleInstId) -> Result<SeqWorkerHandle> {
+    pub fn fork(&self, target_id: AiciSeqId) -> Result<SeqWorkerHandle> {
         match self.handle.send_cmd_with_timeout(
             SeqCmd::Fork { inst_id: target_id },
             Duration::from_millis(QUICK_OP_MS),
         )? {
             SeqResp::Fork { handle } => {
                 let res = SeqWorkerHandle {
+                    aici_id: target_id,
                     req_id: self.req_id.clone(),
+                    iface_id: None,
                     handle: handle.to_client(),
                 };
                 match res
@@ -610,6 +628,7 @@ impl GroupCtx {
 }
 
 pub struct WorkerForker {
+    next_id: Mutex<AiciSeqId>,
     limits: AiciLimits,
     fork_worker: ForkerHandle,
 }
@@ -639,6 +658,7 @@ fn forker_dispatcher(
 
         let cmd = server.recv_req(wasm_ctx.limits.busy_wait_duration);
         let cmd_id = cmd.id;
+        let aici_id = cmd.aici_id;
         let for_compile = cmd.for_compile;
 
         // fork the seq worker first
@@ -654,7 +674,7 @@ fn forker_dispatcher(
                     wasm_ctx,
                     shm: Rc::new(shm),
                     query: None,
-                    inst_id: 424242,
+                    aici_id,
                     modinst: None,
                     pre_timer,
                 };
@@ -738,11 +758,16 @@ impl WorkerForker {
                 unsafe { libc::signal(libc::SIGUSR1, clean_exit as usize) };
                 WorkerForker {
                     fork_worker: handle.to_client(),
+                    next_id: Mutex::new(AiciSeqId::first()),
                     limits,
                 }
             }
             ForkResult::Child { server } => forker_dispatcher(server, wasm_ctx, shm),
         }
+    }
+
+    pub fn next_aici_id(&self) -> AiciSeqId {
+        self.next_id.lock().unwrap().next()
     }
 
     pub fn instantiate(
@@ -776,11 +801,15 @@ impl WorkerForker {
             )
         };
 
+        let aici_id = self.next_aici_id();
         let resp = self.fork_worker.send_cmd(ForkerCmd {
             id: req.req_id.clone(),
+            aici_id,
             for_compile: false,
         })?;
         let res = SeqWorkerHandle {
+            aici_id,
+            iface_id: None,
             req_id: req.req_id.clone(),
             handle: resp.0.to_client(),
         };
@@ -804,13 +833,17 @@ impl WorkerForker {
 
     pub fn compile(&self, wasm: Vec<u8>) -> Result<Vec<u8>> {
         let id = "compile".to_string();
+        let aici_id = self.next_aici_id();
         let resp = self.fork_worker.send_cmd(ForkerCmd {
             id: id.clone(),
+            aici_id,
             for_compile: true,
         })?;
 
         // res.drop() kills handle
         let res = SeqWorkerHandle {
+            aici_id,
+            iface_id: None,
             req_id: id.clone(),
             handle: resp.0.to_client(),
         };

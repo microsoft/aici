@@ -35,7 +35,7 @@ pub struct InitPromptArg {
 pub struct InitPromptResult {}
 
 #[repr(transparent)]
-#[derive(Serialize, Deserialize, Debug, PartialEq, Eq)]
+#[derive(Serialize, Deserialize, Debug, PartialEq, Eq, Clone)]
 pub struct SeqId(pub u32);
 
 #[derive(Serialize, Deserialize, Debug)]
