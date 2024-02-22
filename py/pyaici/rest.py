@@ -224,9 +224,6 @@ def run_controller(
                     if w:
                         storage[w["name"]] = w["value"]
                 err = ch.get("error", "")
-                if err:
-                    res["error"] = err
-                    print(f"*** Error in [{idx}]: {err}")
                 if log_level > 2:
                     l = ch["logs"].rstrip("\n")
                     if l:
@@ -241,6 +238,12 @@ def run_controller(
                     elif log_level > 0:
                         print(ch["text"], end="")
                         sys.stdout.flush()
+                if err:
+                    res["error"] = err
+                    if log_level > 2 and err in ch["logs"]:
+                        print(f"*** Error in [{idx}]")
+                    else:
+                        print(f"*** Error in [{idx}]: {err}")
                 logs[idx] += ch["logs"]
                 texts[idx] += ch["text"]
         elif decoded_line == "data: [DONE]":
