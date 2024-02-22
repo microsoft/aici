@@ -223,8 +223,9 @@ class ConstrainedToken(NextToken):
         if log_level >= 2:
             print("ALLOW:", bias)
         if bias.num_set() == 0:
-            print("Constraint doesn't allow any tokens")
-            raise StopIteration
+            if log_level >= 1:
+                print("Constraint doesn't allow any tokens; adding EOS")
+            bias[eos_token()] = True
         return MidProcessResult.bias(bias)
 
     def post_process(self, tokens: List[Token]):
