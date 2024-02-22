@@ -83,7 +83,7 @@ class TokenSet(Sequence[bool]):
 
     def __len__(self) -> int:
         """
-        Number of all tokens (not only in the set).
+        Number of all possible tokens (whether they are in the set or not).
         """
         ...
 
@@ -93,6 +93,11 @@ class TokenSet(Sequence[bool]):
         """
         ...
 
+    def num_set(self) -> int:
+        """
+        Number of tokens in the set.
+        """
+        ...
 
 class Constraint:
     def __init__(self):

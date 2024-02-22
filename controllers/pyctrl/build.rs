@@ -3,7 +3,7 @@ fn main() {
         let display = entry.display();
         println!("cargo:rerun-if-changed={display}");
     }
-    for entry in glob::glob("../pyaici/server*.py")
+    for entry in glob::glob("../../py/pyaici/server*.py")
         .expect("exists?")
         .flatten()
     {

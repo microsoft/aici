@@ -25,6 +25,7 @@ import pyaici.server_native as _aici
 Token = int
 SeqId = int
 
+log_level = 1
 
 def get_tokens() -> List[Token]:
     """
@@ -168,7 +169,8 @@ class FixedTokens(NextToken):
         """
         super().__init__()
         self.fixed_tokens: List[Token] = tokenize(text)
-        print("FIXED", repr(detokenize(self.fixed_tokens).decode(errors="replace")))
+        if log_level >= 1:
+            print("FIXED", repr(detokenize(self.fixed_tokens).decode(errors="replace")))
         self.following = following
 
     def pre_process(self) -> PreProcessResult:
@@ -181,7 +183,8 @@ class FixedTokens(NextToken):
         if self.following is not None:
             backtrack = len(get_tokens()) - self.following.ptr
             assert backtrack >= 0
-            print("BACKTRACK", backtrack)
+            if log_level >= 1:
+                print("BACKTRACK", backtrack)
         return MidProcessResult.splice(backtrack, tokens=self.fixed_tokens)
 
 
@@ -216,6 +219,11 @@ class ConstrainedToken(NextToken):
         if self._constraint is None:
             self._constraint = self.mk_constraint()
         self._constraint.allow_tokens(bias)
+        if log_level >= 2:
+            print("ALLOW:", bias)
+        if bias.num_set() == 0:
+            print("Constraint doesn't allow any tokens")
+            raise StopIteration
         return MidProcessResult.bias(bias)
 
     def post_process(self, tokens: List[Token]):
@@ -497,7 +505,8 @@ async def gen_tokens(
             break
     if store_var is not None:
         set_var(store_var, detokenize(res))
-    print("GEN", repr(detokenize(res).decode(errors="replace")))
+    if log_level >= 1:
+        print("GEN", repr(detokenize(res).decode(errors="replace")))
     return res
 
 
