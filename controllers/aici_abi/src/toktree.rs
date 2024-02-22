@@ -177,12 +177,42 @@ impl TokTrie {
         r
     }
 
+    pub fn token_set_dbg(&self, ts: &SimpleVob) -> String {
+        let num_set = ts.num_set();
+        let max_tok = std::cmp::min(100, num_set);
+        let mut token_names = Vec::new();
+        for idx in 0..self.vocab_size() {
+            if ts.is_allowed(idx as TokenId) {
+                token_names.push(self.token_dbg(idx as TokenId));
+                if token_names.len() >= max_tok {
+                    break;
+                }
+            }
+        }
+        if token_names.len() < num_set {
+            token_names.push("...".to_string());
+        }
+        format!(
+            "TokenSet: {}/{}; {}",
+            num_set,
+            self.vocab_size(),
+            token_names.join(", ")
+        )
+    }
+
     pub fn alloc_logits(&self) -> Vec<f32> {
         vec![0.0; self.vocab_size() + 1]
     }
 
     pub fn token_dbg(&self, idx: u32) -> String {
-        format!("{:?}[{}]", self.token_str(idx), idx)
+        if idx == self.info.tok_eos {
+            "EOS".to_string()
+        } else if idx as usize >= self.vocab_size() {
+            format!("OOB[{}]", idx)
+        } else {
+            // format!("{:?}[{}]", self.token_str(idx), idx)
+            format!("{:?}", self.token_str(idx))
+        }
     }
 
     pub fn token_str(&self, idx: u32) -> String {
@@ -448,6 +478,8 @@ impl TokTrie {
             }
         }
         r.trie_finished();
+        // revert the fake token
+        toks.disallow_token(defl_tok);
     }
 }
 

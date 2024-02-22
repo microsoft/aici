@@ -26,6 +26,13 @@ def detokenize(tokens: List[int]) -> bytes:
     ...
 
 
+def token_repr(token: int) -> str:
+    """
+    Return debug string representation of a given token index
+    """
+    ...
+
+
 def self_seq_id() -> int:
     """
     Return identifier of the current sequence.
@@ -83,7 +90,7 @@ class TokenSet(Sequence[bool]):
 
     def __len__(self) -> int:
         """
-        Number of all tokens (not only in the set).
+        Number of all possible tokens (whether they are in the set or not).
         """
         ...
 
@@ -93,6 +100,11 @@ class TokenSet(Sequence[bool]):
         """
         ...
 
+    def num_set(self) -> int:
+        """
+        Number of tokens in the set.
+        """
+        ...
 
 class Constraint:
     def __init__(self):

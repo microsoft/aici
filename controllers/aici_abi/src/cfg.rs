@@ -159,7 +159,7 @@ impl CfgParser {
         }
 
         let mut skip_patterns = vob![false; patterns.len()];
-        let mut friendly_pattern_names = pat_idx_to_tidx
+        let friendly_pattern_names = pat_idx_to_tidx
             .iter()
             .map(|tok| grm.token_name(*tok).unwrap().to_string())
             .collect::<Vec<_>>();
@@ -173,7 +173,8 @@ impl CfgParser {
                 let toks = grm.prod(*pidx);
                 if let [Symbol::Token(tidx)] = toks {
                     let idx = *tidx_to_pat_idx.get(&tidx).unwrap();
-                    friendly_pattern_names[idx] = rname.to_string();
+                    // this doesn't seem very useful
+                    // friendly_pattern_names[idx] = rname.to_string();
                     if rname == "SKIP" {
                         skip_patterns.set(idx, true);
                     }
@@ -191,7 +192,8 @@ impl CfgParser {
         // TIME: 27ms
         let dfa = Lexer::from(patterns, &mut vobset);
 
-        let parse_stacks = vec![vec![stable.start_state()]];
+        let cfg_start = stable.start_state();
+        let parse_stacks = vec![vec![cfg_start]];
 
         let byte_state = ByteState {
             lexer_state: dfa.file_start_state(),
@@ -241,6 +243,15 @@ impl CfgParser {
         };
 
         cfg.vobset.pre_compute();
+
+        // compute viable set of initial tokens
+        cfg.byte_states[0].viable = cfg.viable_vobidx(cfg_start);
+        if LOG_PARSER {
+            println!(
+                "initial viable: {:?}",
+                cfg.vobset.resolve(cfg.byte_states[0].viable)
+            );
+        }
 
         Ok(cfg)
     }
@@ -313,7 +324,7 @@ impl CfgParser {
     fn try_push(&mut self, byte: Option<u8>) -> Option<ByteState> {
         let top = self.byte_states.last().unwrap().clone();
         if LOG_PARSER {
-            print!("try_push: ");
+            print!("try_push[{}]: ", self.byte_states.len());
             if let Some(b) = byte {
                 print!("{:?}", b as char)
             } else {
@@ -415,6 +426,11 @@ impl CfgParser {
         if self.vobset.and_is_zero(viable, ls.reachable) {
             None
         } else {
+            // print!(
+            //     " {:?} {:?} ",
+            //     self.vobset.resolve(viable),
+            //     self.vobset.resolve(ls.reachable)
+            // );
             Some(ByteState {
                 lexer_state: ls.state,
                 parse_stack_idx: pstack,

@@ -37,6 +37,10 @@ impl SimpleVob {
         self.data.len() * BITS
     }
 
+    pub fn num_set(&self) -> usize {
+        self.data.iter().map(|x| x.count_ones() as usize).sum()
+    }
+
     pub unsafe fn as_ptr(&self) -> *const u32 {
         self.data.as_ptr()
     }

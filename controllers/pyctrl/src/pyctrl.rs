@@ -59,8 +59,8 @@ mod _aici {
         builtins::{PyStrRef, PyTypeRef},
         function::{ArgStrOrBytesLike, FuncArgs},
         protocol::PySequenceMethods,
-        types::{AsSequence, Constructor},
-        PyObjectRef, PyPayload, PyRef, PyResult, VirtualMachine,
+        types::{AsSequence, Constructor, Representable},
+        Py, PyObjectRef, PyPayload, PyRef, PyResult, VirtualMachine,
     };
     use std::{fmt::Debug, sync::Mutex};
 
@@ -95,6 +95,12 @@ mod _aici {
             .flat_map(|t| trie.token(*t).to_vec())
             .collect();
         bytes
+    }
+
+    #[pyfunction]
+    fn token_repr(token: u32) -> String {
+        let trie = &mut GLOBAL_STATE.lock().unwrap().trie;
+        trie.token_dbg(token)
     }
 
     #[pyfunction]
@@ -204,7 +210,7 @@ mod _aici {
     #[derive(Debug, PyPayload)]
     pub struct TokenSet(pub Mutex<SimpleVob>);
 
-    #[pyclass(with(Constructor, AsSequence))]
+    #[pyclass(with(Constructor, AsSequence, Representable))]
     impl TokenSet {
         fn len(&self) -> usize {
             self.0.lock().unwrap().len()
@@ -235,6 +241,20 @@ mod _aici {
         fn set_all(&self, v: bool) {
             let mut inner = self.0.lock().unwrap();
             inner.set_all(v)
+        }
+
+        #[pymethod]
+        fn num_set(&self) -> usize {
+            let inner = self.0.lock().unwrap();
+            inner.num_set()
+        }
+    }
+
+    impl Representable for TokenSet {
+        fn repr_str(zelf: &Py<Self>, _vm: &VirtualMachine) -> PyResult<String> {
+            let inner = zelf.0.lock().unwrap();
+            let trie = &GLOBAL_STATE.lock().unwrap().trie;
+            Ok(trie.token_set_dbg(&inner))
         }
     }
 
