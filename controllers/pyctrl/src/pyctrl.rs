@@ -98,6 +98,12 @@ mod _aici {
     }
 
     #[pyfunction]
+    fn token_repr(token: u32) -> String {
+        let trie = &mut GLOBAL_STATE.lock().unwrap().trie;
+        trie.token_dbg(token)
+    }
+
+    #[pyfunction]
     fn get_var(name: PyStrRef, _vm: &VirtualMachine) -> Option<Vec<u8>> {
         let name = name.as_str();
         let v = GLOBAL_STATE.lock().unwrap().vars.get(name);

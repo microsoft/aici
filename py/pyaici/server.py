@@ -19,6 +19,7 @@ from pyaici.server_native import (
     set_var,
     append_var,
     eos_token,
+    token_repr,
 )
 import pyaici.server_native as _aici
 
@@ -492,6 +493,9 @@ async def gen_tokens(
     for _ in range(max_tokens):
         tokens = await next_token
         res += tokens
+
+        if log_level >= 2:
+            print("GEN-STEP:", ", ".join([token_repr(t) for t in tokens]))
 
         # this may get slow when the output is veeeeeery long
         # not a problem for a few k tokens

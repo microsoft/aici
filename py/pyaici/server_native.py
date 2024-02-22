@@ -26,6 +26,13 @@ def detokenize(tokens: List[int]) -> bytes:
     ...
 
 
+def token_repr(token: int) -> str:
+    """
+    Return debug string representation of a given token index
+    """
+    ...
+
+
 def self_seq_id() -> int:
     """
     Return identifier of the current sequence.
