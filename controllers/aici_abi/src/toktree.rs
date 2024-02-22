@@ -205,7 +205,14 @@ impl TokTrie {
     }
 
     pub fn token_dbg(&self, idx: u32) -> String {
-        format!("{:?}[{}]", self.token_str(idx), idx)
+        if idx == self.info.tok_eos {
+            "EOS".to_string()
+        } else if idx as usize >= self.vocab_size() {
+            format!("OOB[{}]", idx)
+        } else {
+            // format!("{:?}[{}]", self.token_str(idx), idx)
+            format!("{:?}", self.token_str(idx))
+        }
     }
 
     pub fn token_str(&self, idx: u32) -> String {
@@ -471,6 +478,8 @@ impl TokTrie {
             }
         }
         r.trie_finished();
+        // revert the fake token
+        toks.disallow_token(defl_tok);
     }
 }
 
