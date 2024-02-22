@@ -241,9 +241,10 @@ impl Lexer {
     }
 
     pub fn file_start_state(&self) -> StateID {
+        self.initial.state
         // pretend we've just seen a newline at the beginning of the file
         // TODO: this should be configurable
-        self.dfa.next_state(self.initial.state, b'\n')
+        // self.dfa.next_state(self.initial.state, b'\n')
     }
 
     fn mk_state(&self, state: StateID) -> LexerState {
