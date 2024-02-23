@@ -44,6 +44,12 @@ pub fn tokenizers() -> Vec<TokenizerInfo> {
             model_ids: "codellama-13b",
         },
         TokenizerInfo {
+            name: "llama70",
+            description: "used by codellama-70b; with <step> token",
+            hf_model: "codellama/CodeLlama-70b-Instruct-hf",
+            model_ids: "codellama-70b",
+        },
+        TokenizerInfo {
             name: "orca",
             description: "llama",
             hf_model: "microsoft/Orca-2-13b@refs/pr/23",

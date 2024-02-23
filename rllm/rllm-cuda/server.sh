@@ -69,6 +69,9 @@ if [ "$CPP" = 1 ] ; then
     mixtral )
       ARGS="-m https://huggingface.co/TheBloke/Mixtral-8x7B-Instruct-v0.1-GGUF/blob/main/mixtral-8x7b-instruct-v0.1.Q6_K.gguf"
       ;;
+    code70 )
+      ARGS="-m https://huggingface.co/TheBloke/CodeLlama-70B-Instruct-GGUF/blob/main/codellama-70b-instruct.Q5_K_M.gguf"
+      ;;
     https* )
       ARGS="-m $1"
       ;;
@@ -86,6 +89,7 @@ model_name can a HuggingFace URL pointing to a .gguf file, or one of the followi
   orca     https://huggingface.co/TheBloke/Orca-2-13B-GGUF/blob/main/orca-2-13b.Q8_0.gguf
   mistral  https://huggingface.co/TheBloke/Mistral-7B-Instruct-v0.2-GGUF/blob/main/mistral-7b-instruct-v0.2.Q5_K_M.gguf
   mixtral  https://huggingface.co/TheBloke/Mixtral-8x7B-Instruct-v0.1-GGUF/blob/main/mixtral-8x7b-instruct-v0.1.Q6_K.gguf
+  code70   https://huggingface.co/TheBloke/CodeLlama-70B-Instruct-GGUF/blob/main/codellama-70b-instruct.Q5_K_M.gguf
 
 Additionally, "$SELF build" will just build the server, and not run a model.
 
