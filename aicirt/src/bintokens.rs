@@ -32,12 +32,6 @@ pub fn tokenizers() -> Vec<TokenizerInfo> {
             model_ids: "gpt-4",
         },
         TokenizerInfo {
-            name: "llama",
-            description: "used by Llama, CodeLlama, etc.",
-            hf_model: "codellama/CodeLlama-34b-Instruct-hf",
-            model_ids: "",
-        },
-        TokenizerInfo {
             name: "llama16",
             description: "same as llama, with 16 added tokens (used by 13B codellama)",
             hf_model: "codellama/CodeLlama-13b-Instruct-hf",
@@ -48,6 +42,12 @@ pub fn tokenizers() -> Vec<TokenizerInfo> {
             description: "used by codellama-70b; with <step> token",
             hf_model: "codellama/CodeLlama-70b-Instruct-hf",
             model_ids: "codellama-70b",
+        },
+        TokenizerInfo {
+            name: "llama",
+            description: "used by Llama, CodeLlama, etc.",
+            hf_model: "codellama/CodeLlama-34b-Instruct-hf",
+            model_ids: "",
         },
         TokenizerInfo {
             name: "orca",
