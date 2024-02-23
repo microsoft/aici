@@ -411,7 +411,7 @@ impl<ME: ModelExec> RllmEngine<ME> {
                     for fork_idx in 1..lst.len() {
                         let copy_id = self.seq_mgr.new_sequence();
                         let mut copy =
-                            seq.fork_as(self.seq_mgr.deref(), copy_id, sg.max_index + to_add.len());
+                            seq.fork_as(self.seq_mgr.deref(), copy_id, sg.max_index + to_add.len() + 1);
                         self.setup_postop(fork_parent, fork_idx as u32, &mut copy, &lst[fork_idx]);
                         to_add.push(copy);
                     }
