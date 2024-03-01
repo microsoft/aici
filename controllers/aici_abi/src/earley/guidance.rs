@@ -5,6 +5,7 @@
 #![allow(non_upper_case_globals)]
 #![allow(non_camel_case_types)]
 #![allow(unused_imports)]
+#![allow(unused_variables)]
 #![allow(unknown_lints)]
 #![allow(clippy::all)]
 #![cfg_attr(rustfmt, rustfmt_skip)]

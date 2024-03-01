@@ -18,9 +18,6 @@ pub mod rx;
 
 #[cfg(feature = "earley")]
 pub mod earley;
-#[cfg(all(feature = "earley", feature = "cfg"))]
-pub mod earley_yacc;
-mod guidance;
 
 pub mod substring;
 

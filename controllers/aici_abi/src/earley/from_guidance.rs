@@ -1,48 +1,16 @@
 use anyhow::Result;
-use cfgrammar::Symbol;
 use quick_protobuf::MessageRead;
 use rustc_hash::FxHashSet;
 
 use crate::{
-    cfg::{parse_rx_token, parse_yacc},
-    earley::{ByteSet, Grammar},
-    guidance,
+    earley::{
+        guidance,
+        parser::{ByteSet, Parser},
+    },
     toktree::TokTrie,
 };
 
-pub fn earley_grm_from_yacc(yacc: &str) -> Result<Grammar> {
-    let grm = parse_yacc(yacc)?;
-
-    let mut res = Grammar::new();
-
-    for pidx in grm.iter_pidxs() {
-        let ridx = grm.prod_to_rule(pidx);
-
-        let lhs = res.symbol(grm.rule_name_str(ridx));
-        let rhs = grm
-            .prod(pidx)
-            .iter()
-            .map(|sym| match sym {
-                Symbol::Token(tidx) => {
-                    let name = grm.token_name(*tidx).unwrap();
-                    let t = res.symbol(name);
-                    res.make_terminal(t, &parse_rx_token(name));
-                    t
-                }
-                Symbol::Rule(ridx) => res.symbol(grm.rule_name_str(*ridx)),
-            })
-            .collect();
-
-        res.add_rule(lhs, rhs);
-    }
-
-    let start_sym = grm.rule_name_str(grm.start_rule_idx());
-    println!("start_sym: {:?}", start_sym);
-    let ss = res.symbol(start_sym);
-    res.add_rule(res.start(), vec![ss]);
-
-    Ok(res)
-}
+use super::parser::Grammar;
 
 pub fn earley_grm_from_guidance(bytes: &[u8]) -> Result<Grammar> {
     let mut reader = quick_protobuf::BytesReader::from_bytes(bytes);
@@ -53,22 +21,20 @@ pub fn earley_grm_from_guidance(bytes: &[u8]) -> Result<Grammar> {
         .nodes
         .iter()
         .map(|n| match &n.function_type {
-            guidance::mod_GrammarFunction::OneOffunction_type::join(n) => grm.symbol(&n.name),
-            guidance::mod_GrammarFunction::OneOffunction_type::select(n) => grm.symbol(&n.name),
+            guidance::mod_GrammarFunction::OneOffunction_type::join(n) => grm.fresh_symbol(&n.name),
+            guidance::mod_GrammarFunction::OneOffunction_type::select(n) => {
+                grm.fresh_symbol(&n.name)
+            }
             guidance::mod_GrammarFunction::OneOffunction_type::byte(n) => {
                 assert!(n.byte.len() == 1);
-                let sym = grm.symbol(&format!("b'{}", n.byte[0]));
-                grm.make_terminal(sym, ByteSet::from_range(n.byte[0], n.byte[0]));
-                sym
+                grm.terminal(ByteSet::from_range(n.byte[0], n.byte[0]))
             }
             guidance::mod_GrammarFunction::OneOffunction_type::byte_range(n) => {
                 assert!(n.byte_range.len() == 2);
-                let sym = grm.symbol(&format!("b'{}-{}", n.byte_range[0], n.byte_range[1]));
-                grm.make_terminal(sym, ByteSet::from_range(n.byte_range[0], n.byte_range[1]));
-                sym
+                grm.terminal(ByteSet::from_range(n.byte_range[0], n.byte_range[1]))
             }
             guidance::mod_GrammarFunction::OneOffunction_type::model_variable(n) => {
-                grm.symbol(&n.name)
+                grm.fresh_symbol(&n.name)
             }
             guidance::mod_GrammarFunction::OneOffunction_type::None => {
                 panic!("None function type in guidance::Grammar")
@@ -83,10 +49,17 @@ pub fn earley_grm_from_guidance(bytes: &[u8]) -> Result<Grammar> {
         let lhs = *sym;
         match &n.function_type {
             guidance::mod_GrammarFunction::OneOffunction_type::join(n) => {
+                if n.nullable {
+                    //println!("nullable join: {:?}", n.name);
+                }
                 let rhs = n.values.iter().map(|idx| symbols[*idx as usize]).collect();
                 grm.add_rule(lhs, rhs);
             }
             guidance::mod_GrammarFunction::OneOffunction_type::select(n) => {
+                if n.nullable {
+                    // println!("nullable sel: {:?} {:?}", n.name, n.values);
+                    grm.add_rule(lhs, vec![]);
+                }
                 for v in &n.values {
                     grm.add_rule(lhs, vec![symbols[*v as usize]]);
                 }
@@ -101,20 +74,34 @@ pub fn earley_grm_from_guidance(bytes: &[u8]) -> Result<Grammar> {
         }
     }
 
+    grm.add_rule(grm.start(), vec![symbols[0]]);
+
     Ok(grm)
 }
 
 #[allow(dead_code)]
 pub fn earley_test(trie: TokTrie) {
-    let yacc_bytes = include_bytes!("../grammars/c.y");
-    let cfg = earley_grm_from_yacc(&String::from_utf8_lossy(yacc_bytes)).unwrap();
-
+    let g_bytes = include_bytes!("../../grammars/json0.guidance");
+    let cfg = earley_grm_from_guidance(g_bytes).unwrap();
+    println!("cfg0: {:?}", cfg);
+    let cfg = cfg.optimize();
     println!("cfg: {:?}", cfg);
 
-    let sample = include_bytes!("../grammars/sample.c");
-    let toks = trie.greedy_tokenize(sample);
+    let input = r#"{"name":"Joe","info":{"foo":10,"bar":"20"}}"#.as_bytes();
 
+    let toks = trie.greedy_tokenize(input);
     println!("toks: {:?}", toks.len());
+
+    let mut parser = Parser::new(cfg);
+    for b in input {
+        let row = parser.scan(*b);
+        if row.is_empty() {
+            println!("reject");
+            break;
+        }
+        println!("row: {}", parser.row_to_string(&row));
+        parser.push_row(row);
+    }
 
     // #[cfg(not(target_arch = "wasm32"))]
     // let t0 = std::time::Instant::now();
