@@ -66,45 +66,57 @@ fn quote_rx(name: &str) -> String {
         .collect::<String>()
 }
 
-impl CfgParser {
-    fn span_to_str(s: &Span, src: &str) -> String {
-        let mut line = 1;
-        let mut last_nl = 0;
-        for (idx, ch) in src.chars().enumerate() {
-            if idx == s.start() {
-                break;
-            }
-            if ch == '\n' {
-                line += 1;
-                last_nl = idx;
-            }
-        }
-        let column = s.start() - last_nl;
-        format!("({},{})", line, column)
+pub(crate) fn parse_rx_token(name: &str) -> String {
+    if is_rx(name) {
+        name[1..name.len() - 1].to_string()
+    } else {
+        quote_rx(name)
     }
+}
 
+fn span_to_str(s: &Span, src: &str) -> String {
+    let mut line = 1;
+    let mut last_nl = 0;
+    for (idx, ch) in src.chars().enumerate() {
+        if idx == s.start() {
+            break;
+        }
+        if ch == '\n' {
+            line += 1;
+            last_nl = idx;
+        }
+    }
+    let column = s.start() - last_nl;
+    format!("({},{})", line, column)
+}
+
+pub(crate) fn parse_yacc(yacc: &str) -> Result<YaccGrammar> {
+    let grmkind = YaccKind::Original(cfgrammar::yacc::YaccOriginalActionKind::NoAction);
+    let grm = match YaccGrammar::new(grmkind, yacc) {
+        Ok(grm) => grm,
+        Err(e) => {
+            let err_str = e
+                .iter()
+                .map(|e| {
+                    let spans = e
+                        .spans()
+                        .iter()
+                        .map(|s| span_to_str(s, yacc))
+                        .collect::<Vec<_>>()
+                        .join(", ");
+                    format!("{}: {}", spans, e)
+                })
+                .collect::<Vec<_>>()
+                .join("\n");
+            anyhow::bail!("yacc grammar errors:\n{}", err_str);
+        }
+    };
+    Ok(grm)
+}
+
+impl CfgParser {
     pub fn from_yacc(yacc: &str) -> Result<Self> {
-        let grmkind = YaccKind::Original(cfgrammar::yacc::YaccOriginalActionKind::NoAction);
-        let grm = match YaccGrammar::new(grmkind, yacc) {
-            Ok(grm) => grm,
-            Err(e) => {
-                let err_str = e
-                    .iter()
-                    .map(|e| {
-                        let spans = e
-                            .spans()
-                            .iter()
-                            .map(|s| Self::span_to_str(s, yacc))
-                            .collect::<Vec<_>>()
-                            .join(", ");
-                        format!("{}: {}", spans, e)
-                    })
-                    .collect::<Vec<_>>()
-                    .join("\n");
-                anyhow::bail!("yacc grammar errors:\n{}", err_str);
-            }
-        };
-
+        let grm = parse_yacc(yacc)?;
         // TIME: all these annotation are for native release x86 build for C grammar
         // TIME: 27ms
         let (sgraph, stable) = match from_yacc(&grm, Minimiser::Pager) {
@@ -143,14 +155,7 @@ impl CfgParser {
 
         let patterns = pat_idx_to_tidx
             .iter()
-            .map(|tok| {
-                let name = grm.token_name(*tok).unwrap();
-                if is_rx(name) {
-                    name[1..name.len() - 1].to_string()
-                } else {
-                    quote_rx(name)
-                }
-            })
+            .map(|tok| parse_rx_token(grm.token_name(*tok).unwrap()))
             .collect::<Vec<_>>();
 
         let mut tidx_to_pat_idx = FxHashMap::default();

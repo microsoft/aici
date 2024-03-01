@@ -16,6 +16,11 @@ mod lex;
 #[cfg(feature = "rx")]
 pub mod rx;
 
+#[cfg(feature = "earley")]
+pub mod earley;
+#[cfg(all(feature = "earley", feature = "cfg"))]
+pub mod earley_yacc;
+
 pub mod substring;
 
 pub type TokenId = bytes::TokenId;

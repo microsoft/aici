@@ -12,7 +12,7 @@ use crate::{
     TimerRef, TimerSet,
 };
 use aici_abi::{
-    bytes::limit_str, toktree::TokTrie, MidProcessArg, PostProcessArg, PreProcessArg, SeqId,
+    bytes::limit_str, earley_yacc::earley_test, toktree::TokTrie, MidProcessArg, PostProcessArg, PreProcessArg, SeqId
 };
 use aicirt::{bintokens::find_tokenizer, futexshm::ServerChannel, *};
 use anyhow::{anyhow, ensure, Result};
@@ -1113,6 +1113,8 @@ fn save_tokenizer(cli: &Cli) {
 
     std::fs::write(filename, &bytes).unwrap();
     println!("wrote {}, {} bytes", filename, bytes.len());
+
+    earley_test(trie);
 }
 
 fn install_from_cmdline(cli: &Cli, wasm_ctx: WasmContext, shm: Shm) {
