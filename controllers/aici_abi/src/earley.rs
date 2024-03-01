@@ -40,10 +40,41 @@ impl SymIdx {
     }
 }
 
+pub struct ByteSet {
+    mask: [u32; 8],
+}
+
+impl ByteSet {
+    pub fn new() -> Self {
+        ByteSet { mask: [0; 8] }
+    }
+
+    pub fn add(&mut self, byte: u8) {
+        let idx = byte as usize / 32;
+        let bit = byte as usize % 32;
+        self.mask[idx] |= 1 << bit;
+    }
+
+    pub fn contains(&self, byte: u8) -> bool {
+        let idx = byte as usize / 32;
+        let bit = byte as usize % 32;
+        self.mask[idx] & (1 << bit) != 0
+    }
+
+    pub fn from_range(start: u8, end: u8) -> Self {
+        let mut r = ByteSet::new();
+        // TODO optimize
+        for b in start..=end {
+            r.add(b);
+        }
+        r
+    }
+}
+
 struct Symbol {
     idx: SymIdx,
     name: String,
-    rx: Option<String>,
+    bytes: Option<ByteSet>,
     rules: Vec<Rule>,
     nullable: bool,
 }
@@ -75,9 +106,7 @@ pub struct Row {
     items: Vec<Item>,
 }
 
-impl Row {
-
-}
+impl Row {}
 
 impl Item {
     fn new(rule: RuleIdx, dot: usize, start: usize) -> Self {
@@ -280,8 +309,8 @@ impl Grammar {
         }
     }
 
-    pub fn make_terminal(&mut self, sym: SymIdx, rx: &str) {
-        self.symbols[sym.0 as usize].rx = Some(rx.to_string());
+    pub fn make_terminal(&mut self, sym: SymIdx, bytes: ByteSet) {
+        self.symbols[sym.0 as usize].bytes = Some(bytes);
     }
 
     pub fn sym_name(&self, sym: SymIdx) -> &str {
@@ -306,7 +335,7 @@ impl Grammar {
                 let idx = SymIdx(self.symbols.len() as u32);
                 self.symbols.push(Symbol {
                     name: name.to_string(),
-                    rx: None,
+                    bytes: None,
                     idx,
                     rules: vec![],
                     nullable: false,
@@ -320,12 +349,12 @@ impl Grammar {
 
 impl Debug for Grammar {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        for sym in &self.symbols {
-            match sym.rx {
-                Some(ref rx) => writeln!(f, "{} /= {:?}", sym.name, rx)?,
-                None => {}
-            }
-        }
+        // for sym in &self.symbols {
+        //     match sym.bytes {
+        //         Some(ref rx) => writeln!(f, "{} /= {:?}", sym.name, rx)?,
+        //         None => {}
+        //     }
+        // }
         for sym in &self.symbols {
             for rule in &sym.rules {
                 writeln!(f, "{}", self.rule_to_string(rule))?;

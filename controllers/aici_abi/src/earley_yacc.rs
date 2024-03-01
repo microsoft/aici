@@ -1,9 +1,12 @@
 use anyhow::Result;
 use cfgrammar::Symbol;
+use quick_protobuf::MessageRead;
+use rustc_hash::FxHashSet;
 
 use crate::{
     cfg::{parse_rx_token, parse_yacc},
-    earley::Grammar,
+    earley::{ByteSet, Grammar},
+    guidance,
     toktree::TokTrie,
 };
 
@@ -39,6 +42,66 @@ pub fn earley_grm_from_yacc(yacc: &str) -> Result<Grammar> {
     res.add_rule(res.start(), vec![ss]);
 
     Ok(res)
+}
+
+pub fn earley_grm_from_guidance(bytes: &[u8]) -> Result<Grammar> {
+    let mut reader = quick_protobuf::BytesReader::from_bytes(bytes);
+    let gg = guidance::Grammar::from_reader(&mut reader, bytes).unwrap();
+    let mut grm = Grammar::new();
+
+    let symbols = gg
+        .nodes
+        .iter()
+        .map(|n| match &n.function_type {
+            guidance::mod_GrammarFunction::OneOffunction_type::join(n) => grm.symbol(&n.name),
+            guidance::mod_GrammarFunction::OneOffunction_type::select(n) => grm.symbol(&n.name),
+            guidance::mod_GrammarFunction::OneOffunction_type::byte(n) => {
+                assert!(n.byte.len() == 1);
+                let sym = grm.symbol(&format!("b'{}", n.byte[0]));
+                grm.make_terminal(sym, ByteSet::from_range(n.byte[0], n.byte[0]));
+                sym
+            }
+            guidance::mod_GrammarFunction::OneOffunction_type::byte_range(n) => {
+                assert!(n.byte_range.len() == 2);
+                let sym = grm.symbol(&format!("b'{}-{}", n.byte_range[0], n.byte_range[1]));
+                grm.make_terminal(sym, ByteSet::from_range(n.byte_range[0], n.byte_range[1]));
+                sym
+            }
+            guidance::mod_GrammarFunction::OneOffunction_type::model_variable(n) => {
+                grm.symbol(&n.name)
+            }
+            guidance::mod_GrammarFunction::OneOffunction_type::None => {
+                panic!("None function type in guidance::Grammar")
+            }
+        })
+        .collect::<Vec<_>>();
+
+    let set = FxHashSet::from_iter(symbols.iter());
+    assert!(set.len() == symbols.len(), "duplicate symbols");
+
+    for (n, sym) in gg.nodes.iter().zip(symbols.iter()) {
+        let lhs = *sym;
+        match &n.function_type {
+            guidance::mod_GrammarFunction::OneOffunction_type::join(n) => {
+                let rhs = n.values.iter().map(|idx| symbols[*idx as usize]).collect();
+                grm.add_rule(lhs, rhs);
+            }
+            guidance::mod_GrammarFunction::OneOffunction_type::select(n) => {
+                for v in &n.values {
+                    grm.add_rule(lhs, vec![symbols[*v as usize]]);
+                }
+            }
+            guidance::mod_GrammarFunction::OneOffunction_type::byte(_) => {}
+            guidance::mod_GrammarFunction::OneOffunction_type::byte_range(_) => {}
+            guidance::mod_GrammarFunction::OneOffunction_type::model_variable(n) => {
+                // eos_token, bos_token etc
+                panic!("model_variable not implemented yet ({:?})", n.name);
+            }
+            guidance::mod_GrammarFunction::OneOffunction_type::None => panic!("???"),
+        }
+    }
+
+    Ok(grm)
 }
 
 #[allow(dead_code)]
