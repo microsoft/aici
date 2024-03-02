@@ -105,7 +105,7 @@ impl Parser {
         let row_idx = self.rows.len() - 1;
         for item in &self.rows[row_idx].items {
             let idx = self.grammar.sym_idx_at(item.rule_idx()).as_index();
-            assert!(idx != 0);
+            // idx == 0 => completed
             if idx < allowed.len() && allowed[idx] {
                 r.push(item.advance_dot());
             }

@@ -377,7 +377,13 @@ impl OptGrammar {
         let mut outp = OptGrammar {
             start_symbol: OptSymIdx::NULL,
             terminals: vec![ByteSet::new()],
-            symbols: vec![],
+            symbols: vec![OptSymbol {
+                idx: OptSymIdx::NULL,
+                name: "NULL".to_string(),
+                is_terminal: true,
+                is_nullable: false,
+                rules: vec![],
+            }],
             rules: vec![],
             terminals_by_byte: vec![],
         };
