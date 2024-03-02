@@ -2,15 +2,8 @@ use anyhow::Result;
 use quick_protobuf::MessageRead;
 use rustc_hash::FxHashSet;
 
-use crate::{
-    earley::{
-        guidance,
-        parser::{ByteSet, Parser},
-    },
-    toktree::TokTrie,
-};
-
-use super::parser::Grammar;
+use super::{guidance, ByteSet, Parser, Grammar};
+use crate::toktree::TokTrie;
 
 pub fn earley_grm_from_guidance(bytes: &[u8]) -> Result<Grammar> {
     let mut reader = quick_protobuf::BytesReader::from_bytes(bytes);
