@@ -108,7 +108,7 @@ impl Recognizer for Parser {
 pub fn earley_test(trie: TokTrie) {
     let g_bytes = include_bytes!("../../grammars/json0.guidance");
     let cfg = earley_grm_from_guidance(g_bytes).unwrap();
-    println!("cfg0: {:?}", cfg);
+    // println!("cfg0: {:?}", cfg);
     let cfg = cfg.optimize();
     println!("cfg: {:?}", cfg);
 
@@ -117,14 +117,14 @@ pub fn earley_test(trie: TokTrie) {
     let toks = trie.greedy_tokenize(input);
     println!("toks: {:?}", toks.len());
 
-    let mut parser = Parser::new(cfg.clone());
+    let mut parser = Parser::new(cfg.compile());
     for b in input {
         let row = parser.scan(*b);
         if row.is_empty() {
             println!("reject");
             break;
         }
-        println!("row: {}", parser.row_to_string(&row));
+        // println!("row: {}", parser.row_to_string(&row));
         parser.push_row(row);
     }
 
@@ -134,7 +134,7 @@ pub fn earley_test(trie: TokTrie) {
     let mut line = 1;
     let mut vob = trie.alloc_token_set();
 
-    parser = Parser::new(cfg);
+    parser = Parser::new(cfg.compile());
     println!("start!");
     let mut times = vec![];
 
@@ -151,7 +151,7 @@ pub fn earley_test(trie: TokTrie) {
                 line += 1;
             }
         }
-        println!("TOKENS: {}", trie.token_set_dbg(&vob));
+        // println!("TOK: {} ===> {}", trie.token_dbg(tok), trie.token_set_dbg(&vob));
         trie.append_token(&mut parser, tok);
         times.push(tt.elapsed().as_micros() as u32);
     }
