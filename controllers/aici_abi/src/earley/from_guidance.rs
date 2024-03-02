@@ -2,8 +2,8 @@ use anyhow::Result;
 use quick_protobuf::MessageRead;
 use rustc_hash::FxHashSet;
 
-use super::{guidance, ByteSet, Parser, Grammar};
-use crate::toktree::TokTrie;
+use super::{guidance, ByteSet, Grammar, Parser};
+use crate::toktree::{Recognizer, SpecialToken, TokTrie};
 
 pub fn earley_grm_from_guidance(bytes: &[u8]) -> Result<Grammar> {
     let mut reader = quick_protobuf::BytesReader::from_bytes(bytes);
@@ -72,6 +72,38 @@ pub fn earley_grm_from_guidance(bytes: &[u8]) -> Result<Grammar> {
     Ok(grm)
 }
 
+impl Recognizer for Parser {
+    fn pop_bytes(&mut self, num: usize) {
+        self.pop_rows(num);
+    }
+
+    fn collapse(&mut self) {
+        // does nothing - we need to keep the entire state
+    }
+
+    fn special_allowed(&mut self, tok: SpecialToken) -> bool {
+        if tok == SpecialToken::EndOfSentence {
+            self.curr_row().is_accepting()
+        } else {
+            false
+        }
+    }
+
+    fn trie_finished(&mut self) {
+        // do nothing?
+    }
+
+    fn try_push_byte(&mut self, byte: u8) -> bool {
+        let row = self.scan(byte);
+        if row.is_empty() {
+            false
+        } else {
+            self.push_row(row);
+            true
+        }
+    }
+}
+
 #[allow(dead_code)]
 pub fn earley_test(trie: TokTrie) {
     let g_bytes = include_bytes!("../../grammars/json0.guidance");
@@ -85,7 +117,7 @@ pub fn earley_test(trie: TokTrie) {
     let toks = trie.greedy_tokenize(input);
     println!("toks: {:?}", toks.len());
 
-    let mut parser = Parser::new(cfg);
+    let mut parser = Parser::new(cfg.clone());
     for b in input {
         let row = parser.scan(*b);
         if row.is_empty() {
@@ -96,38 +128,39 @@ pub fn earley_test(trie: TokTrie) {
         parser.push_row(row);
     }
 
-    // #[cfg(not(target_arch = "wasm32"))]
-    // let t0 = std::time::Instant::now();
+    #[cfg(not(target_arch = "wasm32"))]
+    let t0 = std::time::Instant::now();
 
-    // let mut line = 1;
-    // let mut vob = trie.alloc_token_set();
+    let mut line = 1;
+    let mut vob = trie.alloc_token_set();
 
-    // for tok in &toks[0..1000] {
-    //     let tok = *tok;
-    //     trie.compute_bias(&mut cfg, &mut vob);
-    //     if !vob.is_allowed(tok) {
-    //         println!("reject, line={}, tok={:?}", line, trie.token_str(tok));
-    //         panic!();
-    //     }
-    //     for b in trie.token(tok) {
-    //         if *b == b'\n' {
-    //             line += 1;
-    //         }
-    //     }
-    //     if false {
-    //         println!(
-    //             "tok: {:?} {}; {}",
-    //             trie.token_str(tok),
-    //             vob.is_allowed(tok),
-    //             cfg.get_stats()
-    //         );
-    //         cfg.viable_now();
-    //     }
-    //     trie.append_token(&mut cfg, tok);
-    // }
+    parser = Parser::new(cfg);
+    println!("start!");
+    let mut times = vec![];
 
-    // #[cfg(not(target_arch = "wasm32"))]
-    // println!("time: {:?} ", t0.elapsed());
+    for tok in &toks {
+        let tok = *tok;
+        let tt = std::time::Instant::now();
+        trie.compute_bias(&mut parser, &mut vob);
+        if !vob.is_allowed(tok) {
+            println!("reject, line={}, tok={:?}", line, trie.token_str(tok));
+            panic!();
+        }
+        for b in trie.token(tok) {
+            if *b == b'\n' {
+                line += 1;
+            }
+        }
+        println!("TOKENS: {}", trie.token_set_dbg(&vob));
+        trie.append_token(&mut parser, tok);
+        times.push(tt.elapsed().as_micros() as u32);
+    }
 
-    // println!("stats:  {}", cfg.get_stats());
+    #[cfg(not(target_arch = "wasm32"))]
+    println!(
+        "time: {:?} ({:?}/tok)",
+        t0.elapsed(),
+        t0.elapsed() / toks.len() as u32
+    );
+    println!("times: {:?}", times);
 }

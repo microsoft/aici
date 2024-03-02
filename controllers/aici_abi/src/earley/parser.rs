@@ -1,8 +1,4 @@
-use std::{
-    fmt::{Debug, Display},
-    rc::Rc,
-    vec,
-};
+use std::{fmt::Debug, rc::Rc, vec};
 
 use rustc_hash::FxHashMap;
 
@@ -58,7 +54,6 @@ impl SymIdx {
     }
 }
 
-
 struct Symbol {
     idx: SymIdx,
     name: String,
@@ -105,11 +100,16 @@ pub struct Row {
     position: usize,
     // TODO index this by .after_dot() ?
     items: Vec<Item>,
+    accepting: bool,
 }
 
 impl Row {
     pub fn is_empty(&self) -> bool {
         self.items.is_empty()
+    }
+
+    pub fn is_accepting(&self) -> bool {
+        self.accepting
     }
 }
 
@@ -199,6 +199,10 @@ impl Parser {
         self.rows.drain(self.rows.len() - n..);
     }
 
+    pub fn curr_row(&self) -> &Row {
+        &self.rows[self.rows.len() - 1]
+    }
+
     pub fn push_row(&mut self, row: Row) {
         assert!(row.position == self.rows.len());
         self.rows.push(row);
@@ -218,12 +222,14 @@ impl Parser {
         let curr_idx = self.rows.len();
         let mut agenda = curr_row.clone();
         let mut predicated_syms = vec![];
+        let mut accepting = false;
 
         if DEBUG {
             let row0 = Row {
                 token,
                 position: curr_idx,
                 items: curr_row.clone(),
+                accepting,
             };
             println!("row0: {}", self.row_to_string(&row0));
         }
@@ -234,29 +240,30 @@ impl Parser {
                 println!("from agenda: {}", self.item_to_string(&item));
             }
             let lhs = item.rule_idx().sym_idx();
+            if lhs == self.grammar.start() && self.grammar.after_dot(item).is_none() {
+                accepting = true;
+            }
             let mut to_add = vec![];
+            let mut add = |new_item: Item, tag: &str| {
+                if !to_add.contains(&new_item) {
+                    to_add.push(new_item);
+                    if DEBUG {
+                        println!("  adding {}: {}", tag, self.item_to_string(&new_item));
+                    }
+                }
+            };
             match self.grammar.after_dot(item) {
                 Some(after_dot) => {
                     let sym_data = self.grammar.sym_data(after_dot);
                     if sym_data.nullable {
                         let new_item = item.advance_dot();
-                        if !to_add.contains(&new_item) {
-                            to_add.push(new_item);
-                            if DEBUG {
-                                println!("  adding (nullable): {}", self.item_to_string(&new_item));
-                            }
-                        }
+                        add(new_item, "null");
                     }
                     if !predicated_syms.contains(&after_dot) {
                         predicated_syms.push(after_dot);
                         for rule in &sym_data.rules {
                             let new_item = Item::new(rule.idx, 0, curr_idx);
-                            if !to_add.contains(&new_item) {
-                                to_add.push(new_item);
-                                if DEBUG {
-                                    println!("  adding: {}", self.item_to_string(&new_item));
-                                }
-                            }
+                            add(new_item, "predict");
                         }
                     }
                 }
@@ -266,15 +273,7 @@ impl Parser {
                         // if item.start_pos() == curr_idx, then we handled it above in the nullable check
                         for parent in self.items_with_after_dot(lhs, item.start_pos()) {
                             let new_item = parent.advance_dot();
-                            if !to_add.contains(&new_item) {
-                                to_add.push(new_item);
-                                if DEBUG {
-                                    println!(
-                                        "  adding complete: {}",
-                                        self.item_to_string(&new_item)
-                                    );
-                                }
-                            }
+                            add(new_item, "complete");
                         }
                     }
                 }
@@ -292,6 +291,7 @@ impl Parser {
             token,
             position: curr_idx,
             items: curr_row,
+            accepting,
         }
     }
 }
