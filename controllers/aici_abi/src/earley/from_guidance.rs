@@ -134,7 +134,8 @@ pub fn earley_test(trie: TokTrie) {
         println!("final non-accept");
     }
 
-    const NUM_REP: usize = 200;
+    const COLLECT_TIMES: bool = false;
+    const NUM_REP: usize = if COLLECT_TIMES { 5 } else { 200 };
     let mut durations = vec![];
     println!("start!");
 
@@ -144,8 +145,6 @@ pub fn earley_test(trie: TokTrie) {
 
         let mut line = 1;
         let mut vob = trie.alloc_token_set();
-
-        const COLLECT_TIMES: bool = false;
 
         parser = Parser::new(cfg.compile());
         let mut times = vec![];
