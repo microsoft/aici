@@ -114,7 +114,6 @@ impl<T: SimpleHash + Eq + Copy> SimpleSet<T> {
 struct Scratch {
     row_start: usize,
     row_end: usize,
-    row_hash: u64,
     items: Vec<Item>,
     predicated_syms: SimpleSet<OptSymIdx>,
 }
@@ -131,13 +130,13 @@ impl Scratch {
     fn new_row(&mut self, pos: usize) {
         self.row_start = pos;
         self.row_end = pos;
-        self.row_hash = 0;
     }
 
     fn row_len(&self) -> usize {
         self.row_end - self.row_start
     }
 
+    #[inline(always)]
     fn ensure_items(&mut self, n: usize) {
         if self.items.len() < n {
             let missing = n - self.items.len();
@@ -146,17 +145,16 @@ impl Scratch {
         }
     }
 
+    #[inline(always)]
     fn just_add(&mut self, item: Item) {
         self.ensure_items(self.row_end + 1);
         self.items[self.row_end] = item;
         self.row_end += 1;
-        self.row_hash |= item.mask64();
     }
 
+    #[inline(always)]
     fn add_unique(&mut self, item: Item, _info: &str) {
-        if self.row_hash & item.mask64() == 0
-            || !self.items[self.row_start..self.row_end].contains(&item)
-        {
+        if !self.items[self.row_start..self.row_end].contains(&item) {
             self.just_add(item);
         }
     }
@@ -201,6 +199,7 @@ impl Parser {
     //     "todo".to_string()
     // }
 
+    #[inline(always)]
     pub fn scan(&mut self, b: u8) -> ParseResult {
         let row_idx = self.rows.len() - 1;
         let last = self.rows[row_idx].last_item;
@@ -234,6 +233,7 @@ impl Parser {
         self.stats = Stats::default();
     }
 
+    #[inline(always)]
     fn push_row(&mut self) -> ParseResult {
         let curr_idx = self.rows.len();
         let mut agenda_ptr = self.scratch.row_start;
