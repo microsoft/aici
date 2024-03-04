@@ -1,9 +1,6 @@
 use std::{fmt::Debug, vec};
 
-use super::{
-    byteset::byte_to_string,
-    grammar::{OptGrammar, OptSymIdx, RuleIdx},
-};
+use super::grammar::{OptGrammar, OptSymIdx, RuleIdx};
 
 const DEBUG: bool = false;
 
@@ -14,22 +11,25 @@ struct Item {
     sym_idx: OptSymIdx,
 }
 
-pub struct Row {
-    token: u8,
-    position: usize,
-    // TODO index this by .after_dot() ?
-    items: Vec<Item>,
-    accepting: bool,
+#[derive(Debug, Default)]
+pub struct Stats {
+    pub rows: usize,
+    pub empty_rows: usize,
+    pub nontrivial_scans: usize,
+    pub scan_items: usize,
+    pub all_items: usize,
 }
 
-impl Row {
-    pub fn is_empty(&self) -> bool {
-        self.items.is_empty()
-    }
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ParseResult {
+    Accept,
+    Reject,
+    Continue,
+}
 
-    pub fn is_accepting(&self) -> bool {
-        self.accepting
-    }
+struct Row {
+    first_item: usize,
+    last_item: usize,
 }
 
 impl Item {
@@ -58,28 +58,66 @@ impl Item {
     }
 }
 
+#[derive(Default)]
+struct Scratch {
+    row_start: usize,
+    row_end: usize,
+    items: Vec<Item>,
+}
+
 pub struct Parser {
     grammar: OptGrammar,
+    scratch: Scratch,
     rows: Vec<Row>,
+    stats: Stats,
+    is_accepting: bool,
+}
+
+impl Scratch {
+    fn row_len(&self) -> usize {
+        self.row_end - self.row_start
+    }
+
+    fn ensure_items(&mut self, n: usize) {
+        if self.items.len() < n {
+            let missing = n - self.items.len();
+            self.items.reserve(missing);
+            unsafe { self.items.set_len(n) }
+        }
+    }
+
+    fn just_add(&mut self, item: Item) {
+        self.ensure_items(self.row_end + 1);
+        self.items[self.row_end] = item;
+        self.row_end += 1;
+    }
+
+    fn add_unique(&mut self, item: Item, _info: &str) {
+        if !self.items[self.row_start..self.row_end].contains(&item) {
+            self.just_add(item);
+        }
+    }
 }
 
 impl Parser {
     pub fn new(grammar: OptGrammar) -> Self {
         let start = grammar.start();
-        let init_rules = grammar
-            .rules_of(start)
-            .iter()
-            .map(|r| Item::new(start, *r, 0))
-            .collect();
         let mut r = Parser {
             grammar,
             rows: vec![],
+            scratch: Scratch::default(),
+            stats: Stats::default(),
+            is_accepting: false,
         };
-        // '0' token is bogus
-        let row = r.make_row(init_rules, 0);
-        println!("init: {}", r.row_to_string(&row));
-        r.push_row(row);
+        for rule in r.grammar.rules_of(start).to_vec() {
+            r.scratch.add_unique(Item::new(start, rule, 0), "init");
+        }
+        let _ = r.push_row();
         r
+    }
+
+    pub fn is_accepting(&self) -> bool {
+        self.is_accepting
     }
 
     fn item_to_string(&self, item: &Item) -> String {
@@ -91,71 +129,64 @@ impl Parser {
         )
     }
 
-    pub fn row_to_string(&self, row: &Row) -> String {
-        let mut r = vec![format!("token: {}", byte_to_string(row.token))];
-        for item in &row.items {
-            r.push(self.item_to_string(item));
-        }
-        r.join("\n") + "\n"
-    }
+    // fn row_to_string(&self, row: &Row) -> String {
+    //     // let mut r = vec![format!("token: {}", byte_to_string(row.token))];
+    //     // for item in &row.items {
+    //     //     r.push(self.item_to_string(item));
+    //     // }
+    //     // r.join("\n") + "\n"
+    //     "todo".to_string()
+    // }
 
-    pub fn scan(&self, b: u8) -> Row {
-        let allowed = self.grammar.terminals_by_byte(b);
-        let mut r = vec![];
+    pub fn scan(&mut self, b: u8) -> ParseResult {
         let row_idx = self.rows.len() - 1;
-        for item in &self.rows[row_idx].items {
+        let last = self.rows[row_idx].last_item;
+        let mut i = self.rows[row_idx].first_item;
+        let n = last - i;
+        self.scratch.ensure_items(last + n + 100);
+
+        let allowed = self.grammar.terminals_by_byte(b);
+
+        // for next row:
+        self.scratch.row_start = last;
+        self.scratch.row_end = last;
+
+        while i < last {
+            let item = self.scratch.items[i];
             let idx = self.grammar.sym_idx_at(item.rule_idx()).as_index();
             // idx == 0 => completed
             if idx < allowed.len() && allowed[idx] {
-                r.push(item.advance_dot());
+                self.scratch.just_add(item.advance_dot());
             }
+            i += 1;
         }
-        self.make_row(r, b)
+        self.push_row()
     }
 
     pub fn pop_rows(&mut self, n: usize) {
         self.rows.drain(self.rows.len() - n..);
     }
 
-    pub fn curr_row(&self) -> &Row {
-        &self.rows[self.rows.len() - 1]
+    pub fn print_stats(&mut self) {
+        println!("stats: {:?}", self.stats);
+        self.stats = Stats::default();
     }
 
-    pub fn push_row(&mut self, row: Row) {
-        assert!(row.position == self.rows.len());
-        self.rows.push(row);
-    }
-
-    fn make_row(&self, mut curr_row: Vec<Item>, token: u8) -> Row {
+    fn push_row(&mut self) -> ParseResult {
         let curr_idx = self.rows.len();
-        let mut agenda = curr_row.clone();
+        let mut agenda_ptr = self.scratch.row_start;
+
         let mut predicated_syms = vec![];
-        let mut accepting = false;
 
-        if DEBUG {
-            let row0 = Row {
-                token,
-                position: curr_idx,
-                items: curr_row.clone(),
-                accepting,
-            };
-            println!("row0: {}", self.row_to_string(&row0));
-        }
+        self.stats.rows += 1;
+        self.is_accepting = false;
 
-        while !agenda.is_empty() {
-            let item = agenda.pop().unwrap();
+        while agenda_ptr < self.scratch.row_end {
+            let item = self.scratch.items[agenda_ptr];
+            agenda_ptr += 1;
             if DEBUG {
                 println!("from agenda: {}", self.item_to_string(&item));
             }
-            let mut to_add = vec![];
-            let mut add = |new_item: Item, tag: &str| {
-                if !to_add.contains(&new_item) {
-                    to_add.push(new_item);
-                    if DEBUG {
-                        println!("  adding {}: {}", tag, self.item_to_string(&new_item));
-                    }
-                }
-            };
 
             let lhs = item.sym_idx();
             let rule = item.rule_idx();
@@ -164,44 +195,52 @@ impl Parser {
             if after_dot == OptSymIdx::NULL {
                 // complete
                 if lhs == self.grammar.start() {
-                    accepting = true;
+                    self.is_accepting = true;
                 }
 
                 if item.start_pos() < curr_idx {
                     // if item.start_pos() == curr_idx, then we handled it above in the nullable check
-                    for item in self.rows[item.start_pos()].items.iter() {
+                    let srow = &self.rows[item.start_pos()];
+                    for i in srow.first_item..srow.last_item {
+                        let item = self.scratch.items[i];
                         if self.grammar.sym_idx_at(item.rule_idx()) == lhs {
-                            add(item.advance_dot(), "complete");
+                            self.scratch.add_unique(item.advance_dot(), "complete");
                         }
                     }
                 }
             } else {
                 let sym_data = self.grammar.sym_data(after_dot);
                 if sym_data.is_nullable {
-                    add(item.advance_dot(), "null");
+                    self.scratch.add_unique(item.advance_dot(), "null");
                 }
+                // TODO this is slow
                 if !predicated_syms.contains(&after_dot) {
                     predicated_syms.push(after_dot);
                     for rule in &sym_data.rules {
                         let new_item = Item::new(after_dot, *rule, curr_idx);
-                        add(new_item, "predict");
+                        self.scratch.add_unique(new_item, "predict");
                     }
-                }
-            }
-
-            for new_item in to_add {
-                if !curr_row.contains(&new_item) {
-                    curr_row.push(new_item);
-                    agenda.push(new_item);
                 }
             }
         }
 
-        Row {
-            token,
-            position: curr_idx,
-            items: curr_row,
-            accepting,
+        let row_len = self.scratch.row_len();
+        self.stats.all_items += row_len;
+
+        if row_len == 0 {
+            assert!(!self.is_accepting);
+            return ParseResult::Reject;
+        }
+
+        self.rows.push(Row {
+            first_item: self.scratch.row_start,
+            last_item: self.scratch.row_end,
+        });
+
+        if self.is_accepting {
+            ParseResult::Accept
+        } else {
+            ParseResult::Continue
         }
     }
 }

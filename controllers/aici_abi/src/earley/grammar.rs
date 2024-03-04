@@ -357,6 +357,10 @@ impl OptGrammar {
         &self.terminals_by_byte[b as usize]
     }
 
+    pub fn terminal_allowed(&self, b: u8, sym: OptSymIdx) -> bool {
+        self.terminals_by_byte[b as usize].get(sym.0 as usize) == Some(true)
+    }
+
     pub fn sym_idx_at(&self, idx: RuleIdx) -> OptSymIdx {
         self.rules[idx.0 as usize]
     }

@@ -3,7 +3,10 @@ use quick_protobuf::MessageRead;
 use rustc_hash::FxHashSet;
 
 use super::{guidance, ByteSet, Grammar, Parser};
-use crate::toktree::{Recognizer, SpecialToken, TokTrie};
+use crate::{
+    earley::parser::ParseResult,
+    toktree::{Recognizer, SpecialToken, TokTrie},
+};
 
 pub fn earley_grm_from_guidance(bytes: &[u8]) -> Result<Grammar> {
     let mut reader = quick_protobuf::BytesReader::from_bytes(bytes);
@@ -83,7 +86,7 @@ impl Recognizer for Parser {
 
     fn special_allowed(&mut self, tok: SpecialToken) -> bool {
         if tok == SpecialToken::EndOfSentence {
-            self.curr_row().is_accepting()
+            self.is_accepting()
         } else {
             false
         }
@@ -94,11 +97,10 @@ impl Recognizer for Parser {
     }
 
     fn try_push_byte(&mut self, byte: u8) -> bool {
-        let row = self.scan(byte);
-        if row.is_empty() {
+        let res = self.scan(byte);
+        if res == ParseResult::Reject {
             false
         } else {
-            self.push_row(row);
             true
         }
     }
@@ -118,14 +120,16 @@ pub fn earley_test(trie: TokTrie) {
     println!("toks: {:?}", toks.len());
 
     let mut parser = Parser::new(cfg.compile());
+    let mut last_res = ParseResult::Reject;
     for b in input {
-        let row = parser.scan(*b);
-        if row.is_empty() {
+        last_res = parser.scan(*b);
+        if last_res == ParseResult::Reject {
             println!("reject");
             break;
         }
-        // println!("row: {}", parser.row_to_string(&row));
-        parser.push_row(row);
+    }
+    if last_res != ParseResult::Accept {
+        println!("final non-accept");
     }
 
     #[cfg(not(target_arch = "wasm32"))]
@@ -142,6 +146,7 @@ pub fn earley_test(trie: TokTrie) {
         let tok = *tok;
         let tt = std::time::Instant::now();
         trie.compute_bias(&mut parser, &mut vob);
+        // parser.print_stats();
         if !vob.is_allowed(tok) {
             println!("reject, line={}, tok={:?}", line, trie.token_str(tok));
             panic!();
