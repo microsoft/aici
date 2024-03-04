@@ -1,3 +1,5 @@
+use std::time::Duration;
+
 use anyhow::Result;
 use quick_protobuf::MessageRead;
 use rustc_hash::FxHashSet;
@@ -132,40 +134,59 @@ pub fn earley_test(trie: TokTrie) {
         println!("final non-accept");
     }
 
-    #[cfg(not(target_arch = "wasm32"))]
-    let t0 = std::time::Instant::now();
-
-    let mut line = 1;
-    let mut vob = trie.alloc_token_set();
-
-    parser = Parser::new(cfg.compile());
+    const NUM_REP: usize = 200;
+    let mut durations = vec![];
     println!("start!");
-    let mut times = vec![];
 
-    for tok in &toks {
-        let tok = *tok;
-        let tt = std::time::Instant::now();
-        trie.compute_bias(&mut parser, &mut vob);
-        // parser.print_stats();
-        if !vob.is_allowed(tok) {
-            println!("reject, line={}, tok={:?}", line, trie.token_str(tok));
-            panic!();
-        }
-        for b in trie.token(tok) {
-            if *b == b'\n' {
-                line += 1;
+    for _ in 0..NUM_REP {
+        #[cfg(not(target_arch = "wasm32"))]
+        let t0 = std::time::Instant::now();
+
+        let mut line = 1;
+        let mut vob = trie.alloc_token_set();
+
+        const COLLECT_TIMES: bool = false;
+
+        parser = Parser::new(cfg.compile());
+        let mut times = vec![];
+
+        for tok in &toks {
+            let tok = *tok;
+            let tt = std::time::Instant::now();
+            trie.compute_bias(&mut parser, &mut vob);
+            // parser.print_stats();
+            if !vob.is_allowed(tok) {
+                println!("reject, line={}, tok={:?}", line, trie.token_str(tok));
+                panic!();
+            }
+            for b in trie.token(tok) {
+                if *b == b'\n' {
+                    line += 1;
+                }
+            }
+            // println!("TOK: {} ===> {}", trie.token_dbg(tok), trie.token_set_dbg(&vob));
+            trie.append_token(&mut parser, tok);
+            if COLLECT_TIMES {
+                times.push(tt.elapsed().as_micros() as u32);
             }
         }
-        // println!("TOK: {} ===> {}", trie.token_dbg(tok), trie.token_set_dbg(&vob));
-        trie.append_token(&mut parser, tok);
-        times.push(tt.elapsed().as_micros() as u32);
+
+        durations.push(t0.elapsed());
+
+        if COLLECT_TIMES {
+            println!("times: {:?}", times);
+        }
     }
 
-    #[cfg(not(target_arch = "wasm32"))]
+    let mut total = Duration::ZERO;
+    for d in &durations {
+        total += *d;
+    }
+
     println!(
-        "time: {:?} ({:?}/tok)",
-        t0.elapsed(),
-        t0.elapsed() / toks.len() as u32
+        "time: {:?} - {:?} - {:?}",
+        durations.iter().min().unwrap(),
+        total / durations.len() as u32,
+        durations.iter().max().unwrap(),
     );
-    println!("times: {:?}", times);
 }

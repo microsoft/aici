@@ -1,4 +1,4 @@
-use std::{fmt::Debug, vec};
+use std::{fmt::Debug, ops::Range, vec};
 
 use super::grammar::{OptGrammar, OptSymIdx, RuleIdx};
 
@@ -32,6 +32,12 @@ struct Row {
     last_item: usize,
 }
 
+impl Row {
+    fn item_indices(&self) -> Range<usize> {
+        self.first_item..self.last_item
+    }
+}
+
 impl Item {
     fn new(sym: OptSymIdx, rule: RuleIdx, start: usize) -> Self {
         Item {
@@ -63,6 +69,7 @@ struct Scratch {
     row_start: usize,
     row_end: usize,
     items: Vec<Item>,
+    predicated_syms: Vec<OptSymIdx>,
 }
 
 pub struct Parser {
@@ -164,7 +171,8 @@ impl Parser {
     }
 
     pub fn pop_rows(&mut self, n: usize) {
-        self.rows.drain(self.rows.len() - n..);
+        unsafe { self.rows.set_len(self.rows.len() - n) }
+        // self.rows.drain(self.rows.len() - n..);
     }
 
     pub fn print_stats(&mut self) {
@@ -176,7 +184,7 @@ impl Parser {
         let curr_idx = self.rows.len();
         let mut agenda_ptr = self.scratch.row_start;
 
-        let mut predicated_syms = vec![];
+        self.scratch.predicated_syms.clear();
 
         self.stats.rows += 1;
         self.is_accepting = false;
@@ -194,14 +202,11 @@ impl Parser {
 
             if after_dot == OptSymIdx::NULL {
                 // complete
-                if lhs == self.grammar.start() {
-                    self.is_accepting = true;
-                }
+                self.is_accepting = self.is_accepting || lhs == self.grammar.start();
 
                 if item.start_pos() < curr_idx {
                     // if item.start_pos() == curr_idx, then we handled it above in the nullable check
-                    let srow = &self.rows[item.start_pos()];
-                    for i in srow.first_item..srow.last_item {
+                    for i in self.rows[item.start_pos()].item_indices() {
                         let item = self.scratch.items[i];
                         if self.grammar.sym_idx_at(item.rule_idx()) == lhs {
                             self.scratch.add_unique(item.advance_dot(), "complete");
@@ -213,9 +218,8 @@ impl Parser {
                 if sym_data.is_nullable {
                     self.scratch.add_unique(item.advance_dot(), "null");
                 }
-                // TODO this is slow
-                if !predicated_syms.contains(&after_dot) {
-                    predicated_syms.push(after_dot);
+                if !self.scratch.predicated_syms.contains(&after_dot) {
+                    self.scratch.predicated_syms.push(after_dot);
                     for rule in &sym_data.rules {
                         let new_item = Item::new(after_dot, *rule, curr_idx);
                         self.scratch.add_unique(new_item, "predict");
