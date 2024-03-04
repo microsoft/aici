@@ -1,6 +1,6 @@
-use std::{fmt::Debug, ops::Range, vec};
+use std::{fmt::Debug, hash::Hash, ops::Range, vec};
 
-use super::grammar::{OptGrammar, OptSymIdx, RuleIdx};
+use super::grammar::{OptGrammar, OptSymIdx, RuleIdx, SimpleHash};
 
 const DEBUG: bool = false;
 
@@ -64,12 +64,59 @@ impl Item {
     }
 }
 
+impl SimpleHash for Item {
+    fn simple_hash(&self) -> u32 {
+        (self.rule_idx.as_index() as u32)
+            .wrapping_mul(16315967)
+            .wrapping_add((self.start as u32).wrapping_mul(33398653))
+    }
+}
+
+struct SimpleSet<T: SimpleHash + Eq> {
+    hash: u64,
+    items: Vec<T>,
+}
+
+impl<T: SimpleHash + Eq + Copy> Default for SimpleSet<T> {
+    fn default() -> Self {
+        SimpleSet {
+            hash: 0,
+            items: vec![],
+        }
+    }
+}
+
+impl<T: SimpleHash + Eq + Copy> SimpleSet<T> {
+    fn clear(&mut self) {
+        self.hash = 0;
+        self.items.clear();
+    }
+
+    fn insert(&mut self, item: T) {
+        let mask = item.mask64();
+        if (self.hash & mask) != 0 && self.items.contains(&item) {
+            return;
+        }
+        self.hash |= mask;
+        self.items.push(item);
+    }
+
+    fn contains(&self, item: T) -> bool {
+        if (item.mask64() & self.hash) == 0 {
+            false
+        } else {
+            self.items.contains(&item)
+        }
+    }
+}
+
 #[derive(Default)]
 struct Scratch {
     row_start: usize,
     row_end: usize,
+    row_hash: u64,
     items: Vec<Item>,
-    predicated_syms: Vec<OptSymIdx>,
+    predicated_syms: SimpleSet<OptSymIdx>,
 }
 
 pub struct Parser {
@@ -81,6 +128,12 @@ pub struct Parser {
 }
 
 impl Scratch {
+    fn new_row(&mut self, pos: usize) {
+        self.row_start = pos;
+        self.row_end = pos;
+        self.row_hash = 0;
+    }
+
     fn row_len(&self) -> usize {
         self.row_end - self.row_start
     }
@@ -97,10 +150,13 @@ impl Scratch {
         self.ensure_items(self.row_end + 1);
         self.items[self.row_end] = item;
         self.row_end += 1;
+        self.row_hash |= item.mask64();
     }
 
     fn add_unique(&mut self, item: Item, _info: &str) {
-        if !self.items[self.row_start..self.row_end].contains(&item) {
+        if self.row_hash & item.mask64() == 0
+            || !self.items[self.row_start..self.row_end].contains(&item)
+        {
             self.just_add(item);
         }
     }
@@ -154,9 +210,7 @@ impl Parser {
 
         let allowed = self.grammar.terminals_by_byte(b);
 
-        // for next row:
-        self.scratch.row_start = last;
-        self.scratch.row_end = last;
+        self.scratch.new_row(last);
 
         while i < last {
             let item = self.scratch.items[i];
@@ -218,8 +272,8 @@ impl Parser {
                 if sym_data.is_nullable {
                     self.scratch.add_unique(item.advance_dot(), "null");
                 }
-                if !self.scratch.predicated_syms.contains(&after_dot) {
-                    self.scratch.predicated_syms.push(after_dot);
+                if !self.scratch.predicated_syms.contains(after_dot) {
+                    self.scratch.predicated_syms.insert(after_dot);
                     for rule in &sym_data.rules {
                         let new_item = Item::new(after_dot, *rule, curr_idx);
                         self.scratch.add_unique(new_item, "predict");
