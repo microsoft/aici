@@ -360,10 +360,17 @@ pub struct OptGrammar {
     terminals: Vec<ByteSet>,
     symbols: Vec<OptSymbol>,
     rules: Vec<OptSymIdx>,
+    rule_idx_to_sym_idx: Vec<OptSymIdx>,
     terminals_by_byte: Vec<SimpleVob>,
 }
 
+const RULE_SHIFT: usize = 2;
+
 impl OptGrammar {
+    pub fn sym_idx_of(&self, rule: RuleIdx) -> OptSymIdx {
+        self.rule_idx_to_sym_idx[rule.as_index() >> RULE_SHIFT]
+    }
+
     pub fn sym_data(&self, sym: OptSymIdx) -> &OptSymbol {
         &self.symbols[sym.0 as usize]
     }
@@ -404,6 +411,7 @@ impl OptGrammar {
                 rules: vec![],
             }],
             rules: vec![],
+            rule_idx_to_sym_idx: vec![],
             terminals_by_byte: vec![],
         };
         let mut sym_map = FxHashMap::default();
@@ -448,6 +456,13 @@ impl OptGrammar {
                     outp.rules.push(sym_map[r]);
                 }
                 outp.rules.push(OptSymIdx::NULL);
+            }
+            while outp.rules.len() % (1 << RULE_SHIFT) != 0 {
+                outp.rules.push(OptSymIdx::NULL);
+            }
+            let rlen = outp.rules.len() >> RULE_SHIFT;
+            while outp.rule_idx_to_sym_idx.len() < rlen {
+                outp.rule_idx_to_sym_idx.push(idx);
             }
         }
 

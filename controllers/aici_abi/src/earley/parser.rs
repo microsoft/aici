@@ -8,7 +8,6 @@ const DEBUG: bool = false;
 struct Item {
     rule_idx: RuleIdx,
     start: u32,
-    sym_idx: OptSymIdx,
 }
 
 #[derive(Debug, Default)]
@@ -39,9 +38,8 @@ impl Row {
 }
 
 impl Item {
-    fn new(sym: OptSymIdx, rule: RuleIdx, start: usize) -> Self {
+    fn new(rule: RuleIdx, start: usize) -> Self {
         Item {
-            sym_idx: sym,
             rule_idx: rule,
             start: start.try_into().unwrap(),
         }
@@ -51,16 +49,12 @@ impl Item {
         self.rule_idx
     }
 
-    fn sym_idx(&self) -> OptSymIdx {
-        self.sym_idx
-    }
-
     fn start_pos(&self) -> usize {
         self.start as usize
     }
 
     fn advance_dot(&self) -> Self {
-        Item::new(self.sym_idx, self.rule_idx.advance(), self.start_pos())
+        Item::new(self.rule_idx.advance(), self.start_pos())
     }
 }
 
@@ -171,7 +165,7 @@ impl Parser {
             is_accepting: false,
         };
         for rule in r.grammar.rules_of(start).to_vec() {
-            r.scratch.add_unique(Item::new(start, rule, 0), "init");
+            r.scratch.add_unique(Item::new(rule, 0), "init");
         }
         let _ = r.push_row();
         r
@@ -184,10 +178,7 @@ impl Parser {
     fn item_to_string(&self, item: &Item) -> String {
         // let rule = self.grammar.rule_data(item.rule_idx());
         // self.grammar.rule_to_string(rule, item.dot_pos())
-        format!(
-            "item: rule: {:?}, dot: {:?}, start: {}",
-            item.rule_idx, item.sym_idx, item.start
-        )
+        format!("item: rule: {:?}, start: {}", item.rule_idx, item.start)
     }
 
     // fn row_to_string(&self, row: &Row) -> String {
@@ -254,7 +245,7 @@ impl Parser {
             let after_dot = self.grammar.sym_idx_at(rule);
 
             if after_dot == OptSymIdx::NULL {
-                let lhs = item.sym_idx();
+                let lhs = self.grammar.sym_idx_of(item.rule_idx());
                 // complete
                 self.is_accepting = self.is_accepting || lhs == self.grammar.start();
 
@@ -275,7 +266,7 @@ impl Parser {
                 if !self.scratch.predicated_syms.contains(after_dot) {
                     self.scratch.predicated_syms.insert(after_dot);
                     for rule in &sym_data.rules {
-                        let new_item = Item::new(after_dot, *rule, curr_idx);
+                        let new_item = Item::new(*rule, curr_idx);
                         self.scratch.add_unique(new_item, "predict");
                     }
                 }
