@@ -19,9 +19,6 @@ pub mod rx;
 #[cfg(feature = "earley")]
 pub mod earley;
 
-#[cfg(target_os = "linux")]
-pub mod bench;
-
 pub mod substring;
 
 pub type TokenId = bytes::TokenId;

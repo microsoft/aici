@@ -135,16 +135,12 @@ pub fn earley_test(trie: TokTrie) {
     }
 
     const COLLECT_TIMES: bool = false;
-    const NUM_REP: usize = if COLLECT_TIMES { 5 } else { 1000 };
+    const NUM_REP: usize = if COLLECT_TIMES { 5 } else { 200 };
     let mut durations = vec![];
     println!("start!");
-    let mut min_us = 100000;
-    let mut dur2 = vec![];
 
-    let mut btest = crate::bench::BenchmarkState::new();
-    let max_tidx = 4;
+    for _ in 0..NUM_REP {
 
-    for r in 0..NUM_REP {
         let mut line = 1;
         let mut vob = trie.alloc_token_set();
 
@@ -154,21 +150,10 @@ pub fn earley_test(trie: TokTrie) {
         #[cfg(not(target_arch = "wasm32"))]
         let t0 = std::time::Instant::now();
 
-        for (tidx, tok) in toks.iter().enumerate() {
+        for tok in &toks {
             let tok = *tok;
             let tt = std::time::Instant::now();
-            if tidx == max_tidx {
-                btest.measure(|| {
-                    trie.compute_bias(&mut parser, &mut vob);
-                });
-            } else {
-                trie.compute_bias(&mut parser, &mut vob);
-            }
-
-            if r > 0 && tidx > max_tidx {
-                break;
-            }
-
+            trie.compute_bias(&mut parser, &mut vob);
             // parser.print_stats();
             if !vob.is_allowed(tok) {
                 println!("reject, line={}, tok={:?}", line, trie.token_str(tok));
@@ -185,13 +170,6 @@ pub fn earley_test(trie: TokTrie) {
             //     trie.token_set_dbg(&vob)
             // );
             trie.append_token(&mut parser, tok);
-            let tm = tt.elapsed().as_micros() as u32;
-            if tm > 1000 {
-                dur2.push(tm);
-            }
-            if tm > 1000 && tm < min_us {
-                min_us = tm;
-            }
             if COLLECT_TIMES {
                 times.push(tt.elapsed().as_micros() as u32);
             }
@@ -204,21 +182,15 @@ pub fn earley_test(trie: TokTrie) {
         }
     }
 
-    btest.print();
-
     let mut total = Duration::ZERO;
     for d in &durations {
         total += *d;
     }
 
-    dur2.sort();
-
     println!(
-        "time: {:?} - {:?} - {:?} {} {}",
+        "time: {:?} - {:?} - {:?}",
         durations.iter().min().unwrap(),
         total / durations.len() as u32,
         durations.iter().max().unwrap(),
-        min_us,
-        dur2[dur2.len() / 2]
     );
 }
