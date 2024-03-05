@@ -250,11 +250,11 @@ impl Parser {
                 println!("from agenda: {}", self.item_to_string(&item));
             }
 
-            let lhs = item.sym_idx();
             let rule = item.rule_idx();
             let after_dot = self.grammar.sym_idx_at(rule);
 
             if after_dot == OptSymIdx::NULL {
+                let lhs = item.sym_idx();
                 // complete
                 self.is_accepting = self.is_accepting || lhs == self.grammar.start();
 

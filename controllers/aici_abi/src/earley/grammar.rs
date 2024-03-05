@@ -1,8 +1,9 @@
 use std::fmt::Debug;
 
+use crate::svob::SimpleVob;
+
 use super::ByteSet;
 use rustc_hash::FxHashMap;
-use vob::Vob;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct SymIdx(u32);
@@ -359,7 +360,7 @@ pub struct OptGrammar {
     terminals: Vec<ByteSet>,
     symbols: Vec<OptSymbol>,
     rules: Vec<OptSymIdx>,
-    terminals_by_byte: Vec<Vob>,
+    terminals_by_byte: Vec<SimpleVob>,
 }
 
 impl OptGrammar {
@@ -371,12 +372,8 @@ impl OptGrammar {
         &mut self.symbols[sym.0 as usize]
     }
 
-    pub fn terminals_by_byte(&self, b: u8) -> &Vob {
+    pub fn terminals_by_byte(&self, b: u8) -> &SimpleVob {
         &self.terminals_by_byte[b as usize]
-    }
-
-    pub fn terminal_allowed(&self, b: u8, sym: OptSymIdx) -> bool {
-        self.terminals_by_byte[b as usize].get(sym.0 as usize) == Some(true)
     }
 
     pub fn sym_idx_at(&self, idx: RuleIdx) -> OptSymIdx {
@@ -480,10 +477,10 @@ impl OptGrammar {
         }
 
         for b in 0..=255 {
-            let mut v = Vob::from_elem(false, outp.terminals.len());
+            let mut v = SimpleVob::alloc(outp.terminals.len());
             for (i, bytes) in outp.terminals.iter().enumerate() {
                 if bytes.contains(b as u8) {
-                    v.set(i, true);
+                    v.allow_token(i as u32);
                 }
             }
             outp.terminals_by_byte.push(v);

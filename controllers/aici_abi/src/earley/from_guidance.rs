@@ -140,14 +140,15 @@ pub fn earley_test(trie: TokTrie) {
     println!("start!");
 
     for _ in 0..NUM_REP {
-        #[cfg(not(target_arch = "wasm32"))]
-        let t0 = std::time::Instant::now();
 
         let mut line = 1;
         let mut vob = trie.alloc_token_set();
 
         parser = Parser::new(cfg.compile());
         let mut times = vec![];
+
+        #[cfg(not(target_arch = "wasm32"))]
+        let t0 = std::time::Instant::now();
 
         for tok in &toks {
             let tok = *tok;
