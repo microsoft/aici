@@ -1,3 +1,4 @@
+import guidance
 import pyaici.server as aici
 import re
 
@@ -18,3 +19,4 @@ async def test_joke():
 
 
 aici.test(test_joke())
+
