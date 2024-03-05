@@ -1,5 +1,3 @@
-use std::time::Duration;
-
 use anyhow::Result;
 use quick_protobuf::MessageRead;
 use rustc_hash::FxHashSet;
@@ -135,12 +133,14 @@ pub fn earley_test(trie: TokTrie) {
     }
 
     const COLLECT_TIMES: bool = false;
-    const NUM_REP: usize = if COLLECT_TIMES { 5 } else { 200 };
+    const NUM_REP: usize = if COLLECT_TIMES { 5 } else { 500 };
     let mut durations = vec![];
+    let mut durations_us = vec![];
     println!("start!");
 
-    for _ in 0..NUM_REP {
+    let num_tok = 4;
 
+    for _ in 0..NUM_REP {
         let mut line = 1;
         let mut vob = trie.alloc_token_set();
 
@@ -150,10 +150,13 @@ pub fn earley_test(trie: TokTrie) {
         #[cfg(not(target_arch = "wasm32"))]
         let t0 = std::time::Instant::now();
 
-        for tok in &toks {
+        for (idx, tok) in toks.iter().take(num_tok).enumerate() {
             let tok = *tok;
             let tt = std::time::Instant::now();
             trie.compute_bias(&mut parser, &mut vob);
+            if idx == num_tok - 1 {
+                durations_us.push(tt.elapsed().as_micros() as u64);
+            }
             // parser.print_stats();
             if !vob.is_allowed(tok) {
                 println!("reject, line={}, tok={:?}", line, trie.token_str(tok));
@@ -175,22 +178,50 @@ pub fn earley_test(trie: TokTrie) {
             }
         }
 
-        durations.push(t0.elapsed());
+        durations.push(t0.elapsed().as_micros() as u64);
 
         if COLLECT_TIMES {
             println!("times: {:?}", times);
         }
     }
 
-    let mut total = Duration::ZERO;
-    for d in &durations {
-        total += *d;
-    }
+    durations.sort();
+    durations_us.sort();
 
     println!(
-        "time: {:?} - {:?} - {:?}",
-        durations.iter().min().unwrap(),
-        total / durations.len() as u32,
-        durations.iter().max().unwrap(),
+        "time: {},{}",
+        vec_stats(&durations),
+        vec_stats(&durations_us),
     );
+
+    println!(
+        "time_us: {:?},{:?},{:?}",
+        durations_us.iter().min().unwrap(),
+        durations_us[durations_us.len() / 2],
+        durations_us.iter().max().unwrap(),
+    );
+}
+
+fn vec_stats(times: &[u64]) -> String {
+    let mut times = times.to_vec();
+    times.sort();
+    let sum0 = times.iter().sum::<u64>();
+    let drop = times.len() / 10;
+    let len2 = times.len() - 2 * drop;
+    let sum1 = times[drop..times.len() - drop].iter().sum::<u64>();
+    // t0,t10,t50,t90,t100,avg,avg90
+    let stats = vec![
+        times[0],
+        times[drop],
+        times[times.len() / 2],
+        times[times.len() - drop],
+        times[times.len() - 1],
+        sum0 / times.len() as u64,
+        sum1 / len2 as u64,
+    ];
+    stats
+        .iter()
+        .map(|x| x.to_string())
+        .collect::<Vec<_>>()
+        .join(",")
 }
