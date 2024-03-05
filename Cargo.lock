@@ -270,6 +270,25 @@ dependencies = [
 ]
 
 [[package]]
+name = "aici_guidance_ctrl"
+version = "0.1.0"
+dependencies = [
+ "aici_abi",
+ "anyhow",
+ "crossbeam-utils",
+ "glob",
+ "indexmap 2.1.0",
+ "lazy_static",
+ "libc",
+ "num-traits",
+ "once_cell",
+ "rustpython-derive",
+ "rustpython-vm",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "aici_jsctrl"
 version = "0.1.0"
 dependencies = [

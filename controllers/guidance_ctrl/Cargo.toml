@@ -1,5 +1,5 @@
 [package]
-name = "aici_pyctrl"
+name = "aici_guidance_ctrl"
 version = "0.1.0"
 edition = "2021"
 
@@ -19,7 +19,7 @@ indexmap = { version = "2.1.0", features = ["std"] }
 
 [[bin]]
 name = "aici_pyctrl"
-path = "src/pyctrl.rs"
+path = "src/gctrl.rs"
 
 [build-dependencies]
 glob = "0.3.1"
