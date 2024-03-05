@@ -4,6 +4,7 @@ use super::grammar::{OptGrammar, OptSymIdx, RuleIdx, SimpleHash};
 
 const DEBUG: bool = false;
 
+//#[repr(align(8))]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 struct Item {
     rule_idx: RuleIdx,
