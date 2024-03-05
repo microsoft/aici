@@ -338,6 +338,10 @@ impl SimpleHash for OptSymIdx {
 pub struct RuleIdx(u32);
 
 impl RuleIdx {
+    pub fn from_index(idx: u32) -> Self {
+        RuleIdx(idx)
+    }
+
     pub fn advance(&self) -> RuleIdx {
         RuleIdx(self.0 + 1)
     }

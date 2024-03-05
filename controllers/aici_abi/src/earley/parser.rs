@@ -6,8 +6,7 @@ const DEBUG: bool = false;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 struct Item {
-    rule_idx: RuleIdx,
-    start: u32,
+    data: u64,
 }
 
 #[derive(Debug, Default)]
@@ -40,29 +39,30 @@ impl Row {
 impl Item {
     fn new(rule: RuleIdx, start: usize) -> Self {
         Item {
-            rule_idx: rule,
-            start: start.try_into().unwrap(),
+            data: rule.as_index() as u64 | ((start as u64) << 32),
         }
     }
 
     fn rule_idx(&self) -> RuleIdx {
-        self.rule_idx
+        RuleIdx::from_index(self.data as u32)
     }
 
     fn start_pos(&self) -> usize {
-        self.start as usize
+        (self.data >> 32) as usize
     }
 
     fn advance_dot(&self) -> Self {
-        Item::new(self.rule_idx.advance(), self.start_pos())
+        Item {
+            data: self.data + 1,
+        }
     }
 }
 
 impl SimpleHash for Item {
     fn simple_hash(&self) -> u32 {
-        (self.rule_idx.as_index() as u32)
+        (self.rule_idx().as_index() as u32)
             .wrapping_mul(16315967)
-            .wrapping_add((self.start as u32).wrapping_mul(33398653))
+            .wrapping_add((self.start_pos() as u32).wrapping_mul(33398653))
     }
 }
 
@@ -178,7 +178,11 @@ impl Parser {
     fn item_to_string(&self, item: &Item) -> String {
         // let rule = self.grammar.rule_data(item.rule_idx());
         // self.grammar.rule_to_string(rule, item.dot_pos())
-        format!("item: rule: {:?}, start: {}", item.rule_idx, item.start)
+        format!(
+            "item: rule: {:?}, start: {}",
+            item.rule_idx(),
+            item.start_pos()
+        )
     }
 
     // fn row_to_string(&self, row: &Row) -> String {

@@ -188,40 +188,8 @@ pub fn earley_test(trie: TokTrie) {
     durations.sort();
     durations_us.sort();
 
-    println!(
-        "time: {},{}",
-        vec_stats(&durations),
-        vec_stats(&durations_us),
-    );
-
-    println!(
-        "time_us: {:?},{:?},{:?}",
-        durations_us.iter().min().unwrap(),
-        durations_us[durations_us.len() / 2],
-        durations_us.iter().max().unwrap(),
-    );
-}
-
-fn vec_stats(times: &[u64]) -> String {
-    let mut times = times.to_vec();
-    times.sort();
-    let sum0 = times.iter().sum::<u64>();
-    let drop = times.len() / 10;
-    let len2 = times.len() - 2 * drop;
-    let sum1 = times[drop..times.len() - drop].iter().sum::<u64>();
-    // t0,t10,t50,t90,t100,avg,avg90
-    let stats = vec![
-        times[0],
-        times[drop],
-        times[times.len() / 2],
-        times[times.len() - drop],
-        times[times.len() - 1],
-        sum0 / times.len() as u64,
-        sum1 / len2 as u64,
-    ];
-    stats
-        .iter()
-        .map(|x| x.to_string())
-        .collect::<Vec<_>>()
-        .join(",")
+    let min_us = *durations_us.iter().min().unwrap();
+    // println!("min_time_us: {:?}", min_us);
+    // for ~5ms 0.1ms is the precision we expect
+    println!("min_time_ms: {:.1}", min_us as f64 / 1000.0);
 }
