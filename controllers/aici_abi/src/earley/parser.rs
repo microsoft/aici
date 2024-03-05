@@ -1,5 +1,7 @@
 use std::{fmt::Debug, hash::Hash, ops::Range, vec};
 
+use crate::toktree::{Recognizer, SpecialToken};
+
 use super::grammar::{OptGrammar, OptSymIdx, RuleIdx, SimpleHash};
 
 const DEBUG: bool = false;
@@ -294,6 +296,37 @@ impl Parser {
             ParseResult::Accept
         } else {
             ParseResult::Continue
+        }
+    }
+}
+
+impl Recognizer for Parser {
+    fn pop_bytes(&mut self, num: usize) {
+        self.pop_rows(num);
+    }
+
+    fn collapse(&mut self) {
+        // does nothing - we need to keep the entire state
+    }
+
+    fn special_allowed(&mut self, tok: SpecialToken) -> bool {
+        if tok == SpecialToken::EndOfSentence {
+            self.is_accepting()
+        } else {
+            false
+        }
+    }
+
+    fn trie_finished(&mut self) {
+        // do nothing?
+    }
+
+    fn try_push_byte(&mut self, byte: u8) -> bool {
+        let res = self.scan(byte);
+        if res == ParseResult::Reject {
+            false
+        } else {
+            true
         }
     }
 }

@@ -12,7 +12,8 @@ use crate::{
     TimerRef, TimerSet,
 };
 use aici_abi::{
-    bytes::limit_str, earley::earley_test, toktree::TokTrie, MidProcessArg, PostProcessArg, PreProcessArg, SeqId
+    bytes::limit_str, earley::bench::earley_test, toktree::TokTrie, MidProcessArg, PostProcessArg,
+    PreProcessArg, SeqId,
 };
 use aicirt::{bintokens::find_tokenizer, futexshm::ServerChannel, *};
 use anyhow::{anyhow, ensure, Result};

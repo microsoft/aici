@@ -3,10 +3,7 @@ use quick_protobuf::MessageRead;
 use rustc_hash::FxHashSet;
 
 use super::{guidance, ByteSet, Grammar, Parser};
-use crate::{
-    earley::parser::ParseResult,
-    toktree::{Recognizer, SpecialToken, TokTrie},
-};
+use crate::earley::parser::ParseResult;
 
 pub fn earley_grm_from_guidance(bytes: &[u8]) -> Result<Grammar> {
     let mut reader = quick_protobuf::BytesReader::from_bytes(bytes);
@@ -75,39 +72,7 @@ pub fn earley_grm_from_guidance(bytes: &[u8]) -> Result<Grammar> {
     Ok(grm)
 }
 
-impl Recognizer for Parser {
-    fn pop_bytes(&mut self, num: usize) {
-        self.pop_rows(num);
-    }
-
-    fn collapse(&mut self) {
-        // does nothing - we need to keep the entire state
-    }
-
-    fn special_allowed(&mut self, tok: SpecialToken) -> bool {
-        if tok == SpecialToken::EndOfSentence {
-            self.is_accepting()
-        } else {
-            false
-        }
-    }
-
-    fn trie_finished(&mut self) {
-        // do nothing?
-    }
-
-    fn try_push_byte(&mut self, byte: u8) -> bool {
-        let res = self.scan(byte);
-        if res == ParseResult::Reject {
-            false
-        } else {
-            true
-        }
-    }
-}
-
-#[allow(dead_code)]
-pub fn earley_test(trie: TokTrie) {
+pub fn earley_test(trie: crate::toktree::TokTrie) {
     let g_bytes = include_bytes!("../../grammars/json0.guidance");
     let cfg = earley_grm_from_guidance(g_bytes).unwrap();
     // println!("cfg0: {:?}", cfg);
@@ -117,7 +82,7 @@ pub fn earley_test(trie: TokTrie) {
     let input = r#"{"name":"Joe","info":{"foo":10,"bar":"20"}}"#.as_bytes();
 
     let toks = trie.greedy_tokenize(input);
-    println!("toks: {:?}", toks.len());
+    println!("tokens: {:?}", toks.len());
 
     let grm = cfg.compile();
 
