@@ -351,6 +351,7 @@ impl RuleIdx {
     }
 }
 
+#[derive(Clone)]
 pub struct OptSymbol {
     pub idx: OptSymIdx,
     pub name: String,
@@ -359,6 +360,7 @@ pub struct OptSymbol {
     pub rules: Vec<RuleIdx>,
 }
 
+#[derive(Clone)]
 pub struct OptGrammar {
     start_symbol: OptSymIdx,
     terminals: Vec<ByteSet>,

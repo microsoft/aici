@@ -119,7 +119,9 @@ pub fn earley_test(trie: TokTrie) {
     let toks = trie.greedy_tokenize(input);
     println!("toks: {:?}", toks.len());
 
-    let mut parser = Parser::new(cfg.compile());
+    let grm = cfg.compile();
+
+    let mut parser = Parser::new(grm.clone());
     let mut last_res = ParseResult::Reject;
     for b in input {
         last_res = parser.scan(*b);
@@ -144,7 +146,7 @@ pub fn earley_test(trie: TokTrie) {
         let mut line = 1;
         let mut vob = trie.alloc_token_set();
 
-        parser = Parser::new(cfg.compile());
+        parser = Parser::new(grm.clone());
         let mut times = vec![];
 
         #[cfg(not(target_arch = "wasm32"))]
