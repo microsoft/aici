@@ -86,6 +86,7 @@
         "freqs",
         "futex",
         "gguf",
+        "gserver",
         "isatty",
         "jsctrl",
         "jsonformer",

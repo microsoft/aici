@@ -27,7 +27,7 @@ async def test_joke():
 
     g = aici.Grammar()
     g.add_rule("expr", ["id"])
-    g.add_rule("expr", ["int"])
+    #g.add_rule("expr", ["int"])
     g.add_rule("expr", terminal("(") + ["expr"] + terminal(")"))
     g.add_rule("expr", ["expr", "op", "expr"])
     g.add_rule("op", terminal(" + "))
@@ -37,11 +37,11 @@ async def test_joke():
     g.add_rule("cont", ["cont", idchars])
     g.add_rule("int", [numbers])
     #g.add_rule("int", ["int", numbers])
-    g.add_rule("_start", terminal("expression: ") + ["expr"])
+    g.add_rule("_start", ["expr"])
     print(repr(g))
     print(repr(g.optimize()))
 
-    await aici.FixedTokens("Hello, ")
+    await aici.FixedTokens("Arithmetic expression: ")
     await aici.gen_tokens(constraint=lambda: g.parser(), max_tokens=20)
 
 

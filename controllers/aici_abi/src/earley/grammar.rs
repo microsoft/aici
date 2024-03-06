@@ -379,6 +379,20 @@ impl CGrammar {
         self.rule_idx_to_sym_idx[rule.as_index() >> RULE_SHIFT]
     }
 
+    pub fn rule_rhs(&self, rule: RuleIdx) -> (&[CSymIdx], usize) {
+        let idx = rule.as_index();
+        let mut start = idx - 1;
+        while self.rules[start] != CSymIdx::NULL {
+            start -= 1;
+        }
+        start += 1;
+        let mut stop = idx;
+        while self.rules[stop] != CSymIdx::NULL {
+            stop += 1;
+        }
+        (&self.rules[start..stop], idx - start)
+    }
+
     pub fn sym_data(&self, sym: CSymIdx) -> &CSymbol {
         &self.symbols[sym.0 as usize]
     }
@@ -480,14 +494,14 @@ impl CGrammar {
                 if sym.is_nullable {
                     continue;
                 }
-                'rules: for rule in sym.rules.iter() {
-                    let mut idx = rule.as_index();
-                    while outp.rules[idx] != CSymIdx::NULL {
-                        if outp.sym_data(outp.rules[idx]).is_nullable {
-                            to_null.push(sym.idx);
-                            break 'rules;
-                        }
-                        idx += 1;
+                for rule in sym.rules.iter() {
+                    if outp
+                        .rule_rhs(*rule)
+                        .0
+                        .iter()
+                        .all(|elt| outp.sym_data(*elt).is_nullable)
+                    {
+                        to_null.push(sym.idx);
                     }
                 }
             }
@@ -509,5 +523,33 @@ impl CGrammar {
             outp.terminals_by_byte.push(v);
         }
         outp
+    }
+
+    pub fn sym_name(&self, sym: CSymIdx) -> &str {
+        &self.symbols[sym.0 as usize].name
+    }
+
+    pub fn rule_to_string(&self, rule: RuleIdx) -> String {
+        let lhs = self.sym_name(self.sym_idx_of(rule));
+        let (rhs, dot) = self.rule_rhs(rule);
+        let mut rhs_str = rhs
+            .iter()
+            .enumerate()
+            .map(|(i, s)| {
+                format!(
+                    "{}{}",
+                    if i == dot { "(*) " } else { "" },
+                    self.sym_name(*s)
+                )
+            })
+            .collect::<Vec<_>>()
+            .join(" ");
+        if rhs.is_empty() {
+            rhs_str.push_str("ϵ");
+        }
+        if dot == rhs.len() {
+            rhs_str.push_str(" (*)");
+        }
+        format!("{} ::= {}", lhs, rhs_str)
     }
 }

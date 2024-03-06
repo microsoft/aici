@@ -120,6 +120,7 @@ pub struct Parser {
     rows: Vec<Row>,
     stats: Stats,
     is_accepting: bool,
+    last_collapse: usize,
 }
 
 impl Scratch {
@@ -165,6 +166,7 @@ impl Parser {
             scratch: Scratch::default(),
             stats: Stats::default(),
             is_accepting: false,
+            last_collapse: 0,
         };
         for rule in r.grammar.rules_of(start).to_vec() {
             r.scratch.add_unique(Item::new(rule, 0), "init");
@@ -178,23 +180,24 @@ impl Parser {
     }
 
     fn item_to_string(&self, item: &Item) -> String {
-        // let rule = self.grammar.rule_data(item.rule_idx());
-        // self.grammar.rule_to_string(rule, item.dot_pos())
         format!(
-            "item: rule: {:?}, start: {}",
-            item.rule_idx(),
+            "{} @{}",
+            self.grammar.rule_to_string(item.rule_idx()),
             item.start_pos()
         )
     }
 
-    // fn row_to_string(&self, row: &Row) -> String {
-    //     // let mut r = vec![format!("token: {}", byte_to_string(row.token))];
-    //     // for item in &row.items {
-    //     //     r.push(self.item_to_string(item));
-    //     // }
-    //     // r.join("\n") + "\n"
-    //     "todo".to_string()
-    // }
+    pub fn print_row(&self, row_idx: usize) {
+        let row = &self.rows[row_idx];
+        println!("row {}", row_idx);
+        for i in row.item_indices() {
+            println!("{}", self.item_to_string(&self.scratch.items[i]));
+        }
+    }
+
+    pub fn num_rows(&self) -> usize {
+        self.rows.len()
+    }
 
     #[inline(always)]
     pub fn scan(&mut self, b: u8) -> ParseResult {
@@ -306,7 +309,14 @@ impl Recognizer for Parser {
     }
 
     fn collapse(&mut self) {
-        // does nothing - we need to keep the entire state
+        // this actually means "commit" - can no longer backtrack past this point
+
+        if false {
+            for idx in self.last_collapse..self.num_rows() {
+                self.print_row(idx);
+            }
+        }
+        self.last_collapse = self.num_rows();
     }
 
     fn special_allowed(&mut self, tok: SpecialToken) -> bool {
