@@ -430,6 +430,7 @@ impl TokTrie {
     }
 
     pub fn append_token(&self, r: &mut impl Recognizer, t: TokenId) {
+        // println!("append_token: {}", self.token_dbg(t));
         let bytes = self.token(t);
         for &byte in bytes {
             r.push_byte(byte)

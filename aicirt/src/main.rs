@@ -12,7 +12,8 @@ use crate::{
     TimerRef, TimerSet,
 };
 use aici_abi::{
-    bytes::limit_str, toktree::TokTrie, MidProcessArg, PostProcessArg, PreProcessArg, SeqId,
+    bytes::limit_str, earley::bench::earley_test, toktree::TokTrie, MidProcessArg, PostProcessArg,
+    PreProcessArg, SeqId,
 };
 use aicirt::{bintokens::find_tokenizer, futexshm::ServerChannel, *};
 use anyhow::{anyhow, ensure, Result};
@@ -59,6 +60,10 @@ struct Cli {
     /// Save the --tokenizer=... to specified file
     #[arg(long)]
     save_tokenizer: Option<String>,
+
+    /// Run Earley parser benchmark
+    #[arg(long)]
+    earley_bench: bool,
 
     /// Run main() from the module just added
     #[arg(short, long)]
@@ -1091,6 +1096,13 @@ fn bench_hashmap() {
     }
 }
 
+fn earley_bench(cli: &Cli) {
+    let tokenizer = find_tokenizer(&cli.tokenizer).unwrap();
+    let tokens = tokenizer.token_bytes();
+    let trie = TokTrie::from(&tokenizer.tokrx_info(), &tokens);
+    earley_test(trie);
+}
+
 fn save_tokenizer(cli: &Cli) {
     let filename = cli.save_tokenizer.as_deref().unwrap();
     let tokenizer = find_tokenizer(&cli.tokenizer).unwrap();
@@ -1185,6 +1197,11 @@ fn main() -> () {
 
     if cli.save_tokenizer.is_some() {
         save_tokenizer(&cli);
+        return ();
+    }
+
+    if cli.earley_bench {
+        earley_bench(&cli);
         return ();
     }
 

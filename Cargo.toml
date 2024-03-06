@@ -6,6 +6,7 @@ members = [
     "controllers/declctrl",
     "controllers/pyctrl",
     "controllers/jsctrl",
+    "controllers/guidance_ctrl",
     "controllers/uppercase",
     "rllm/rllm-base",
     "rllm/rllm-cuda",

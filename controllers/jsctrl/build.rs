@@ -20,7 +20,7 @@ fn main() {
     rerun_if_glob("gen-dts.mjs");
 
     if Command::new("tsc").arg("--version").status().is_err() {
-        println!("cargo:warning=typescript not found, installing...");
+        // println!("cargo:warning=typescript not found, installing...");
         run(
             Command::new("npm")
                 .arg("install")

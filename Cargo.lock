@@ -244,6 +244,7 @@ dependencies = [
  "lrlex",
  "lrpar",
  "lrtable",
+ "quick-protobuf",
  "regex-automata 0.4.5",
  "rustc-hash",
  "serde",
@@ -266,6 +267,25 @@ dependencies = [
  "serde",
  "serde_json",
  "vob",
+]
+
+[[package]]
+name = "aici_guidance_ctrl"
+version = "0.1.0"
+dependencies = [
+ "aici_abi",
+ "anyhow",
+ "crossbeam-utils",
+ "glob",
+ "indexmap 2.1.0",
+ "lazy_static",
+ "libc",
+ "num-traits",
+ "once_cell",
+ "rustpython-derive",
+ "rustpython-vm",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]
@@ -2728,6 +2748,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "5787f7cda34e3033a72192c018bc5883100330f362ef279a8cbccfce8bb4e874"
 dependencies = [
  "cc",
+]
+
+[[package]]
+name = "quick-protobuf"
+version = "0.8.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9d6da84cc204722a989e01ba2f6e1e276e190f22263d0cb6ce8526fcdb0d2e1f"
+dependencies = [
+ "byteorder",
 ]
 
 [[package]]
