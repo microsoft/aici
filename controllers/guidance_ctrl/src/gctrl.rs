@@ -300,6 +300,12 @@ mod _aici {
             let other = other.0.lock().unwrap();
             bs.add_set(&*other);
         }
+        #[pymethod]
+        fn copy(&self) -> ByteSet {
+            let bs = self.0.lock().unwrap();
+            let bs = bs.clone();
+            ByteSet(Mutex::new(bs))
+        }
     }
 
     #[pyattr]
