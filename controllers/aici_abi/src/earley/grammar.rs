@@ -241,8 +241,8 @@ impl Grammar {
             .expand_shortcuts()
     }
 
-    pub fn compile(&self) -> OptGrammar {
-        OptGrammar::from_grammar(self)
+    pub fn compile(&self) -> CGrammar {
+        CGrammar::from_grammar(self)
     }
 
     pub fn fresh_symbol(&mut self, name0: &str) -> SymIdx {
@@ -306,10 +306,10 @@ impl Debug for Grammar {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct OptSymIdx(u16);
+pub struct CSymIdx(u16);
 
-impl OptSymIdx {
-    pub const NULL: OptSymIdx = OptSymIdx(0);
+impl CSymIdx {
+    pub const NULL: CSymIdx = CSymIdx(0);
 
     pub fn as_index(&self) -> usize {
         self.0 as usize
@@ -328,7 +328,7 @@ pub trait SimpleHash {
     }
 }
 
-impl SimpleHash for OptSymIdx {
+impl SimpleHash for CSymIdx {
     fn simple_hash(&self) -> u32 {
         (self.0 as u32).wrapping_mul(79667123)
     }
@@ -338,6 +338,8 @@ impl SimpleHash for OptSymIdx {
 pub struct RuleIdx(u32);
 
 impl RuleIdx {
+    pub const NULL: RuleIdx = RuleIdx(0);
+
     pub fn from_index(idx: u32) -> Self {
         RuleIdx(idx)
     }
@@ -352,8 +354,8 @@ impl RuleIdx {
 }
 
 #[derive(Clone)]
-pub struct OptSymbol {
-    pub idx: OptSymIdx,
+pub struct CSymbol {
+    pub idx: CSymIdx,
     pub name: String,
     pub is_terminal: bool,
     pub is_nullable: bool,
@@ -361,27 +363,27 @@ pub struct OptSymbol {
 }
 
 #[derive(Clone)]
-pub struct OptGrammar {
-    start_symbol: OptSymIdx,
+pub struct CGrammar {
+    start_symbol: CSymIdx,
     terminals: Vec<ByteSet>,
-    symbols: Vec<OptSymbol>,
-    rules: Vec<OptSymIdx>,
-    rule_idx_to_sym_idx: Vec<OptSymIdx>,
+    symbols: Vec<CSymbol>,
+    rules: Vec<CSymIdx>,
+    rule_idx_to_sym_idx: Vec<CSymIdx>,
     terminals_by_byte: Vec<SimpleVob>,
 }
 
 const RULE_SHIFT: usize = 2;
 
-impl OptGrammar {
-    pub fn sym_idx_of(&self, rule: RuleIdx) -> OptSymIdx {
+impl CGrammar {
+    pub fn sym_idx_of(&self, rule: RuleIdx) -> CSymIdx {
         self.rule_idx_to_sym_idx[rule.as_index() >> RULE_SHIFT]
     }
 
-    pub fn sym_data(&self, sym: OptSymIdx) -> &OptSymbol {
+    pub fn sym_data(&self, sym: CSymIdx) -> &CSymbol {
         &self.symbols[sym.0 as usize]
     }
 
-    fn sym_data_mut(&mut self, sym: OptSymIdx) -> &mut OptSymbol {
+    fn sym_data_mut(&mut self, sym: CSymIdx) -> &mut CSymbol {
         &mut self.symbols[sym.0 as usize]
     }
 
@@ -389,34 +391,34 @@ impl OptGrammar {
         &self.terminals_by_byte[b as usize]
     }
 
-    pub fn sym_idx_at(&self, idx: RuleIdx) -> OptSymIdx {
+    pub fn sym_idx_at(&self, idx: RuleIdx) -> CSymIdx {
         self.rules[idx.0 as usize]
     }
 
-    pub fn start(&self) -> OptSymIdx {
+    pub fn start(&self) -> CSymIdx {
         self.start_symbol
     }
 
-    pub fn is_accepting(&self, sym: OptSymIdx, rule: RuleIdx) -> bool {
-        sym == self.start() && self.sym_idx_at(rule) == OptSymIdx::NULL
+    pub fn is_accepting(&self, sym: CSymIdx, rule: RuleIdx) -> bool {
+        sym == self.start() && self.sym_idx_at(rule) == CSymIdx::NULL
     }
 
-    pub fn rules_of(&self, sym: OptSymIdx) -> &[RuleIdx] {
+    pub fn rules_of(&self, sym: CSymIdx) -> &[RuleIdx] {
         &self.sym_data(sym).rules
     }
 
     fn from_grammar(grammar: &Grammar) -> Self {
-        let mut outp = OptGrammar {
-            start_symbol: OptSymIdx::NULL,
+        let mut outp = CGrammar {
+            start_symbol: CSymIdx::NULL, // replaced
             terminals: vec![ByteSet::new()],
-            symbols: vec![OptSymbol {
-                idx: OptSymIdx::NULL,
+            symbols: vec![CSymbol {
+                idx: CSymIdx::NULL,
                 name: "NULL".to_string(),
                 is_terminal: true,
                 is_nullable: false,
                 rules: vec![],
             }],
-            rules: vec![],
+            rules: vec![CSymIdx::NULL], // make sure RuleIdx::NULL is invalid
             rule_idx_to_sym_idx: vec![],
             terminals_by_byte: vec![],
         };
@@ -425,28 +427,28 @@ impl OptGrammar {
             let sym = grammar.sym_data(*sidx);
             outp.terminals.push(sym.bytes.clone().unwrap());
             let idx = outp.symbols.len() as u16;
-            outp.symbols.push(OptSymbol {
-                idx: OptSymIdx(idx),
+            outp.symbols.push(CSymbol {
+                idx: CSymIdx(idx),
                 name: sym.name.clone(),
                 is_terminal: true,
                 is_nullable: false,
                 rules: vec![],
             });
-            sym_map.insert(sym.idx, OptSymIdx(idx));
+            sym_map.insert(sym.idx, CSymIdx(idx));
         }
         for sym in &grammar.symbols {
             if sym.is_terminal() {
                 continue;
             }
             let idx = outp.symbols.len() as u16;
-            outp.symbols.push(OptSymbol {
-                idx: OptSymIdx(idx),
+            outp.symbols.push(CSymbol {
+                idx: CSymIdx(idx),
                 name: sym.name.clone(),
                 is_terminal: false,
                 is_nullable: sym.rules.iter().any(|r| r.rhs.is_empty()),
                 rules: vec![],
             });
-            sym_map.insert(sym.idx, OptSymIdx(idx));
+            sym_map.insert(sym.idx, CSymIdx(idx));
         }
         outp.start_symbol = sym_map[&grammar.start()];
         for sym in &grammar.symbols {
@@ -461,10 +463,10 @@ impl OptGrammar {
                 for r in &rule.rhs {
                     outp.rules.push(sym_map[r]);
                 }
-                outp.rules.push(OptSymIdx::NULL);
+                outp.rules.push(CSymIdx::NULL);
             }
             while outp.rules.len() % (1 << RULE_SHIFT) != 0 {
-                outp.rules.push(OptSymIdx::NULL);
+                outp.rules.push(CSymIdx::NULL);
             }
             let rlen = outp.rules.len() >> RULE_SHIFT;
             while outp.rule_idx_to_sym_idx.len() < rlen {
@@ -480,7 +482,7 @@ impl OptGrammar {
                 }
                 'rules: for rule in sym.rules.iter() {
                     let mut idx = rule.as_index();
-                    while outp.rules[idx] != OptSymIdx::NULL {
+                    while outp.rules[idx] != CSymIdx::NULL {
                         if outp.sym_data(outp.rules[idx]).is_nullable {
                             to_null.push(sym.idx);
                             break 'rules;

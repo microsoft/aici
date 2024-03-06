@@ -2,7 +2,7 @@ use std::{fmt::Debug, hash::Hash, ops::Range, vec};
 
 use crate::toktree::{Recognizer, SpecialToken};
 
-use super::grammar::{OptGrammar, OptSymIdx, RuleIdx, SimpleHash};
+use super::grammar::{CGrammar, CSymIdx, RuleIdx, SimpleHash};
 
 const DEBUG: bool = false;
 
@@ -111,11 +111,11 @@ struct Scratch {
     row_start: usize,
     row_end: usize,
     items: Vec<Item>,
-    predicated_syms: SimpleSet<OptSymIdx>,
+    predicated_syms: SimpleSet<CSymIdx>,
 }
 
 pub struct Parser {
-    grammar: OptGrammar,
+    grammar: CGrammar,
     scratch: Scratch,
     rows: Vec<Row>,
     stats: Stats,
@@ -157,7 +157,7 @@ impl Scratch {
 }
 
 impl Parser {
-    pub fn new(grammar: OptGrammar) -> Self {
+    pub fn new(grammar: CGrammar) -> Self {
         let start = grammar.start();
         let mut r = Parser {
             grammar,
@@ -250,7 +250,7 @@ impl Parser {
             let rule = item.rule_idx();
             let after_dot = self.grammar.sym_idx_at(rule);
 
-            if after_dot == OptSymIdx::NULL {
+            if after_dot == CSymIdx::NULL {
                 let lhs = self.grammar.sym_idx_of(item.rule_idx());
                 // complete
                 self.is_accepting = self.is_accepting || lhs == self.grammar.start();
