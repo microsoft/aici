@@ -67,8 +67,8 @@ impl Grammar {
         sym.rules.push(Rule { lhs, rhs });
     }
 
-    pub fn terminal(&mut self, bytes: ByteSet) -> SymIdx {
-        match self.terminals.get(&bytes) {
+    pub fn terminal(&mut self, bytes: &ByteSet) -> SymIdx {
+        match self.terminals.get(bytes) {
             Some(sym) => *sym,
             None => {
                 let mut name = format!("T:{}", bytes);
@@ -77,7 +77,7 @@ impl Grammar {
                 }
                 let sym = self.fresh_symbol(&name);
                 self.sym_data_mut(sym).bytes = Some(bytes.clone());
-                self.terminals.insert(bytes, sym);
+                self.terminals.insert(bytes.clone(), sym);
                 sym
             }
         }
@@ -114,7 +114,7 @@ impl Grammar {
     fn copy_from(&mut self, other: &Grammar, sym: SymIdx) -> SymIdx {
         let sym_data = other.sym_data(sym);
         if sym_data.is_terminal() {
-            self.terminal(sym_data.bytes.clone().unwrap())
+            self.terminal(sym_data.bytes.as_ref().unwrap())
         } else {
             self.symbol(&sym_data.name)
         }
@@ -156,7 +156,7 @@ impl Grammar {
                             let terminals = rules
                                 .iter()
                                 .map(|r| self.sym_data(r.rhs[i]).bytes.clone().unwrap());
-                            outp.terminal(ByteSet::from_sum(terminals))
+                            outp.terminal(&ByteSet::from_sum(terminals))
                         } else {
                             outp.copy_from(self, *s)
                         }

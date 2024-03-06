@@ -1,10 +1,27 @@
-use std::fmt::Display;
+use std::fmt::{Debug, Display};
 
 const BYTESET_LEN: usize = 8;
 
 #[derive(Clone, PartialEq, Eq, Hash)]
 pub struct ByteSet {
     mask: [u32; BYTESET_LEN],
+}
+
+impl Debug for ByteSet {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "[")?;
+        let mut first = true;
+        for i in 0u32..=256 {
+            if i <= 0xff && self.contains(i as u8) {
+                if !first {
+                    write!(f, ", ")?;
+                }
+                first = false;
+                write!(f, "{}", i)?;
+            }
+        }
+        write!(f, "]")
+    }
 }
 
 pub fn byte_to_string(b: u8) -> String {

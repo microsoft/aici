@@ -20,11 +20,11 @@ pub fn earley_grm_from_guidance(bytes: &[u8]) -> Result<Grammar> {
             }
             guidance::mod_GrammarFunction::OneOffunction_type::byte(n) => {
                 assert!(n.byte.len() == 1);
-                grm.terminal(ByteSet::from_range(n.byte[0], n.byte[0]))
+                grm.terminal(&ByteSet::from_range(n.byte[0], n.byte[0]))
             }
             guidance::mod_GrammarFunction::OneOffunction_type::byte_range(n) => {
                 assert!(n.byte_range.len() == 2);
-                grm.terminal(ByteSet::from_range(n.byte_range[0], n.byte_range[1]))
+                grm.terminal(&ByteSet::from_range(n.byte_range[0], n.byte_range[1]))
             }
             guidance::mod_GrammarFunction::OneOffunction_type::model_variable(n) => {
                 grm.fresh_symbol(&n.name)
