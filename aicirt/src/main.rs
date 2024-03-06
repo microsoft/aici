@@ -61,6 +61,10 @@ struct Cli {
     #[arg(long)]
     save_tokenizer: Option<String>,
 
+    /// Run Earley parser benchmark
+    #[arg(long)]
+    earley_bench: bool,
+
     /// Run main() from the module just added
     #[arg(short, long)]
     run: bool,
@@ -1092,6 +1096,13 @@ fn bench_hashmap() {
     }
 }
 
+fn earley_bench(cli: &Cli) {
+    let tokenizer = find_tokenizer(&cli.tokenizer).unwrap();
+    let tokens = tokenizer.token_bytes();
+    let trie = TokTrie::from(&tokenizer.tokrx_info(), &tokens);
+    earley_test(trie);
+}
+
 fn save_tokenizer(cli: &Cli) {
     let filename = cli.save_tokenizer.as_deref().unwrap();
     let tokenizer = find_tokenizer(&cli.tokenizer).unwrap();
@@ -1114,8 +1125,6 @@ fn save_tokenizer(cli: &Cli) {
 
     std::fs::write(filename, &bytes).unwrap();
     println!("wrote {}, {} bytes", filename, bytes.len());
-
-    earley_test(trie);
 }
 
 fn install_from_cmdline(cli: &Cli, wasm_ctx: WasmContext, shm: Shm) {
@@ -1188,6 +1197,11 @@ fn main() -> () {
 
     if cli.save_tokenizer.is_some() {
         save_tokenizer(&cli);
+        return ();
+    }
+
+    if cli.earley_bench {
+        earley_bench(&cli);
         return ();
     }
 

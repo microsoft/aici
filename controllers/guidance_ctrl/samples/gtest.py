@@ -30,6 +30,8 @@ async def test_joke():
     #g.add_rule("expr", ["int"])
     g.add_rule("expr", terminal("(") + ["expr"] + terminal(")"))
     g.add_rule("expr", ["expr", "op", "expr"])
+    g.add_rule("op", terminal(" * "))
+    g.add_rule("op", terminal(" / "))
     g.add_rule("op", terminal(" + "))
     g.add_rule("op", terminal(" - "))
     g.add_rule("id", [letters, "cont"])
