@@ -1,22 +1,43 @@
-import guidance
-import pyaici.server as aici
-import re
+import pyaici.gserver as aici
 
-# asserts for microsoft/Orca-2-13b
+
+def single_byte(v: int):
+    r = aici.ByteSet()
+    r.add(v)
+    return r
+
+
+def byte_range(start: int, end: int):
+    r = aici.ByteSet()
+    r.add_range(start, end)
+    return r
+
+
+def terminal(value: str):
+    return [single_byte(b) for b in value.encode("utf-8")]
 
 
 async def test_joke():
-    await aici.FixedTokens("Do you want a joke or a poem? A")
-    answer = await aici.gen_text(options=[" joke", " poem"])
-    if answer == " joke":
-        await aici.FixedTokens("\nHere is a one-line joke about cats: ")
-    else:
-        await aici.FixedTokens("\nHere is a one-line poem about dogs: ")
-    await aici.gen_text(regex="[A-Z].*", stop_at="\n", store_var="result")
-    print("explaining...")
-    await aici.FixedTokens("\nLet me explain it: ")
-    await aici.gen_text(max_tokens=15)
+    g = aici.Grammar()
+    g.add_rule("expr", ["id"])
+    g.add_rule("expr", terminal("(") + ["expr"] + terminal(")"))
+    g.add_rule("expr", ["expr", "op", "expr"])
+    g.add_rule("op", terminal(" + "))
+    g.add_rule("op", terminal(" - "))
+    letters = byte_range(ord("a"), ord("z"))
+    letters.add(ord("_"))
+    # letters.add_range(ord("A"), ord("Z"))
+    idchars = byte_range(ord("0"), ord("9"))
+    idchars.add_set(letters)
+    g.add_rule("id", [letters, "cont"])
+    g.add_rule("cont", [])
+    g.add_rule("cont", ["cont", idchars])
+    g.add_rule("_start", terminal("expression: ") + ["expr"])
+    print(repr(g))
+    print(repr(g.optimize()))
+
+    await aici.FixedTokens("Hello, ")
+    await aici.gen_tokens(constraint=lambda: g.parser(), max_tokens=20)
 
 
 aici.test(test_joke())
-

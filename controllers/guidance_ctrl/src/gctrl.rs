@@ -45,6 +45,7 @@ mod _aici {
     use crate::{PyConstraint, VmExt, GLOBAL_STATE};
     use aici_abi::{
         cfg::CfgParser,
+        earley,
         recognizer::{AnythingGoes, StackRecognizer},
         rx::RecRx,
         substring::SubStrMatcher,
@@ -56,10 +57,10 @@ mod _aici {
     use rustpython_derive::pyclass;
     use rustpython_vm::{
         atomic_func,
-        builtins::{PyStrRef, PyTypeRef},
+        builtins::{PyStr, PyStrRef, PyTypeRef},
         function::{ArgStrOrBytesLike, FuncArgs},
         protocol::PySequenceMethods,
-        types::{AsSequence, Constructor, Representable},
+        types::{AsSequence, Constructor, DefaultConstructor, Representable},
         Py, PyObjectRef, PyPayload, PyRef, PyResult, VirtualMachine,
     };
     use std::{fmt::Debug, sync::Mutex};
@@ -208,6 +209,102 @@ mod _aici {
     #[pyattr]
     #[pyclass(name)]
     #[derive(Debug, PyPayload)]
+    pub struct Grammar(pub Mutex<earley::Grammar>);
+
+    impl Default for Grammar {
+        fn default() -> Self {
+            let g = earley::Grammar::new();
+            Grammar(Mutex::new(g))
+        }
+    }
+
+    impl Representable for Grammar {
+        fn repr_str(zelf: &Py<Self>, _vm: &VirtualMachine) -> PyResult<String> {
+            let g = zelf.0.lock().unwrap();
+            Ok(format!("{:?}", g))
+        }
+    }
+
+    #[pyclass(with(DefaultConstructor, Representable))]
+    impl Grammar {
+        #[pymethod]
+        fn add_rule(&self, lhs: PyStrRef, rhs: PyObjectRef, vm: &VirtualMachine) -> PyResult<()> {
+            let mut g = self.0.lock().unwrap();
+            let lhs = g.symbol(lhs.as_str());
+            let rhs = vm.to_list(rhs, |obj| match obj.payload::<ByteSet>() {
+                Some(bs) => {
+                    let bs = bs.0.lock().unwrap();
+                    Ok(g.terminal(&bs))
+                }
+                None => match obj.payload::<PyStr>() {
+                    Some(s) => {
+                        let s = s.as_str();
+                        Ok(g.symbol(s))
+                    }
+                    None => Err(vm.new_type_error(format!("expecting str or ByteSet"))),
+                },
+            });
+            let rhs = rhs.into_iter().collect::<PyResult<Vec<_>>>()?;
+            g.add_rule(lhs, rhs);
+            Ok(())
+        }
+        #[pymethod]
+        fn optimize(&self) -> Grammar {
+            let g = self.0.lock().unwrap();
+            let g = g.optimize();
+            Grammar(Mutex::new(g))
+        }
+        #[pymethod]
+        fn parser(&self) -> PyResult<Constraint> {
+            let g = self.0.lock().unwrap();
+            let p = earley::Parser::new(g.compile());
+            Ok(Constraint(Mutex::new(Box::new(p))))
+        }
+    }
+    impl DefaultConstructor for Grammar {}
+
+    #[pyattr]
+    #[pyclass(name)]
+    #[derive(Debug, PyPayload)]
+    pub struct ByteSet(pub Mutex<earley::ByteSet>);
+
+    impl DefaultConstructor for ByteSet {}
+    impl Default for ByteSet {
+        fn default() -> Self {
+            ByteSet(Mutex::new(earley::ByteSet::new()))
+        }
+    }
+
+    #[pyclass(with(DefaultConstructor))]
+    impl ByteSet {
+        #[pymethod]
+        fn add(&self, byte: u8) {
+            let mut bs = self.0.lock().unwrap();
+            bs.add(byte);
+        }
+        #[pymethod]
+        fn contains(&self, byte: u8) -> bool {
+            let bs = self.0.lock().unwrap();
+            bs.contains(byte)
+        }
+        #[pymethod]
+        fn add_range(&self, start: u8, end: u8) {
+            let mut bs = self.0.lock().unwrap();
+            for b in start..=end {
+                bs.add(b);
+            }
+        }
+        #[pymethod]
+        fn add_set(&self, other: PyRef<ByteSet>) {
+            let mut bs = self.0.lock().unwrap();
+            let other = other.0.lock().unwrap();
+            bs.add_set(&*other);
+        }
+    }
+
+    #[pyattr]
+    #[pyclass(name)]
+    #[derive(Debug, PyPayload)]
     pub struct TokenSet(pub Mutex<SimpleVob>);
 
     #[pyclass(with(Constructor, AsSequence, Representable))]
@@ -325,14 +422,14 @@ impl Runner {
         let source = String::from_utf8(arg).unwrap();
         let interpreter = rustpython_vm::Interpreter::with_init(Default::default(), |vm| {
             vm.add_native_module(
-                "pyaici.server_native".to_owned(),
+                "pyaici.gserver_native".to_owned(),
                 Box::new(_aici::make_module),
             );
             vm.add_frozen(rustpython_vm::py_freeze!(dir = "Lib"));
 
             let code = rustpython_vm::py_compile!(
-                file = "../../py/pyaici/server.py",
-                module_name = "pyaici.server",
+                file = "../../py/pyaici/gserver.py",
+                module_name = "pyaici.gserver",
                 mode = "exec"
             );
             let empty = rustpython_vm::py_compile!(
@@ -349,7 +446,7 @@ impl Runner {
                     },
                 ),
                 (
-                    "pyaici.server",
+                    "pyaici.gserver",
                     rustpython_vm::frozen::FrozenModule {
                         code,
                         package: true,
