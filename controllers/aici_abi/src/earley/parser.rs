@@ -6,6 +6,9 @@ use super::grammar::{CGrammar, CSymIdx, RuleIdx, SimpleHash};
 
 const DEBUG: bool = false;
 
+// this may speed up more complex grammar but slows down simple ones (by 10%)
+const PREDICTED_SYM_FILTER: bool = false;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 struct Item {
     data: u64,
@@ -88,6 +91,7 @@ impl<T: SimpleHash + Eq + Copy> SimpleSet<T> {
         self.items.clear();
     }
 
+    #[inline(always)]
     fn insert(&mut self, item: T) {
         let mask = item.mask64();
         if (self.hash & mask) != 0 && self.items.contains(&item) {
@@ -97,11 +101,26 @@ impl<T: SimpleHash + Eq + Copy> SimpleSet<T> {
         self.items.push(item);
     }
 
+    #[inline(always)]
     fn contains(&self, item: T) -> bool {
         if (item.mask64() & self.hash) == 0 {
             false
         } else {
             self.items.contains(&item)
+        }
+    }
+
+    #[inline(always)]
+    fn should_insert(&mut self, item: T) -> bool {
+        if !PREDICTED_SYM_FILTER {
+            true
+        } else {
+            if self.contains(item) {
+                false
+            } else {
+                self.insert(item);
+                true
+            }
         }
     }
 }
@@ -145,7 +164,11 @@ impl Scratch {
     #[inline(always)]
     fn just_add(&mut self, item: Item) {
         self.ensure_items(self.row_end + 1);
-        self.items[self.row_end] = item;
+        // SAFETY: we just ensured that there is enough space
+        unsafe {
+            self.items.as_mut_ptr().add(self.row_end).write(item);
+        }
+        // self.items[self.row_end] = item;
         self.row_end += 1;
     }
 
@@ -272,8 +295,7 @@ impl Parser {
                 if sym_data.is_nullable {
                     self.scratch.add_unique(item.advance_dot(), "null");
                 }
-                if !self.scratch.predicated_syms.contains(after_dot) {
-                    self.scratch.predicated_syms.insert(after_dot);
+                if self.scratch.predicated_syms.should_insert(after_dot) {
                     for rule in &sym_data.rules {
                         let new_item = Item::new(*rule, curr_idx);
                         self.scratch.add_unique(new_item, "predict");
