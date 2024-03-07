@@ -299,7 +299,7 @@ More info at: {url}"#
     );
     Ok(web::Json(serde_json::json!({
         "msg": msg,
-        "connection_string": "AICI_API_BASE=\"{website}/v1/#key={key}\""
+        "connection_string": "AICI_API_BASE={website}/v1/#key={key}"
     })))
 }
 
