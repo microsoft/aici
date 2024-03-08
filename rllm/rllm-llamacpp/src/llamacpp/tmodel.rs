@@ -150,9 +150,14 @@ impl ModelExec for TModel {
             None => self.sample_argmax(&logits),
             Some(temperature) => {
                 let mut prs: Vec<f32> = logits.to_vec1();
+                let max_logit = prs.iter().fold(f32::NEG_INFINITY, |a, &b| a.max(b));
                 let temp = (1.0 / temperature) as f32;
                 for idx in 0..prs.len() {
-                    prs[idx] *= temp;
+                    prs[idx] = ((prs[idx] - max_logit) * temp).exp();
+                }
+                let sum = prs.iter().sum::<f32>();
+                for idx in 0..prs.len() {
+                    prs[idx] /= sum;
                 }
                 let top_p = state.top_p;
                 if top_p <= 0.0 || top_p >= 1.0 {

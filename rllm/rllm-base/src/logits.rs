@@ -18,7 +18,8 @@ impl LogitsProcessor {
         };
 
         Self {
-            rng: rand::rngs::StdRng::seed_from_u64(42),
+            rng: rand::rngs::StdRng::from_entropy(),
+            // seed_from_u64(42),
             temperature,
             top_p: sampling_params.top_p,
         }
