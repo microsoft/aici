@@ -10,7 +10,9 @@ write fast Controllers, and ease compatibility across LLM inference and serving 
 
 AICI is designed for both local and cloud execution, including (eventually) multi-tenant LLM deployments.
 Controllers are implemented as light-weight WebAssembly (Wasm) modules which run on the same machine as the LLM inference engine, utilizing the CPU while the GPU is busy with token generation.
-AICI is one layer in the inference stack, and is designed to allow control libraries such as Guidance, LMQL, and others to run over it and gain both efficiency and performance improvements, as well as portability across LLM inference and serving engines.
+AICI is one layer in the inference stack, and is designed to allow control libraries such as Guidance, LMQL, and others to run on top of it and gain both efficiency and performance improvements, as well as portability across LLM inference and serving engines.
+
+AICI currently integrates with llama.cpp, HuggingFace Transformers, and rLLM (custom tch-based LLM inference engine), with vLLM in the works.
 
 AICI is:
 
