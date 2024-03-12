@@ -24,9 +24,6 @@ AICI is:
 
 AICI is a prototype, designed and built at [Microsoft Research](https://www.microsoft.com/en-us/research/).
 
-> [!TIP]
-> We are [looking for a research intern](https://jobs.careers.microsoft.com/us/en/job/1659267). You have to be accepted or currently enrolled in a PhD program or an equivalent research-oriented program in Computer Science or related STEM field.
-
 # Table of Contents
 
 - [Artificial Intelligence Controller Interface (AICI)](#artificial-intelligence-controller-interface-aici)
