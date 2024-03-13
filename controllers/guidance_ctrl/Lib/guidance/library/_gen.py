@@ -27,7 +27,7 @@ def gen(lm, name=None, *, max_tokens=1000, list_append=False, regex=None,
     Parameters
         ----------
         name : str or None
-            If this is not None then the the results of the generation will be saved as a variable on
+            If this is not None then the results of the generation will be saved as a variable on
             the Model object (so you can access the result as `lm["var_name"]`).
 
         max_tokens : int
