@@ -251,6 +251,7 @@ impl Parser {
         // self.rows.drain(self.rows.len() - n..);
     }
 
+    #[allow(dead_code)]
     pub fn print_stats(&mut self) {
         println!("stats: {:?}", self.stats);
         self.stats = Stats::default();

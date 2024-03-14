@@ -10,6 +10,7 @@ serde_json = "1.0.108"
 anyhow = "1.0.75"
 quick-protobuf = "0.8.1"
 rustc-hash = "1.1.0"
+base64 = "0.22.0"
 
 [[bin]]
 name = "aici_guidance_ctrl"

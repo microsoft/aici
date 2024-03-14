@@ -349,14 +349,10 @@ impl SimpleHash for CSymIdx {
 pub struct RuleIdx(u32);
 
 impl RuleIdx {
-    pub const NULL: RuleIdx = RuleIdx(0);
+    // pub const NULL: RuleIdx = RuleIdx(0);
 
     pub fn from_index(idx: u32) -> Self {
         RuleIdx(idx)
-    }
-
-    pub fn advance(&self) -> RuleIdx {
-        RuleIdx(self.0 + 1)
     }
 
     pub fn as_index(&self) -> usize {
@@ -422,10 +418,6 @@ impl CGrammar {
 
     pub fn start(&self) -> CSymIdx {
         self.start_symbol
-    }
-
-    pub fn is_accepting(&self, sym: CSymIdx, rule: RuleIdx) -> bool {
-        sym == self.start() && self.sym_idx_at(rule) == CSymIdx::NULL
     }
 
     pub fn rules_of(&self, sym: CSymIdx) -> &[RuleIdx] {

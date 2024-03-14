@@ -105,6 +105,7 @@
         "NOSYS",
         "nvprof",
         "POSIX",
+        "protobuf",
         "pyaici",
         "pyctrl",
         "pylib",
