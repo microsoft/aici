@@ -1,6 +1,6 @@
 use std::fmt::Debug;
 
-use crate::svob::SimpleVob;
+use aici_abi::svob::SimpleVob;
 
 use super::ByteSet;
 use rustc_hash::FxHashMap;

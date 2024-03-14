@@ -1,6 +1,6 @@
 use std::{fmt::Debug, hash::Hash, ops::Range, vec};
 
-use crate::toktree::{Recognizer, SpecialToken};
+use aici_abi::toktree::{Recognizer, SpecialToken};
 
 use super::grammar::{CGrammar, CSymIdx, RuleIdx, SimpleHash};
 

@@ -1,3 +1,4 @@
+use aici_abi::toktree;
 use anyhow::Result;
 use quick_protobuf::MessageRead;
 use rustc_hash::FxHashSet;
@@ -72,8 +73,8 @@ pub fn earley_grm_from_guidance(bytes: &[u8]) -> Result<Grammar> {
     Ok(grm)
 }
 
-pub fn earley_test(trie: crate::toktree::TokTrie) {
-    let g_bytes = include_bytes!("../../grammars/json0.guidance");
+pub fn earley_test(trie: toktree::TokTrie) {
+    let g_bytes = include_bytes!("../../../aici_abi/grammars/json0.guidance");
     let cfg = earley_grm_from_guidance(g_bytes).unwrap();
     // println!("cfg0: {:?}", cfg);
     let cfg = cfg.optimize();
