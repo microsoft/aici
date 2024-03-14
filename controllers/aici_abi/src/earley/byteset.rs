@@ -104,4 +104,31 @@ impl ByteSet {
         }
         r
     }
+
+    pub fn num_bytes(&self) -> usize {
+        let mut r = 0;
+        for i in 0..BYTESET_LEN {
+            r += self.mask[i].count_ones() as usize;
+        }
+        r
+    }
+
+    pub fn first_byte(&self) -> Option<u8> {
+        for i in 0..BYTESET_LEN {
+            let m = self.mask[i];
+            if m != 0 {
+                let bit = m.trailing_zeros() as usize;
+                return Some((i * 32 + bit) as u8);
+            }
+        }
+        None
+    }
+
+    pub fn single_byte(&self) -> Option<u8> {
+        if self.num_bytes() != 1 {
+            None
+        } else {
+            self.first_byte()
+        }
+    }
 }

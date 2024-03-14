@@ -32,6 +32,22 @@ impl Rule {
     }
 }
 
+enum SymName {
+    Name(String),
+    Byte(u8),
+}
+
+impl SymName {
+    fn from(name: &str, bytes: Option<&ByteSet>) -> Self {
+        if let Some(bytes) = bytes {
+            if let Some(b) = bytes.single_byte() {
+                return SymName::Byte(b);
+            }
+        }
+        SymName::Name(name.to_string())
+    }
+}
+
 pub struct Grammar {
     symbols: Vec<Symbol>,
     symbol_by_name: FxHashMap<String, SymIdx>,
@@ -87,28 +103,18 @@ impl Grammar {
         &self.symbols[sym.0 as usize].name
     }
 
-    fn rule_to_string(&self, rule: &Rule, dot: usize) -> String {
-        let lhs = self.sym_name(rule.lhs());
-        let mut rhs = rule
-            .rhs
-            .iter()
-            .enumerate()
-            .map(|(i, s)| {
-                format!(
-                    "{}{}",
-                    if i == dot { "(*) " } else { "" },
-                    self.sym_name(*s)
-                )
-            })
-            .collect::<Vec<_>>()
-            .join(" ");
-        if rule.rhs.is_empty() {
-            rhs.push_str("ϵ");
-        }
-        if dot == rule.rhs.len() {
-            rhs.push_str(" (*)");
-        }
-        format!("{} ::= {}", lhs, rhs)
+    fn rule_to_string(&self, rule: &Rule, dot: Option<usize>) -> String {
+        rule_to_string(
+            self.sym_name(rule.lhs()),
+            rule.rhs
+                .iter()
+                .map(|s| {
+                    let d = self.sym_data(*s);
+                    SymName::from(&d.name, d.bytes.as_ref())
+                })
+                .collect(),
+            dot,
+        )
     }
 
     fn copy_from(&mut self, other: &Grammar, sym: SymIdx) -> SymIdx {
@@ -293,7 +299,7 @@ impl Debug for Grammar {
                 num_rules += sym.rules.len();
             }
             for rule in &sym.rules {
-                writeln!(f, "{}", self.rule_to_string(rule, usize::MAX))?;
+                writeln!(f, "{}", self.rule_to_string(rule, None))?;
             }
         }
         writeln!(
@@ -532,24 +538,56 @@ impl CGrammar {
     pub fn rule_to_string(&self, rule: RuleIdx) -> String {
         let lhs = self.sym_name(self.sym_idx_of(rule));
         let (rhs, dot) = self.rule_rhs(rule);
-        let mut rhs_str = rhs
-            .iter()
-            .enumerate()
-            .map(|(i, s)| {
-                format!(
-                    "{}{}",
-                    if i == dot { "(*) " } else { "" },
-                    self.sym_name(*s)
-                )
-            })
-            .collect::<Vec<_>>()
-            .join(" ");
-        if rhs.is_empty() {
-            rhs_str.push_str("ϵ");
-        }
-        if dot == rhs.len() {
-            rhs_str.push_str(" (*)");
-        }
-        format!("{} ::= {}", lhs, rhs_str)
+        rule_to_string(
+            lhs,
+            rhs.iter()
+                .map(|s| {
+                    let d = self.sym_data(*s);
+                    SymName::from(
+                        &d.name,
+                        if d.is_terminal {
+                            Some(&self.terminals[d.idx.0 as usize])
+                        } else {
+                            None
+                        },
+                    )
+                })
+                .collect(),
+            Some(dot),
+        )
     }
+}
+
+fn rule_to_string(lhs: &str, mut rhs: Vec<SymName>, dot: Option<usize>) -> String {
+    if rhs.is_empty() {
+        rhs.push(SymName::Name("ϵ".to_string()));
+        if dot == Some(0) {
+            rhs.push(SymName::Name("•".to_string()));
+        }
+    } else if let Some(dot) = dot {
+        rhs.insert(dot, SymName::Name("•".to_string()));
+    }
+    let mut outp = Vec::new();
+    let mut i = 0;
+    while i < rhs.len() {
+        match &rhs[i] {
+            SymName::Name(s) => {
+                outp.push(s.clone());
+                i += 1;
+            }
+            SymName::Byte(_) => {
+                let mut text = Vec::new();
+                while i < rhs.len() {
+                    if let SymName::Byte(b) = rhs[i] {
+                        text.push(b);
+                        i += 1;
+                    } else {
+                        break;
+                    }
+                }
+                outp.push(format!("{:?}", String::from_utf8_lossy(&text)));
+            }
+        }
+    }
+    format!("{} ::= {}", lhs, outp.join(" "))
 }
