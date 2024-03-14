@@ -28,6 +28,7 @@ impl Runner {
             .expect("invalid base64");
         let grm = earley_grm_from_guidance(&guidance).expect("invalid guidance protobuf");
         let grm = grm.optimize();
+        println!("optimized: {:?}", grm);
         let cgrm = grm.compile();
         let parser = Parser::new(cgrm);
         Runner {
@@ -53,6 +54,14 @@ impl AiciCtrl for Runner {
 
     fn post_process(&mut self, arg: PostProcessArg) -> PostProcessResult {
         self.tokens.extend_from_slice(&arg.tokens);
+        let bytes = arg
+            .tokens
+            .iter()
+            .flat_map(|t| self.toktrie.token(*t))
+            .map(|t| *t)
+            .collect::<Vec<_>>();
+        let tokstr = String::from_utf8_lossy(&bytes);
+        println!("token: {:?}", tokstr);
         self.toktrie.append_tokens(&mut self.parser, &arg.tokens);
         // ::from_arg() will translate generation of EOS token into Stop instruction
         PostProcessResult::from_arg(&arg)
