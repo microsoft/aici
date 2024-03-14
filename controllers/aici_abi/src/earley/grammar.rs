@@ -126,6 +126,21 @@ impl Grammar {
         }
     }
 
+    fn rule_shape(&self, r: &Rule) -> Vec<Option<SymIdx>> {
+        let mut shape = Vec::new();
+        let mut had_term = false;
+        for s in &r.rhs {
+            let sym = self.sym_data(*s);
+            if !had_term && sym.is_terminal() {
+                had_term = true;
+                shape.push(None);
+            } else {
+                shape.push(Some(*s));
+            }
+        }
+        shape
+    }
+
     fn collapse_terminals(&self) -> Self {
         let mut outp = Grammar::new();
         for sym in &self.symbols {
@@ -134,19 +149,8 @@ impl Grammar {
             }
             let mut rules_by_shape = FxHashMap::default();
             for rule in &sym.rules {
-                let shape = rule
-                    .rhs
-                    .iter()
-                    .map(|s| {
-                        if self.sym_data(*s).is_terminal() {
-                            None
-                        } else {
-                            Some(*s)
-                        }
-                    })
-                    .collect::<Vec<_>>();
                 rules_by_shape
-                    .entry(shape)
+                    .entry(self.rule_shape(rule))
                     .or_insert_with(Vec::new)
                     .push(rule);
             }
@@ -280,6 +284,7 @@ impl Grammar {
 
 impl Debug for Grammar {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        writeln!(f, "Grammar:")?;
         for sym in &self.symbols {
             match sym.bytes {
                 Some(ref bytes) if sym.name.starts_with("T@") => {
@@ -589,5 +594,5 @@ fn rule_to_string(lhs: &str, mut rhs: Vec<SymName>, dot: Option<usize>) -> Strin
             }
         }
     }
-    format!("{} ::= {}", lhs, outp.join(" "))
+    format!("{:15} ⇦ {}", lhs, outp.join(" "))
 }
