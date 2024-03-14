@@ -8,3 +8,6 @@
 [submodule "llama-cpp-low/llama.cpp"]
 	path = rllm/llama-cpp-low/llama.cpp
 	url = https://github.com/ggerganov/llama.cpp
+[submodule "py/guidance"]
+	path = py/guidance
+	url = https://github.com/guidance-ai/guidance
