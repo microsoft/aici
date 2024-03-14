@@ -8,6 +8,7 @@ use aici_abi::{
 };
 
 pub mod earley;
+mod serialization;
 
 // This constraints enforces an upper case letter every 4th byte
 // The state is the position in the output stream
