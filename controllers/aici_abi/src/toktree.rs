@@ -52,6 +52,7 @@ pub struct TokTrie {
     token_offsets: Vec<u32>,
     token_data: Vec<u8>,
     nodes: Vec<TrieNode>,
+    max_token_len: usize,
 }
 
 #[repr(C)]
@@ -134,12 +135,17 @@ impl TokTrie {
         }
         let mut nodes = Vec::new();
         trie.serialize(&mut nodes, 0);
-        let r = TokTrie {
+        let mut r = TokTrie {
             info: info.clone(),
             token_offsets,
             token_data,
             nodes,
+            max_token_len: 0,
         };
+        r.max_token_len = (0..info.vocab_size)
+            .map(|idx| r.token(idx).len())
+            .max()
+            .unwrap();
         r.validate();
         r
     }
@@ -268,6 +274,13 @@ impl TokTrie {
         r
     }
 
+    pub fn has_extensions(&self, bytes: &[u8]) -> bool {
+        match self.child_at_bytes(self.root(), bytes) {
+            None => false,
+            Some(n) => n.subtree_size() > 1,
+        }
+    }
+
     pub fn token_id(&self, bytes: &[u8]) -> Option<TokenId> {
         let (tok, len) = self.prefix_token_id(bytes);
         // println!("tok_id {:?} {:?} {:?} ", bytes, tok, len);
@@ -306,14 +319,23 @@ impl TokTrie {
         let token_offsets = vec_from_bytes(&bytes[trie_end..offsets_end]);
         let token_data = vec_from_bytes(&bytes[offsets_end..]);
 
-        let r = TokTrie {
+        let mut r = TokTrie {
             info: hd.info,
             token_offsets,
             token_data,
             nodes,
+            max_token_len: 0,
         };
         r.validate();
+        r.max_token_len = (0..r.info.vocab_size)
+            .map(|idx| r.token(idx).len())
+            .max()
+            .unwrap();
         r
+    }
+
+    pub fn max_token_len(&self) -> usize {
+        self.max_token_len
     }
 
     fn validate_node(&self, n: &TrieNode, ep: usize, used: &mut [bool]) {

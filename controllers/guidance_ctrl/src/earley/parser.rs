@@ -257,6 +257,56 @@ impl Parser {
         self.stats = Stats::default();
     }
 
+    pub fn force_bytes(&mut self) -> Vec<u8> {
+        let mut bytes = vec![];
+        while let Some(b) = self.forced_byte() {
+            let res = self.scan(b);
+            if res == ParseResult::Accept {
+                self.pop_rows(1);
+                break;
+            }
+            if res == ParseResult::Reject {
+                // shouldn't happen?
+                break;
+            }
+            bytes.push(b);
+        }
+        bytes
+    }
+
+    fn forced_byte(&self) -> Option<u8> {
+        if self.is_accepting {
+            // we're not forced when in accepting state
+            return None;
+        }
+
+        let curr_idx = self.rows.len() - 1;
+        let mut byte_sym = None;
+        for i in self.rows[curr_idx].item_indices() {
+            let item = self.scratch.items[i];
+            let sym = self.grammar.sym_idx_at(item.rule_idx());
+            if self.grammar.is_terminal(sym) {
+                if self.grammar.is_single_byte_terminal(sym) {
+                    if byte_sym == None || byte_sym == Some(sym) {
+                        byte_sym = Some(sym);
+                    } else {
+                        return None;
+                    }
+                } else {
+                    return None;
+                }
+            }
+        }
+
+        if let Some(s) = byte_sym {
+            let r = self.grammar.terminal_byteset(s).single_byte();
+            assert!(r.is_some());
+            r
+        } else {
+            None
+        }
+    }
+
     #[inline(always)]
     fn push_row(&mut self) -> ParseResult {
         let curr_idx = self.rows.len();

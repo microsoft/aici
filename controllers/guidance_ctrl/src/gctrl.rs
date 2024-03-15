@@ -1,6 +1,8 @@
 use aici_abi::{
-    arg_bytes, toktree::TokTrie, AiciCtrl, MidProcessArg, MidProcessResult, PostProcessArg,
-    PostProcessResult, PreProcessArg, PreProcessResult,
+    arg_bytes, tokenize, tokenize_bytes,
+    toktree::{Recognizer, TokTrie},
+    AiciCtrl, MidProcessArg, MidProcessResult, PostProcessArg, PostProcessResult, PreProcessArg,
+    PreProcessResult,
 };
 use base64::{self, Engine as _};
 use earley::{earley_grm_from_guidance, Parser};
@@ -11,7 +13,6 @@ mod serialization;
 
 pub struct Runner {
     toktrie: TokTrie,
-    tokens: Vec<u32>,
     parser: Parser,
 }
 
@@ -33,7 +34,6 @@ impl Runner {
         let parser = Parser::new(cgrm);
         Runner {
             toktrie: TokTrie::from_host(),
-            tokens: Vec::new(),
             parser,
         }
     }
@@ -41,29 +41,44 @@ impl Runner {
 
 impl AiciCtrl for Runner {
     fn pre_process(&mut self, _arg: PreProcessArg) -> PreProcessResult {
+        let bytes = self.parser.force_bytes();
+        if bytes.len() > 0 {
+            let mut tokens = tokenize_bytes(&bytes);
+            let mut suff = Vec::new();
+            let mut chop_tokens = 0;
+            for (idx, t) in tokens.iter().rev().enumerate() {
+                suff.splice(0..0, self.toktrie.token(*t).iter().cloned());
+                if suff.len() > self.toktrie.max_token_len() {
+                    break;
+                }
+                if self.toktrie.has_extensions(&suff) {
+                    chop_tokens = idx + 1;
+                }
+            }
+            tokens.truncate(tokens.len() - chop_tokens);
+            self.parser.pop_rows(bytes.len());
+            if tokens.len() > 0 {
+                println!("ff_tokens: {:?}", self.toktrie.decode_str(&tokens));
+                return PreProcessResult::ff_tokens(tokens);
+            }
+        }
+
         PreProcessResult::continue_()
     }
 
     fn mid_process(&mut self, _arg: MidProcessArg) -> MidProcessResult {
         let mut set = self.toktrie.alloc_token_set();
         self.toktrie.compute_bias(&mut self.parser, &mut set);
+        println!("bias: {}", self.toktrie.token_set_dbg(&set));
+
         MidProcessResult::SampleWithBias {
             allowed_tokens: set,
         }
     }
 
     fn post_process(&mut self, arg: PostProcessArg) -> PostProcessResult {
-        self.tokens.extend_from_slice(&arg.tokens);
-        let bytes = arg
-            .tokens
-            .iter()
-            .flat_map(|t| self.toktrie.token(*t))
-            .map(|t| *t)
-            .collect::<Vec<_>>();
-        let tokstr = String::from_utf8_lossy(&bytes);
-        println!("token: {:?}", tokstr);
+        println!("post tokens: {:?}", self.toktrie.decode_str(&arg.tokens));
         self.toktrie.append_tokens(&mut self.parser, &arg.tokens);
-        // ::from_arg() will translate generation of EOS token into Stop instruction
         PostProcessResult::from_arg(&arg)
     }
 }

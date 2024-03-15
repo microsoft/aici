@@ -373,6 +373,7 @@ pub struct CSymbol {
 pub struct CGrammar {
     start_symbol: CSymIdx,
     terminals: Vec<ByteSet>,
+    last_single_byte_terminal: usize,
     symbols: Vec<CSymbol>,
     rules: Vec<CSymIdx>,
     rule_idx_to_sym_idx: Vec<CSymIdx>,
@@ -382,6 +383,14 @@ pub struct CGrammar {
 const RULE_SHIFT: usize = 2;
 
 impl CGrammar {
+    pub fn is_single_byte_terminal(&self, sym: CSymIdx) -> bool {
+        sym.0 != 0 && sym.0 <= self.last_single_byte_terminal as u16
+    }
+
+    pub fn is_terminal(&self, sym: CSymIdx) -> bool {
+        sym.0 != 0 && sym.0 <= self.terminals.len() as u16
+    }
+
     pub fn sym_idx_of(&self, rule: RuleIdx) -> CSymIdx {
         self.rule_idx_to_sym_idx[rule.as_index() >> RULE_SHIFT]
     }
@@ -402,6 +411,10 @@ impl CGrammar {
 
     pub fn sym_data(&self, sym: CSymIdx) -> &CSymbol {
         &self.symbols[sym.0 as usize]
+    }
+
+    pub fn terminal_byteset(&self, sym: CSymIdx) -> &ByteSet {
+        &self.terminals[sym.0 as usize]
     }
 
     fn sym_data_mut(&mut self, sym: CSymIdx) -> &mut CSymbol {
@@ -428,6 +441,7 @@ impl CGrammar {
         let mut outp = CGrammar {
             start_symbol: CSymIdx::NULL, // replaced
             terminals: vec![ByteSet::new()],
+            last_single_byte_terminal: 0,
             symbols: vec![CSymbol {
                 idx: CSymIdx::NULL,
                 name: "NULL".to_string(),
@@ -440,7 +454,25 @@ impl CGrammar {
             terminals_by_byte: vec![],
         };
         let mut sym_map = FxHashMap::default();
-        for (_, sidx) in &grammar.terminals {
+        let (mut single, mut multi) = grammar
+            .terminals
+            .values()
+            .map(|x| *x)
+            .partition::<Vec<_>, _>(|sidx| {
+                grammar
+                    .sym_data(*sidx)
+                    .bytes
+                    .as_ref()
+                    .unwrap()
+                    .single_byte()
+                    .is_some()
+            });
+        assert!(outp.symbols.len() == 1);
+        assert!(outp.terminals.len() == 1);
+        // we account for the already existing empty terminal
+        outp.last_single_byte_terminal = single.len();
+        single.append(&mut multi);
+        for sidx in &single {
             let sym = grammar.sym_data(*sidx);
             outp.terminals.push(sym.bytes.clone().unwrap());
             let idx = outp.symbols.len() as u16;
