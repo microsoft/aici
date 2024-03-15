@@ -340,6 +340,11 @@ export class ConstrainedToken extends NextToken {
       this._constraint = this.mkConstraint();
     }
     this._constraint.allowTokens(bias);
+    console.log("ALLOW:", bias.toString());
+    if (bias.numSet() === 0) {
+      console.log("Constraint doesn't allow any tokens; adding EOS")
+      return MidProcessResult.stop();
+    }
     return MidProcessResult.bias(bias);
   }
 

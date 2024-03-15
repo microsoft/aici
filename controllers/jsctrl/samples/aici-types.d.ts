@@ -200,13 +200,15 @@ declare module "_aici" {
      */
     constructor();
 
+    toString(): string;
+
     add(t: number): void;
     delete(t: number): void;
     has(t: number): boolean;
     clear(): void;
 
     /**
-     * Number of all tokens (not only in the set).
+     * Number of all possible tokens (regardless of whether they are in the set or not).
      */
     length: number;
 
@@ -214,6 +216,11 @@ declare module "_aici" {
      * Include or exclude all tokens from the set.
      */
     setAll(value: boolean): void;
+
+    /**
+     * Number of tokens in the set.
+     */
+    numSet(): number;
   }
 
   /**
