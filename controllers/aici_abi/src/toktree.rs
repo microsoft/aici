@@ -211,20 +211,29 @@ impl TokTrie {
     }
 
     pub fn tokens_dbg(&self, toks: &[u32]) -> String {
-        format!(
-            "\"{}\"",
-            toks.iter()
-                .map(|t| {
-                    let s = self.token_dbg(*t);
-                    if s.starts_with("\"") {
-                        s[1..s.len() - 1].to_string()
+        let minimal = false;
+        let sep = "‧";
+        let joined = toks
+            .iter()
+            .map(|t| {
+                let s = self.token_dbg(*t);
+                if s.starts_with("\"") {
+                    let inner = s[1..s.len() - 1].to_string();
+                    let b = s.as_bytes();
+                    // for " [\w]..." and " " the sep in front is implicit
+                    if minimal && b[1] == b' ' && ((b[2] as char).is_alphanumeric() || b.len() == 3)
+                    {
+                        inner
                     } else {
-                        format!("<{}>", s)
+                        format!("{}{}", sep, inner)
                     }
-                })
-                .collect::<Vec<_>>()
-                .join("‿"),
-        )
+                } else {
+                    format!("≺{}≻", s)
+                }
+            })
+            .collect::<Vec<_>>()
+            .join("");
+        format!("\"{}\"", joined.trim_start_matches(sep))
     }
 
     pub fn token_dbg(&self, idx: u32) -> String {
