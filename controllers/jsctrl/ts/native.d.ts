@@ -144,6 +144,11 @@ declare module "_aici" {
   function detokenize(tokens: number[]): Buffer;
 
   /**
+   * Return debug string representation of a given token index
+   */
+  function tokenRepr(token: number): string;
+
+  /**
    * Return identifier of the current sequence.
    * Most useful with fork_group parameter in mid_process() callback.
    * Best use aici.fork() instead.

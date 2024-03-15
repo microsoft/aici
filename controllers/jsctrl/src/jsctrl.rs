@@ -271,6 +271,12 @@ mod aici_mod {
     }
 
     #[rquickjs::function]
+    pub fn tokenRepr(token: TokenId) -> String {
+        let trie = &mut GLOBAL_STATE.lock().unwrap().trie;
+        trie.token_dbg(token)
+    }
+
+    #[rquickjs::function]
     pub fn getVar(name: String) -> Option<Buffer> {
         let name = name.as_str();
         let v = GLOBAL_STATE.lock().unwrap().vars.get(name);

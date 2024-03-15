@@ -682,6 +682,8 @@ export async function genTokens(options: GenOptions): Promise<Token[]> {
     const tokens = await next_token.run();
     res.push(...tokens);
 
+    console.log("GEN-STEP:", tokens.map(t => _aici.tokenRepr(t)).join(", "));
+
     const text = detokenize(res).decode();
 
     if (stopAt !== undefined && text.includes(stopAt)) {
