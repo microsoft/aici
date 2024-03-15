@@ -210,6 +210,23 @@ impl TokTrie {
         vec![0.0; self.vocab_size() + 1]
     }
 
+    pub fn tokens_dbg(&self, toks: &[u32]) -> String {
+        format!(
+            "\"{}\"",
+            toks.iter()
+                .map(|t| {
+                    let s = self.token_dbg(*t);
+                    if s.starts_with("\"") {
+                        s[1..s.len() - 1].to_string()
+                    } else {
+                        format!("<{}>", s)
+                    }
+                })
+                .collect::<Vec<_>>()
+                .join("‿"),
+        )
+    }
+
     pub fn token_dbg(&self, idx: u32) -> String {
         if idx == self.info.tok_eos {
             "EOS".to_string()

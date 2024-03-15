@@ -1,8 +1,6 @@
 use aici_abi::{
-    arg_bytes, tokenize, tokenize_bytes,
-    toktree::{Recognizer, TokTrie},
-    AiciCtrl, MidProcessArg, MidProcessResult, PostProcessArg, PostProcessResult, PreProcessArg,
-    PreProcessResult,
+    arg_bytes, tokenize_bytes, toktree::TokTrie, AiciCtrl, MidProcessArg, MidProcessResult,
+    PostProcessArg, PostProcessResult, PreProcessArg, PreProcessResult, TokenId,
 };
 use base64::{self, Engine as _};
 use earley::{earley_grm_from_guidance, Parser};
@@ -14,6 +12,8 @@ mod serialization;
 pub struct Runner {
     toktrie: TokTrie,
     parser: Parser,
+    all_tokens: Vec<TokenId>,
+    is_ff: bool,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -35,17 +35,24 @@ impl Runner {
         Runner {
             toktrie: TokTrie::from_host(),
             parser,
+            all_tokens: Vec::new(),
+            is_ff: false,
         }
     }
 }
 
 impl AiciCtrl for Runner {
     fn pre_process(&mut self, _arg: PreProcessArg) -> PreProcessResult {
+        PreProcessResult::continue_()
+    }
+
+    fn mid_process(&mut self, _arg: MidProcessArg) -> MidProcessResult {
         let bytes = self.parser.force_bytes();
         if bytes.len() > 0 {
             let mut tokens = tokenize_bytes(&bytes);
             let mut suff = Vec::new();
             let mut chop_tokens = 0;
+            let mut chop_bytes = 0;
             for (idx, t) in tokens.iter().rev().enumerate() {
                 suff.splice(0..0, self.toktrie.token(*t).iter().cloned());
                 if suff.len() > self.toktrie.max_token_len() {
@@ -53,20 +60,47 @@ impl AiciCtrl for Runner {
                 }
                 if self.toktrie.has_extensions(&suff) {
                     chop_tokens = idx + 1;
+                    chop_bytes = suff.len();
                 }
             }
             tokens.truncate(tokens.len() - chop_tokens);
-            self.parser.pop_rows(bytes.len());
+            self.parser.pop_rows(chop_bytes);
             if tokens.len() > 0 {
-                println!("ff_tokens: {:?}", self.toktrie.decode_str(&tokens));
-                return PreProcessResult::ff_tokens(tokens);
+                let fixed_tokens = {
+                    let all_tokens = self
+                        .all_tokens
+                        .iter()
+                        .chain(tokens.iter())
+                        .cloned()
+                        .collect::<Vec<_>>();
+                    let all_bytes = self.toktrie.decode(&all_tokens);
+                    tokenize_bytes(&all_bytes)
+                };
+                for idx in 0..=self.all_tokens.len() {
+                    if idx == self.all_tokens.len() || self.all_tokens[idx] != fixed_tokens[idx] {
+                        let backtrack = (self.all_tokens.len() - idx) as u32;
+                        let ff_tokens = fixed_tokens[idx..].to_vec();
+                        println!(
+                            "backtrack: {}, ff_tokens: {}",
+                            backtrack,
+                            self.toktrie.tokens_dbg(&ff_tokens)
+                        );
+                        self.all_tokens = fixed_tokens;
+                        self.is_ff = true;
+                        return MidProcessResult::Splice {
+                            backtrack,
+                            ff_tokens,
+                        };
+                    }
+                }
+                panic!("unreachable");
+            } else {
+                assert!(chop_bytes == bytes.len());
             }
         }
 
-        PreProcessResult::continue_()
-    }
+        self.is_ff = false;
 
-    fn mid_process(&mut self, _arg: MidProcessArg) -> MidProcessResult {
         let mut set = self.toktrie.alloc_token_set();
         self.toktrie.compute_bias(&mut self.parser, &mut set);
         println!("bias: {}", self.toktrie.token_set_dbg(&set));
@@ -77,8 +111,15 @@ impl AiciCtrl for Runner {
     }
 
     fn post_process(&mut self, arg: PostProcessArg) -> PostProcessResult {
-        println!("post tokens: {:?}", self.toktrie.decode_str(&arg.tokens));
-        self.toktrie.append_tokens(&mut self.parser, &arg.tokens);
+        println!(
+            "post tokens:{} {}",
+            if self.is_ff { " ff" } else { "" },
+            self.toktrie.tokens_dbg(&arg.tokens)
+        );
+        if !self.is_ff {
+            self.all_tokens.extend(&arg.tokens);
+            self.toktrie.append_tokens(&mut self.parser, &arg.tokens);
+        }
         PostProcessResult::from_arg(&arg)
     }
 }
