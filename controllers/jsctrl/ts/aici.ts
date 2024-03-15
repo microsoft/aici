@@ -340,6 +340,11 @@ export class ConstrainedToken extends NextToken {
       this._constraint = this.mkConstraint();
     }
     this._constraint.allowTokens(bias);
+    console.log("ALLOW:", bias.toString());
+    if (bias.numSet() === 0) {
+      console.log("Constraint doesn't allow any tokens; adding EOS")
+      return MidProcessResult.stop();
+    }
     return MidProcessResult.bias(bias);
   }
 
@@ -676,6 +681,8 @@ export async function genTokens(options: GenOptions): Promise<Token[]> {
   for (let i = 0; i < maxTokens; i++) {
     const tokens = await next_token.run();
     res.push(...tokens);
+
+    console.log("GEN-STEP:", tokens.map(t => _aici.tokenRepr(t)).join(", "));
 
     const text = detokenize(res).decode();
 
