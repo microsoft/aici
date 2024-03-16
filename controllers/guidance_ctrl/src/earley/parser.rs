@@ -222,30 +222,6 @@ impl Parser {
         self.rows.len()
     }
 
-    #[inline(always)]
-    pub fn scan(&mut self, b: u8) -> ParseResult {
-        let row_idx = self.rows.len() - 1;
-        let last = self.rows[row_idx].last_item;
-        let mut i = self.rows[row_idx].first_item;
-        let n = last - i;
-        self.scratch.ensure_items(last + n + 100);
-
-        let allowed = self.grammar.terminals_by_byte(b);
-
-        self.scratch.new_row(last);
-
-        while i < last {
-            let item = self.scratch.items[i];
-            let idx = self.grammar.sym_idx_at(item.rule_idx()).as_index();
-            // idx == 0 => completed
-            if idx < allowed.len() && allowed[idx] {
-                self.scratch.just_add(item.advance_dot());
-            }
-            i += 1;
-        }
-        self.push_row()
-    }
-
     pub fn pop_rows(&mut self, n: usize) {
         unsafe { self.rows.set_len(self.rows.len() - n) }
         // self.rows.drain(self.rows.len() - n..);
@@ -308,6 +284,30 @@ impl Parser {
     }
 
     #[inline(always)]
+    pub fn scan(&mut self, b: u8) -> ParseResult {
+        let row_idx = self.rows.len() - 1;
+        let last = self.rows[row_idx].last_item;
+        let mut i = self.rows[row_idx].first_item;
+        let n = last - i;
+        self.scratch.ensure_items(last + n + 100);
+
+        let allowed = self.grammar.terminals_by_byte(b);
+
+        self.scratch.new_row(last);
+
+        while i < last {
+            let item = self.scratch.items[i];
+            let idx = self.grammar.sym_idx_at(item.rule_idx()).as_index();
+            // idx == 0 => completed
+            if idx < allowed.len() && allowed[idx] {
+                self.scratch.just_add(item.advance_dot());
+            }
+            i += 1;
+        }
+        self.push_row()
+    }
+
+    #[inline(always)]
     fn push_row(&mut self) -> ParseResult {
         let curr_idx = self.rows.len();
         let mut agenda_ptr = self.scratch.row_start;
@@ -318,7 +318,7 @@ impl Parser {
         self.is_accepting = false;
 
         while agenda_ptr < self.scratch.row_end {
-            let item = self.scratch.items[agenda_ptr];
+            let mut item = self.scratch.items[agenda_ptr];
             agenda_ptr += 1;
             if DEBUG {
                 println!("from agenda: {}", self.item_to_string(&item));
@@ -328,12 +328,34 @@ impl Parser {
             let after_dot = self.grammar.sym_idx_at(rule);
 
             if after_dot == CSymIdx::NULL {
+                let flags = self.grammar.sym_flags_of(rule);
                 let lhs = self.grammar.sym_idx_of(item.rule_idx());
                 // complete
                 self.is_accepting = self.is_accepting || lhs == self.grammar.start();
 
+                if flags.commit_point() {
+                    // TODO do we need to remove possible scans?
+                    for ptr in agenda_ptr..self.scratch.row_end {
+                        let next_item = self.scratch.items[ptr];
+                        let next_rule = next_item.rule_idx();
+                        // is it earlier, complete, and commit point?
+                        if next_item.start_pos() < item.start_pos()
+                            && self.grammar.sym_idx_at(next_rule) == CSymIdx::NULL
+                            && self.grammar.sym_flags_of(next_rule).commit_point()
+                        {
+                            // if so, use it
+                            item = next_item;
+                        }
+                    }
+                    self.scratch.row_end = agenda_ptr;
+                    self.scratch.items[agenda_ptr - 1] = item;
+                    if DEBUG {
+                        println!("commit point: {}", self.item_to_string(&item));
+                    }
+                }
+
                 if item.start_pos() < curr_idx {
-                    // if item.start_pos() == curr_idx, then we handled it above in the nullable check
+                    // if item.start_pos() == curr_idx, then we handled it below in the nullable check
                     for i in self.rows[item.start_pos()].item_indices() {
                         let item = self.scratch.items[i];
                         if self.grammar.sym_idx_at(item.rule_idx()) == lhs {

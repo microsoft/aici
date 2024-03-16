@@ -414,6 +414,37 @@ pub struct CSymbol {
     pub is_nullable: bool,
     pub props: SymbolProps,
     pub rules: Vec<RuleIdx>,
+    pub sym_flags: SymFlags,
+}
+
+#[derive(Clone, Copy)]
+pub struct SymFlags(u8);
+
+impl SymFlags {
+    const COMMIT_POINT: u8 = 0b0000_0001;
+    const HIDDEN: u8 = 0b0000_0010;
+
+    fn from_csymbol(sym: &CSymbol) -> Self {
+        let mut flags = 0;
+        if sym.props.commit_point {
+            flags |= Self::COMMIT_POINT;
+        }
+        if sym.props.hidden {
+            flags |= Self::HIDDEN;
+        }
+        SymFlags(flags)
+    }
+
+    #[inline(always)]
+    pub fn commit_point(&self) -> bool {
+        self.0 & Self::COMMIT_POINT != 0
+    }
+
+    #[inline(always)]
+    #[allow(dead_code)]
+    pub fn hidden(&self) -> bool {
+        self.0 & Self::HIDDEN != 0
+    }
 }
 
 #[derive(Clone)]
@@ -424,6 +455,7 @@ pub struct CGrammar {
     symbols: Vec<CSymbol>,
     rules: Vec<CSymIdx>,
     rule_idx_to_sym_idx: Vec<CSymIdx>,
+    rule_idx_to_sym_flags: Vec<SymFlags>,
     terminals_by_byte: Vec<SimpleVob>,
 }
 
@@ -440,6 +472,10 @@ impl CGrammar {
 
     pub fn sym_idx_of(&self, rule: RuleIdx) -> CSymIdx {
         self.rule_idx_to_sym_idx[rule.as_index() >> RULE_SHIFT]
+    }
+
+    pub fn sym_flags_of(&self, rule: RuleIdx) -> SymFlags {
+        self.rule_idx_to_sym_flags[rule.as_index() >> RULE_SHIFT]
     }
 
     pub fn rule_rhs(&self, rule: RuleIdx) -> (&[CSymIdx], usize) {
@@ -496,10 +532,12 @@ impl CGrammar {
                 is_nullable: false,
                 rules: vec![],
                 props: SymbolProps::default(),
+                sym_flags: SymFlags(0),
             }],
             rules: vec![CSymIdx::NULL], // make sure RuleIdx::NULL is invalid
             rule_idx_to_sym_idx: vec![],
             terminals_by_byte: vec![],
+            rule_idx_to_sym_flags: vec![],
         };
         let mut sym_map = FxHashMap::default();
         let (single, multi) = grammar
@@ -530,6 +568,7 @@ impl CGrammar {
                 is_nullable: false,
                 rules: vec![],
                 props: sym.props.clone(),
+                sym_flags: SymFlags(0),
             });
             sym_map.insert(sym.idx, CSymIdx(idx));
         }
@@ -545,6 +584,7 @@ impl CGrammar {
                 is_nullable: sym.rules.iter().any(|r| r.rhs.is_empty()),
                 rules: vec![],
                 props: sym.props.clone(),
+                sym_flags: SymFlags(0),
             });
             sym_map.insert(sym.idx, CSymIdx(idx));
         }
@@ -571,6 +611,16 @@ impl CGrammar {
                 outp.rule_idx_to_sym_idx.push(idx);
             }
         }
+
+        for sym in &mut outp.symbols {
+            sym.sym_flags = SymFlags::from_csymbol(sym);
+        }
+
+        outp.rule_idx_to_sym_flags = outp
+            .rule_idx_to_sym_idx
+            .iter()
+            .map(|s| outp.sym_data(*s).sym_flags)
+            .collect();
 
         loop {
             let mut to_null = vec![];

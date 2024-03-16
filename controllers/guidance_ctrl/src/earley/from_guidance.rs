@@ -8,6 +8,7 @@ use crate::{
     serialization::guidance::{self, mod_GrammarFunction::OneOffunction_type},
 };
 
+#[derive(Debug)]
 pub struct NodeProps {
     pub nullable: bool,
     pub name: String,
@@ -74,8 +75,12 @@ impl NodeProps {
     pub fn to_symbol_props(&self) -> SymbolProps {
         SymbolProps {
             commit_point: self.commit_point,
-            hidden: self.hidden,
-            max_tokens: self.max_tokens.try_into().unwrap(),
+            hidden: self.hidden && self.commit_point,
+            max_tokens: if self.max_tokens == i32::MAX {
+                usize::MAX
+            } else {
+                self.max_tokens.try_into().unwrap()
+            },
         }
     }
 }
@@ -101,6 +106,7 @@ pub fn earley_grm_from_guidance(bytes: &[u8]) -> Result<Grammar> {
                 _ => None,
             };
             let props = NodeProps::from_grammar_function(&n.function_type);
+            // println!("props: {:?}", props);
             let sym = if let Some(term) = term {
                 assert!(props.max_tokens == i32::MAX, "max_tokens on terminal");
                 if props.commit_point {
