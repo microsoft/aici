@@ -14,13 +14,35 @@ impl Symbol {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct SymbolProps {
+    pub max_tokens: usize,
+    pub commit_point: bool,
+    pub hidden: bool,
+}
+
+impl Default for SymbolProps {
+    fn default() -> Self {
+        SymbolProps {
+            commit_point: false,
+            hidden: false,
+            max_tokens: usize::MAX,
+        }
+    }
+}
+
+impl SymbolProps {
+    pub fn is_special(&self) -> bool {
+        self.commit_point || self.hidden || self.max_tokens < usize::MAX
+    }
+}
+
 struct Symbol {
     idx: SymIdx,
     name: String,
     bytes: Option<ByteSet>,
     rules: Vec<Rule>,
-    is_commit_point: bool,
-    max_tokens: usize,
+    props: SymbolProps,
 }
 
 struct Rule {
@@ -117,8 +139,7 @@ impl Grammar {
                 })
                 .collect(),
             dot,
-            ldata.is_commit_point,
-            ldata.max_tokens,
+            &ldata.props,
         )
     }
 
@@ -129,9 +150,7 @@ impl Grammar {
         } else {
             self.symbol(&sym_data.name)
         };
-        let sym = self.sym_data_mut(r);
-        sym.is_commit_point = sym_data.is_commit_point;
-        sym.max_tokens = sym_data.max_tokens;
+        self.sym_data_mut(r).props = sym_data.props.clone();
         r
     }
 
@@ -200,7 +219,7 @@ impl Grammar {
         let mut repl = FxHashMap::default();
         for sym in &self.symbols {
             // don't inline commit points or start symbol
-            if sym.idx == self.start() || sym.is_commit_point {
+            if sym.idx == self.start() || sym.props.is_special() {
                 continue;
             }
             if sym.rules.len() == 1
@@ -266,16 +285,19 @@ impl Grammar {
         CGrammar::from_grammar(self)
     }
 
-    pub fn set_props(&mut self, sym: SymIdx, commit_point: bool, max_tokens: i32) {
+    pub fn set_props(&mut self, sym: SymIdx, props: SymbolProps) {
         let sym = self.sym_data_mut(sym);
-        if commit_point {
+        if props.commit_point {
             assert!(!sym.is_terminal(), "commit_point on terminal");
         }
-        sym.is_commit_point = commit_point;
-        if 0 < max_tokens && max_tokens < i32::MAX {
+        if props.max_tokens < usize::MAX {
             assert!(!sym.is_terminal(), "max_tokens on terminal");
-            sym.max_tokens = max_tokens as usize;
         }
+        assert!(
+            !(!props.commit_point && props.hidden),
+            "hidden on non-commit_point"
+        );
+        sym.props = props;
     }
 
     pub fn fresh_symbol(&mut self, name0: &str) -> SymIdx {
@@ -292,8 +314,7 @@ impl Grammar {
             bytes: None,
             idx,
             rules: vec![],
-            is_commit_point: false,
-            max_tokens: usize::MAX,
+            props: SymbolProps::default(),
         });
         self.symbol_by_name.insert(name, idx);
         idx
@@ -391,8 +412,7 @@ pub struct CSymbol {
     pub name: String,
     pub is_terminal: bool,
     pub is_nullable: bool,
-    pub is_commit_point: bool,
-    pub max_tokens: usize,
+    pub props: SymbolProps,
     pub rules: Vec<RuleIdx>,
 }
 
@@ -475,8 +495,7 @@ impl CGrammar {
                 is_terminal: true,
                 is_nullable: false,
                 rules: vec![],
-                is_commit_point: false,
-                max_tokens: usize::MAX,
+                props: SymbolProps::default(),
             }],
             rules: vec![CSymIdx::NULL], // make sure RuleIdx::NULL is invalid
             rule_idx_to_sym_idx: vec![],
@@ -510,8 +529,7 @@ impl CGrammar {
                 is_terminal: true,
                 is_nullable: false,
                 rules: vec![],
-                is_commit_point: false,
-                max_tokens: usize::MAX,
+                props: sym.props.clone(),
             });
             sym_map.insert(sym.idx, CSymIdx(idx));
         }
@@ -526,8 +544,7 @@ impl CGrammar {
                 is_terminal: false,
                 is_nullable: sym.rules.iter().any(|r| r.rhs.is_empty()),
                 rules: vec![],
-                is_commit_point: sym.is_commit_point,
-                max_tokens: sym.max_tokens,
+                props: sym.props.clone(),
             });
             sym_map.insert(sym.idx, CSymIdx(idx));
         }
@@ -617,8 +634,7 @@ impl CGrammar {
                 })
                 .collect(),
             Some(dot),
-            symdata.is_commit_point,
-            symdata.max_tokens,
+            &symdata.props,
         )
     }
 }
@@ -627,8 +643,7 @@ fn rule_to_string(
     lhs: &str,
     mut rhs: Vec<SymName>,
     dot: Option<usize>,
-    commit_point: bool,
-    max_tokens: usize,
+    props: &SymbolProps,
 ) -> String {
     if rhs.is_empty() {
         rhs.push(SymName::Name("ϵ".to_string()));
@@ -664,9 +679,17 @@ fn rule_to_string(
         "{:15} ⇦ {}{}{}",
         lhs,
         outp.join(" "),
-        if commit_point { " COMMIT" } else { "" },
-        if max_tokens < usize::MAX {
-            format!(" max_tokens={}", max_tokens)
+        if props.commit_point {
+            if props.hidden {
+                " HIDDEN-COMMIT"
+            } else {
+                " COMMIT"
+            }
+        } else {
+            ""
+        },
+        if props.max_tokens < usize::MAX {
+            format!(" max_tokens={}", props.max_tokens)
         } else {
             "".to_string()
         }

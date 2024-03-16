@@ -3,7 +3,10 @@ use quick_protobuf::MessageRead;
 use rustc_hash::FxHashSet;
 
 use super::{ByteSet, Grammar};
-use crate::serialization::guidance::{self, mod_GrammarFunction::OneOffunction_type};
+use crate::{
+    earley::grammar::SymbolProps,
+    serialization::guidance::{self, mod_GrammarFunction::OneOffunction_type},
+};
 
 pub struct NodeProps {
     pub nullable: bool,
@@ -67,6 +70,14 @@ impl NodeProps {
         }
         r
     }
+
+    pub fn to_symbol_props(&self) -> SymbolProps {
+        SymbolProps {
+            commit_point: self.commit_point,
+            hidden: self.hidden,
+            max_tokens: self.max_tokens.try_into().unwrap(),
+        }
+    }
 }
 
 pub fn earley_grm_from_guidance(bytes: &[u8]) -> Result<Grammar> {
@@ -93,7 +104,7 @@ pub fn earley_grm_from_guidance(bytes: &[u8]) -> Result<Grammar> {
             let sym = if let Some(term) = term {
                 assert!(props.max_tokens == i32::MAX, "max_tokens on terminal");
                 if props.commit_point {
-                    let wrap = grm.fresh_symbol("twrap");
+                    let wrap = grm.fresh_symbol("t_wrap");
                     grm.add_rule(term, vec![term]);
                     wrap
                 } else {
@@ -103,7 +114,7 @@ pub fn earley_grm_from_guidance(bytes: &[u8]) -> Result<Grammar> {
                 assert!(props.name.len() > 0, "empty name");
                 grm.fresh_symbol(&props.name)
             };
-            grm.set_props(sym, props.commit_point, props.max_tokens);
+            grm.set_props(sym, props.to_symbol_props());
             sym
         })
         .collect::<Vec<_>>();

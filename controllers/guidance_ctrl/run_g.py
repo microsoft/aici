@@ -10,7 +10,9 @@ def main():
         "Here's a "
         + select(["joke", "poem"])
         + " about cats: "
-        + gen(regex=r"[A-Z]+")
+        + gen(stop="\n")
+        + "\nScore: "
+        + gen(regex=r"\d+\.\d+")
     )
     mod_id = pyaici.cli.build_rust(".")
     pyaici.rest.log_level = 2
