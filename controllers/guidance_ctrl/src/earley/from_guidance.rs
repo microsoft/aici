@@ -81,6 +81,7 @@ impl NodeProps {
             } else {
                 self.max_tokens.try_into().unwrap()
             },
+            model_variable: None,
         }
     }
 }
@@ -103,6 +104,7 @@ pub fn earley_grm_from_guidance(bytes: &[u8]) -> Result<Grammar> {
                     assert!(n.byte_range.len() == 2);
                     Some(grm.terminal(&ByteSet::from_range(n.byte_range[0], n.byte_range[1])))
                 }
+                OneOffunction_type::model_variable(n) => Some(grm.model_variable(&n.name)),
                 _ => None,
             };
             let props = NodeProps::from_grammar_function(&n.function_type);
@@ -143,12 +145,9 @@ pub fn earley_grm_from_guidance(bytes: &[u8]) -> Result<Grammar> {
                     grm.add_rule(lhs, vec![symbols[*v as usize]]);
                 }
             }
-            OneOffunction_type::byte(_) => {}
-            OneOffunction_type::byte_range(_) => {}
-            OneOffunction_type::model_variable(n) => {
-                // eos_token, bos_token etc
-                panic!("model_variable not implemented yet ({:?})", n.name);
-            }
+            OneOffunction_type::byte(_)
+            | OneOffunction_type::byte_range(_)
+            | OneOffunction_type::model_variable(_) => {}
             OneOffunction_type::None => panic!("???"),
         }
     }

@@ -2,7 +2,7 @@ use std::{fmt::Debug, hash::Hash, ops::Range, vec};
 
 use aici_abi::toktree::{Recognizer, SpecialToken};
 
-use super::grammar::{CGrammar, CSymIdx, RuleIdx, SimpleHash};
+use super::grammar::{CGrammar, CSymIdx, ModelVariable, RuleIdx, SimpleHash};
 
 const DEBUG: bool = false;
 
@@ -250,15 +250,33 @@ impl Parser {
         bytes
     }
 
+    fn curr_row(&self) -> &Row {
+        &self.rows[self.rows.len() - 1]
+    }
+
+    pub fn model_variables(&self) -> Vec<ModelVariable> {
+        let mut vars = vec![];
+        for i in self.curr_row().item_indices() {
+            let item = self.scratch.items[i];
+            let sym = self.grammar.sym_idx_at(item.rule_idx());
+            let sym_data = self.grammar.sym_data(sym);
+            if let Some(ref mv) = sym_data.props.model_variable {
+                if !vars.contains(mv) {
+                    vars.push(mv.clone());
+                }
+            }
+        }
+        vars
+    }
+
     fn forced_byte(&self) -> Option<u8> {
         if self.is_accepting {
             // we're not forced when in accepting state
             return None;
         }
 
-        let curr_idx = self.rows.len() - 1;
         let mut byte_sym = None;
-        for i in self.rows[curr_idx].item_indices() {
+        for i in self.curr_row().item_indices() {
             let item = self.scratch.items[i];
             let sym = self.grammar.sym_idx_at(item.rule_idx());
             if self.grammar.is_terminal(sym) {
@@ -415,7 +433,12 @@ impl Recognizer for Parser {
     }
 
     fn special_allowed(&mut self, tok: SpecialToken) -> bool {
-        if tok == SpecialToken::EndOfSentence {
+        if self
+            .model_variables()
+            .contains(&ModelVariable::SpecialToken(tok))
+        {
+            true
+        } else if tok == SpecialToken::EndOfSentence {
             self.is_accepting()
         } else {
             false

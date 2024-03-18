@@ -9,7 +9,7 @@ use crate::{
     svob::SimpleVob,
 };
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum SpecialToken {
     Unknown,
     Padding,

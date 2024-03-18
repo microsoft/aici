@@ -28,6 +28,7 @@ impl Runner {
             .decode(arg.guidance_b64)
             .expect("invalid base64");
         let grm = earley_grm_from_guidance(&guidance).expect("invalid guidance protobuf");
+        println!("original: {:?}", grm);
         let grm = grm.optimize();
         println!("optimized: {:?}", grm);
         let cgrm = grm.compile();
