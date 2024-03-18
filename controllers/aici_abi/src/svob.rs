@@ -41,6 +41,16 @@ impl SimpleVob {
         self.data.iter().map(|x| x.count_ones() as usize).sum()
     }
 
+    pub fn negated(&self, size: usize) -> Self {
+        let mut r = Self::new();
+        r.data = self.data.iter().map(|x| !x).collect();
+        for i in size..r.len() {
+            // disallow tokens that are out of range
+            r.disallow_token(i as TokenId);
+        }
+        r
+    }
+
     pub unsafe fn as_ptr(&self) -> *const u32 {
         self.data.as_ptr()
     }

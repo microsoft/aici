@@ -11,9 +11,8 @@ pub struct ByteTokenizer {
     pub hf_tokenizer: Tokenizer,
     pub eos_token: u32,
     pub vocab_size: u32,
+    token_bytes: Vec<Vec<u8>>,
     pub special: BTreeMap<String, u32>,
-    pub binary: BTreeMap<String, u32>,
-    pub text: BTreeMap<String, u32>,
 }
 
 pub struct TokenizerInfo {
@@ -187,14 +186,6 @@ pub fn find_tokenizer(mut name: &str) -> Result<ByteTokenizer> {
     }
 }
 
-fn from_hex(hex_str: &str) -> Result<Vec<u8>> {
-    let mut bytes = Vec::new();
-    for i in (0..hex_str.len()).step_by(2) {
-        bytes.push(u8::from_str_radix(&hex_str[i..(i + 2)], 16)?);
-    }
-    Ok(bytes)
-}
-
 impl ByteTokenizer {
     pub fn from_tokenizer(mut hft: Tokenizer) -> Result<ByteTokenizer> {
         let mut is_byte_level = false;
@@ -256,8 +247,7 @@ impl ByteTokenizer {
             eos_token: 0,
             vocab_size,
             special: BTreeMap::new(),
-            binary: BTreeMap::new(),
-            text: BTreeMap::new(),
+            token_bytes: (0..vocab_size).map(|_| Vec::new()).collect(),
             hf_tokenizer: hft,
         };
 
@@ -269,7 +259,7 @@ impl ByteTokenizer {
                 }
                 res.special.insert(info.content.clone(), *id);
             } else {
-                res.text.insert(info.content.clone(), *id);
+                res.token_bytes[*id as usize] = info.content.clone().into_bytes();
             }
         }
 
@@ -286,17 +276,11 @@ impl ByteTokenizer {
                         // parse hex number from tok_name
                         let hex_str = &tok_name[3..5];
                         let byte = u8::from_str_radix(hex_str, 16).unwrap();
-                        if byte >= 0x80 {
-                            let s = format!("{:02x}", byte);
-                            res.binary.insert(s, tok_id);
-                        } else {
-                            let s = format!("{}", byte as char);
-                            res.text.insert(s, tok_id);
-                        }
+                        res.token_bytes[tok_id as usize] = vec![byte];
                     } else {
                         assert!(!tok_name.starts_with("<0x"));
                         let tok_name = tok_name.replace(space_ch, " ");
-                        res.text.insert(tok_name, tok_id);
+                        res.token_bytes[tok_id as usize] = tok_name.as_bytes().to_vec();
                     }
                 } else if is_byte_level {
                     let bytes: Result<Vec<u8>> = tok_name
@@ -316,12 +300,7 @@ impl ByteTokenizer {
                         }
                     };
 
-                    if let Ok(s) = String::from_utf8(bytes.clone()) {
-                        res.text.insert(s, tok_id);
-                    } else {
-                        let hexstr = String::from_iter(bytes.iter().map(|b| format!("{:02x}", b)));
-                        res.binary.insert(hexstr, tok_id);
-                    }
+                    res.token_bytes[tok_id as usize] = bytes;
                 } else {
                     panic!();
                 }
@@ -342,22 +321,6 @@ impl ByteTokenizer {
         }
     }
     pub fn token_bytes(&self) -> Vec<Vec<u8>> {
-        let tinfo = self.tokrx_info();
-        let mut r = Vec::with_capacity(tinfo.vocab_size as usize);
-        r.resize_with(tinfo.vocab_size as usize, Vec::new);
-
-        let info = self;
-
-        for (k, v) in &info.text {
-            let idx = *v as usize;
-            r[idx] = k.as_bytes().to_vec();
-        }
-
-        for (k, v) in &info.binary {
-            let idx = *v as usize;
-            r[idx] = from_hex(k).unwrap();
-        }
-
-        r
+        self.token_bytes.clone()
     }
 }
