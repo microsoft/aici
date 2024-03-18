@@ -183,6 +183,10 @@ impl Grammar {
 
     fn rule_to_string(&self, rule: &Rule, dot: Option<usize>) -> String {
         let ldata = self.sym_data(rule.lhs());
+        let dot_data = rule
+            .rhs
+            .get(dot.unwrap_or(0))
+            .map(|s| &self.sym_data(*s).props);
         rule_to_string(
             self.sym_name(rule.lhs()),
             rule.rhs
@@ -194,6 +198,7 @@ impl Grammar {
                 .collect(),
             dot,
             &ldata.props,
+            dot_data,
         )
     }
 
@@ -338,8 +343,10 @@ impl Grammar {
         CGrammar::from_grammar(self)
     }
 
-    pub fn set_props(&mut self, sym: SymIdx, props: SymbolProps) {
+    pub fn apply_props(&mut self, sym: SymIdx, mut props: SymbolProps) {
         let sym = self.sym_data_mut(sym);
+        assert!(props.model_variable.is_none());
+        props.model_variable = sym.props.model_variable.clone();
         if props.commit_point {
             assert!(!sym.is_terminal(), "commit_point on terminal");
         }
@@ -605,7 +612,8 @@ impl CGrammar {
         // we account for the already existing empty terminal
         outp.last_single_byte_terminal = single.len();
         for sym in single.iter().chain(&multi) {
-            outp.terminals.push(sym.bytes.clone().unwrap_or_else(ByteSet::new));
+            outp.terminals
+                .push(sym.bytes.clone().unwrap_or_else(ByteSet::new));
             let idx = outp.symbols.len() as u16;
             outp.symbols.push(CSymbol {
                 idx: CSymIdx(idx),
@@ -714,6 +722,11 @@ impl CGrammar {
         let symdata = self.sym_data(sym);
         let lhs = self.sym_name(sym);
         let (rhs, dot) = self.rule_rhs(rule);
+        let dot_prop = if rhs.len() > 0 {
+            Some(&self.sym_data(self.sym_idx_at(rule)).props)
+        } else {
+            None
+        };
         rule_to_string(
             lhs,
             rhs.iter()
@@ -731,6 +744,7 @@ impl CGrammar {
                 .collect(),
             Some(dot),
             &symdata.props,
+            dot_prop,
         )
     }
 }
@@ -740,6 +754,7 @@ fn rule_to_string(
     mut rhs: Vec<SymName>,
     dot: Option<usize>,
     props: &SymbolProps,
+    _dot_props: Option<&SymbolProps>,
 ) -> String {
     if rhs.is_empty() {
         rhs.push(SymName::Name("ϵ".to_string()));
@@ -788,6 +803,6 @@ fn rule_to_string(
             format!(" max_tokens={}", props.max_tokens)
         } else {
             "".to_string()
-        }
+        },
     )
 }

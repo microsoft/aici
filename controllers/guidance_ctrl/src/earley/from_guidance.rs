@@ -122,7 +122,7 @@ pub fn earley_grm_from_guidance(bytes: &[u8]) -> Result<Grammar> {
                 assert!(props.name.len() > 0, "empty name");
                 grm.fresh_symbol(&props.name)
             };
-            grm.set_props(sym, props.to_symbol_props());
+            grm.apply_props(sym, props.to_symbol_props());
             sym
         })
         .collect::<Vec<_>>();

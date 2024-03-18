@@ -206,7 +206,7 @@ impl Parser {
         format!(
             "{} @{}",
             self.grammar.rule_to_string(item.rule_idx()),
-            item.start_pos()
+            item.start_pos(),
         )
     }
 
@@ -433,6 +433,8 @@ impl Recognizer for Parser {
     }
 
     fn special_allowed(&mut self, tok: SpecialToken) -> bool {
+        // self.print_row(self.num_rows() - 1);
+        // println!("model vars: {:?}", self.model_variables());
         if self
             .model_variables()
             .contains(&ModelVariable::SpecialToken(tok))

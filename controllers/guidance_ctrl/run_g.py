@@ -7,11 +7,11 @@ import ujson as json
 
 def main():
     grm = (
-        "Here's a "
+        "Here's one-liner "
         + select(["joke", "poem"])
         + " about cats: "
         + gen(stop="\n")
-        + "\nScore: "
+        + "\nScore (out of 10): "
         + gen(regex=r"\d+\.\d+")
     )
     mod_id = pyaici.cli.build_rust(".")
