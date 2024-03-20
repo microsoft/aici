@@ -42,6 +42,8 @@ impl Row {
 }
 
 impl Item {
+    const NULL: Self = Item { data: 0 };
+
     fn new(rule: RuleIdx, start: usize) -> Self {
         Item {
             data: rule.as_index() as u64 | ((start as u64) << 32),
@@ -133,13 +135,20 @@ struct Scratch {
     predicated_syms: SimpleSet<CSymIdx>,
 }
 
+struct RowInfo {
+    byte: u8,
+    commit_item: Item,
+}
+
 pub struct Parser {
     grammar: CGrammar,
     scratch: Scratch,
     rows: Vec<Row>,
+    row_infos: Vec<RowInfo>,
     stats: Stats,
     is_accepting: bool,
     last_collapse: usize,
+    speculative: bool,
 }
 
 impl Scratch {
@@ -186,15 +195,17 @@ impl Parser {
         let mut r = Parser {
             grammar,
             rows: vec![],
+            row_infos: vec![],
             scratch: Scratch::default(),
             stats: Stats::default(),
             is_accepting: false,
             last_collapse: 0,
+            speculative: false,
         };
         for rule in r.grammar.rules_of(start).to_vec() {
             r.scratch.add_unique(Item::new(rule, 0), "init");
         }
-        let _ = r.push_row();
+        let _ = r.push_row(r.scratch.row_start, 0);
         r
     }
 
@@ -233,14 +244,17 @@ impl Parser {
         self.stats = Stats::default();
     }
 
+    pub fn get_bytes(&self) -> Vec<u8> {
+        assert!(!self.speculative);
+        assert!(self.num_rows() == self.row_infos.len());
+        self.row_infos.iter().skip(1).map(|ri| ri.byte).collect()
+    }
+
     pub fn force_bytes(&mut self) -> Vec<u8> {
+        assert!(!self.speculative);
         let mut bytes = vec![];
         while let Some(b) = self.forced_byte() {
             let res = self.scan(b);
-            if res == ParseResult::Accept {
-                self.pop_rows(1);
-                break;
-            }
             if res == ParseResult::Reject {
                 // shouldn't happen?
                 break;
@@ -301,6 +315,24 @@ impl Parser {
         }
     }
 
+    pub fn hide_item(&mut self, sym: CSymIdx, row_idx: usize) -> ParseResult {
+        let row_range = self.rows[row_idx].item_indices();
+        let agenda_ptr = row_range.end;
+        self.scratch.row_start = row_range.start;
+        self.scratch.row_end = row_range.end;
+        self.pop_rows(self.num_rows() - row_idx);
+        assert!(self.num_rows() == row_idx);
+
+        for idx in row_range {
+            let item = self.scratch.items[idx];
+            if self.grammar.sym_idx_at(item.rule_idx()) == sym {
+                self.scratch.add_unique(item.advance_dot(), "hide");
+            }
+        }
+
+        self.push_row(agenda_ptr, self.row_infos[row_idx].byte)
+    }
+
     #[inline(always)]
     pub fn scan(&mut self, b: u8) -> ParseResult {
         let row_idx = self.rows.len() - 1;
@@ -322,13 +354,13 @@ impl Parser {
             }
             i += 1;
         }
-        self.push_row()
+        self.push_row(self.scratch.row_start, b)
     }
 
     #[inline(always)]
-    fn push_row(&mut self) -> ParseResult {
+    fn push_row(&mut self, mut agenda_ptr: usize, byte: u8) -> ParseResult {
         let curr_idx = self.rows.len();
-        let mut agenda_ptr = self.scratch.row_start;
+        let mut commit_item = Item::NULL;
 
         self.scratch.predicated_syms.clear();
 
@@ -367,6 +399,7 @@ impl Parser {
                     }
                     self.scratch.row_end = agenda_ptr;
                     self.scratch.items[agenda_ptr - 1] = item;
+                    commit_item = item;
                     if DEBUG {
                         println!("commit point: {}", self.item_to_string(&item));
                     }
@@ -408,6 +441,11 @@ impl Parser {
             last_item: self.scratch.row_end,
         });
 
+        if !self.speculative {
+            self.row_infos.drain((self.row_infos.len() - 1)..);
+            self.row_infos.push(RowInfo { byte, commit_item });
+        }
+
         if self.is_accepting {
             ParseResult::Accept
         } else {
@@ -447,8 +485,12 @@ impl Recognizer for Parser {
         }
     }
 
+    fn trie_started(&mut self) {
+        self.speculative = true;
+    }
+
     fn trie_finished(&mut self) {
-        // do nothing?
+        self.speculative = false;
     }
 
     fn try_push_byte(&mut self, byte: u8) -> bool {

@@ -45,6 +45,8 @@ pub trait Recognizer {
     /// Called when iteration over the trie is finished
     /// Stack has exactly one element then.
     fn trie_finished(&mut self);
+    /// Called when iteration over the trie is started
+    fn trie_started(&mut self) {}
     /// This combines `push_byte` and `byte_allowed` into one function for performance.
     fn try_push_byte(&mut self, byte: u8) -> bool;
 }
@@ -546,6 +548,7 @@ impl TokTrie {
 
     #[inline(never)]
     pub fn add_bias(&self, r: &mut impl Recognizer, toks: &mut SimpleVob) {
+        r.trie_started();
         let n = self.root();
         let defl_tok = self.vocab_size() as u32;
         let off = self.node_offset(n);
