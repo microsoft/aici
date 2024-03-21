@@ -103,30 +103,39 @@ export class MidProcessResult {
 
   constructor() {}
 
+  /**
+   * Stop the current sequence.
+   */
   static stop(): MidProcessResult {
     const res = new MidProcessResult();
     res._n_stop = true;
     return res;
   }
 
-  static skipMe(): MidProcessResult {
+  /**
+   * Sample one of the tokens from the set.
+   */
+  static bias(allowedTokens: TokenSet): MidProcessResult {
     const res = new MidProcessResult();
-    res._n_skip_me = true;
+    res._n_logit_bias = allowedTokens;
     return res;
   }
 
-  static bias(bias: TokenSet): MidProcessResult {
-    const res = new MidProcessResult();
-    res._n_logit_bias = bias;
-    return res;
-  }
-
+  /**
+   * Backtrack given number of tokens and then appends the given tokens to the prompt.
+   */
   static splice(backtrack: number, tokens: Token[]): MidProcessResult {
     const res = new MidProcessResult();
     assert(backtrack >= 0);
     assert(Array.isArray(tokens));
     res._n_backtrack = backtrack;
     res._n_ff_tokens = tokens;
+    return res;
+  }
+
+  static skipMe(): MidProcessResult {
+    const res = new MidProcessResult();
+    res._n_skip_me = true;
     return res;
   }
 }
