@@ -1,3 +1,5 @@
+use std::process::id;
+
 use aici_abi::{
     arg_bytes, tokenize_bytes, toktree::TokTrie, AiciCtrl, MidProcessArg, MidProcessResult,
     PostProcessArg, PostProcessResult, PreProcessArg, PreProcessResult, TokenId,
@@ -6,13 +8,15 @@ use base64::{self, Engine as _};
 use earley::{earley_grm_from_guidance, Parser};
 use serde::{Deserialize, Serialize};
 
+use crate::earley::ParseResult;
+
 mod earley;
 mod serialization;
 
 pub struct Runner {
     toktrie: TokTrie,
     parser: Parser,
-    all_tokens: Vec<TokenId>,
+    llm_tokens: Vec<TokenId>,
     is_ff: bool,
 }
 
@@ -36,7 +40,7 @@ impl Runner {
         Runner {
             toktrie: TokTrie::from_host(),
             parser,
-            all_tokens: Vec::new(),
+            llm_tokens: Vec::new(),
             is_ff: false,
         }
     }
@@ -48,62 +52,73 @@ impl AiciCtrl for Runner {
     }
 
     fn mid_process(&mut self, _arg: MidProcessArg) -> MidProcessResult {
-        let bytes = self.parser.force_bytes();
-        if bytes.len() > 0 {
-            let mut tokens = tokenize_bytes(&bytes);
-            let mut suff = Vec::new();
-            let mut chop_tokens = 0;
-            let mut chop_bytes = 0;
-            for (idx, t) in tokens.iter().rev().enumerate() {
-                suff.splice(0..0, self.toktrie.token(*t).iter().cloned());
-                if suff.len() > self.toktrie.max_token_len() {
-                    break;
-                }
-                if self.toktrie.has_extensions(&suff) {
-                    chop_tokens = idx + 1;
-                    chop_bytes = suff.len();
-                }
+        let _ = self.parser.force_bytes();
+        let fixed_bytes = self.parser.get_bytes();
+        let mut fixed_tokens = tokenize_bytes(&fixed_bytes);
+        let mut suff = Vec::new();
+        let mut chop_tokens = 0;
+        let mut chop_bytes = 0;
+        for (idx, t) in fixed_tokens.iter().rev().enumerate() {
+            suff.splice(0..0, self.toktrie.token(*t).iter().cloned());
+            if suff.len() > self.toktrie.max_token_len() {
+                break;
             }
-            tokens.truncate(tokens.len() - chop_tokens);
-            self.parser.pop_rows(chop_bytes);
-            if tokens.len() > 0 {
-                let fixed_tokens = {
-                    let all_tokens = self
-                        .all_tokens
-                        .iter()
-                        .chain(tokens.iter())
-                        .cloned()
-                        .collect::<Vec<_>>();
-                    let all_bytes = self.toktrie.decode(&all_tokens);
-                    tokenize_bytes(&all_bytes)
-                };
-                for idx in 0..=self.all_tokens.len() {
-                    if idx == self.all_tokens.len() || self.all_tokens[idx] != fixed_tokens[idx] {
-                        let backtrack = (self.all_tokens.len() - idx) as u32;
-                        let ff_tokens = fixed_tokens[idx..].to_vec();
-                        println!(
-                            "backtrack: {}, ff_tokens: {}",
-                            backtrack,
-                            self.toktrie.tokens_dbg(&ff_tokens)
-                        );
-                        self.all_tokens = fixed_tokens;
-                        self.is_ff = true;
-                        return MidProcessResult::Splice {
-                            backtrack,
-                            ff_tokens,
-                        };
-                    }
-                }
-                panic!("unreachable");
-            } else {
-                assert!(chop_bytes == bytes.len());
+            if self.toktrie.has_extensions(&suff) {
+                chop_tokens = idx + 1;
+                chop_bytes = suff.len();
             }
         }
+        fixed_tokens.truncate(fixed_tokens.len() - chop_tokens);
+
+        for idx in 0..fixed_tokens.len() {
+            if self.llm_tokens.get(idx) != fixed_tokens.get(idx) {
+                let backtrack = (self.llm_tokens.len() - idx) as u32;
+                let ff_tokens = fixed_tokens[idx..].to_vec();
+                println!(
+                    "backtrack: {}, ff_tokens: {}",
+                    backtrack,
+                    self.toktrie.tokens_dbg(&ff_tokens)
+                );
+                self.llm_tokens = fixed_tokens;
+                self.is_ff = true;
+                return MidProcessResult::Splice {
+                    backtrack,
+                    ff_tokens,
+                };
+            }
+        }
+
+        let llm_bytes = self.toktrie.decode(&self.llm_tokens[fixed_tokens.len()..]);
+        let byte_suffix = fixed_bytes[fixed_bytes.len() - chop_bytes..].to_vec();
+
+        let byte_suffix = if byte_suffix.len() <= llm_bytes.len() {
+            if !llm_bytes.starts_with(&byte_suffix) {
+                panic!("llm_bytes: {:?}, byte_suffix: {:?}", llm_bytes, byte_suffix);
+            }
+
+            for b in &llm_bytes[byte_suffix.len()..] {
+                let r = self.parser.scan(*b);
+                if r == ParseResult::Reject {
+                    panic!("rejected byte: {}", b);
+                }
+                if r == ParseResult::Accept {
+                    return MidProcessResult::Stop;
+                }
+            }
+            vec![]
+        } else {
+            if !byte_suffix.starts_with(&llm_bytes) {
+                panic!("llm_bytes: {:?}, byte_suffix: {:?}", llm_bytes, byte_suffix);
+            }
+            byte_suffix[llm_bytes.len()..].to_vec()
+        };
 
         self.is_ff = false;
 
         let mut set = self.toktrie.alloc_token_set();
-        self.toktrie.compute_bias(&mut self.parser, &mut set);
+        TODO include prefixes of byte_suffix as valid tokens
+        self.toktrie
+            .compute_bias_ext(&mut self.parser, &mut set, &byte_suffix);
         println!("bias: {}", self.toktrie.token_set_dbg(&set));
 
         MidProcessResult::SampleWithBias {
@@ -118,7 +133,7 @@ impl AiciCtrl for Runner {
             self.toktrie.tokens_dbg(&arg.tokens)
         );
         if !self.is_ff {
-            self.all_tokens.extend(&arg.tokens);
+            self.llm_tokens.extend(&arg.tokens);
             self.toktrie.append_tokens(&mut self.parser, &arg.tokens);
         }
         PostProcessResult::from_arg(&arg)

@@ -495,13 +495,17 @@ impl TokTrie {
     }
 
     pub fn compute_bias(&self, r: &mut impl Recognizer, logits: &mut SimpleVob) {
+        self.compute_bias_ext(r, logits, &[]);
+    }
+
+    pub fn compute_bias_ext(&self, r: &mut impl Recognizer, logits: &mut SimpleVob, start: &[u8]) {
         logits.set_all(false);
         for tok in vec![SpecialToken::EndOfSentence] {
             if r.special_allowed(tok) {
                 logits.allow_token(self.special_token(tok))
             }
         }
-        self.add_bias(r, logits);
+        self.add_bias(r, logits, start);
         self.apply_duplicates(logits);
     }
 
@@ -547,9 +551,9 @@ impl TokTrie {
     }
 
     #[inline(never)]
-    pub fn add_bias(&self, r: &mut impl Recognizer, toks: &mut SimpleVob) {
+    pub fn add_bias(&self, r: &mut impl Recognizer, toks: &mut SimpleVob, start: &[u8]) {
         r.trie_started();
-        let n = self.root();
+        let n = self.child_at_bytes(self.root(), start).unwrap();
         let defl_tok = self.vocab_size() as u32;
         let off = self.node_offset(n);
         let mut p = off + 1;

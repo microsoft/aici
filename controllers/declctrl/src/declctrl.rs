@@ -18,8 +18,8 @@ use aici_abi::{
     svob::SimpleVob,
     tokenize, tokenize_bytes,
     toktree::{Recognizer, SpecialToken, TokTrie},
-    AiciCtrl, InitPromptArg, InitPromptResult, MidProcessArg, MidProcessResult,
-    PostProcessArg, PostProcessResult, PreProcessArg, PreProcessResult, TokenId, VariableStorage,
+    AiciCtrl, InitPromptArg, InitPromptResult, MidProcessArg, MidProcessResult, PostProcessArg,
+    PostProcessResult, PreProcessArg, PreProcessResult, TokenId, VariableStorage,
 };
 use core::panic;
 use serde::{Deserialize, Serialize};
@@ -910,10 +910,10 @@ impl StepState {
                 }
             }
             StepSpecific::Rx { rx } => {
-                trie.add_bias(rx, toks);
+                trie.add_bias(rx, toks, &[]);
             }
             StepSpecific::Cfg { cfg } => {
-                trie.add_bias(cfg, toks);
+                trie.add_bias(cfg, toks, &[]);
             }
         }
     }
