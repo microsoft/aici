@@ -21,7 +21,6 @@ const ENABLE_CLOCK: bool = false;
 #[derive(Clone)]
 pub struct AiciLimits {
     pub ipc_shm_bytes: usize,
-    pub msg_cnt: Arc<Shm>,
 
     pub max_memory_bytes: usize,
     pub max_pre_step_ms: u64,

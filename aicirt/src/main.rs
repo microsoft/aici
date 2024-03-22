@@ -1002,10 +1002,9 @@ impl CmdRespChannel {
                 cli.json_size * MEGABYTE,
                 shm::Unlink::Post,
             )?;
-            let cnt_shm = Arc::new(Shm::anon(4096)?); // unused at the moment
             Ok(Self::Futex {
-                cmd_ch: ServerChannel::new(cmd_shm, cnt_shm.clone()),
-                resp_ch: Arc::new(Mutex::new(ServerChannel::new(resp_shm, cnt_shm))),
+                cmd_ch: ServerChannel::new(cmd_shm),
+                resp_ch: Arc::new(Mutex::new(ServerChannel::new(resp_shm))),
                 busy_wait_duration,
             })
         } else {
@@ -1159,10 +1158,7 @@ fn main() -> () {
         std::process::exit(1);
     }
 
-    let msg_cnt = Shm::anon(4096).unwrap();
-
     let limits = AiciLimits {
-        msg_cnt: Arc::new(msg_cnt),
         ipc_shm_bytes: cli.json_size * MEGABYTE,
         max_memory_bytes: cli.wasm_max_memory * MEGABYTE,
         max_init_ms: cli.wasm_max_init_time,

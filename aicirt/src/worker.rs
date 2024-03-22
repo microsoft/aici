@@ -94,7 +94,7 @@ where
     }
 
     if pid == 0 {
-        let server = TypedServer::<Cmd, Resp>::new(shm, limits.msg_cnt.clone());
+        let server = TypedServer::<Cmd, Resp>::new(shm);
         Ok(ForkResult::Child { server })
     } else {
         // we drop shm, so it's unmapped
