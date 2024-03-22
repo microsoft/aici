@@ -151,6 +151,7 @@ struct RowInfo {
 pub struct Parser {
     grammar: CGrammar,
     scratch: Scratch,
+    captures: Vec<(String, Vec<u8>)>,
     rows: Vec<Row>,
     row_infos: Vec<RowInfo>,
     stats: Stats,
@@ -205,6 +206,7 @@ impl Parser {
             grammar,
             rows: vec![],
             row_infos: vec![],
+            captures: vec![],
             scratch: Scratch::default(),
             stats: Stats::default(),
             is_accepting: false,
@@ -364,6 +366,10 @@ impl Parser {
         self.push_row(self.scratch.row_start, b)
     }
 
+    pub fn captures(&self) -> &[(String, Vec<u8>)] {
+        &self.captures
+    }
+
     #[inline(always)]
     fn push_row(&mut self, mut agenda_ptr: usize, byte: u8) -> ParseResult {
         let curr_idx = self.rows.len();
@@ -387,6 +393,16 @@ impl Parser {
                 let lhs = self.grammar.sym_idx_of(item.rule_idx());
                 // complete
                 self.is_accepting = self.is_accepting || lhs == self.grammar.start();
+
+                if !self.speculative && flags.capture() {
+                    let var_name = self.grammar.sym_data(lhs).props.capture_name.as_ref().unwrap();
+                    let mut bytes = self.row_infos[item.start_pos() + 1..curr_idx]
+                        .iter()
+                        .map(|ri| ri.byte)
+                        .collect::<Vec<_>>();
+                    bytes.push(byte);
+                    self.captures.push((var_name.clone(), bytes));
+                }
 
                 if flags.commit_point() {
                     // TODO do we need to remove possible scans?

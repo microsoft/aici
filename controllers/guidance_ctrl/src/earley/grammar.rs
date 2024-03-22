@@ -484,8 +484,9 @@ pub struct CSymbol {
 pub struct SymFlags(u8);
 
 impl SymFlags {
-    const COMMIT_POINT: u8 = 0b0000_0001;
-    const HIDDEN: u8 = 0b0000_0010;
+    const COMMIT_POINT: u8 = 1 << 0;
+    const HIDDEN: u8 = 1 << 2;
+    const CAPTURE: u8 = 1 << 3;
 
     fn from_csymbol(sym: &CSymbol) -> Self {
         let mut flags = 0;
@@ -494,6 +495,9 @@ impl SymFlags {
         }
         if sym.props.hidden {
             flags |= Self::HIDDEN;
+        }
+        if sym.props.capture_name.is_some() {
+            flags |= Self::CAPTURE;
         }
         SymFlags(flags)
     }
@@ -507,6 +511,11 @@ impl SymFlags {
     #[allow(dead_code)]
     pub fn hidden(&self) -> bool {
         self.0 & Self::HIDDEN != 0
+    }
+
+    #[inline(always)]
+    pub fn capture(&self) -> bool {
+        self.0 & Self::CAPTURE != 0
     }
 }
 

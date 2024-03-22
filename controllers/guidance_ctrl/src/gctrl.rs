@@ -5,6 +5,7 @@ use aici_abi::{
 use base64::{self, Engine as _};
 use earley::{earley_grm_from_guidance, Parser};
 use serde::{Deserialize, Serialize};
+use serde_json::json;
 
 use crate::earley::ParseResult;
 
@@ -26,6 +27,7 @@ pub struct Runner {
     parser: Parser,
     llm_tokens: Vec<TokenId>,
     is_ff: bool,
+    reported_captures: usize,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -50,6 +52,25 @@ impl Runner {
             parser,
             llm_tokens: Vec::new(),
             is_ff: false,
+            reported_captures: 0,
+        }
+    }
+
+    fn report_captures(&mut self) {
+        let captures = &self.parser.captures()[self.reported_captures..];
+        for (name, val) in captures {
+            self.reported_captures += 1;
+            let d = match String::from_utf8(val.clone()) {
+                Ok(s) => json!({
+                    "name": name,
+                    "str": s,
+                }),
+                Err(e) => json!({
+                    "name": name,
+                    "hex": e.as_bytes().iter().map(|b| format!("{:02x}", b)).collect::<Vec<_>>()
+                }),
+            };
+            println!("CAPTURE: {}", d);
         }
     }
 }
@@ -90,6 +111,7 @@ impl AiciCtrl for Runner {
                 );
                 self.llm_tokens = fixed_tokens;
                 self.is_ff = true;
+                self.report_captures();
                 return MidProcessResult::Splice {
                     backtrack,
                     ff_tokens,
@@ -131,6 +153,8 @@ impl AiciCtrl for Runner {
             self.toktrie.token_set_dbg(&set)
         );
 
+        self.report_captures();
+
         MidProcessResult::SampleWithBias {
             allowed_tokens: set,
         }
@@ -145,6 +169,7 @@ impl AiciCtrl for Runner {
         if !self.is_ff {
             self.llm_tokens.extend(&arg.tokens);
         }
+        // TODO EOS!
         PostProcessResult::from_arg(&arg)
     }
 }
