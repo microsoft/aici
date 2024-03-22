@@ -82,6 +82,11 @@ impl NodeProps {
                 self.max_tokens.try_into().unwrap()
             },
             model_variable: None,
+            capture_name: if self.capture_name.is_empty() {
+                None
+            } else {
+                Some(self.capture_name.clone())
+            },
         }
     }
 }
@@ -108,21 +113,23 @@ pub fn earley_grm_from_guidance(bytes: &[u8]) -> Result<Grammar> {
                 _ => None,
             };
             let props = NodeProps::from_grammar_function(&n.function_type);
+            let sym_props = props.to_symbol_props();
+            let name = sym_props.capture_name.as_ref().unwrap_or(&props.name);
             // println!("props: {:?}", props);
             let sym = if let Some(term) = term {
                 assert!(props.max_tokens == i32::MAX, "max_tokens on terminal");
-                if props.commit_point {
-                    let wrap = grm.fresh_symbol("t_wrap");
+                if sym_props.is_special() {
+                    let wrap = grm.fresh_symbol(if name.is_empty() { "t_wrap" } else { name });
                     grm.add_rule(term, vec![term]);
                     wrap
                 } else {
                     term
                 }
             } else {
-                assert!(props.name.len() > 0, "empty name");
-                grm.fresh_symbol(&props.name)
+                assert!(name.len() > 0, "empty name");
+                grm.fresh_symbol(name)
             };
-            grm.apply_props(sym, props.to_symbol_props());
+            grm.apply_props(sym, sym_props);
             sym
         })
         .collect::<Vec<_>>();

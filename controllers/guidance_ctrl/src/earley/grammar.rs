@@ -55,6 +55,7 @@ impl ModelVariable {
 pub struct SymbolProps {
     pub max_tokens: usize,
     pub commit_point: bool,
+    pub capture_name: Option<String>,
     pub hidden: bool,
     pub model_variable: Option<ModelVariable>,
 }
@@ -66,13 +67,18 @@ impl Default for SymbolProps {
             hidden: false,
             max_tokens: usize::MAX,
             model_variable: None,
+            capture_name: None,
         }
     }
 }
 
 impl SymbolProps {
+    /// Special nodes can't be removed in grammar optimizations
     pub fn is_special(&self) -> bool {
-        self.commit_point || self.hidden || self.max_tokens < usize::MAX
+        self.commit_point
+            || self.hidden
+            || self.max_tokens < usize::MAX
+            || self.capture_name.is_some()
     }
 }
 
@@ -276,7 +282,7 @@ impl Grammar {
 
         let mut repl = FxHashMap::default();
         for sym in &self.symbols {
-            // don't inline commit points or start symbol
+            // don't inline special symbols (commit points, captures, ...) or start symbol
             if sym.idx == self.start() || sym.props.is_special() {
                 continue;
             }
@@ -347,11 +353,8 @@ impl Grammar {
         let sym = self.sym_data_mut(sym);
         assert!(props.model_variable.is_none());
         props.model_variable = sym.props.model_variable.clone();
-        if props.commit_point {
-            assert!(!sym.is_terminal(), "commit_point on terminal");
-        }
-        if props.max_tokens < usize::MAX {
-            assert!(!sym.is_terminal(), "max_tokens on terminal");
+        if props.is_special() {
+            assert!(!sym.is_terminal(), "special terminal");
         }
         assert!(
             !(!props.commit_point && props.hidden),
@@ -787,7 +790,7 @@ fn rule_to_string(
         }
     }
     format!(
-        "{:15} ⇦ {}{}{}",
+        "{:15} ⇦ {}{}{}{}",
         lhs,
         outp.join(" "),
         if props.commit_point {
@@ -796,6 +799,11 @@ fn rule_to_string(
             } else {
                 " COMMIT"
             }
+        } else {
+            ""
+        },
+        if props.capture_name.is_some() {
+            " CAPTURE"
         } else {
             ""
         },

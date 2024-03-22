@@ -5,7 +5,7 @@ import ujson as json
 
 
 import guidance
-from guidance import one_or_more, select, zero_or_more, byte_range
+from guidance import one_or_more, select, zero_or_more, byte_range, capture
 
 
 # stateless=True indicates this function does not depend on LLM generations
@@ -15,10 +15,11 @@ def number(lm):
     # Allow for negative or positive numbers
     return lm + select(["-" + n, n])
 
+
 @guidance(stateless=True)
 def identifier(lm):
-    letter = select([byte_range(b'a', b'z'), byte_range(b'A', b'Z'), "_"])
-    num = byte_range(b'0', b'9')
+    letter = select([byte_range(b"a", b"z"), byte_range(b"A", b"Z"), "_"])
+    num = byte_range(b"0", b"9")
     return lm + letter + zero_or_more(select([letter, num]))
 
 
@@ -43,7 +44,12 @@ def expression(lm):
 
 
 def main():
-    grm = "Here's a sample arithmetic expression: " + expression() + " = " + number()
+    grm = (
+        "Here's a sample arithmetic expression: "
+        + capture(expression(), "expr")
+        + " = "
+        + capture(number(), "num")
+    )
     print(base64.b64encode(grm.serialize()).decode("utf-8"))
     mod_id = pyaici.cli.build_rust(".")
     pyaici.rest.log_level = 2
@@ -53,16 +59,6 @@ def main():
             {"guidance_b64": base64.b64encode(grm.serialize()).decode("utf-8")}
         ),
     )
-    max_micros = 0
-    step = 0
-    for r in res["response"]:
-        if r["object"] == "run":
-            step += 1
-            if step == 1:
-                continue  # skip intial processing
-            for f in r["forks"]:
-                max_micros = max(max_micros, f["micros"])
-    print("Max ctrl us:", max_micros)
     print("Usage:", res["usage"])
     print("Timing:", res["timing"])
     print("Tokens/sec:", res["tps"])
