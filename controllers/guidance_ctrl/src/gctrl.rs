@@ -60,21 +60,23 @@ impl Runner {
         let captures = &self.parser.captures()[self.reported_captures..];
         for (name, val) in captures {
             self.reported_captures += 1;
-            let mut obj = json!({
-                "type": "capture",
-                "name": name,
-            });
-            match String::from_utf8(val.clone()) {
-                Ok(s) => {
-                    obj["string"] = json!(s);
-                }
-                Err(_) => {
-                    obj["hex"] = json!(to_hex_string(val));
-                }
+            let cap = Capture {
+                object: "capture",
+                name: name.clone(),
+                str: String::from_utf8_lossy(val).to_string(),
+                hex: to_hex_string(val),
             };
-            println!("JSON-OUT: {}", obj);
+            println!("JSON-OUT: {}", serde_json::to_string(&cap).unwrap());
         }
     }
+}
+
+#[derive(Serialize, Deserialize)]
+struct Capture {
+    object: &'static str, // "capture"
+    name: String,
+    str: String,
+    hex: String,
 }
 
 impl AiciCtrl for Runner {
