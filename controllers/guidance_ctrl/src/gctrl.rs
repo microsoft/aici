@@ -1,5 +1,3 @@
-use std::process::id;
-
 use aici_abi::{
     arg_bytes, tokenize_bytes, toktree::TokTrie, AiciCtrl, MidProcessArg, MidProcessResult,
     PostProcessArg, PostProcessResult, PreProcessArg, PreProcessResult, TokenId,
@@ -72,7 +70,7 @@ impl AiciCtrl for Runner {
 
         for idx in 0..fixed_tokens.len() {
             if self.llm_tokens.get(idx) != fixed_tokens.get(idx) {
-                let backtrack = (self.llm_tokens.len() - idx) as u32;
+                let backtrack: u32 = (self.llm_tokens.len() - idx).try_into().unwrap();
                 let ff_tokens = fixed_tokens[idx..].to_vec();
                 println!(
                     "backtrack: {}, ff_tokens: {}",
@@ -101,9 +99,6 @@ impl AiciCtrl for Runner {
                 if r == ParseResult::Reject {
                     panic!("rejected byte: {}", b);
                 }
-                if r == ParseResult::Accept {
-                    return MidProcessResult::Stop;
-                }
             }
             vec![]
         } else {
@@ -116,10 +111,13 @@ impl AiciCtrl for Runner {
         self.is_ff = false;
 
         let mut set = self.toktrie.alloc_token_set();
-        TODO include prefixes of byte_suffix as valid tokens
         self.toktrie
             .compute_bias_ext(&mut self.parser, &mut set, &byte_suffix);
-        println!("bias: {}", self.toktrie.token_set_dbg(&set));
+        println!(
+            "bias: (pref: {:?}) {}",
+            String::from_utf8_lossy(&byte_suffix),
+            self.toktrie.token_set_dbg(&set)
+        );
 
         MidProcessResult::SampleWithBias {
             allowed_tokens: set,
@@ -134,7 +132,6 @@ impl AiciCtrl for Runner {
         );
         if !self.is_ff {
             self.llm_tokens.extend(&arg.tokens);
-            self.toktrie.append_tokens(&mut self.parser, &arg.tokens);
         }
         PostProcessResult::from_arg(&arg)
     }

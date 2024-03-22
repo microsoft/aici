@@ -33,7 +33,8 @@ def expression(lm):
 
 def main():
     grm = (
-        expression()
+        "Here's a sample arithmetic expression: " +
+        expression() + " = " + number()
     )
     print( base64.b64encode(grm.serialize()).decode("utf-8"))
     mod_id = pyaici.cli.build_rust(".")

@@ -9,6 +9,14 @@ const DEBUG: bool = false;
 // this may speed up more complex grammar but slows down simple ones (by 10%)
 const PREDICTED_SYM_FILTER: bool = false;
 
+macro_rules! debug {
+    ($($arg:tt)*) => {
+        if DEBUG {
+            println!($($arg)*);
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 struct Item {
     data: u64,
@@ -182,7 +190,8 @@ impl Scratch {
     }
 
     #[inline(always)]
-    fn add_unique(&mut self, item: Item, _info: &str) {
+    fn add_unique(&mut self, item: Item, grm: &CGrammar, info: &str) {
+        debug!("add_unique: {} {}", info, item_to_string(grm, &item));
         if !self.items[self.row_start..self.row_end].contains(&item) {
             self.just_add(item);
         }
@@ -203,8 +212,9 @@ impl Parser {
             speculative: false,
         };
         for rule in r.grammar.rules_of(start).to_vec() {
-            r.scratch.add_unique(Item::new(rule, 0), "init");
+            r.scratch.add_unique(Item::new(rule, 0), &r.grammar, "init");
         }
+        debug!("initial push");
         let _ = r.push_row(r.scratch.row_start, 0);
         r
     }
@@ -214,11 +224,7 @@ impl Parser {
     }
 
     fn item_to_string(&self, item: &Item) -> String {
-        format!(
-            "{} @{}",
-            self.grammar.rule_to_string(item.rule_idx()),
-            item.start_pos(),
-        )
+        item_to_string(&self.grammar, item)
     }
 
     pub fn print_row(&self, row_idx: usize) {
@@ -326,7 +332,8 @@ impl Parser {
         for idx in row_range {
             let item = self.scratch.items[idx];
             if self.grammar.sym_idx_at(item.rule_idx()) == sym {
-                self.scratch.add_unique(item.advance_dot(), "hide");
+                self.scratch
+                    .add_unique(item.advance_dot(), &self.grammar, "hide");
             }
         }
 
@@ -370,9 +377,7 @@ impl Parser {
         while agenda_ptr < self.scratch.row_end {
             let mut item = self.scratch.items[agenda_ptr];
             agenda_ptr += 1;
-            if DEBUG {
-                println!("from agenda: {}", self.item_to_string(&item));
-            }
+            debug!("from agenda: {}", self.item_to_string(&item));
 
             let rule = item.rule_idx();
             let after_dot = self.grammar.sym_idx_at(rule);
@@ -400,9 +405,7 @@ impl Parser {
                     self.scratch.row_end = agenda_ptr;
                     self.scratch.items[agenda_ptr - 1] = item;
                     commit_item = item;
-                    if DEBUG {
-                        println!("commit point: {}", self.item_to_string(&item));
-                    }
+                    debug!("commit point: {}", self.item_to_string(&item));
                 }
 
                 if item.start_pos() < curr_idx {
@@ -410,19 +413,21 @@ impl Parser {
                     for i in self.rows[item.start_pos()].item_indices() {
                         let item = self.scratch.items[i];
                         if self.grammar.sym_idx_at(item.rule_idx()) == lhs {
-                            self.scratch.add_unique(item.advance_dot(), "complete");
+                            self.scratch
+                                .add_unique(item.advance_dot(), &self.grammar, "complete");
                         }
                     }
                 }
             } else {
                 let sym_data = self.grammar.sym_data(after_dot);
                 if sym_data.is_nullable {
-                    self.scratch.add_unique(item.advance_dot(), "null");
+                    self.scratch
+                        .add_unique(item.advance_dot(), &self.grammar, "null");
                 }
                 if self.scratch.predicated_syms.should_insert(after_dot) {
                     for rule in &sym_data.rules {
                         let new_item = Item::new(*rule, curr_idx);
-                        self.scratch.add_unique(new_item, "predict");
+                        self.scratch.add_unique(new_item, &self.grammar, "predict");
                     }
                 }
             }
@@ -442,7 +447,7 @@ impl Parser {
         });
 
         if !self.speculative {
-            self.row_infos.drain((self.row_infos.len() - 1)..);
+            self.row_infos.drain((self.rows.len() - 1)..);
             self.row_infos.push(RowInfo { byte, commit_item });
         }
 
@@ -501,4 +506,12 @@ impl Recognizer for Parser {
             true
         }
     }
+}
+
+fn item_to_string(g: &CGrammar, item: &Item) -> String {
+    format!(
+        "{} @{}",
+        g.rule_to_string(item.rule_idx()),
+        item.start_pos(),
+    )
 }

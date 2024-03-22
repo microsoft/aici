@@ -505,6 +505,15 @@ impl TokTrie {
                 logits.allow_token(self.special_token(tok))
             }
         }
+        // all prefixes of 'start' are also allowed
+        if start.len() > 0 {
+            for len in 1..start.len() - 1 {
+                let bytes = &start[0..len];
+                if let Some(tok) = self.token_id(bytes) {
+                    logits.allow_token(tok);
+                }
+            }
+        }
         self.add_bias(r, logits, start);
         self.apply_duplicates(logits);
     }
