@@ -5,7 +5,8 @@ use rustc_hash::FxHashMap;
 
 use crate::{
     bytes::{
-        box_from_bytes, clone_as_bytes, clone_vec_as_bytes, vec_from_bytes, TokRxInfo, TokenId,
+        box_from_bytes, clone_as_bytes, clone_vec_as_bytes, to_hex_string, vec_from_bytes,
+        TokRxInfo, TokenId,
     },
     host::trie_bytes,
     svob::SimpleVob,
@@ -271,13 +272,7 @@ impl TokTrie {
                 format!("{:?}", s)
             } else {
                 let bytes = self.token(idx);
-                format!(
-                    "HEX[{}]",
-                    bytes
-                        .iter()
-                        .map(|b| format!("{:02x}", b))
-                        .collect::<String>(),
-                )
+                format!("HEX[{}]", to_hex_string(bytes))
             }
         }
     }

@@ -1,6 +1,6 @@
 use aici_abi::{
-    arg_bytes, tokenize_bytes, toktree::TokTrie, AiciCtrl, MidProcessArg, MidProcessResult,
-    PostProcessArg, PostProcessResult, PreProcessArg, PreProcessResult, TokenId,
+    arg_bytes, bytes::to_hex_string, tokenize_bytes, toktree::TokTrie, AiciCtrl, MidProcessArg,
+    MidProcessResult, PostProcessArg, PostProcessResult, PreProcessArg, PreProcessResult, TokenId,
 };
 use base64::{self, Engine as _};
 use earley::{earley_grm_from_guidance, Parser};
@@ -60,17 +60,19 @@ impl Runner {
         let captures = &self.parser.captures()[self.reported_captures..];
         for (name, val) in captures {
             self.reported_captures += 1;
-            let d = match String::from_utf8(val.clone()) {
-                Ok(s) => json!({
-                    "name": name,
-                    "str": s,
-                }),
-                Err(e) => json!({
-                    "name": name,
-                    "hex": e.as_bytes().iter().map(|b| format!("{:02x}", b)).collect::<Vec<_>>()
-                }),
+            let mut obj = json!({
+                "type": "capture",
+                "name": name,
+            });
+            match String::from_utf8(val.clone()) {
+                Ok(s) => {
+                    obj["string"] = json!(s);
+                }
+                Err(_) => {
+                    obj["hex"] = json!(to_hex_string(val));
+                }
             };
-            println!("CAPTURE: {}", d);
+            println!("JSON-OUT: {}", obj);
         }
     }
 }
