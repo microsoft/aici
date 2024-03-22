@@ -128,6 +128,7 @@ pub struct Args {
     pub bin_size: usize,
     pub shm_prefix: String,
     pub busy_wait_time: u64,
+    pub add_args: Vec<String>,
 }
 
 pub fn kill_self() {
@@ -144,7 +145,8 @@ impl AiciRtIface {
         let side_cmd = AsyncCmdChannel::new(args.json_size, &args.shm_prefix, "-side")?;
         let bin_shm = Shm::new(&shm_name, args.bin_size * M, Unlink::Pre)?;
 
-        let child = Command::new(&args.aicirt)
+        let mut cmd_bld = Command::new(&args.aicirt);
+        cmd_bld
             .arg("--tokenizer")
             .arg(&args.tokenizer)
             .arg("--json-size")
@@ -153,9 +155,11 @@ impl AiciRtIface {
             .arg(&args.bin_size.to_string())
             .arg("--name")
             .arg(&args.shm_prefix)
-            .arg("--futex")
-            .arg("--server")
-            .spawn()?;
+            .arg("--futex");
+        for a in &args.add_args {
+            cmd_bld.arg(a);
+        }
+        let child = cmd_bld.arg("--server").spawn()?;
 
         let pid = child.id() as libc::c_int;
         let default_panic_hook = std::panic::take_hook();

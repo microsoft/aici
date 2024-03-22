@@ -116,6 +116,10 @@ struct Cli {
     #[arg(long, default_value = "1000")]
     wasm_max_init_time: u64,
 
+    /// Resolution of timer exposed to WASM modules in microseconds; 0 to disable timer
+    #[arg(long, default_value = "0")]
+    wasm_timer_resolution_us: u64,
+
     /// Shm/semaphore name prefix
     #[arg(long, short, default_value = "/aici0-")]
     name: String,
@@ -1160,6 +1164,7 @@ fn main() -> () {
 
     let limits = AiciLimits {
         ipc_shm_bytes: cli.json_size * MEGABYTE,
+        timer_resolution_ns: cli.wasm_timer_resolution_us * 1000,
         max_memory_bytes: cli.wasm_max_memory * MEGABYTE,
         max_init_ms: cli.wasm_max_init_time,
         max_step_ms: cli.wasm_max_step_time,

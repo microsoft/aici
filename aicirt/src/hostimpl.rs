@@ -15,13 +15,11 @@ use std::{
 };
 use tokenizers::Tokenizer;
 
-// we would need some spectre mitigation if we enable this (add jitter to clock?)
-const ENABLE_CLOCK: bool = false;
-
 #[derive(Clone)]
 pub struct AiciLimits {
     pub ipc_shm_bytes: usize,
 
+    pub timer_resolution_ns: u64,
     pub max_memory_bytes: usize,
     pub max_pre_step_ms: u64,
     pub max_step_ms: u64,
@@ -43,6 +41,7 @@ pub struct ModuleData {
     pub group_channel: GroupHandle,
     pub process_result: Vec<u8>,
     pub logit_ptr: &'static mut [f32],
+    pub limits: AiciLimits,
     pub linker: Arc<wasmtime::Linker<ModuleData>>,
     pub instance: Option<wasmtime::Instance>,
     pub memory: Option<wasmtime::Memory>,
@@ -99,6 +98,7 @@ impl ModuleData {
             globals,
             group_channel,
             module: module.clone(),
+            limits: limits.clone(),
             linker: linker.clone(),
             instance: None,
             memory: None,
@@ -349,14 +349,14 @@ pub fn setup_linker(engine: &wasmtime::Engine) -> Result<Arc<wasmtime::Linker<Mo
          _precision: i64,
          dst_ptr: u32|
          -> Result<i32> {
-            if !ENABLE_CLOCK || clock_id != 1 {
+            if clock_id != 1 {
                 return Ok(63); // EPERM
             }
+            let res = caller.data().limits.timer_resolution_ns as u64;
             let now = std::time::Instant::now();
-            let bytes = now
-                .duration_since(caller.data().start_time)
-                .as_nanos()
-                .to_le_bytes();
+            let nanos = now.duration_since(caller.data().start_time).as_nanos() as u64;
+            let nanos = if res == 0 { 0 } else { nanos / res * res };
+            let bytes = nanos.to_le_bytes();
             write_caller_mem(&mut caller, dst_ptr, 8, &bytes);
             Ok(0)
         },
