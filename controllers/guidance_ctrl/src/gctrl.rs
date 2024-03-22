@@ -11,6 +11,16 @@ use crate::earley::ParseResult;
 mod earley;
 mod serialization;
 
+const INFO: bool = true;
+
+macro_rules! infoln {
+    ($($arg:tt)*) => {
+        if INFO {
+            println!($($arg)*);
+        }
+    };
+}
+
 pub struct Runner {
     toktrie: TokTrie,
     parser: Parser,
@@ -30,9 +40,9 @@ impl Runner {
             .decode(arg.guidance_b64)
             .expect("invalid base64");
         let grm = earley_grm_from_guidance(&guidance).expect("invalid guidance protobuf");
-        println!("original: {:?}", grm);
+        infoln!("original: {:?}", grm);
         let grm = grm.optimize();
-        println!("optimized: {:?}", grm);
+        infoln!("optimized: {:?}", grm);
         let cgrm = grm.compile();
         let parser = Parser::new(cgrm);
         Runner {
@@ -50,6 +60,7 @@ impl AiciCtrl for Runner {
     }
 
     fn mid_process(&mut self, _arg: MidProcessArg) -> MidProcessResult {
+        let start_time = std::time::Instant::now();
         let _ = self.parser.force_bytes();
         let fixed_bytes = self.parser.get_bytes();
         let mut fixed_tokens = tokenize_bytes(&fixed_bytes);
@@ -72,7 +83,7 @@ impl AiciCtrl for Runner {
             if self.llm_tokens.get(idx) != fixed_tokens.get(idx) {
                 let backtrack: u32 = (self.llm_tokens.len() - idx).try_into().unwrap();
                 let ff_tokens = fixed_tokens[idx..].to_vec();
-                println!(
+                infoln!(
                     "backtrack: {}, ff_tokens: {}",
                     backtrack,
                     self.toktrie.tokens_dbg(&ff_tokens)
@@ -113,9 +124,10 @@ impl AiciCtrl for Runner {
         let mut set = self.toktrie.alloc_token_set();
         self.toktrie
             .compute_bias_ext(&mut self.parser, &mut set, &byte_suffix);
-        println!(
-            "bias: (pref: {:?}) {}",
+        infoln!(
+            "bias: (pref: {:?}) {:?} {}",
             String::from_utf8_lossy(&byte_suffix),
+            start_time.elapsed(),
             self.toktrie.token_set_dbg(&set)
         );
 
@@ -125,7 +137,7 @@ impl AiciCtrl for Runner {
     }
 
     fn post_process(&mut self, arg: PostProcessArg) -> PostProcessResult {
-        println!(
+        infoln!(
             "post tokens:{} {}",
             if self.is_ff { " ff" } else { "" },
             self.toktrie.tokens_dbg(&arg.tokens)
