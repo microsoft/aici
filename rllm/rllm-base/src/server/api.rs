@@ -42,4 +42,5 @@ pub struct RunForkResponse {
     pub error: String,
     pub logs: String,
     pub storage: Vec<StorageCmd>,
+    pub micros: u64,
 }

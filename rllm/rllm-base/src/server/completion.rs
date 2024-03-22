@@ -211,6 +211,7 @@ impl futures::Stream for Client {
                             text: choice.new_text.clone(),
                             index: choice.index,
                             finish_reason: choice.finish_reason.map(|r| r.short_name()),
+                            micros: choice.aici_logs.iter().map(|e| e.micros).sum(),
                             logs: choice
                                 .aici_logs
                                 .iter()
