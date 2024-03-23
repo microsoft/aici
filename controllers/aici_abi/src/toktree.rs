@@ -202,11 +202,13 @@ impl TokTrie {
     }
 
     pub fn token_set_dbg(&self, ts: &SimpleVob) -> String {
+        let max_examples = 50;
+
         let ts_neg = ts.negated(self.vocab_size());
         let use_neg = ts_neg.num_set() * 20 < ts.num_set();
         let ts1 = if use_neg { &ts_neg } else { &ts };
         let num_set = ts1.num_set();
-        let max_tok = std::cmp::min(100, num_set);
+        let max_tok = std::cmp::min(max_examples, num_set);
         let mut token_names = Vec::new();
         for idx in 0..self.vocab_size() {
             if ts1.is_allowed(idx as TokenId) {

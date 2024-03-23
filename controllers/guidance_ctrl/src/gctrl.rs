@@ -111,8 +111,9 @@ impl AiciCtrl for Runner {
                 infoln!(
                     "backtrack: {}, ff_tokens: {}",
                     backtrack,
-                    self.toktrie.tokens_dbg(&ff_tokens)
+                    self.toktrie.tokens_dbg(&ff_tokens),
                 );
+                infoln!("fixed_tokens: {:?}", self.toktrie.tokens_dbg(&fixed_tokens));
                 self.llm_tokens = fixed_tokens;
                 self.is_ff = true;
                 self.report_captures();
@@ -144,6 +145,8 @@ impl AiciCtrl for Runner {
             }
             byte_suffix[llm_bytes.len()..].to_vec()
         };
+
+        // self.parser.print_row(self.parser.num_rows() - 1);
 
         self.is_ff = false;
 

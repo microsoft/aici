@@ -5,6 +5,7 @@ use aici_abi::toktree::{Recognizer, SpecialToken};
 use super::grammar::{CGrammar, CSymIdx, ModelVariable, RuleIdx, SimpleHash};
 
 const DEBUG: bool = false;
+const INFO: bool = true;
 
 // this may speed up more complex grammar but slows down simple ones (by 10%)
 const PREDICTED_SYM_FILTER: bool = false;
@@ -12,6 +13,14 @@ const PREDICTED_SYM_FILTER: bool = false;
 macro_rules! debug {
     ($($arg:tt)*) => {
         if DEBUG {
+            println!($($arg)*);
+        }
+    }
+}
+
+macro_rules! info {
+    ($($arg:tt)*) => {
+        if INFO {
             println!($($arg)*);
         }
     }
@@ -324,19 +333,30 @@ impl Parser {
     }
 
     pub fn hide_item(&mut self, sym: CSymIdx, row_idx: usize) -> ParseResult {
+        info!("hide_item: {} {}", self.grammar.sym_data(sym).name, row_idx);
+
         let row_range = self.rows[row_idx].item_indices();
-        let agenda_ptr = row_range.end;
-        self.scratch.row_start = row_range.start;
-        self.scratch.row_end = row_range.end;
+        let agenda_ptr = row_range.start;
         self.pop_rows(self.num_rows() - row_idx);
         assert!(self.num_rows() == row_idx);
 
+        let mut items_to_add = vec![];
         for idx in row_range {
             let item = self.scratch.items[idx];
+            //info!("  => now: {}", item_to_string(&self.grammar, &item));
             if self.grammar.sym_idx_at(item.rule_idx()) == sym {
-                self.scratch
-                    .add_unique(item.advance_dot(), &self.grammar, "hide");
+                info!(
+                    "  => add: {}",
+                    item_to_string(&self.grammar, &item.advance_dot())
+                );
+                items_to_add.push(item.advance_dot());
             }
+        }
+
+        // we remove everything from the current row before adding the entries
+        self.scratch.new_row(agenda_ptr);
+        for item in items_to_add {
+            self.scratch.add_unique(item, &self.grammar, "hide");
         }
 
         self.push_row(agenda_ptr, self.row_infos[row_idx].byte)
@@ -395,7 +415,13 @@ impl Parser {
                 self.is_accepting = self.is_accepting || lhs == self.grammar.start();
 
                 if !self.speculative && flags.capture() {
-                    let var_name = self.grammar.sym_data(lhs).props.capture_name.as_ref().unwrap();
+                    let var_name = self
+                        .grammar
+                        .sym_data(lhs)
+                        .props
+                        .capture_name
+                        .as_ref()
+                        .unwrap();
                     let mut bytes = self.row_infos[item.start_pos() + 1..curr_idx]
                         .iter()
                         .map(|ri| ri.byte)
@@ -422,6 +448,9 @@ impl Parser {
                     self.scratch.items[agenda_ptr - 1] = item;
                     commit_item = item;
                     debug!("commit point: {}", self.item_to_string(&item));
+                    if !self.speculative && flags.hidden() {
+                        return self.hide_item(lhs, item.start_pos());
+                    }
                 }
 
                 if item.start_pos() < curr_idx {
