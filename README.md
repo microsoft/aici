@@ -427,8 +427,6 @@ All of these can be easily extended.
 - specific [Python library](./controllers/pyctrl/Lib/) files are copied from
   [RustPython](https://github.com/RustPython/RustPython)
   (as we only use a subset of them)
-- [Guidance](https://github.com/guidance-ai/guidance) files copied under
-  [guidance_ctrl](./controllers/guidance_ctrl/Lib/guidance/)
 - the [example ANSI C grammar](controllers/aici_abi/grammars/c.y) is based on
   https://www.lysator.liu.se/c/ANSI-C-grammar-y.html by Jeff Lee (from 1985)
 
