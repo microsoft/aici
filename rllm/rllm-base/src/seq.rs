@@ -153,6 +153,8 @@ impl Sequence {
     ) {
         self.tokens.truncate(self.get_len() - backtrack);
         self.output_ptr = std::cmp::min(self.output_ptr, self.get_len());
+        // backtracking can remove some tokens from the initial prompt
+        self.prompt_len = std::cmp::min(self.prompt_len, self.get_len());
         if backtrack > 0 {
             self.output_pending.clear();
             self.output_pending.extend_from_slice(" ↩ ".as_bytes());

@@ -3,6 +3,7 @@ import re
 
 # asserts for microsoft/Orca-2-13b
 
+
 async def test_backtrack_one():
     await aici.FixedTokens("3+")
     l = aici.Label()
@@ -124,6 +125,15 @@ async def test_drugs():
     )
 
 
+async def test_prompt_backtrack():
+    await aici.FixedTokens("Some test prompt for the model to generate more text.")
+    l = aici.Label()
+    await aici.FixedTokens("And then some more text.")
+    await aici.gen_tokens(max_tokens=2)
+    await aici.FixedTokens("Now different text.", following=l)
+    await aici.gen_tokens(max_tokens=2)
+
+
 async def test_sample():
     # initialization code
     print("I'm going in the logs!")
@@ -160,6 +170,7 @@ async def test_eos():
     await SampleEos()
     await aici.gen_tokens(regex=r' "[^"]+"', max_tokens=6, store_var="french")
     aici.check_vars({"french": ' "bonjour"'})
+
 
 async def test_joke():
     await aici.FixedTokens("Do you want a joke or a poem? A")

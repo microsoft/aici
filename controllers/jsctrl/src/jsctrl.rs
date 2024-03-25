@@ -125,6 +125,11 @@ impl TokenSet {
         self.inner.len()
     }
 
+    pub fn toString(&self) -> String {
+        let trie = &mut GLOBAL_STATE.lock().unwrap().trie;
+        trie.token_set_dbg(&self.inner)
+    }
+
     pub fn add(&mut self, tok: u32) {
         self.inner.allow_token(tok);
     }
@@ -143,6 +148,10 @@ impl TokenSet {
 
     pub fn setAll(&mut self, val: bool) {
         self.inner.set_all(val);
+    }
+
+    pub fn numSet(&self) -> usize {
+        self.inner.num_set()
     }
 }
 
@@ -259,6 +268,12 @@ mod aici_mod {
             .flat_map(|t| trie.token(*t).to_vec())
             .collect();
         Buffer(bytes)
+    }
+
+    #[rquickjs::function]
+    pub fn tokenRepr(token: TokenId) -> String {
+        let trie = &mut GLOBAL_STATE.lock().unwrap().trie;
+        trie.token_dbg(token)
     }
 
     #[rquickjs::function]
