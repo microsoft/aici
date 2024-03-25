@@ -163,6 +163,11 @@ declare module "_aici" {
   function detokenize(tokens: number[]): Buffer;
 
   /**
+   * Return debug string representation of a given token index
+   */
+  function tokenRepr(token: number): string;
+
+  /**
    * Return identifier of the current sequence.
    * Most useful with fork_group parameter in mid_process() callback.
    * Best use aici.fork() instead.
@@ -219,13 +224,15 @@ declare module "_aici" {
      */
     constructor();
 
+    toString(): string;
+
     add(t: number): void;
     delete(t: number): void;
     has(t: number): boolean;
     clear(): void;
 
     /**
-     * Number of all tokens (not only in the set).
+     * Number of all possible tokens (regardless of whether they are in the set or not).
      */
     length: number;
 
@@ -233,6 +240,11 @@ declare module "_aici" {
      * Include or exclude all tokens from the set.
      */
     setAll(value: boolean): void;
+
+    /**
+     * Number of tokens in the set.
+     */
+    numSet(): number;
   }
 
   /**
