@@ -1,7 +1,7 @@
 use crate::{
     config::SamplingParams, engine::ExpectedGeneration, LogitsProcessor, SeqId, SequenceManager,
 };
-use aici_abi::{toktree::TokTrie, TokenId};
+use aici_abi::{toktree::TokTrie, Branch, TokenId};
 use aicirt::api::{AiciMidOp, SequenceResult};
 use serde::{Deserialize, Serialize};
 use std::fmt::Debug;
@@ -50,24 +50,6 @@ pub enum SchedulingPhase {
     Finished(FinishReason),
 }
 
-#[derive(Debug, Clone)]
-pub enum AiciSampling {
-    Regular,
-    SampleWithBias {
-        offset: usize,
-    },
-    Splice {
-        backtrack: u32,
-        ff_tokens: Vec<TokenId>,
-    },
-}
-
-impl Default for AiciSampling {
-    fn default() -> Self {
-        Self::Regular
-    }
-}
-
 pub struct Sequence {
     pub seq_id: SeqId,
     pub index: usize, // within the sequence group
@@ -77,7 +59,7 @@ pub struct Sequence {
     pub(crate) output_pending: Vec<u8>,
     pub num_kv_computed: usize,
     pub(crate) has_aici: bool,
-    pub(crate) aici_sampling: AiciSampling,
+    pub(crate) aici_sampling: Option<Branch<usize>>,
     pub aici_logs: Vec<SequenceResult>,
     pub(crate) expected: Option<ExpectedGeneration>,
 
@@ -114,7 +96,8 @@ impl Sequence {
             output_pending: Vec::new(),
             has_aici: false,
             aici_logs: Vec::new(),
-            aici_sampling: AiciSampling::Regular,
+            aici_sampling: None,
+            mid_op: None,
             expected: None,
         }
     }
@@ -162,15 +145,15 @@ impl Sequence {
         backtrack: usize,
         tokens: &[Token],
     ) {
-        self.tokens.truncate(self.get_len() - backtrack);
-        self.output_ptr = std::cmp::min(self.output_ptr, self.get_len());
-        // backtracking can remove some tokens from the initial prompt
-        self.prompt_len = std::cmp::min(self.prompt_len, self.get_len());
         if backtrack > 0 {
+            self.tokens.truncate(self.get_len() - backtrack);
+            self.output_ptr = std::cmp::min(self.output_ptr, self.get_len());
+            // backtracking can remove some tokens from the initial prompt
+            self.prompt_len = std::cmp::min(self.prompt_len, self.get_len());
             self.output_pending.clear();
             self.output_pending.extend_from_slice(" ↩ ".as_bytes());
+            self.trim_physical_blocks(seq_mgr);
         }
-        self.trim_physical_blocks(seq_mgr);
         self.append_tokens(tokens);
     }
 
@@ -200,7 +183,7 @@ impl Sequence {
             output_pending: Vec::new(),
             has_aici: self.has_aici,
             aici_logs: Vec::new(),
-            aici_sampling: AiciSampling::Regular,
+            aici_sampling: None,
             expected: None,
             mid_op: None,
         }

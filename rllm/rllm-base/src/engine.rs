@@ -2,14 +2,14 @@ use crate::{
     config::{ParallelConfig, RllmConfig, SamplingParams, SchedulerConfig},
     iface::AiciRtIface,
     seq::{
-        AiciSampling, FinishReason, RequestOutput, SchedulingPhase, SeqOutput, Sequence,
-        SequenceGroup, Token, TokenUsage,
+        FinishReason, RequestOutput, SchedulingPhase, SeqOutput, Sequence, SequenceGroup, Token,
+        TokenUsage,
     },
     util::get_setting,
     AiciBias as _, HashMap, LoaderArgs, LogitsProcessor, ModelExec, Scheduler, SchedulerOutputs,
     SequenceManager, TBlockSpaceManager as _,
 };
-use aici_abi::toktree::TokTrie;
+use aici_abi::{toktree::TokTrie, Branch, Splice};
 use aicirt::{
     api::{AiciMidOp, AiciMidProcessReq, ModuleInstId, SequenceResult},
     with_timer, TimerRef, TimerSet,
@@ -340,83 +340,72 @@ impl<ME: ModelExec> RllmEngine<ME> {
         })
     }
 
-    fn aici_bias(&mut self, sched_out: &mut SchedulerOutputs) -> Result<ME::AiciBias> {
+    fn aici_bias(
+        &mut self,
+        sched_out: &mut SchedulerOutputs,
+    ) -> Result<(ME::AiciBias, HashMap<usize, usize>)> {
+        let mut seq_id_mapping = HashMap::default();
         let vocab_size = self.tok_trie.vocab_size();
         if self.aicirt.is_none() {
-            return Ok(self.tmodel.empty_bias(vocab_size));
+            return Ok((self.tmodel.empty_bias(vocab_size), seq_id_mapping));
         }
 
         let mid_res = self.aicirt.as_mut().unwrap().finish_mid_process()?;
-        let mut idx = 0;
+        let mut max_offset = 0;
 
         for sg in sched_out.next_seq_groups.iter_mut() {
             if sg.sampling_params.controller.is_none() {
                 continue;
             }
+            let mut to_add = Vec::new();
             for seq in sg.seqs.iter_mut() {
                 if seq.sched_phase != SchedulingPhase::Running {
                     continue;
                 }
                 assert!(seq.has_aici);
                 match self.save_aici_log(seq, &mid_res.seqs) {
-                    Some(r) if r.ff_tokens.len() > 0 || r.backtrack > 0 => {
-                        seq.aici_sampling = AiciSampling::Splice {
-                            // backtrack count includes the token that was supposed to be appended
-                            // due to current sampling; however we never append it
-                            backtrack: r.backtrack.saturating_sub(1),
-                            ff_tokens: r.ff_tokens.clone(),
+                    Some(resp) => {
+                        if resp.branches.is_empty() {
+                            self.scheduler.finish_seq(seq, FinishReason::AiciStop);
+                            continue;
+                        }
+                        for (idx, b) in resp.branches.iter().enumerate() {
+                            b.sample_mask.map(|m| max_offset = max_offset.max(m));
+                            if idx == 0 {
+                                seq.aici_sampling = Some(b.clone());
+                                seq.mid_op = Some(seq.defl_mid_op());
+                            } else {
+                                let new_id = self.seq_mgr.new_sequence();
+                                let mut copy =
+                                    seq.fork_as(self.seq_mgr.deref(), new_id, sg.max_index + 1);
+                                log::debug!("forked: {:?} -> {:?}", seq.seq_id, copy.seq_id);
+                                seq_id_mapping.insert(copy.seq_id.to_num(), seq.seq_id.to_num());
+                                sg.max_index += 1;
+                                copy.aici_sampling = Some(b.clone());
+                                copy.mid_op = Some(AiciMidOp {
+                                    clone_id: Some(seq.seq_id.to_num()),
+                                    clone_idx: Some(idx),
+                                    ..copy.defl_mid_op()
+                                });
+                                to_add.push(copy);
+                            }
                         }
                     }
                     _ => {
-                        seq.aici_sampling = AiciSampling::SampleWithBias { offset: idx };
+                        assert!(seq.sched_phase != SchedulingPhase::Running);
                     }
                 }
-                idx += 1;
             }
+            sg.seqs.extend(to_add);
         }
 
-        assert!(idx == mid_res.num_seqs);
-
+        let num_seqs = max_offset / vocab_size + 1;
         let shm = &self.aicirt.as_mut().unwrap().bin_shm;
-        let slice = shm.slice_at_byte_offset::<f32>(0, mid_res.num_seqs * vocab_size);
-        Ok(self.tmodel.new_bias(
-            //    self.device,
-            slice,
-            mid_res.num_seqs,
-            vocab_size,
+        let slice = shm.slice_at_byte_offset::<f32>(0, num_seqs * vocab_size);
+        Ok((
+            self.tmodel.new_bias(slice, num_seqs, vocab_size),
+            seq_id_mapping,
         ))
-    }
-
-    fn aici_apply_bias(
-        &self,
-        seq: &mut Sequence,
-        logits: &mut ME::Tensor,
-        aici_bias: &ME::AiciBias,
-    ) -> bool {
-        match std::mem::take(&mut seq.aici_sampling) {
-            AiciSampling::Regular => false,
-            AiciSampling::SampleWithBias { offset } => {
-                log::trace!("sample *{}: bias at {offset}", seq.seq_id);
-                aici_bias.apply(logits, offset);
-                false
-            }
-            AiciSampling::Splice {
-                backtrack,
-                ff_tokens,
-            } => {
-                log::trace!(
-                    "sample *{}: backtrack:{backtrack} ff_tokens:{ff_tokens:?}",
-                    seq.seq_id
-                );
-                seq.splice_tokens(self.seq_mgr.deref(), backtrack as usize, &ff_tokens);
-                seq.mid_op = Some(AiciMidOp {
-                    backtrack: backtrack,
-                    tokens: ff_tokens,
-                    ..seq.defl_mid_op()
-                });
-                true
-            }
-        }
     }
 
     fn check_expected(&mut self, mut logits: Vec<f32>, req_id: &str, seq: &mut Sequence) -> Token {
@@ -482,13 +471,6 @@ impl<ME: ModelExec> RllmEngine<ME> {
     fn dropped_outputs(&mut self, sched_out: &mut SchedulerOutputs) -> Vec<RequestOutput> {
         let mut res = Vec::new();
 
-        // in addition to dropped, we also add suspended/deadlocked
-        self.scheduler.for_each_ongpu_sg(|sg| {
-            if sg.deadlock_steps > 0 {
-                res.push(self.req_output(sg, false));
-            }
-        });
-
         sched_out
             .dropped_seq_groups
             .iter_mut()
@@ -503,28 +485,8 @@ impl<ME: ModelExec> RllmEngine<ME> {
     }
 
     fn sample(&mut self, sched_out: &mut SchedulerOutputs) -> Result<Vec<RequestOutput>> {
-        let mut seq_id_mapping = HashMap::default();
-
-        for sg in sched_out.next_seq_groups.iter_mut() {
-            let mut to_add = Vec::new();
-            for seq in sg.seqs.iter_mut() {
-                if seq.sched_phase != SchedulingPhase::Running {
-                    continue;
-                }
-                // get it even if no pending - make sure we have them all
-                let pending = std::mem::take(&mut seq.pending_fork_ids);
-                for copy_id in pending {
-                    seq_id_mapping.insert(copy_id.to_num(), seq.seq_id.to_num());
-                    let copy = seq.fork_as(self.seq_mgr.deref(), copy_id, sg.max_index + 1);
-                    sg.max_index += 1;
-                    log::debug!("forked: {:?} -> {:?}", seq, copy);
-                    to_add.push(copy);
-                }
-            }
-            sg.seqs.extend(to_add);
-        }
-
-        let aici_bias = with_timer!(self.tim_aici_bias, self.aici_bias(sched_out)?);
+        let (aici_bias, seq_id_mapping) =
+            with_timer!(self.tim_aici_bias, self.aici_bias(sched_out)?);
 
         for sg in sched_out.next_seq_groups.iter_mut() {
             for seq in sg.seqs.iter_mut() {
@@ -536,45 +498,102 @@ impl<ME: ModelExec> RllmEngine<ME> {
                 let sidx = seq_id_mapping.get(&sidx).unwrap_or(&sidx);
                 let mut logits = self.tmodel.get_logits(*sidx);
 
-                if self.aici_apply_bias(seq, &mut logits, &aici_bias) {
-                    continue;
-                }
+                let mut info = "";
 
-                let next_token = if seq.expected.is_some() {
-                    let logits = ME::tensor_to_vec1(&logits);
-                    self.check_expected(logits, &sg.request_id, seq)
-                } else {
-                    with_timer!(
-                        self.tim_logit_sample,
-                        self.tmodel.sample(&mut sg.logits_processor, &logits)?
-                    )
+                let splice = match seq.aici_sampling {
+                    Some(b) if b.sample_mask.is_none() => {
+                        assert!(b.splices.len() == 1);
+                        let s = &b.splices[0];
+                        assert!(s.when_sampled.is_empty());
+                        info = " force splice";
+                        s.clone()
+                    }
+                    _ => {
+                        match seq.aici_sampling {
+                            Some(b) => aici_bias.apply(&mut logits, b.sample_mask.unwrap()),
+                            None => {}
+                        }
+
+                        let next_token = if seq.expected.is_some() {
+                            let logits = ME::tensor_to_vec1(&logits);
+                            self.check_expected(logits, &sg.request_id, seq)
+                        } else {
+                            with_timer!(
+                                self.tim_logit_sample,
+                                self.tmodel.sample(&mut sg.logits_processor, &logits)?
+                            )
+                        };
+
+                        let splices = seq
+                            .aici_sampling
+                            .map(|s| s.splices.clone())
+                            .unwrap_or_default();
+
+                        let candidates = splices
+                            .iter()
+                            .filter(|s| s.when_sampled.contains(&next_token))
+                            .collect::<Vec<_>>();
+                        if candidates.len() > 1 {
+                            log::warn!(
+                                "sample *{}: multiple splices for token {}",
+                                seq.seq_id,
+                                self.tok_trie.token_dbg(next_token)
+                            );
+                            // TODO finish seq
+                        }
+
+                        if candidates.len() > 0 {
+                            info = " splice";
+                            log::trace!(
+                                "sample *{}: splice from {}",
+                                seq.seq_id,
+                                self.tok_trie.token_dbg(next_token)
+                            );
+                            candidates[0].clone()
+                        } else {
+                            let mut info = "";
+                            let next_token = if seq.has_aici && next_token == self.eos_token_id {
+                                // replace with space, so the model doesn't get confused
+                                // note that aici will still get the real EOS token
+                                info = " -> space";
+                                self.space_token_id
+                            } else {
+                                next_token
+                            };
+
+                            Splice {
+                                backtrack: 0,
+                                ff_tokens: vec![next_token],
+                                when_sampled: vec![],
+                            }
+                        }
+                    }
                 };
 
-                let mut info = "";
-                if seq.has_aici && next_token == self.eos_token_id {
-                    // replace with space, so the model doesn't get confused
-                    // note that aici will still get the real EOS token
-                    seq.append_tokens(&[self.space_token_id]);
-                    info = " -> space";
-                } else {
-                    seq.append_tokens(&[next_token]);
-                }
-
-                if seq.has_aici {
-                    seq.mid_op = Some(AiciMidOp {
-                        tokens: vec![next_token],
-                        ..seq.defl_mid_op()
-                    });
-                }
-
                 log::trace!(
-                    "sample *{}: {}{}",
+                    "sample *{}:{} {} {}",
                     seq.seq_id,
-                    self.tok_trie.token_dbg(next_token),
-                    info
+                    info,
+                    if splice.backtrack == 0 {
+                        "".to_string()
+                    } else {
+                        format!("backtrack:{}", splice.backtrack)
+                    },
+                    self.tok_trie.tokens_dbg(&splice.ff_tokens),
                 );
 
-                if !sg.sampling_params.ignore_eos && next_token == self.eos_token_id {
+                seq.splice_tokens(
+                    self.seq_mgr.deref(),
+                    splice.backtrack as usize,
+                    &splice.ff_tokens,
+                );
+
+                if seq.has_aici {
+                    seq.mid_op.unwrap().tokens = splice.ff_tokens;
+                    seq.mid_op.unwrap().backtrack = splice.backtrack;
+                }
+
+                if !sg.sampling_params.ignore_eos && splice.ff_tokens.contains(&self.eos_token_id) {
                     self.scheduler.finish_seq(seq, FinishReason::FoundEos);
                 } else if seq.get_gen_len() >= sg.sampling_params.max_tokens {
                     self.scheduler
@@ -610,7 +629,7 @@ impl<ME: ModelExec> RllmEngine<ME> {
     fn run_model(&mut self, sched_out: &mut SchedulerOutputs) -> Result<Vec<RequestOutput>> {
         if sched_out.is_empty() {
             log::debug!("no seqs to run");
-            return Ok((self.empty_outputs(sched_out)?, vec![]));
+            return Ok(self.empty_outputs(sched_out)?);
         }
 
         self.tmodel.run(
@@ -644,6 +663,7 @@ impl<ME: ModelExec> RllmEngine<ME> {
             seq.aici_logs.push(r.clone_with(None));
             if r.error.len() > 0 {
                 self.scheduler.finish_seq(seq, FinishReason::Failed);
+                return None;
             }
             match &r.result {
                 Some(r) => Some(r),
@@ -653,129 +673,6 @@ impl<ME: ModelExec> RllmEngine<ME> {
             None
         }
     }
-
-    /*
-    fn aici_post_pre(&mut self, post_ops: Vec<AiciPostOp>) -> Result<()> {
-        if self.aicirt.is_none() {
-            return Ok(());
-        }
-
-        let mut pre_ops = Vec::new();
-
-        self.scheduler.for_each_sg(|sg| {
-            if sg.sampling_params.controller.is_none() {
-                return;
-            }
-            if sg.seqs.len() == 1 && !sg.seqs[0].has_aici {
-                let seq = &mut sg.seqs[0];
-                seq.has_aici = true;
-                pre_ops.push(AiciPreOp {
-                    id: seq.seq_id.to_num(),
-                    req_id: sg.request_id.clone(),
-                });
-            } else {
-                for seq in sg.seqs.iter() {
-                    if seq.sched_phase != SchedulingPhase::Running {
-                        continue;
-                    }
-                    assert!(seq.has_aici);
-                }
-            }
-        });
-
-        //  let ids = ops.iter().map(|op| op.id).collect::<Vec<_>>();
-        let aici_res = self
-            .aicirt
-            .as_mut()
-            .unwrap()
-            .post_pre_process(AiciPostPreProcessReq {
-                pre_ops,
-                post_ops,
-                freed: self.scheduler.get_freed_seq_ids(),
-            })?;
-
-        // let gen = &mut self.seq_gen;
-        self.scheduler.for_each_sg(|sg| {
-            if sg.sampling_params.controller.is_none() {
-                return;
-            }
-
-            for seq in sg.seqs.iter_mut() {
-                let sid = seq.seq_id.to_num();
-
-                match self.save_aici_log(seq, &aici_res.post_seqs) {
-                    Some(r) if r.stop => {
-                        self.scheduler.finish_seq(seq, FinishReason::AiciStop);
-                    }
-                    _ => {}
-                }
-
-                let res = aici_res.pre_seqs.get(&sid);
-                if res.is_none() {
-                    continue;
-                }
-                let res = res.unwrap();
-
-                assert!(seq.has_aici);
-                self.save_aici_log(seq, &aici_res.pre_seqs);
-
-                match &res.result {
-                    Some(r) => {
-                        if r.suspend {
-                            if seq.sched_phase == SchedulingPhase::Running {
-                                seq.sched_phase = SchedulingPhase::Suspended;
-                            }
-                            continue;
-                        }
-                        if r.num_forks == 0 {
-                            self.scheduler.finish_seq(seq, FinishReason::AiciStop);
-                            continue;
-                        }
-                        if r.ff_tokens.len() > 0 {
-                            seq.append_tokens(&r.ff_tokens);
-                        }
-
-                        while seq.pending_fork_ids.len() < r.num_forks - 1 {
-                            seq.pending_fork_ids.push(self.seq_mgr.new_sequence());
-                        }
-                    }
-                    None => {}
-                }
-            }
-
-            let mut num_susp = 0;
-            let mut num_running = 0;
-
-            for seq in sg.seqs.iter() {
-                match seq.sched_phase {
-                    SchedulingPhase::Waiting
-                    | SchedulingPhase::Running
-                    | SchedulingPhase::Swapped => {
-                        num_running += 1;
-                    }
-                    SchedulingPhase::Suspended => {
-                        num_susp += 1;
-                    }
-                    SchedulingPhase::Finished(_) => {}
-                }
-            }
-
-            if num_running == 0 && num_susp > 0 {
-                sg.deadlock_steps += 1;
-                if sg.deadlock_steps > 3 {
-                    for seq in sg.seqs.iter_mut() {
-                        self.scheduler.finish_seq(seq, FinishReason::Deadlock);
-                    }
-                }
-            } else {
-                sg.deadlock_steps = 0;
-            }
-        });
-
-        Ok(())
-    }
-
-    */
 
     fn aici_mid(&mut self, sched_out: &mut SchedulerOutputs) -> Result<()> {
         if self.aicirt.is_none() {
@@ -837,9 +734,6 @@ impl<ME: ModelExec> RllmEngine<ME> {
     fn step_inner(&mut self) -> Result<Vec<RequestOutput>> {
         self.step_no += 1;
 
-        let post_ops = std::mem::take(&mut self.post_ops);
-        with_timer!(self.tim_aici_post, self.aici_post_pre(post_ops)?);
-
         self.scheduler.for_each_waiting_sg(|sg| {
             if sg.only_seq().get_len() == 0 {
                 // this happens when we fork right away, and there is no start token
@@ -861,13 +755,10 @@ impl<ME: ModelExec> RllmEngine<ME> {
         // we run step_finished() regardless if model failed
         self.scheduler.step_finished(sched_out);
 
-        let (outputs, post_ops) = outputs?;
+        let outputs = outputs?;
         if outputs.is_empty() {
             assert!(!self.scheduler.has_unfinished_seqs());
         }
-
-        assert!(self.post_ops.is_empty());
-        self.post_ops = post_ops;
 
         Ok(outputs)
     }

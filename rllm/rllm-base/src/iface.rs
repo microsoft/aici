@@ -5,8 +5,7 @@ use aici_abi::{
 };
 use aicirt::{
     api::{
-        AiciMidProcessReq, AiciMidProcessResp, AiciPostPreProcessReq, AiciPostPreProcessResp,
-        AiciPreProcessResultInner, AuthInfo, GetTagsResp, InstantiateReq, MkModuleReq,
+        AiciMidProcessReq, AiciMidProcessResp, AuthInfo, GetTagsResp, InstantiateReq, MkModuleReq,
         MkModuleResp, SequenceResult, SetTagsReq, TokensResp,
     },
     futexshm::ClientChannel,
@@ -231,7 +230,7 @@ impl AiciRtIface {
     pub fn finish_mid_process(&mut self) -> Result<AiciMidProcessResp> {
         assert!(self.pending_mid_size < usize::MAX);
         let r: AiciMidProcessResp = self.cmd.expect("async:mid_process")?;
-        assert!(r.num_seqs == self.pending_mid_size);
+        // assert!(r.num_seqs == self.pending_mid_size);
         self.pending_mid_size = usize::MAX;
         Ok(r)
     }
@@ -283,7 +282,7 @@ impl AsyncCmdChannel {
         &self,
         req: InstantiateReq,
         authinfo: AuthInfo,
-    ) -> Result<SequenceResult<AiciPreProcessResultInner>> {
+    ) -> Result<SequenceResult> {
         self.exec("instantiate", req, authinfo).await
     }
 

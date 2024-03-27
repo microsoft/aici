@@ -1,4 +1,3 @@
-use regex_automata::nfa::thompson::backtrack;
 use serde::{Deserialize, Serialize};
 use svob::SimpleVob;
 
@@ -104,6 +103,15 @@ pub struct Branch<S> {
     /// Describes what to do after sampling.
     /// If no sampling, there should be exactly one splice, with empty `when_sampled`.
     pub splices: Vec<Splice>,
+}
+
+impl<S: Clone> Clone for Branch<S> {
+    fn clone(&self) -> Self {
+        Branch {
+            sample_mask: self.sample_mask.clone(),
+            splices: self.splices.clone(),
+        }
+    }
 }
 
 impl<S> Branch<S> {

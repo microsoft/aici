@@ -110,16 +110,7 @@ async fn run_controller(
             )
             .await;
         bail_if_error!(inst);
-        let inst = inst.unwrap();
-        match &inst.result {
-            Some(r) => {
-                assert!(r.num_forks == 1);
-                assert!(r.suspend == false);
-                token_ids.extend_from_slice(&r.ff_tokens);
-            }
-            None => {}
-        }
-        Some(inst.clone_with(Some(())))
+        Some(inst.unwrap())
     } else {
         None
     };
