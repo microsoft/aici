@@ -7,16 +7,8 @@ use crate::{
     worker::{GroupHandle, RtMidProcessArg},
     TimerSet, UserError,
 };
-use aici_abi::{
-    toktree::TokTrie, InitPromptArg, MidProcessResult, PostProcessArg, PostProcessResult,
-    PreProcessArg, PreProcessResult, TokenId,
-};
-use aicirt::{
-    api::{AiciMidProcessResultInner, AiciPostProcessResultInner, SequenceResult},
-    bail_user,
-    bintokens::ByteTokenizer,
-    user_error,
-};
+use aici_abi::{toktree::TokTrie, InitPromptArg, MidProcessResult, ProcessResultOffset, TokenId};
+use aicirt::{api::SequenceResult, bail_user, bintokens::ByteTokenizer, user_error};
 use anyhow::{anyhow, bail, ensure, Result};
 use serde::Deserialize;
 use std::{path::PathBuf, sync::Arc, time::Instant};
@@ -101,7 +93,6 @@ pub struct ModuleInstance {
     store: wasmtime::Store<ModuleData>,
     memory: wasmtime::Memory,
     instance: wasmtime::Instance,
-    pending_pre_result: Option<PreProcessResult>,
     handle: WasmAici,
     #[allow(dead_code)]
     limits: AiciLimits,
@@ -217,7 +208,6 @@ impl ModuleInstance {
             memory,
             instance,
             limits: ctx.limits,
-            pending_pre_result: None,
         })
     }
 
@@ -260,115 +250,20 @@ impl ModuleInstance {
         }
     }
 
-    fn do_pre_process(&mut self, rtarg: PreProcessArg) -> Result<PreProcessResult> {
-        let mut ff_tokens = Vec::new();
-        let mut cnt = 0;
-        loop {
-            let mut res = self.do_pre_process_inner(&rtarg)?;
-
-            if res.ff_tokens.len() > 0 {
-                ensure!(res.num_forks == 1, "can't fork when returning ff_tokens");
-                ensure!(
-                    res.suspend == false,
-                    "can't suspend when returning ff_tokens"
-                );
-                ff_tokens.extend_from_slice(&res.ff_tokens);
-                let r_post = self.do_post_process(PostProcessArg {
-                    tokens: res.ff_tokens.clone(),
-                    backtrack: 0,
-                })?;
-                if r_post.stop {
-                    res.num_forks = 0;
-                    return Ok(res); // we're stopping - no point returning ff_tokens
-                } else {
-                    cnt += 1;
-                    if cnt > 10 {
-                        bail!("too many ff_tokens rounds from pre_process")
-                    }
-                    continue;
-                }
-            }
-
-            res.ff_tokens = ff_tokens;
-            return Ok(res);
-        }
-    }
-
-    fn do_pre_process_inner(&mut self, rtarg: &PreProcessArg) -> Result<PreProcessResult> {
-        self.store.data_mut().set_pre_process_data(&rtarg);
-        self.call_func::<WasmAici, ()>("aici_pre_process", self.handle)?;
-        let res: PreProcessResult = self.proc_result()?;
-        Ok(res)
-    }
-
     fn do_mid_process(
         &mut self,
         op: RtMidProcessArg,
         shm: &Shm,
-    ) -> Result<Option<AiciMidProcessResultInner>> {
+    ) -> Result<Option<ProcessResultOffset>> {
+        let off = op.logit_offset;
         self.store.data_mut().set_mid_process_data(op, shm);
         self.call_func::<WasmAici, ()>("aici_mid_process", self.handle)?;
-        match self.proc_result()? {
-            MidProcessResult::SampleWithBias { .. } => Ok(None),
-            MidProcessResult::Stop { .. } => {
-                let eos = self.store.data().globals.tokrx_info.tok_eos;
-                self.store
-                    .data_mut()
-                    .logit_ptr
-                    .iter_mut()
-                    .for_each(|v| *v = LOGIT_BIAS_DISALLOW);
-                self.store.data_mut().logit_ptr[eos as usize] = LOGIT_BIAS_ALLOW;
-                Ok(None)
-            }
-            MidProcessResult::Splice {
-                mut backtrack,
-                ff_tokens,
-            } => {
-                let vocab_size = self.store.data().logit_ptr.len();
-                if let Some((idx, val)) = ff_tokens.iter().enumerate().find_map(|(idx, t)| {
-                    if *t as usize >= vocab_size {
-                        Some((idx, *t))
-                    } else {
-                        None
-                    }
-                }) {
-                    bail!("ff_token out of range ({val} >= {vocab_size} at {idx})")
-                } else {
-                    log::debug!("backtrack: {backtrack}, ff_tokens:{ff_tokens:?}");
-                    if backtrack == 0 {
-                        if ff_tokens.len() == 0 {
-                            bail!("empty Splice (both backtrack == 0 and ff_tokens == [])")
-                        }
-                        // first token will be sampled; next tokens will be passed via "ff_tokens"
-                        let t0 = ff_tokens[0];
-                        self.store.data_mut().logit_ptr[t0 as usize] = LOGIT_BIAS_ALLOW;
-                    } else {
-                        // we don't really care about biases, as we're going to backtrack this token anyways
-                        // but just in case, allow all
-                        self.store
-                            .data_mut()
-                            .logit_ptr
-                            .iter_mut()
-                            .for_each(|v| *v = LOGIT_BIAS_ALLOW);
-                        // don't remove anything from ff_tokens - they all need to be appended after backtracking
-
-                        // backtrack needs to include also the next token to be generated
-                        backtrack += 1;
-                    }
-                    Ok(Some(AiciMidProcessResultInner {
-                        ff_tokens,
-                        backtrack,
-                    }))
-                }
-            }
-        }
-    }
-
-    fn do_post_process(&mut self, rtarg: PostProcessArg) -> Result<AiciPostProcessResultInner> {
-        self.store.data_mut().set_post_process_data(rtarg);
-        self.call_func::<WasmAici, ()>("aici_post_process", self.handle)?;
-        let res: PostProcessResult = self.proc_result()?;
-        Ok(AiciPostProcessResultInner { stop: res.stop })
+        let res: ProcessResultOffset = self.proc_result()?;
+        assert!(res.branches.len() <= 1);
+        let res = ProcessResultOffset {
+            branches: res.branches.iter().map(|b| b.map_mask(|_| off)).collect(),
+        };
+        Ok(Some(res))
     }
 
     fn seq_result<T>(
@@ -405,49 +300,15 @@ impl ModuleInstance {
         }
     }
 
-    pub fn pre_process(&mut self, op: PreProcessArg) -> SequenceResult<PreProcessResult> {
-        let t0 = Instant::now();
-        if let Some(pp) = self.pending_pre_result.clone() {
-            return self.seq_result("pre-cached", t0, Ok(Some(pp)));
-        }
-        match self.do_pre_process(op) {
-            Err(e) => self.seq_result("pre0", t0, Err(e)),
-            Ok(pp) => {
-                if pp.ff_tokens.len() > 0 {
-                    self.pending_pre_result = Some(pp.clone());
-                }
-                self.seq_result("pre", t0, Ok(Some(pp)))
-            }
-        }
-    }
-
     pub fn mid_process(
         &mut self,
         op: RtMidProcessArg,
         shm: &Shm,
-    ) -> SequenceResult<AiciMidProcessResultInner> {
+    ) -> SequenceResult<ProcessResultOffset> {
         let t0 = Instant::now();
-        self.pending_pre_result = None;
         let res = self.do_mid_process(op, shm);
         // log::info!("mid_process: {:?}", t0.elapsed());
         self.seq_result("mid", t0, res)
-    }
-
-    pub fn post_process(
-        &mut self,
-        op: PostProcessArg,
-    ) -> SequenceResult<AiciPostProcessResultInner> {
-        let t0 = Instant::now();
-        self.pending_pre_result = None;
-        let res = self.do_post_process(op);
-        match res {
-            Err(e) => {
-                let mut r = self.seq_result("post", t0, Err(e));
-                r.result = Some(AiciPostProcessResultInner { stop: true });
-                r
-            }
-            Ok(res) => self.seq_result("post", t0, Ok(Some(res))),
-        }
     }
 
     pub fn tokenize(&mut self, s: &str) -> Result<Vec<u32>> {
@@ -467,24 +328,11 @@ impl ModuleInstance {
         Ok(())
     }
 
-    pub fn setup(&mut self, prompt: Vec<TokenId>) -> SequenceResult<PreProcessResult> {
+    pub fn setup(&mut self, prompt: Vec<TokenId>) -> SequenceResult {
         let t0 = Instant::now();
         match self.setup_inner(prompt) {
             Err(err) => self.seq_result("setup", t0, Err(err)),
-            Ok(()) => match self.do_pre_process(PreProcessArg {}) {
-                Err(e) => self.seq_result("setup-pre", t0, Err(e)),
-                Ok(pp) if pp.suspend || pp.num_forks == 0 => self.seq_result(
-                    "setup-pre",
-                    t0,
-                    Err(user_error!("setup-pre asked for suspend")),
-                ),
-                Ok(mut pp) => {
-                    // force a single fork; we expect another fork request when pre() runs in its own turn
-                    pp.num_forks = 1;
-                    // don't set self.pending_pre_result -> we assume the results are always handled
-                    self.seq_result("setup-pre", t0, Ok(Some(pp)))
-                }
-            },
+            Ok(()) => self.seq_result("setup", t0, Ok(Some(()))),
         }
     }
 }

@@ -3,7 +3,6 @@ exclude = ["tch-rs"]
 members = [
     "aicirt",
     "controllers/aici_abi",
-    "controllers/declctrl",
     "controllers/pyctrl",
     "controllers/jsctrl",
     "controllers/guidance_ctrl",

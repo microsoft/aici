@@ -5,8 +5,8 @@ use aici_abi::{
     recognizer::{AnythingGoes, StackRecognizer},
     svob::SimpleVob,
     toktree::{Recognizer, SpecialToken, TokTrie},
-    AiciCtrl, InitPromptArg, InitPromptResult, MidProcessArg, MidProcessResult, PostProcessArg,
-    PostProcessResult, PreProcessArg, PreProcessResult, TokenId, VariableStorage,
+    AiciCtrl, InitPromptArg, InitPromptResult, MidProcessArg, MidProcessResult, TokenId,
+    VariableStorage,
 };
 use rquickjs::{
     class::Trace, function::IntoArgs, ArrayBuffer, Context, Ctx, FromJs, Function, IntoAtom,
@@ -505,18 +505,6 @@ impl AiciCtrl for Runner {
         })
     }
 
-    fn pre_process(&mut self, _arg: PreProcessArg) -> PreProcessResult {
-        self.with_cb("pre_process", |ctx| {
-            let cb: Function = ctx.eval2("globalThis._aici_cb.pre_process");
-            let r: Object = cb.call2(());
-            PreProcessResult {
-                num_forks: r.get2("_n_num_forks"),
-                suspend: r.get2("_n_suspended"),
-                ff_tokens: r.get2("_n_ff_tokens"),
-            }
-        })
-    }
-
     fn mid_process(&mut self, arg: MidProcessArg) -> MidProcessResult {
         loop {
             let res = self.with_cb("mid_process", |ctx| {
@@ -529,23 +517,16 @@ impl AiciCtrl for Runner {
                 if skip_me {
                     None
                 } else if stop {
-                    Some(MidProcessResult::Stop)
+                    Some(MidProcessResult::stop())
                 } else {
                     let backtrack: u32 = r.get2("_n_backtrack");
                     let ff_tokens: Vec<TokenId> = r.get2("_n_ff_tokens");
 
                     if backtrack > 0 || ff_tokens.len() > 0 {
-                        Some(MidProcessResult::Splice {
-                            backtrack,
-                            ff_tokens,
-                        })
+                        Some(MidProcessResult::splice(backtrack, ff_tokens))
                     } else {
-                        // TODO perf - clone on TokenSet
                         let logit_bias: TokenSet = r.get2("_n_logit_bias");
-                        aici_abi::return_logit_bias(&logit_bias.inner);
-                        Some(MidProcessResult::SampleWithBias {
-                            allowed_tokens: SimpleVob::new(),
-                        })
+                        Some(MidProcessResult::sample(logit_bias.inner))
                     }
                 }
             });
@@ -554,15 +535,6 @@ impl AiciCtrl for Runner {
                 None => {}
             }
         }
-    }
-
-    fn post_process(&mut self, arg: PostProcessArg) -> PostProcessResult {
-        self.with_cb("post_process", |ctx| {
-            let cb: Function = ctx.eval2("globalThis._aici_cb.post_process");
-            let r: Object = cb.call2((arg.backtrack, &arg.tokens));
-            let stop: bool = r.get2("_n_stop_seq");
-            PostProcessResult { stop }
-        })
     }
 }
 

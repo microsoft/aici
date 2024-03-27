@@ -2,7 +2,7 @@ use crate::{
     config::SamplingParams, engine::ExpectedGeneration, LogitsProcessor, SeqId, SequenceManager,
 };
 use aici_abi::{toktree::TokTrie, TokenId};
-use aicirt::api::SequenceResult;
+use aicirt::api::{AiciMidOp, SequenceResult};
 use serde::{Deserialize, Serialize};
 use std::fmt::Debug;
 
@@ -79,8 +79,9 @@ pub struct Sequence {
     pub(crate) has_aici: bool,
     pub(crate) aici_sampling: AiciSampling,
     pub aici_logs: Vec<SequenceResult>,
-    pub pending_fork_ids: Vec<SeqId>,
     pub(crate) expected: Option<ExpectedGeneration>,
+
+    pub(crate) mid_op: Option<AiciMidOp>,
 
     // state for Scheduler and BlockSpaceManager
     pub sched_phase: SchedulingPhase,
@@ -114,7 +115,6 @@ impl Sequence {
             has_aici: false,
             aici_logs: Vec::new(),
             aici_sampling: AiciSampling::Regular,
-            pending_fork_ids: Vec::new(),
             expected: None,
         }
     }
@@ -143,6 +143,17 @@ impl Sequence {
 
     fn trim_physical_blocks(&mut self, seq_mgr: &impl SequenceManager) {
         self.trim_computed_kv(std::cmp::min(self.num_kv_computed, self.get_len()), seq_mgr);
+    }
+
+    pub(crate) fn defl_mid_op(&self) -> AiciMidOp {
+        AiciMidOp {
+            id: self.seq_id.to_num(),
+            clone_id: None,
+            clone_idx: None,
+            req_id: None,
+            backtrack: 0,
+            tokens: vec![],
+        }
     }
 
     pub fn splice_tokens(
@@ -189,9 +200,9 @@ impl Sequence {
             output_pending: Vec::new(),
             has_aici: self.has_aici,
             aici_logs: Vec::new(),
-            pending_fork_ids: Vec::new(),
             aici_sampling: AiciSampling::Regular,
             expected: None,
+            mid_op: None,
         }
     }
 
@@ -258,7 +269,6 @@ pub struct SequenceGroup {
     pub request_id: String,
     pub prompt: String,
     pub seqs: Vec<Sequence>,
-    pub deadlock_steps: usize,
     pub sampling_params: SamplingParams,
     pub arrival_time: std::time::Instant,
     pub logits_processor: LogitsProcessor,

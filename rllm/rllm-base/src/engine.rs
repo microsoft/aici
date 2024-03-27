@@ -11,10 +11,7 @@ use crate::{
 };
 use aici_abi::toktree::TokTrie;
 use aicirt::{
-    api::{
-        AiciMidOp, AiciMidProcessReq, AiciPostOp, AiciPostPreProcessReq, AiciPreOp, ModuleInstId,
-        SequenceResult,
-    },
+    api::{AiciMidOp, AiciMidProcessReq, ModuleInstId, SequenceResult},
     with_timer, TimerRef, TimerSet,
 };
 use anyhow::{bail, Error as E, Result};
@@ -135,8 +132,6 @@ pub struct RllmEngine<ME: ModelExec> {
     pub space_token_id: Token,
     pub num_errors: usize,
 
-    post_ops: Vec<AiciPostOp>,
-
     pub timers: TimerSet,
 
     tim_step: TimerRef,
@@ -150,7 +145,6 @@ pub struct RllmEngine<ME: ModelExec> {
 
     tim_aici_bias: TimerRef,
     tim_logit_sample: TimerRef,
-    tim_aici_post: TimerRef,
 
     aicirt: Option<AiciRtIface>,
 
@@ -232,7 +226,6 @@ impl<ME: ModelExec> RllmEngine<ME> {
             alt: args.alt,
             scheduler,
             aicirt: None,
-            post_ops: Vec::new(),
             tim_step: timers.new_timer("step"),
             tim_schedule: timers.new_timer("step.schedule"),
             tim_aici_mid: timers.new_timer("step.aici_mid"),
@@ -241,7 +234,6 @@ impl<ME: ModelExec> RllmEngine<ME> {
             tim_sample: timers.new_timer("step.run_model.sample"),
             tim_aici_bias: timers.new_timer("step.run_model.sample.aici_bias"),
             tim_logit_sample: timers.new_timer("step.run_model.sample.sample"),
-            tim_aici_post: timers.new_timer("step.run_model.sample.aici_post"),
             timers,
         })
     }
@@ -291,9 +283,6 @@ impl<ME: ModelExec> RllmEngine<ME> {
             None => {}
         }
         seq.expected = req.expected;
-        seq.pending_fork_ids = (1..req.sampling_params.n)
-            .map(|_| self.seq_mgr.new_sequence())
-            .collect::<Vec<_>>();
 
         let logits_processor = LogitsProcessor::new(&req.sampling_params);
         let prompt = self
@@ -306,7 +295,6 @@ impl<ME: ModelExec> RllmEngine<ME> {
             prompt,
             seqs: vec![seq],
             sampling_params: req.sampling_params,
-            deadlock_steps: 0,
             arrival_time: Instant::now(),
             logits_processor,
             max_index: 0,
@@ -404,13 +392,13 @@ impl<ME: ModelExec> RllmEngine<ME> {
         seq: &mut Sequence,
         logits: &mut ME::Tensor,
         aici_bias: &ME::AiciBias,
-    ) -> Option<AiciPostOp> {
+    ) -> bool {
         match std::mem::take(&mut seq.aici_sampling) {
-            AiciSampling::Regular => None,
+            AiciSampling::Regular => false,
             AiciSampling::SampleWithBias { offset } => {
                 log::trace!("sample *{}: bias at {offset}", seq.seq_id);
                 aici_bias.apply(logits, offset);
-                None
+                false
             }
             AiciSampling::Splice {
                 backtrack,
@@ -421,11 +409,12 @@ impl<ME: ModelExec> RllmEngine<ME> {
                     seq.seq_id
                 );
                 seq.splice_tokens(self.seq_mgr.deref(), backtrack as usize, &ff_tokens);
-                Some(AiciPostOp {
-                    id: seq.seq_id.to_num(),
-                    tokens: ff_tokens,
+                seq.mid_op = Some(AiciMidOp {
                     backtrack: backtrack,
-                })
+                    tokens: ff_tokens,
+                    ..seq.defl_mid_op()
+                });
+                true
             }
         }
     }
@@ -513,10 +502,7 @@ impl<ME: ModelExec> RllmEngine<ME> {
         Ok(self.dropped_outputs(sched_out))
     }
 
-    fn sample(
-        &mut self,
-        sched_out: &mut SchedulerOutputs,
-    ) -> Result<(Vec<RequestOutput>, Vec<AiciPostOp>)> {
+    fn sample(&mut self, sched_out: &mut SchedulerOutputs) -> Result<Vec<RequestOutput>> {
         let mut seq_id_mapping = HashMap::default();
 
         for sg in sched_out.next_seq_groups.iter_mut() {
@@ -540,8 +526,6 @@ impl<ME: ModelExec> RllmEngine<ME> {
 
         let aici_bias = with_timer!(self.tim_aici_bias, self.aici_bias(sched_out)?);
 
-        let mut post_ops = Vec::new();
-
         for sg in sched_out.next_seq_groups.iter_mut() {
             for seq in sg.seqs.iter_mut() {
                 if seq.sched_phase != SchedulingPhase::Running {
@@ -552,8 +536,7 @@ impl<ME: ModelExec> RllmEngine<ME> {
                 let sidx = seq_id_mapping.get(&sidx).unwrap_or(&sidx);
                 let mut logits = self.tmodel.get_logits(*sidx);
 
-                if let Some(op) = self.aici_apply_bias(seq, &mut logits, &aici_bias) {
-                    post_ops.push(op);
+                if self.aici_apply_bias(seq, &mut logits, &aici_bias) {
                     continue;
                 }
 
@@ -578,10 +561,9 @@ impl<ME: ModelExec> RllmEngine<ME> {
                 }
 
                 if seq.has_aici {
-                    post_ops.push(AiciPostOp {
-                        id: seq.seq_id.to_num(),
+                    seq.mid_op = Some(AiciMidOp {
                         tokens: vec![next_token],
-                        backtrack: 0,
+                        ..seq.defl_mid_op()
                     });
                 }
 
@@ -609,7 +591,7 @@ impl<ME: ModelExec> RllmEngine<ME> {
                 .map(|sg| self.req_output(sg, false)),
         );
 
-        Ok((outputs, post_ops))
+        Ok(outputs)
     }
 
     fn req_output(&self, sg: &mut SequenceGroup, is_final: bool) -> RequestOutput {
@@ -625,10 +607,7 @@ impl<ME: ModelExec> RllmEngine<ME> {
         }
     }
 
-    fn run_model(
-        &mut self,
-        sched_out: &mut SchedulerOutputs,
-    ) -> Result<(Vec<RequestOutput>, Vec<AiciPostOp>)> {
+    fn run_model(&mut self, sched_out: &mut SchedulerOutputs) -> Result<Vec<RequestOutput>> {
         if sched_out.is_empty() {
             log::debug!("no seqs to run");
             return Ok((self.empty_outputs(sched_out)?, vec![]));
@@ -675,6 +654,7 @@ impl<ME: ModelExec> RllmEngine<ME> {
         }
     }
 
+    /*
     fn aici_post_pre(&mut self, post_ops: Vec<AiciPostOp>) -> Result<()> {
         if self.aicirt.is_none() {
             return Ok(());
@@ -795,6 +775,8 @@ impl<ME: ModelExec> RllmEngine<ME> {
         Ok(())
     }
 
+    */
+
     fn aici_mid(&mut self, sched_out: &mut SchedulerOutputs) -> Result<()> {
         if self.aicirt.is_none() {
             return Ok(());
@@ -812,17 +794,13 @@ impl<ME: ModelExec> RllmEngine<ME> {
                     continue;
                 }
 
-                assert!(seq.has_aici);
-
-                mid_ops.push(AiciMidOp {
-                    id: seq.seq_id.to_num(),
-                    clone_id: None,
-                });
-
-                for copy_id in &seq.pending_fork_ids {
+                if seq.has_aici {
+                    mid_ops.push(seq.mid_op.take().unwrap());
+                } else {
+                    seq.has_aici = true;
                     mid_ops.push(AiciMidOp {
-                        id: copy_id.to_num(),
-                        clone_id: Some(seq.seq_id.to_num()),
+                        req_id: Some(sg.request_id.clone()),
+                        ..seq.defl_mid_op()
                     });
                 }
             }
@@ -831,7 +809,10 @@ impl<ME: ModelExec> RllmEngine<ME> {
         self.aicirt
             .as_mut()
             .unwrap()
-            .start_mid_process(AiciMidProcessReq { ops: mid_ops })?;
+            .start_mid_process(AiciMidProcessReq {
+                ops: mid_ops,
+                freed: self.scheduler.get_freed_seq_ids(),
+            })?;
 
         Ok(())
     }

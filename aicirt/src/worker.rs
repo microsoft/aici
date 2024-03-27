@@ -6,12 +6,9 @@ use crate::{
     shm::Shm,
     with_timer, InstantiateReq, TimerRef, UserError,
 };
-use aici_abi::{
-    MidProcessArg, PostProcessArg, PreProcessArg, PreProcessResult, StorageCmd, StorageOp,
-    StorageResp, TokenId,
-};
+use aici_abi::{MidProcessArg, ProcessResultOffset, StorageCmd, StorageOp, StorageResp, TokenId};
 use aicirt::{
-    api::{AiciMidProcessResultInner, AiciPostProcessResultInner, SequenceResult},
+    api::SequenceResult,
     futexshm::{TypedClient, TypedClientHandle, TypedServer},
     set_max_priority,
     shm::Unlink,
@@ -127,12 +124,6 @@ pub struct RtMidProcessArg {
 }
 
 #[derive(Serialize, Deserialize, Debug)]
-pub struct RtPostPreProcessArg {
-    pub post_op: Option<PostProcessArg>,
-    pub pre_op: PreProcessArg,
-}
-
-#[derive(Serialize, Deserialize, Debug)]
 struct ForkerResp(WireSeqHandle);
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -150,9 +141,6 @@ enum SeqCmd {
     SetId {
         inst_id: ModuleInstId,
     },
-    PostPreProcess {
-        data: RtPostPreProcessArg,
-    },
     MidProcess {
         data: RtMidProcessArg,
     },
@@ -169,7 +157,6 @@ impl SeqCmd {
             SeqCmd::Fork { .. } => "fork",
             SeqCmd::SetId { .. } => "set_id",
             SeqCmd::MidProcess { .. } => "process",
-            SeqCmd::PostPreProcess { .. } => "post_pre_process",
             SeqCmd::RunMain {} => "run_main",
             SeqCmd::Compile { .. } => "compile",
         }
@@ -363,25 +350,6 @@ impl SeqCtx {
                 self.mutinst().set_id(inst_id);
                 ok()
             }
-            SeqCmd::PostPreProcess { data } => {
-                let post_json = if let Some(req) = data.post_op {
-                    let t0 = Instant::now();
-                    let res = self.mutinst().post_process(req);
-                    let json = serde_json::to_string(&res)?;
-                    let e = t0.elapsed();
-                    if e.as_micros() > 500 {
-                        log::warn!("post_process took {:?}", e);
-                    }
-                    json
-                } else {
-                    String::new()
-                };
-                let res = with_timer!(self.pre_timer, self.mutinst().pre_process(data.pre_op));
-                Ok(SeqResp::PostPreProcess {
-                    post_json,
-                    pre_json: serde_json::to_string(&res)?,
-                })
-            }
             SeqCmd::MidProcess { data } => {
                 let shm = self.shm.clone();
                 let res = self.mutinst().mid_process(data, &shm);
@@ -497,46 +465,12 @@ impl SeqWorkerHandle {
         }
     }
 
-    pub fn start_post_process(&self, data: RtPostPreProcessArg) -> Result<()> {
-        self.handle.just_send(SeqCmd::PostPreProcess { data })?;
-        Ok(())
-    }
-
     pub fn start_process(&self, data: RtMidProcessArg) -> Result<()> {
         self.handle.just_send(SeqCmd::MidProcess { data })?;
         Ok(())
     }
 
-    pub fn check_pre_process(
-        &self,
-        timeout: Duration,
-        timer: &TimerRef,
-    ) -> Result<(
-        Option<SequenceResult<AiciPostProcessResultInner>>,
-        SequenceResult<PreProcessResult>,
-    )> {
-        let r = timer.with(|| self.handle.seq_recv_with_timeout("r-pre_process", timeout));
-        match r {
-            Ok(SeqResp::PostPreProcess {
-                post_json,
-                pre_json,
-            }) => Ok((
-                if post_json.len() > 0 {
-                    Some(serde_json::from_str(&post_json)?)
-                } else {
-                    None
-                },
-                serde_json::from_str(&pre_json)?,
-            )),
-            Ok(r) => Err(anyhow!("unexpected response (pre_process) {r:?}")),
-            Err(e) => Err(e.into()),
-        }
-    }
-
-    pub fn check_process(
-        &self,
-        timeout: Duration,
-    ) -> Result<SequenceResult<AiciMidProcessResultInner>> {
+    pub fn check_process(&self, timeout: Duration) -> Result<SequenceResult<ProcessResultOffset>> {
         match self.handle.seq_recv_with_timeout("r-process", timeout) {
             Ok(SeqResp::MidProcess { json }) => Ok(serde_json::from_str(&json)?),
             Ok(r) => Err(anyhow!("unexpected response (process) {r:?}")),
@@ -749,7 +683,7 @@ impl WorkerForker {
         &self,
         req: InstantiateReq,
         module_path: PathBuf,
-    ) -> Result<(SeqWorkerHandle, SequenceResult<PreProcessResult>)> {
+    ) -> Result<(SeqWorkerHandle, SequenceResult<()>)> {
         let module_arg = match req.module_arg.as_str() {
             Some(a) => a.to_string(),
             None => serde_json::to_string(&req.module_arg)?,
@@ -795,7 +729,7 @@ impl WorkerForker {
             Duration::from_millis(self.limits.max_init_ms),
         )? {
             SeqResp::InitPrompt { json } => {
-                let r: SequenceResult<PreProcessResult> = serde_json::from_str(&json)?;
+                let r: SequenceResult<()> = serde_json::from_str(&json)?;
                 Ok((res, r))
             }
             r => Err(anyhow!("unexpected response (init prompt) {r:?}")),

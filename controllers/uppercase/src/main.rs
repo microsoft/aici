@@ -3,8 +3,7 @@ use aici_abi::{
     recognizer::{FunctionalRecognizer, StackRecognizer},
     tokenize,
     toktree::{SpecialToken, TokTrie},
-    AiciCtrl, MidProcessArg, MidProcessResult, PostProcessArg, PostProcessResult, PreProcessArg,
-    PreProcessResult,
+    AiciCtrl, InitPromptArg, InitPromptResult, MidProcessArg, MidProcessResult,
 };
 
 // This constraints enforces an upper case letter every 4th byte
@@ -37,6 +36,7 @@ impl FunctionalRecognizer<usize> for QuadUpper {
 
 pub struct Runner {
     toktrie: TokTrie,
+    ff_tokens: Vec<u32>,
     tokens: Vec<u32>,
     prompt: String,
     recognizer: StackRecognizer<usize, QuadUpper>,
@@ -48,50 +48,43 @@ impl Runner {
             toktrie: TokTrie::from_host(),
             prompt: arg_string() + "\n",
             tokens: Vec::new(),
+            ff_tokens: Vec::new(),
             recognizer: StackRecognizer::from(QuadUpper {}),
         }
     }
 }
 
 impl AiciCtrl for Runner {
-    fn pre_process(&mut self, _arg: PreProcessArg) -> PreProcessResult {
-        if self.tokens.is_empty() {
-            // if no tokens yet, send our prompt
-            let prompt = if self.prompt.len() <= 1 {
-                "Here's a tweet:\n"
-            } else {
-                &self.prompt
-            };
-            let toks = tokenize(prompt);
-            PreProcessResult::ff_tokens(toks)
-        } else {
-            // otherwise just continue - the other option is to suspend
-            PreProcessResult::continue_()
+    fn init_prompt(&mut self, arg: InitPromptArg) -> InitPromptResult {
+        if arg.prompt.len() <= 1 {
+            // in case no prompt was provided, invent some
+            self.ff_tokens = tokenize("Here's a tweet:\n");
         }
+        InitPromptResult::default()
     }
 
-    fn mid_process(&mut self, _arg: MidProcessArg) -> MidProcessResult {
-        if self.tokens.len() > 50 {
-            // stop after 50 tokens
-            return MidProcessResult::Stop;
+    fn mid_process(&mut self, arg: MidProcessArg) -> MidProcessResult {
+        // if we have some tokens pending - send them out
+        if self.ff_tokens.len() > 0 {
+            let tokens = std::mem::take(&mut self.ff_tokens);
+            return MidProcessResult::splice(0, tokens);
+        }
+
+        // store our tokens
+        arg.save_tokens(&mut self.tokens);
+        // and update the state of our recognizer
+        self.toktrie
+            .append_tokens(&mut self.recognizer, &arg.tokens);
+
+        // stop after 50 tokens
+        if self.tokens.len() > 50 || arg.has_eos() {
+            return MidProcessResult::stop();
         }
 
         // otherwise, compute bias according to our recognizer
         let mut set = self.toktrie.alloc_token_set();
         self.toktrie.compute_bias(&mut self.recognizer, &mut set);
-        MidProcessResult::SampleWithBias {
-            allowed_tokens: set,
-        }
-    }
-
-    fn post_process(&mut self, arg: PostProcessArg) -> PostProcessResult {
-        // save our tokens
-        self.tokens.extend_from_slice(&arg.tokens);
-        // and update the state of our recognizer
-        self.toktrie
-            .append_tokens(&mut self.recognizer, &arg.tokens);
-        // ::from_arg() will translate generation of EOS token into Stop instruction
-        PostProcessResult::from_arg(&arg)
+        MidProcessResult::sample(set)
     }
 }
 

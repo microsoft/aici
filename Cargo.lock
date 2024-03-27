@@ -252,23 +252,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "aici_declctrl"
-version = "0.1.0"
-dependencies = [
- "aici_abi",
- "anyhow",
- "cfgrammar",
- "lrlex",
- "lrpar",
- "lrtable",
- "regex-automata 0.3.9",
- "rustc-hash",
- "serde",
- "serde_json",
- "vob",
-]
-
-[[package]]
 name = "aici_guidance_ctrl"
 version = "0.1.0"
 dependencies = [
@@ -2910,17 +2893,6 @@ name = "regex-automata"
 version = "0.1.10"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6c230d73fb8d8c1b9c0b3135c5142a8acee3a0558fb8db5cf1cb65f8d7862132"
-
-[[package]]
-name = "regex-automata"
-version = "0.3.9"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "59b23e92ee4318893fa3fe3e6fb365258efbfe6ac6ab30f090cdcbb7aa37efa9"
-dependencies = [
- "aho-corasick",
- "memchr",
- "regex-syntax 0.7.5",
-]
 
 [[package]]
 name = "regex-automata"

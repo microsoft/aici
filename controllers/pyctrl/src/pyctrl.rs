@@ -2,8 +2,8 @@ use aici_abi::{
     aici_stop,
     svob::SimpleVob,
     toktree::{Recognizer, SpecialToken, TokTrie},
-    AiciCtrl, InitPromptArg, InitPromptResult, MidProcessArg, MidProcessResult, PostProcessArg,
-    PostProcessResult, PreProcessArg, PreProcessResult, TokenId, VariableStorage,
+    AiciCtrl, InitPromptArg, InitPromptResult, MidProcessArg, MidProcessResult, TokenId,
+    VariableStorage,
 };
 use anyhow::Result;
 use lazy_static::lazy_static;
@@ -510,21 +510,6 @@ impl AiciCtrl for Runner {
         })
     }
 
-    fn pre_process(&mut self, _arg: PreProcessArg) -> PreProcessResult {
-        let obj = get_cb_obj();
-        self.interpreter.enter(|vm| {
-            let r = vm.catch_exn(vm.call_method(obj.deref(), "pre_process", vec![]));
-            let suspend = vm.bool_attr(&r, "suspended");
-            let num_forks = vm.int_attr(&r, "num_forks") as usize;
-            let ff_tokens = vm.to_list(vm.attr(&r, "ff_tokens"), |v| vm.to_i32(v) as u32);
-            PreProcessResult {
-                num_forks,
-                suspend,
-                ff_tokens,
-            }
-        })
-    }
-
     fn mid_process(&mut self, arg: MidProcessArg) -> MidProcessResult {
         let obj = get_cb_obj();
         self.interpreter.enter(|vm| {
@@ -533,43 +518,22 @@ impl AiciCtrl for Runner {
                 vm.catch_exn(vm.call_method(obj.deref(), "mid_process", vec![fork_group.into()]));
             let stop = vm.bool_attr(&r, "stop");
             if stop {
-                MidProcessResult::Stop
+                MidProcessResult::stop()
             } else {
                 let backtrack = vm.int_attr(&r, "backtrack") as u32;
                 let ff_tokens = vm.to_list(vm.attr(&r, "ff_tokens"), |v| vm.to_i32(v) as u32);
 
                 if backtrack > 0 || ff_tokens.len() > 0 {
-                    MidProcessResult::Splice {
-                        backtrack,
-                        ff_tokens,
-                    }
+                    MidProcessResult::splice(backtrack, ff_tokens)
                 } else {
                     let logit_bias = vm.attr(&r, "logit_bias");
                     let v = logit_bias
                         .payload_if_exact::<_aici::TokenSet>(vm)
                         .expect("expecting TokenSet as logit_bias");
                     let bias = v.0.lock().unwrap();
-                    aici_abi::return_logit_bias(&bias);
-                    MidProcessResult::SampleWithBias {
-                        allowed_tokens: SimpleVob::new(),
-                    }
+                    MidProcessResult::sample(bias.clone())
                 }
             }
-        })
-    }
-
-    fn post_process(&mut self, arg: PostProcessArg) -> PostProcessResult {
-        let obj = get_cb_obj();
-        self.interpreter.enter(|vm| {
-            let tokens = vm.new_int_list(&arg.tokens);
-            let backtrack = vm.ctx.new_int(arg.backtrack as i32);
-            let r = vm.catch_exn(vm.call_method(
-                obj.deref(),
-                "post_process",
-                vec![backtrack.into(), tokens.into()],
-            ));
-            let stop = vm.bool_attr(&r, "stop_seq");
-            PostProcessResult { stop }
         })
     }
 }

@@ -1,74 +1,38 @@
-use aici_abi::{StorageCmd, TokenId};
+use crate::HashMap;
+use aici_abi::{ProcessResultOffset, StorageCmd, TokenId};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use crate::HashMap;
 
 pub type ModuleInstId = usize;
 
 #[derive(Serialize, Deserialize)]
-pub struct AiciPostPreProcessReq {
-    // Executed first
-    pub post_ops: Vec<AiciPostOp>,
-    // Executed second
-    pub pre_ops: Vec<AiciPreOp>,
-    // Executed third
+pub struct AiciMidProcessReq {
+    pub ops: Vec<AiciMidOp>,
     pub freed: Vec<ModuleInstId>,
 }
 
 #[derive(Serialize, Deserialize)]
-pub struct AiciPostPreProcessResp {
-    pub post_seqs: HashMap<ModuleInstId, SequenceResult<AiciPostProcessResultInner>>,
-    pub pre_seqs: HashMap<ModuleInstId, SequenceResult<AiciPreProcessResultInner>>,
-}
-
-#[derive(Serialize, Deserialize)]
-pub struct AiciPreProcessResultInner {
-    pub suspend: bool,
-    pub num_forks: usize,
-    pub ff_tokens: Vec<TokenId>,
-}
-
-#[derive(Serialize, Deserialize)]
-pub struct AiciMidProcessReq {
-    pub ops: Vec<AiciMidOp>,
-}
-
-#[derive(Serialize, Deserialize)]
 pub struct AiciMidProcessResp {
-    pub seqs: HashMap<ModuleInstId, SequenceResult<AiciMidProcessResultInner>>,
-    pub num_seqs: usize,
-}
-
-#[derive(Serialize, Deserialize)]
-pub struct AiciMidProcessResultInner {
-    pub ff_tokens: Vec<TokenId>,
-    pub backtrack: u32,
-}
-
-#[derive(Serialize, Deserialize)]
-pub struct AiciPostProcessResultInner {
-    pub stop: bool,
+    pub seqs: HashMap<ModuleInstId, SequenceResult<ProcessResultOffset>>,
 }
 
 #[derive(Clone, Serialize, Deserialize, Debug)]
-pub struct AiciPreOp {
-    // This assigns id to the module currently instantiated with req_id
-    pub id: ModuleInstId,
-    pub req_id: String,
-}
-
-#[derive(Clone, Serialize, Deserialize, Debug)]
+/// At least one of clone_id or req_id should be None.
+/// If either of them is not None, then id should be fresh.
 pub struct AiciMidOp {
     pub id: ModuleInstId,
+    /// Set to None, except upon first call for a branch after forking.
     pub clone_id: Option<ModuleInstId>,
-}
-
-#[derive(Serialize, Deserialize)]
-pub struct AiciPostOp {
-    pub id: ModuleInstId,
-    pub tokens: Vec<Token>,
-    #[serde(default)]
+    /// This is index of branch, set iff clone_id is set.
+    pub clone_idx: Option<usize>,
+    /// Set to None, except upon first call for a user request.
+    pub req_id: Option<String>,
+    /// Sampling result for the previous iteration.
+    /// For simple sampled token 't', backtrack==0 and tokens==[t].
+    /// For first request, backtrack==0 and tokens==[] (prompt is passed separetely, before).
+    /// Can be more complex when splices are used.
     pub backtrack: u32,
+    pub tokens: Vec<Token>,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]

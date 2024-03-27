@@ -235,13 +235,6 @@ impl AiciRtIface {
         self.pending_mid_size = usize::MAX;
         Ok(r)
     }
-
-    pub fn post_pre_process(
-        &mut self,
-        req: AiciPostPreProcessReq,
-    ) -> Result<AiciPostPreProcessResp> {
-        self.cmd.exec("post_pre_process", req)
-    }
 }
 
 #[derive(Clone)]

@@ -1,11 +1,10 @@
 use aici_abi::{
     arg_bytes, bytes::to_hex_string, tokenize_bytes, toktree::TokTrie, AiciCtrl, MidProcessArg,
-    MidProcessResult, PostProcessArg, PostProcessResult, PreProcessArg, PreProcessResult, TokenId,
+    MidProcessResult, TokenId,
 };
 use base64::{self, Engine as _};
 use earley::{earley_grm_from_guidance, Parser};
 use serde::{Deserialize, Serialize};
-use serde_json::json;
 
 use crate::earley::ParseResult;
 
@@ -26,7 +25,6 @@ pub struct Runner {
     toktrie: TokTrie,
     parser: Parser,
     llm_tokens: Vec<TokenId>,
-    is_ff: bool,
     reported_captures: usize,
 }
 
@@ -51,7 +49,6 @@ impl Runner {
             toktrie: TokTrie::from_host(),
             parser,
             llm_tokens: Vec::new(),
-            is_ff: false,
             reported_captures: 0,
         }
     }
@@ -80,11 +77,11 @@ struct Capture {
 }
 
 impl AiciCtrl for Runner {
-    fn pre_process(&mut self, _arg: PreProcessArg) -> PreProcessResult {
-        PreProcessResult::continue_()
-    }
+    fn mid_process(&mut self, arg: MidProcessArg) -> MidProcessResult {
+        infoln!("post tokens: {}", self.toktrie.tokens_dbg(&arg.tokens));
+        arg.save_tokens(&mut self.llm_tokens);
+        // TODO EOS!
 
-    fn mid_process(&mut self, _arg: MidProcessArg) -> MidProcessResult {
         let start_time = std::time::Instant::now();
         let _ = self.parser.force_bytes();
         let fixed_bytes = self.parser.get_bytes();
@@ -115,12 +112,8 @@ impl AiciCtrl for Runner {
                 );
                 infoln!("fixed_tokens: {:?}", self.toktrie.tokens_dbg(&fixed_tokens));
                 self.llm_tokens = fixed_tokens;
-                self.is_ff = true;
                 self.report_captures();
-                return MidProcessResult::Splice {
-                    backtrack,
-                    ff_tokens,
-                };
+                return MidProcessResult::splice(backtrack, ff_tokens);
             }
         }
 
@@ -148,8 +141,6 @@ impl AiciCtrl for Runner {
 
         // self.parser.print_row(self.parser.num_rows() - 1);
 
-        self.is_ff = false;
-
         let mut set = self.toktrie.alloc_token_set();
         self.toktrie
             .compute_bias_ext(&mut self.parser, &mut set, &byte_suffix);
@@ -162,22 +153,7 @@ impl AiciCtrl for Runner {
 
         self.report_captures();
 
-        MidProcessResult::SampleWithBias {
-            allowed_tokens: set,
-        }
-    }
-
-    fn post_process(&mut self, arg: PostProcessArg) -> PostProcessResult {
-        infoln!(
-            "post tokens:{} {}",
-            if self.is_ff { " ff" } else { "" },
-            self.toktrie.tokens_dbg(&arg.tokens)
-        );
-        if !self.is_ff {
-            self.llm_tokens.extend(&arg.tokens);
-        }
-        // TODO EOS!
-        PostProcessResult::from_arg(&arg)
+        MidProcessResult::sample(set)
     }
 }
 

@@ -4,7 +4,7 @@ use crate::{
 };
 use aici_abi::{
     bytes::{clone_vec_as_bytes, limit_str, vec_from_bytes, TokRxInfo},
-    PostProcessArg, PreProcessArg, StorageCmd,
+    StorageCmd,
 };
 use aicirt::user_error;
 use anyhow::{anyhow, Result};
@@ -21,7 +21,6 @@ pub struct AiciLimits {
 
     pub timer_resolution_ns: u64,
     pub max_memory_bytes: usize,
-    pub max_pre_step_ms: u64,
     pub max_step_ms: u64,
     pub max_init_ms: u64,
     pub max_compile_ms: u64,
@@ -136,16 +135,6 @@ impl ModuleData {
         self.logit_ptr
             .iter_mut()
             .for_each(|x| *x = LOGIT_BIAS_DISALLOW);
-    }
-
-    pub fn set_pre_process_data(&mut self, data: &PreProcessArg) {
-        let bytes = serde_json::to_vec(&data).unwrap();
-        self.set_process_arg(bytes);
-    }
-
-    pub fn set_post_process_data(&mut self, data: PostProcessArg) {
-        let bytes = serde_json::to_vec(&data).unwrap();
-        self.set_process_arg(bytes);
     }
 
     pub fn tokenize(&mut self, s: &str) -> Result<Vec<u32>> {
