@@ -500,7 +500,7 @@ impl<ME: ModelExec> RllmEngine<ME> {
 
                 let mut info = "";
 
-                let splice = match seq.aici_sampling {
+                let splice = match &seq.aici_sampling {
                     Some(b) if b.sample_mask.is_none() => {
                         assert!(b.splices.len() == 1);
                         let s = &b.splices[0];
@@ -509,7 +509,7 @@ impl<ME: ModelExec> RllmEngine<ME> {
                         s.clone()
                     }
                     _ => {
-                        match seq.aici_sampling {
+                        match &seq.aici_sampling {
                             Some(b) => aici_bias.apply(&mut logits, b.sample_mask.unwrap()),
                             None => {}
                         }
@@ -526,6 +526,7 @@ impl<ME: ModelExec> RllmEngine<ME> {
 
                         let splices = seq
                             .aici_sampling
+                            .as_ref()
                             .map(|s| s.splices.clone())
                             .unwrap_or_default();
 
@@ -588,12 +589,14 @@ impl<ME: ModelExec> RllmEngine<ME> {
                     &splice.ff_tokens,
                 );
 
+                let has_eos = splice.ff_tokens.contains(&self.eos_token_id);
+
                 if seq.has_aici {
-                    seq.mid_op.unwrap().tokens = splice.ff_tokens;
-                    seq.mid_op.unwrap().backtrack = splice.backtrack;
+                    seq.mid_op.as_mut().unwrap().tokens = splice.ff_tokens;
+                    seq.mid_op.as_mut().unwrap().backtrack = splice.backtrack;
                 }
 
-                if !sg.sampling_params.ignore_eos && splice.ff_tokens.contains(&self.eos_token_id) {
+                if !sg.sampling_params.ignore_eos && has_eos {
                     self.scheduler.finish_seq(seq, FinishReason::FoundEos);
                 } else if seq.get_gen_len() >= sg.sampling_params.max_tokens {
                     self.scheduler

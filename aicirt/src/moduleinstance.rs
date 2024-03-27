@@ -1,13 +1,11 @@
 use crate::{
     api::ModuleInstId,
-    hostimpl::{
-        setup_linker, AiciLimits, GlobalInfo, ModuleData, LOGIT_BIAS_ALLOW, LOGIT_BIAS_DISALLOW,
-    },
+    hostimpl::{setup_linker, AiciLimits, GlobalInfo, ModuleData},
     shm::Shm,
     worker::{GroupHandle, RtMidProcessArg},
     TimerSet, UserError,
 };
-use aici_abi::{toktree::TokTrie, InitPromptArg, MidProcessResult, ProcessResultOffset, TokenId};
+use aici_abi::{toktree::TokTrie, InitPromptArg, ProcessResultOffset, TokenId};
 use aicirt::{api::SequenceResult, bail_user, bintokens::ByteTokenizer, user_error};
 use anyhow::{anyhow, bail, ensure, Result};
 use serde::Deserialize;

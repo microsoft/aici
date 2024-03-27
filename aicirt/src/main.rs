@@ -151,8 +151,6 @@ struct Stepper {
     // for debugging
     shm: Shm,
     token_bytes: Vec<Vec<u8>>,
-    pre_timer: TimerRef,
-    pre_recv_timer: TimerRef,
 }
 
 fn hex_hash_string(s: &str) -> String {
@@ -596,8 +594,6 @@ impl Stepper {
             globals: reg.wasm_ctx.globals.clone(),
             shm,
             token_bytes,
-            pre_timer: reg.wasm_ctx.timers.new_timer("pre"),
-            pre_recv_timer: reg.wasm_ctx.timers.new_timer("pre_recv"),
         })
     }
 
@@ -780,9 +776,7 @@ impl Stepper {
             self.instances.remove(&id);
         }
 
-        Ok(AiciMidProcessResp {
-            seqs: outputs,
-        })
+        Ok(AiciMidProcessResp { seqs: outputs })
     }
 
     fn logit_bias_at_byte_offset(&self, off: usize) -> &'static mut [f32] {
