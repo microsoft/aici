@@ -8,14 +8,18 @@ use aici_abi::{
 };
 use aicirt::user_error;
 use anyhow::{anyhow, Result};
-use std::{rc::Rc, sync::Arc, time::Duration};
+use std::{
+    rc::Rc,
+    sync::Arc,
+    time::{Duration, Instant},
+};
 use tokenizers::Tokenizer;
 
 #[derive(Clone)]
 pub struct AiciLimits {
     pub ipc_shm_bytes: usize,
-    pub msg_cnt: Arc<Shm>,
 
+    pub timer_resolution_ns: u64,
     pub max_memory_bytes: usize,
     pub max_pre_step_ms: u64,
     pub max_step_ms: u64,
@@ -37,6 +41,7 @@ pub struct ModuleData {
     pub group_channel: GroupHandle,
     pub process_result: Vec<u8>,
     pub logit_ptr: &'static mut [f32],
+    pub limits: AiciLimits,
     pub linker: Arc<wasmtime::Linker<ModuleData>>,
     pub instance: Option<wasmtime::Instance>,
     pub memory: Option<wasmtime::Memory>,
@@ -44,6 +49,7 @@ pub struct ModuleData {
     pub store_limits: wasmtime::StoreLimits,
     pub had_error: bool,
     pub storage_log: Vec<StorageCmd>,
+    pub start_time: Instant,
     blobs: Vec<Rc<Vec<u8>>>,
 }
 
@@ -92,6 +98,7 @@ impl ModuleData {
             globals,
             group_channel,
             module: module.clone(),
+            limits: limits.clone(),
             linker: linker.clone(),
             instance: None,
             memory: None,
@@ -100,6 +107,7 @@ impl ModuleData {
             logit_ptr: &mut [],
             had_error: false,
             storage_log: Vec::new(),
+            start_time: Instant::now(),
             blobs: vec![Rc::new(Vec::new()); BlobId::MAX_BLOB_ID as usize],
         };
         r.set_blob(BlobId::MODULE_ARG, module_arg.as_bytes().to_vec());
@@ -290,7 +298,6 @@ pub fn setup_linker(engine: &wasmtime::Engine) -> Result<Arc<wasmtime::Linker<Mo
     let mut linker = wasmtime::Linker::<ModuleData>::new(engine);
 
     fake_wasi!(linker, environ_get, i32 i32);
-    fake_wasi!(linker, clock_time_get, i32 i64 i32);
     fake_wasi!(linker, path_create_directory, i32 i32 i32);
     fake_wasi!(linker, path_filestat_get, i32 i32 i32 i32 i32);
     fake_wasi!(linker, path_link, i32 i32 i32 i32 i32 i32 i32);
@@ -330,6 +337,27 @@ pub fn setup_linker(engine: &wasmtime::Engine) -> Result<Arc<wasmtime::Linker<Mo
             let mut char_device = vec![0u8; 24];
             char_device[0] = 2;
             write_caller_mem(&mut caller, stat_ptr, 24, &char_device);
+            Ok(0)
+        },
+    )?;
+
+    linker.func_wrap(
+        "wasi_snapshot_preview1",
+        "clock_time_get",
+        |mut caller: wasmtime::Caller<'_, ModuleData>,
+         clock_id: i32,
+         _precision: i64,
+         dst_ptr: u32|
+         -> Result<i32> {
+            if clock_id != 1 {
+                return Ok(63); // EPERM
+            }
+            let res = caller.data().limits.timer_resolution_ns as u64;
+            let now = std::time::Instant::now();
+            let nanos = now.duration_since(caller.data().start_time).as_nanos() as u64;
+            let nanos = if res == 0 { 0 } else { nanos / res * res };
+            let bytes = nanos.to_le_bytes();
+            write_caller_mem(&mut caller, dst_ptr, 8, &bytes);
             Ok(0)
         },
     )?;

@@ -19,19 +19,19 @@ You can build, upload, and tag the PyCtrl Wasm module using the `aici.sh` script
 (this assumes a [running server](../../README.md#build-and-start-rllm-server-and-aici-runtime)):
 
 ```bash
-../aici.sh build . --tag pyctrl-latest
+../../aici.sh build . --tag pyctrl-latest
 ```
 
 Then you can run a PyCtrl sample:
 
 ```bash
-../aici.sh run --ctrl pyctrl-latest samples/test.py
+../../aici.sh run --ctrl pyctrl-latest samples/test.py
 ```
 
 You can also build and run in one step (without tagging):
 
 ```bash
-../aici.sh run --build . samples/test.py
+../../aici.sh run --build . samples/test.py
 ```
 
 Either way, you will see the console output of the program.

@@ -12,8 +12,7 @@ use crate::{
     TimerRef, TimerSet,
 };
 use aici_abi::{
-    bytes::limit_str, earley::bench::earley_test, toktree::TokTrie, MidProcessArg, PostProcessArg,
-    PreProcessArg, SeqId,
+    bytes::limit_str, toktree::TokTrie, MidProcessArg, PostProcessArg, PreProcessArg, SeqId,
 };
 use aicirt::{bintokens::find_tokenizer, futexshm::ServerChannel, *};
 use anyhow::{anyhow, ensure, Result};
@@ -60,10 +59,6 @@ struct Cli {
     /// Save the --tokenizer=... to specified file
     #[arg(long)]
     save_tokenizer: Option<String>,
-
-    /// Run Earley parser benchmark
-    #[arg(long)]
-    earley_bench: bool,
 
     /// Run main() from the module just added
     #[arg(short, long)]
@@ -120,6 +115,10 @@ struct Cli {
     /// Maximum time WASM module can execute initialization code in milliseconds
     #[arg(long, default_value = "1000")]
     wasm_max_init_time: u64,
+
+    /// Resolution of timer exposed to WASM modules in microseconds; 0 to disable timer
+    #[arg(long, default_value = "0")]
+    wasm_timer_resolution_us: u64,
 
     /// Shm/semaphore name prefix
     #[arg(long, short, default_value = "/aici0-")]
@@ -1007,10 +1006,9 @@ impl CmdRespChannel {
                 cli.json_size * MEGABYTE,
                 shm::Unlink::Post,
             )?;
-            let cnt_shm = Arc::new(Shm::anon(4096)?); // unused at the moment
             Ok(Self::Futex {
-                cmd_ch: ServerChannel::new(cmd_shm, cnt_shm.clone()),
-                resp_ch: Arc::new(Mutex::new(ServerChannel::new(resp_shm, cnt_shm))),
+                cmd_ch: ServerChannel::new(cmd_shm),
+                resp_ch: Arc::new(Mutex::new(ServerChannel::new(resp_shm))),
                 busy_wait_duration,
             })
         } else {
@@ -1096,13 +1094,6 @@ fn bench_hashmap() {
     }
 }
 
-fn earley_bench(cli: &Cli) {
-    let tokenizer = find_tokenizer(&cli.tokenizer).unwrap();
-    let tokens = tokenizer.token_bytes();
-    let trie = TokTrie::from(&tokenizer.tokrx_info(), &tokens);
-    earley_test(trie);
-}
-
 fn save_tokenizer(cli: &Cli) {
     let filename = cli.save_tokenizer.as_deref().unwrap();
     let tokenizer = find_tokenizer(&cli.tokenizer).unwrap();
@@ -1171,11 +1162,9 @@ fn main() -> () {
         std::process::exit(1);
     }
 
-    let msg_cnt = Shm::anon(4096).unwrap();
-
     let limits = AiciLimits {
-        msg_cnt: Arc::new(msg_cnt),
         ipc_shm_bytes: cli.json_size * MEGABYTE,
+        timer_resolution_ns: cli.wasm_timer_resolution_us * 1000,
         max_memory_bytes: cli.wasm_max_memory * MEGABYTE,
         max_init_ms: cli.wasm_max_init_time,
         max_step_ms: cli.wasm_max_step_time,
@@ -1197,11 +1186,6 @@ fn main() -> () {
 
     if cli.save_tokenizer.is_some() {
         save_tokenizer(&cli);
-        return ();
-    }
-
-    if cli.earley_bench {
-        earley_bench(&cli);
         return ();
     }
 

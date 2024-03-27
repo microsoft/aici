@@ -1,5 +1,7 @@
 use std::{mem::size_of, slice::from_raw_parts};
 
+use anyhow::{anyhow, Result};
+
 pub(crate) type TokenId = u32;
 
 #[repr(C)]
@@ -61,4 +63,25 @@ pub fn limit_bytes(s: &[u8], max_len: usize) -> String {
     } else {
         String::from_utf8_lossy(s).to_string()
     }
+}
+
+pub fn to_hex_string(bytes: &[u8]) -> String {
+    bytes
+        .iter()
+        .map(|b| format!("{:02x}", b))
+        .collect::<Vec<_>>()
+        .join("")
+}
+
+pub fn from_hex_string(s: &str) -> Result<Vec<u8>> {
+    let mut result = Vec::with_capacity(s.len() / 2);
+    let mut iter = s.chars();
+    while let Some(c1) = iter.next() {
+        let c2 = iter
+            .next()
+            .ok_or_else(|| anyhow!("expecting even number of chars"))?;
+        let byte = u8::from_str_radix(&format!("{}{}", c1, c2), 16)?;
+        result.push(byte);
+    }
+    Ok(result)
 }

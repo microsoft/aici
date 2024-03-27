@@ -32,7 +32,7 @@ pub enum LogMode {
 
 struct LimitedWrite {
     limit: usize,
-    dst: String,
+    dst: Vec<u8>,
 }
 
 impl Write for LimitedWrite {
@@ -41,12 +41,12 @@ impl Write for LimitedWrite {
             return Err(std::fmt::Error);
         }
         if self.dst.len() + s.len() < self.limit {
-            self.dst.push_str(s);
+            self.dst.extend_from_slice(s.as_bytes());
             Ok(())
         } else {
             let remaining = self.limit - self.dst.len();
-            self.dst.push_str(&s[..remaining]);
-            self.dst.push_str(" (...)");
+            self.dst.extend_from_slice(&s.as_bytes()[..remaining]);
+            self.dst.extend_from_slice(b" (...)");
             Err(std::fmt::Error)
         }
     }
@@ -56,12 +56,15 @@ fn args_to_str(limit: usize, args: &std::fmt::Arguments) -> String {
     // let capacity = args.estimated_capacity();
     let mut output = LimitedWrite {
         limit,
-        dst: String::with_capacity(128),
+        dst: Vec::with_capacity(128),
     };
     if output.write_fmt(*args).is_err() {
         assert!(output.dst.len() > limit);
     }
-    output.dst
+    match String::from_utf8(output.dst) {
+        Ok(s) => s,
+        Err(err) => String::from_utf8_lossy(err.as_bytes()).to_string(),
+    }
 }
 
 fn truncated_format(

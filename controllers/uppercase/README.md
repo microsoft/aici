@@ -10,7 +10,7 @@ The [main.rs](src/main.rs) shows usage of the `FunctionalRecognizer` interface.
 It forces every 4th letter of the model output to be uppercase.
 
 ```
-$ ../aici.sh run --build .
+$ ../../aici.sh run --build .
 will build aici_uppercase from /workspaces/aici/uppercase/Cargo.toml
    Compiling aici_abi v0.1.0 (/workspaces/aici/aici_abi)
    Compiling aici_uppercase v0.1.0 (/workspaces/aici/uppercase)

@@ -23,7 +23,7 @@ Also, the [PyCtrl samples](../pyctrl/samples/) translate 1:1 to JsCtrl.
 To run a JsCtrl sample use:
 
 ```bash
-../aici.sh run samples/hello.js
+../../aici.sh run samples/hello.js
 ```
 
 If you write your sample in TypeScript, compile it first with `tsc -p samples`.
@@ -31,7 +31,7 @@ If you write your sample in TypeScript, compile it first with `tsc -p samples`.
 If you want to build the interpreter yourself, use:
 
 ```bash
-../aici.sh run --build . samples/hello.js
+../../aici.sh run --build . samples/hello.js
 ```
 
 You will see the console output of the program.

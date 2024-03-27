@@ -1,6 +1,6 @@
 use std::fmt::Debug;
 
-use crate::svob::SimpleVob;
+use aici_abi::{svob::SimpleVob, toktree::SpecialToken};
 
 use super::ByteSet;
 use rustc_hash::FxHashMap;
@@ -10,7 +10,75 @@ pub struct SymIdx(u32);
 
 impl Symbol {
     fn is_terminal(&self) -> bool {
+        self.is_byte_terminal() || self.is_model_variable()
+    }
+    fn is_byte_terminal(&self) -> bool {
         self.bytes.is_some()
+    }
+    fn is_model_variable(&self) -> bool {
+        self.props.model_variable.is_some()
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub enum ModelVariable {
+    SpecialToken(SpecialToken),
+    ActiveRoleEnd,
+    Other(String),
+}
+
+impl ModelVariable {
+    #[allow(dead_code)]
+    pub fn to_string(&self) -> String {
+        match self {
+            ModelVariable::ActiveRoleEnd => "active_role_end".to_string(),
+            ModelVariable::SpecialToken(SpecialToken::EndOfSentence) => "eos_token".to_string(),
+            ModelVariable::SpecialToken(SpecialToken::BeginningOfSentence) => {
+                "bos_token".to_string()
+            }
+            ModelVariable::SpecialToken(s) => format!("{:?}", s),
+            ModelVariable::Other(s) => s.clone(),
+        }
+    }
+
+    pub fn from_string(s: &str) -> Self {
+        match s {
+            "active_role_end" => ModelVariable::ActiveRoleEnd,
+            "eos_token" => ModelVariable::SpecialToken(SpecialToken::EndOfSentence),
+            "bos_token" => ModelVariable::SpecialToken(SpecialToken::BeginningOfSentence),
+            _ => ModelVariable::Other(s.to_string()),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct SymbolProps {
+    pub max_tokens: usize,
+    pub commit_point: bool,
+    pub capture_name: Option<String>,
+    pub hidden: bool,
+    pub model_variable: Option<ModelVariable>,
+}
+
+impl Default for SymbolProps {
+    fn default() -> Self {
+        SymbolProps {
+            commit_point: false,
+            hidden: false,
+            max_tokens: usize::MAX,
+            model_variable: None,
+            capture_name: None,
+        }
+    }
+}
+
+impl SymbolProps {
+    /// Special nodes can't be removed in grammar optimizations
+    pub fn is_special(&self) -> bool {
+        self.commit_point
+            || self.hidden
+            || self.max_tokens < usize::MAX
+            || self.capture_name.is_some()
     }
 }
 
@@ -19,6 +87,7 @@ struct Symbol {
     name: String,
     bytes: Option<ByteSet>,
     rules: Vec<Rule>,
+    props: SymbolProps,
 }
 
 struct Rule {
@@ -51,7 +120,8 @@ impl SymName {
 pub struct Grammar {
     symbols: Vec<Symbol>,
     symbol_by_name: FxHashMap<String, SymIdx>,
-    terminals: FxHashMap<ByteSet, SymIdx>,
+    byte_terminals: FxHashMap<ByteSet, SymIdx>,
+    model_variables: FxHashMap<String, SymIdx>,
 }
 
 impl Grammar {
@@ -59,7 +129,8 @@ impl Grammar {
         let mut r = Grammar {
             symbols: vec![],
             symbol_by_name: FxHashMap::default(),
-            terminals: FxHashMap::default(),
+            byte_terminals: FxHashMap::default(),
+            model_variables: FxHashMap::default(),
         };
         let _ = r.symbol("_start");
         r
@@ -83,17 +154,30 @@ impl Grammar {
         sym.rules.push(Rule { lhs, rhs });
     }
 
+    pub fn model_variable(&mut self, name: &str) -> SymIdx {
+        match self.model_variables.get(name) {
+            Some(sym) => *sym,
+            None => {
+                let sym = self.fresh_symbol(format!("M:{}", name).as_str());
+                self.sym_data_mut(sym).props.model_variable =
+                    Some(ModelVariable::from_string(name));
+                self.model_variables.insert(name.to_string(), sym);
+                sym
+            }
+        }
+    }
+
     pub fn terminal(&mut self, bytes: &ByteSet) -> SymIdx {
-        match self.terminals.get(bytes) {
+        match self.byte_terminals.get(bytes) {
             Some(sym) => *sym,
             None => {
                 let mut name = format!("T:{}", bytes);
                 if name.len() > 40 {
-                    name = format!("T@{}", self.terminals.len());
+                    name = format!("T@{}", self.byte_terminals.len());
                 }
                 let sym = self.fresh_symbol(&name);
                 self.sym_data_mut(sym).bytes = Some(bytes.clone());
-                self.terminals.insert(bytes.clone(), sym);
+                self.byte_terminals.insert(bytes.clone(), sym);
                 sym
             }
         }
@@ -104,6 +188,11 @@ impl Grammar {
     }
 
     fn rule_to_string(&self, rule: &Rule, dot: Option<usize>) -> String {
+        let ldata = self.sym_data(rule.lhs());
+        let dot_data = rule
+            .rhs
+            .get(dot.unwrap_or(0))
+            .map(|s| &self.sym_data(*s).props);
         rule_to_string(
             self.sym_name(rule.lhs()),
             rule.rhs
@@ -114,16 +203,20 @@ impl Grammar {
                 })
                 .collect(),
             dot,
+            &ldata.props,
+            dot_data,
         )
     }
 
     fn copy_from(&mut self, other: &Grammar, sym: SymIdx) -> SymIdx {
         let sym_data = other.sym_data(sym);
-        if sym_data.is_terminal() {
+        let r = if sym_data.is_byte_terminal() {
             self.terminal(sym_data.bytes.as_ref().unwrap())
         } else {
             self.symbol(&sym_data.name)
-        }
+        };
+        self.sym_data_mut(r).props = sym_data.props.clone();
+        r
     }
 
     fn rule_shape(&self, r: &Rule) -> Vec<Option<SymIdx>> {
@@ -131,7 +224,7 @@ impl Grammar {
         let mut had_term = false;
         for s in &r.rhs {
             let sym = self.sym_data(*s);
-            if !had_term && sym.is_terminal() {
+            if !had_term && sym.is_byte_terminal() {
                 had_term = true;
                 shape.push(None);
             } else {
@@ -155,14 +248,13 @@ impl Grammar {
                     .push(rule);
             }
             let lhs = outp.copy_from(self, sym.idx);
-            for rules in rules_by_shape.values() {
+            for (shape, rules) in &rules_by_shape {
                 let rhs = rules[0]
                     .rhs
                     .iter()
                     .enumerate()
                     .map(|(i, s)| {
-                        let sym = self.sym_data(*s);
-                        if sym.is_terminal() {
+                        if shape[i].is_none() {
                             let terminals = rules
                                 .iter()
                                 .map(|r| self.sym_data(r.rhs[i]).bytes.clone().unwrap());
@@ -190,7 +282,8 @@ impl Grammar {
 
         let mut repl = FxHashMap::default();
         for sym in &self.symbols {
-            if sym.idx == self.start() {
+            // don't inline special symbols (commit points, captures, ...) or start symbol
+            if sym.idx == self.start() || sym.props.is_special() {
                 continue;
             }
             if sym.rules.len() == 1
@@ -202,6 +295,7 @@ impl Grammar {
         }
 
         // fix-point expand the mapping
+        // TODO union-find?
         loop {
             let to_change = repl
                 .iter()
@@ -255,6 +349,20 @@ impl Grammar {
         CGrammar::from_grammar(self)
     }
 
+    pub fn apply_props(&mut self, sym: SymIdx, mut props: SymbolProps) {
+        let sym = self.sym_data_mut(sym);
+        assert!(props.model_variable.is_none());
+        props.model_variable = sym.props.model_variable.clone();
+        if props.is_special() {
+            assert!(!sym.is_terminal(), "special terminal");
+        }
+        assert!(
+            !(!props.commit_point && props.hidden),
+            "hidden on non-commit_point"
+        );
+        sym.props = props;
+    }
+
     pub fn fresh_symbol(&mut self, name0: &str) -> SymIdx {
         let mut name = name0.to_string();
         let mut idx = 2;
@@ -269,6 +377,7 @@ impl Grammar {
             bytes: None,
             idx,
             rules: vec![],
+            props: SymbolProps::default(),
         });
         self.symbol_by_name.insert(name, idx);
         idx
@@ -349,14 +458,10 @@ impl SimpleHash for CSymIdx {
 pub struct RuleIdx(u32);
 
 impl RuleIdx {
-    pub const NULL: RuleIdx = RuleIdx(0);
+    // pub const NULL: RuleIdx = RuleIdx(0);
 
     pub fn from_index(idx: u32) -> Self {
         RuleIdx(idx)
-    }
-
-    pub fn advance(&self) -> RuleIdx {
-        RuleIdx(self.0 + 1)
     }
 
     pub fn as_index(&self) -> usize {
@@ -370,24 +475,79 @@ pub struct CSymbol {
     pub name: String,
     pub is_terminal: bool,
     pub is_nullable: bool,
+    pub props: SymbolProps,
     pub rules: Vec<RuleIdx>,
+    pub sym_flags: SymFlags,
+}
+
+#[derive(Clone, Copy)]
+pub struct SymFlags(u8);
+
+impl SymFlags {
+    const COMMIT_POINT: u8 = 1 << 0;
+    const HIDDEN: u8 = 1 << 2;
+    const CAPTURE: u8 = 1 << 3;
+
+    fn from_csymbol(sym: &CSymbol) -> Self {
+        let mut flags = 0;
+        if sym.props.commit_point {
+            flags |= Self::COMMIT_POINT;
+        }
+        if sym.props.hidden {
+            flags |= Self::HIDDEN;
+        }
+        if sym.props.capture_name.is_some() {
+            flags |= Self::CAPTURE;
+        }
+        SymFlags(flags)
+    }
+
+    #[inline(always)]
+    pub fn commit_point(&self) -> bool {
+        self.0 & Self::COMMIT_POINT != 0
+    }
+
+    #[inline(always)]
+    #[allow(dead_code)]
+    pub fn hidden(&self) -> bool {
+        self.0 & Self::HIDDEN != 0
+    }
+
+    #[inline(always)]
+    pub fn capture(&self) -> bool {
+        self.0 & Self::CAPTURE != 0
+    }
 }
 
 #[derive(Clone)]
 pub struct CGrammar {
     start_symbol: CSymIdx,
     terminals: Vec<ByteSet>,
+    last_single_byte_terminal: usize,
     symbols: Vec<CSymbol>,
     rules: Vec<CSymIdx>,
     rule_idx_to_sym_idx: Vec<CSymIdx>,
+    rule_idx_to_sym_flags: Vec<SymFlags>,
     terminals_by_byte: Vec<SimpleVob>,
 }
 
 const RULE_SHIFT: usize = 2;
 
 impl CGrammar {
+    pub fn is_single_byte_terminal(&self, sym: CSymIdx) -> bool {
+        sym.0 != 0 && sym.0 <= self.last_single_byte_terminal as u16
+    }
+
+    pub fn is_terminal(&self, sym: CSymIdx) -> bool {
+        sym.0 != 0 && sym.0 <= self.terminals.len() as u16
+    }
+
     pub fn sym_idx_of(&self, rule: RuleIdx) -> CSymIdx {
         self.rule_idx_to_sym_idx[rule.as_index() >> RULE_SHIFT]
+    }
+
+    pub fn sym_flags_of(&self, rule: RuleIdx) -> SymFlags {
+        self.rule_idx_to_sym_flags[rule.as_index() >> RULE_SHIFT]
     }
 
     pub fn rule_rhs(&self, rule: RuleIdx) -> (&[CSymIdx], usize) {
@@ -408,6 +568,10 @@ impl CGrammar {
         &self.symbols[sym.0 as usize]
     }
 
+    pub fn terminal_byteset(&self, sym: CSymIdx) -> &ByteSet {
+        &self.terminals[sym.0 as usize]
+    }
+
     fn sym_data_mut(&mut self, sym: CSymIdx) -> &mut CSymbol {
         &mut self.symbols[sym.0 as usize]
     }
@@ -424,10 +588,6 @@ impl CGrammar {
         self.start_symbol
     }
 
-    pub fn is_accepting(&self, sym: CSymIdx, rule: RuleIdx) -> bool {
-        sym == self.start() && self.sym_idx_at(rule) == CSymIdx::NULL
-    }
-
     pub fn rules_of(&self, sym: CSymIdx) -> &[RuleIdx] {
         &self.sym_data(sym).rules
     }
@@ -436,21 +596,36 @@ impl CGrammar {
         let mut outp = CGrammar {
             start_symbol: CSymIdx::NULL, // replaced
             terminals: vec![ByteSet::new()],
+            last_single_byte_terminal: 0,
             symbols: vec![CSymbol {
                 idx: CSymIdx::NULL,
                 name: "NULL".to_string(),
                 is_terminal: true,
                 is_nullable: false,
                 rules: vec![],
+                props: SymbolProps::default(),
+                sym_flags: SymFlags(0),
             }],
             rules: vec![CSymIdx::NULL], // make sure RuleIdx::NULL is invalid
             rule_idx_to_sym_idx: vec![],
             terminals_by_byte: vec![],
+            rule_idx_to_sym_flags: vec![],
         };
         let mut sym_map = FxHashMap::default();
-        for (_, sidx) in &grammar.terminals {
-            let sym = grammar.sym_data(*sidx);
-            outp.terminals.push(sym.bytes.clone().unwrap());
+        let (single, multi) = grammar
+            .symbols
+            .iter()
+            .filter_map(|s| if s.is_terminal() { Some(s) } else { None })
+            .partition::<Vec<_>, _>(|s| {
+                s.is_byte_terminal() && s.bytes.as_ref().unwrap().single_byte().is_some()
+            });
+        assert!(outp.symbols.len() == 1);
+        assert!(outp.terminals.len() == 1);
+        // we account for the already existing empty terminal
+        outp.last_single_byte_terminal = single.len();
+        for sym in single.iter().chain(&multi) {
+            outp.terminals
+                .push(sym.bytes.clone().unwrap_or_else(ByteSet::new));
             let idx = outp.symbols.len() as u16;
             outp.symbols.push(CSymbol {
                 idx: CSymIdx(idx),
@@ -458,6 +633,8 @@ impl CGrammar {
                 is_terminal: true,
                 is_nullable: false,
                 rules: vec![],
+                props: sym.props.clone(),
+                sym_flags: SymFlags(0),
             });
             sym_map.insert(sym.idx, CSymIdx(idx));
         }
@@ -472,6 +649,8 @@ impl CGrammar {
                 is_terminal: false,
                 is_nullable: sym.rules.iter().any(|r| r.rhs.is_empty()),
                 rules: vec![],
+                props: sym.props.clone(),
+                sym_flags: SymFlags(0),
             });
             sym_map.insert(sym.idx, CSymIdx(idx));
         }
@@ -498,6 +677,16 @@ impl CGrammar {
                 outp.rule_idx_to_sym_idx.push(idx);
             }
         }
+
+        for sym in &mut outp.symbols {
+            sym.sym_flags = SymFlags::from_csymbol(sym);
+        }
+
+        outp.rule_idx_to_sym_flags = outp
+            .rule_idx_to_sym_idx
+            .iter()
+            .map(|s| outp.sym_data(*s).sym_flags)
+            .collect();
 
         loop {
             let mut to_null = vec![];
@@ -541,8 +730,15 @@ impl CGrammar {
     }
 
     pub fn rule_to_string(&self, rule: RuleIdx) -> String {
-        let lhs = self.sym_name(self.sym_idx_of(rule));
+        let sym = self.sym_idx_of(rule);
+        let symdata = self.sym_data(sym);
+        let lhs = self.sym_name(sym);
         let (rhs, dot) = self.rule_rhs(rule);
+        let dot_prop = if rhs.len() > 0 {
+            Some(&self.sym_data(self.sym_idx_at(rule)).props)
+        } else {
+            None
+        };
         rule_to_string(
             lhs,
             rhs.iter()
@@ -559,11 +755,19 @@ impl CGrammar {
                 })
                 .collect(),
             Some(dot),
+            &symdata.props,
+            dot_prop,
         )
     }
 }
 
-fn rule_to_string(lhs: &str, mut rhs: Vec<SymName>, dot: Option<usize>) -> String {
+fn rule_to_string(
+    lhs: &str,
+    mut rhs: Vec<SymName>,
+    dot: Option<usize>,
+    props: &SymbolProps,
+    _dot_props: Option<&SymbolProps>,
+) -> String {
     if rhs.is_empty() {
         rhs.push(SymName::Name("ϵ".to_string()));
         if dot == Some(0) {
@@ -594,5 +798,28 @@ fn rule_to_string(lhs: &str, mut rhs: Vec<SymName>, dot: Option<usize>) -> Strin
             }
         }
     }
-    format!("{:15} ⇦ {}", lhs, outp.join(" "))
+    format!(
+        "{:15} ⇦ {}{}{}{}",
+        lhs,
+        outp.join(" "),
+        if props.commit_point {
+            if props.hidden {
+                " HIDDEN-COMMIT"
+            } else {
+                " COMMIT"
+            }
+        } else {
+            ""
+        },
+        if props.capture_name.is_some() {
+            " CAPTURE"
+        } else {
+            ""
+        },
+        if props.max_tokens < 1000 {
+            format!(" max_tokens={}", props.max_tokens)
+        } else {
+            "".to_string()
+        },
+    )
 }

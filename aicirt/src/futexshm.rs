@@ -3,10 +3,7 @@ use anyhow::{anyhow, Result};
 use serde::{Deserialize, Serialize};
 use std::{
     ptr,
-    sync::{
-        atomic::{AtomicU32, Ordering},
-        Arc,
-    },
+    sync::atomic::{AtomicU32, Ordering},
     time::{Duration, Instant},
 };
 
@@ -23,53 +20,6 @@ type Futex = crate::macos::Futex;
 fn futex_at(shm: &Shm, off: usize) -> &'static Futex {
     assert!(shm.size >= off + 4);
     unsafe { AtomicU32::from_ptr(shm.ptr_at(off) as *mut u32).as_futex() }
-}
-
-pub struct WrMsgCounter {
-    futex: &'static Futex,
-    #[allow(dead_code)]
-    shm: Shm,
-}
-
-impl WrMsgCounter {
-    pub fn new(shm: Shm) -> Self {
-        Self {
-            futex: futex_at(&shm, 0),
-            shm,
-        }
-    }
-
-    pub fn get(&self) -> u32 {
-        self.futex.value.load(Ordering::Acquire)
-    }
-
-    pub fn inc(&self) {
-        let _ = self.futex.value.fetch_add(1, Ordering::AcqRel);
-        let _ = self.futex.wake(i32::MAX);
-    }
-}
-
-pub struct RdMsgCounter {
-    futex: &'static Futex,
-    #[allow(dead_code)]
-    shm: Arc<Shm>,
-}
-
-impl RdMsgCounter {
-    pub fn new(shm: Arc<Shm>) -> Self {
-        Self {
-            futex: futex_at(&shm, 0),
-            shm,
-        }
-    }
-
-    pub fn read(&self) -> u32 {
-        self.futex.value.load(Ordering::Acquire)
-    }
-
-    pub fn wait(&self, val: u32) {
-        let _ = self.futex.wait(val);
-    }
 }
 
 struct Channel {
@@ -250,15 +200,12 @@ impl ClientChannel {
 
 pub struct ServerChannel {
     channel: Channel,
-    #[allow(dead_code)]
-    msg_cnt: RdMsgCounter,
 }
 
 impl ServerChannel {
-    pub fn new(shm: Shm, cnt_shm: Arc<Shm>) -> Self {
+    pub fn new(shm: Shm) -> Self {
         Self {
             channel: Channel::new(shm, true),
-            msg_cnt: RdMsgCounter::new(cnt_shm),
         }
     }
 
@@ -296,9 +243,9 @@ where
     Cmd: for<'d> Deserialize<'d> + Serialize,
     Resp: for<'d> Deserialize<'d> + Serialize,
 {
-    pub fn new(shm: Shm, cnt_shm: Arc<Shm>) -> Self {
+    pub fn new(shm: Shm) -> Self {
         Self {
-            channel: ServerChannel::new(shm, cnt_shm),
+            channel: ServerChannel::new(shm),
             _cmd: std::marker::PhantomData,
             _resp: std::marker::PhantomData,
         }

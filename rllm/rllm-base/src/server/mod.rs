@@ -186,6 +186,10 @@ pub struct RllmCliArgs {
     #[arg(long, help_heading = "AICI settings")]
     pub shm_prefix: Option<String>,
 
+    /// Pass additional option to aicirt
+    #[arg(long, short = 'A', help_heading = "AICI settings")]
+    pub aicirt_arg: Vec<String>,
+
     /// Specify test-cases (expected/*/*.safetensors)
     #[arg(long, help_heading = "Development")]
     pub test: Vec<String>,
@@ -645,6 +649,7 @@ pub async fn server_main<ME: ModelExec>(
         bin_size: args.bin_size,
         shm_prefix,
         busy_wait_time: args.busy_wait_time,
+        add_args: args.aicirt_arg.clone(),
     };
     let stats = Arc::new(Mutex::new(ServerStats {
         num_requests: 0,

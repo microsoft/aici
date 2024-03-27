@@ -54,7 +54,8 @@
         "regex": "cpp"
     },
     "python.analysis.extraPaths": [
-        "./vllm",
+        "./py/vllm",
+        "./py/guidance",
         "./py"
     ],
     "spellright.language": [
@@ -105,6 +106,7 @@
         "NOSYS",
         "nvprof",
         "POSIX",
+        "protobuf",
         "pyaici",
         "pyctrl",
         "pylib",

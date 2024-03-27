@@ -83,7 +83,6 @@ pub fn arg_string() -> String {
     String::from_utf8_lossy(&arg_bytes()).to_string()
 }
 
-
 pub fn trie_bytes() -> Vec<u8> {
     #[cfg(target_arch = "wasm32")]
     return read_blob(unsafe { aici_host_token_trie() }, 0);
@@ -133,20 +132,16 @@ pub mod bin_string {
 pub mod hex_string {
     use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
+    use crate::bytes::{from_hex_string, to_hex_string};
+
     pub fn serialize<S: Serializer>(v: &Vec<u8>, s: S) -> Result<S::Ok, S::Error> {
-        let hexstr = String::from_iter(v.iter().map(|b| format!("{:02x}", b)));
+        let hexstr = to_hex_string(v);
         String::serialize(&hexstr, s)
     }
 
     pub fn deserialize<'de, D: Deserializer<'de>>(d: D) -> Result<Vec<u8>, D::Error> {
         let hexstr = String::deserialize(d)?;
-        let mut res = Vec::new();
-        for i in 0..(hexstr.len() / 2) {
-            let b = u8::from_str_radix(&hexstr[2 * i..2 * i + 2], 16)
-                .map_err(serde::de::Error::custom)?;
-            res.push(b);
-        }
-        Ok(res)
+        from_hex_string(&hexstr).map_err(serde::de::Error::custom)
     }
 }
 

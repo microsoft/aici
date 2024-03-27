@@ -1,6 +1,6 @@
 const fs = require('fs');
 const path = require('path');
-const exclude = ["tmp/", "node_modules/", "target/"]
+const exclude = ["tmp/", "node_modules/", "target/", "controllers/RustPython/"]
 fs.readFileSync('.gitmodules', 'utf8').replace(/^\s*path = (.*)$/gm, (_, path) => {
     exclude.push(path + "/")
 })
