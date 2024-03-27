@@ -304,10 +304,19 @@ export class MidProcessResult {
     _n_backtrack: number;
     _n_ff_tokens: Token[];
     constructor();
+    /**
+     * Stop the current sequence.
+     */
     static stop(): MidProcessResult;
-    static skipMe(): MidProcessResult;
-    static bias(bias: TokenSet): MidProcessResult;
+    /**
+     * Sample one of the tokens from the set.
+     */
+    static bias(allowedTokens: TokenSet): MidProcessResult;
+    /**
+     * Backtrack given number of tokens and then appends the given tokens to the prompt.
+     */
     static splice(backtrack: number, tokens: Token[]): MidProcessResult;
+    static skipMe(): MidProcessResult;
 }
 export class PreProcessResult {
     _n_suspended: boolean;
