@@ -28,6 +28,11 @@ SeqId = int
 
 log_level = 1
 
+def all_tokens():
+    ts = TokenSet()
+    ts.set_all(True)
+    return ts
+
 def get_tokens() -> List[Token]:
     """
     Get list of tokens in the current sequence, including the prompt.
@@ -36,72 +41,40 @@ def get_tokens() -> List[Token]:
     return AiciAsync.instance._tokens
 
 
+class Splice:
+    def __init__(
+        self, *, when_sampled: List[Token] = [], backtrack: int = 0, ff_tokens: List[Token]
+    ):
+        self.when_sampled = when_sampled
+        self.backtrack = backtrack
+        self.ff_tokens = ff_tokens
+
+
+class Branch:
+    def __init__(
+        self, *, splices: List[Splice] = [], sample_mask: Optional[TokenSet] = None
+    ) -> None:
+        self.sample_mask = sample_mask
+        self.splices = splices
+
+
 class MidProcessResult:
-    def __init__(self, *, stop=False, skip_me=False):
-        self.stop = stop
-        self.skip_me = skip_me
-        self.logit_bias: Optional[TokenSet] = None
-        self.backtrack = 0
-        self.ff_tokens: List[Token] = []
+    def __init__(self, branches: List[Branch]):
+        self.branches = branches
 
     @classmethod
     def bias(cls, bias: TokenSet):
-        res = cls()
-        res.logit_bias = bias
-        return res
+        return cls([Branch(sample_mask=bias)])
 
     @classmethod
-    def splice(cls, backtrack: int, tokens: List[Token]):
-        res = cls()
+    def splice(cls, backtrack: int, ff_tokens: List[Token]):
         assert backtrack >= 0
-        assert isinstance(tokens, list)
-        res.backtrack = backtrack
-        res.ff_tokens = tokens
-        return res
-
-
-class PreProcessResult:
-    def __init__(self, *, suspended=False):
-        self.suspended = suspended
-        self.ff_tokens: List[Token] = []
-        self.num_forks = 1
-
-    @classmethod
-    def continue_(cls):
-        return cls()
-
-    @classmethod
-    def suspend(cls):
-        return cls(suspended=True)
-
-    @classmethod
-    def fork(cls, num_forks: int):
-        res = cls()
-        res.num_forks = num_forks
-        return res
-
-    @classmethod
-    def ff_tokens_pre(cls, toks: List[Token]):
-        res = cls()
-        res.ff_tokens = toks
-        return res
-
-
-class PostProcessResult:
-    def __init__(self, *, stop_seq=False):
-        self.stop_seq = stop_seq
-
-    @classmethod
-    def continue_(cls):
-        return cls()
+        assert isinstance(ff_tokens, list)
+        return cls([Branch(splices=[Splice(backtrack=backtrack, ff_tokens=ff_tokens)])])
 
     @classmethod
     def stop(cls):
-        return cls(stop_seq=True)
-
-    @classmethod
-    def from_tokens(cls, tokens: List[int]):
-        return cls(stop_seq=(eos_token() in tokens))
+        return cls([])
 
 
 class NextToken:
@@ -111,27 +84,12 @@ class NextToken:
     """
 
     # to be overridden
-    def pre_process(self) -> PreProcessResult:
-        """
-        Override to suspend, if the model cannot continue generating tokens
-        now (for example, not all variables are available to compute bias).
-        ~1ms time limit.
-        """
-        return PreProcessResult.continue_()
-
     def mid_process(self) -> MidProcessResult:
         """
         This can be overridden to return a bias, fast-forward tokens, backtrack etc.
         ~20ms time limit.
         """
-        return MidProcessResult.bias(TokenSet())
-
-    def post_process(self, tokens: List[Token]):
-        """
-        This can be overridden to do something with generated tokens.
-        ~1ms time limit.
-        """
-        return PostProcessResult.continue_()
+        return MidProcessResult.bias(all_tokens())
 
     # internals
     def __init__(self) -> None:
@@ -141,10 +99,6 @@ class NextToken:
     def _reset(self):
         self.curr_tokens: Optional[List[Token]] = None
         self.fork_group: List[SeqId] = []
-
-    def _pre_process(self) -> PreProcessResult:
-        self._reset()
-        return self.pre_process()
 
     def _mid_process(self, fork_group: List[SeqId]) -> MidProcessResult:
         self.fork_group = fork_group
@@ -186,7 +140,7 @@ class FixedTokens(NextToken):
             assert backtrack >= 0
             if log_level >= 1:
                 print("BACKTRACK", backtrack)
-        return MidProcessResult.splice(backtrack, tokens=self.fixed_tokens)
+        return MidProcessResult.splice(backtrack, ff_tokens=self.fixed_tokens)
 
 
 class StopToken(NextToken):
@@ -298,17 +252,28 @@ class AiciCallbacks:
     def init_prompt(self, prompt: List[Token]):
         pass
 
-    def pre_process(self) -> PreProcessResult:
-        return PreProcessResult()
-
     def mid_process(self, fork_group: List[SeqId]) -> MidProcessResult:
-        return MidProcessResult.bias(TokenSet())
+        ts = TokenSet()
+        ts.set_all(True)
+        return MidProcessResult.bias(ts)
 
-    def post_process(self, backtrack: int, tokens: List[Token]):
-        return PostProcessResult.from_tokens(tokens)
+
+class GetPrompt:
+    """
+    Awaiting this returns the prompt passed by the user.
+    The code before call to this function has a long time limit (~1000ms).
+    """
+
+    def __init__(self) -> None:
+        self.prompt: Optional[list[Token]] = None
+
+    def __await__(self):
+        yield self
+        assert self.prompt is not None
+        return self.prompt
 
 
-CbType = NextToken
+CbType = Union[GetPrompt, NextToken]
 
 
 class AiciAsync(AiciCallbacks):
@@ -355,8 +320,12 @@ class AiciAsync(AiciCallbacks):
         assert isinstance(r, PreProcessResult)
         return r
 
-    def mid_process(self, fork_group: List[SeqId]) -> MidProcessResult:
+    def mid_process(self, backtrack: int, tokens: List[Token], fork_group: List[SeqId]) -> MidProcessResult:
         assert isinstance(self._cb, NextToken)
+
+        if backtrack > 0:
+            del self._tokens[-backtrack:]
+        self._tokens.extend(tokens)
 
         r = self._cb._mid_process(fork_group)
         assert isinstance(r, MidProcessResult)

@@ -2,8 +2,8 @@ use aici_abi::{
     aici_stop,
     svob::SimpleVob,
     toktree::{Recognizer, SpecialToken, TokTrie},
-    AiciCtrl, InitPromptArg, InitPromptResult, MidProcessArg, MidProcessResult, TokenId,
-    VariableStorage,
+    AiciCtrl, Branch, InitPromptArg, InitPromptResult, MidProcessArg, MidProcessResult, Splice,
+    TokenId, VariableStorage,
 };
 use anyhow::Result;
 use lazy_static::lazy_static;
@@ -88,7 +88,7 @@ mod _aici {
 
     #[pyfunction]
     fn detokenize(tokens: PyObjectRef, vm: &VirtualMachine) -> Vec<u8> {
-        let tokens = vm.to_list(tokens, |v| vm.to_i32(v) as u32);
+        let tokens = vm.to_u32_list(tokens);
         let trie = &mut GLOBAL_STATE.lock().unwrap().trie;
         let bytes = tokens
             .iter()
@@ -441,8 +441,12 @@ trait VmExt {
         self.to_bool_strict(self.attr(obj, name))
     }
 
-    fn int_attr(&self, obj: &PyObjectRef, name: &'static str) -> i32 {
+    fn i32_attr(&self, obj: &PyObjectRef, name: &'static str) -> i32 {
         self.to_i32(self.attr(obj, name))
+    }
+
+    fn u32_attr(&self, obj: &PyObjectRef, name: &'static str) -> u32 {
+        self.to_u32(self.attr(obj, name))
     }
 
     fn to_bool_strict(&self, obj: PyObjectRef) -> bool {
@@ -465,10 +469,23 @@ trait VmExt {
             .expect("expecting i32")
     }
 
+    fn to_u32(&self, obj: PyObjectRef) -> u32 {
+        let vm = self.get_vm();
+        let v = obj.to_number().int(vm).expect("expecting int");
+        self.catch_exn(v)
+            .as_bigint()
+            .to_u32()
+            .expect("expecting u32 (non-negative)")
+    }
+
     fn to_f64(&self, obj: PyObjectRef) -> f64 {
         let vm = self.get_vm();
         let v = obj.to_number().float(vm).expect("expecting float");
         self.catch_exn(v).to_f64()
+    }
+
+    fn to_u32_list(&self, obj: PyObjectRef) -> Vec<u32> {
+        self.to_list(obj, |v| self.to_u32(v))
     }
 
     fn to_list<F, R>(&self, obj: PyObjectRef, mut f: F) -> Vec<R>
@@ -514,26 +531,43 @@ impl AiciCtrl for Runner {
         let obj = get_cb_obj();
         self.interpreter.enter(|vm| {
             let fork_group = vm.new_int_list(&arg.fork_group.iter().map(|v| v.0.clone()).collect());
-            let r =
-                vm.catch_exn(vm.call_method(obj.deref(), "mid_process", vec![fork_group.into()]));
-            let stop = vm.bool_attr(&r, "stop");
-            if stop {
-                MidProcessResult::stop()
-            } else {
-                let backtrack = vm.int_attr(&r, "backtrack") as u32;
-                let ff_tokens = vm.to_list(vm.attr(&r, "ff_tokens"), |v| vm.to_i32(v) as u32);
+            let tokens = vm.new_int_list(&arg.tokens);
+            let bt = vm.ctx.new_int(arg.backtrack as i32);
+            let r = vm.catch_exn(vm.call_method(
+                obj.deref(),
+                "mid_process",
+                vec![bt.into(), tokens.into(), fork_group.into()],
+            ));
 
-                if backtrack > 0 || ff_tokens.len() > 0 {
-                    MidProcessResult::splice(backtrack, ff_tokens)
+            let branches = vm.to_list(vm.attr(&r, "branches"), |b| {
+                let logit_bias = vm.attr(&r, "sample_mask");
+                let sample_mask = if vm.is_none(&logit_bias) {
+                    None
                 } else {
-                    let logit_bias = vm.attr(&r, "logit_bias");
                     let v = logit_bias
                         .payload_if_exact::<_aici::TokenSet>(vm)
-                        .expect("expecting TokenSet as logit_bias");
+                        .expect("expecting TokenSet as sample_mask");
                     let bias = v.0.lock().unwrap();
-                    MidProcessResult::sample(bias.clone())
+                    Some(bias.clone())
+                };
+                let splices = vm.to_list(vm.attr(&b, "splices"), |s| {
+                    let backtrack = vm.u32_attr(&s, "backtrack");
+                    let ff_tokens = vm.to_u32_list(vm.attr(&s, "ff_tokens"));
+                    let when_sampled = vm.to_u32_list(vm.attr(&s, "when_sampled"));
+                    Splice {
+                        when_sampled,
+                        backtrack,
+                        ff_tokens,
+                    }
+                });
+
+                Branch {
+                    sample_mask,
+                    splices,
                 }
-            }
+            });
+
+            MidProcessResult { branches }
         })
     }
 }

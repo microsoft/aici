@@ -7,7 +7,8 @@ function gen() {
     aici = aici.replace(/<reference path=".*/g, "")
     aici = aici.replace(/ declare /g, " ")
     aici = aici.replace(/^declare /mg, "")
-    aici = "declare module 'aici' {\n" + aici + "\n}\n"
+    aici = "// Generated file, do not edit.\n" +
+           "declare module 'aici' {\n" + aici + "\n}\n"
     aici = native + aici
     fs.writeFileSync("./samples/aici-types.d.ts", aici)
 

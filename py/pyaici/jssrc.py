@@ -1,3 +1,5 @@
+# Generated file, do not edit.
+
 tsconfig_json = r"""{
   "compilerOptions": {
     /* Visit https://aka.ms/tsconfig to read more about this file */
