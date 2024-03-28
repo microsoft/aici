@@ -1,6 +1,7 @@
 import {
   Label,
   checkVars,
+  getPrompt,
   test,
   waitVars,
   getVar,
@@ -16,11 +17,11 @@ async function test_sample() {
   // initialization code
   console.log("I'm going in the logs!");
   // ... more initialization code, it has long time limit
+  const _prompt = await getPrompt();
+  // here we're out of initialization code - the time limits are tight
 
   // This appends the exact string to the output; similar to adding it to prompt
   await $`The word 'hello' in French is`;
-
-  // here we're out of initialization code - the time limits are tight
 
   // generate text (tokens) matching the regex
   const french = await gen({ regex: / "[^"]+"/, maxTokens: 5 });
@@ -81,6 +82,8 @@ async function test_main() {
   setVar("test", "hello");
   const v = getVar("test");
   console.log(typeof v);
+  const prompt = await getPrompt();
+  console.log(prompt);
   await $`The word 'hello' in French is`;
   await gen({ storeVar: "french", maxTokens: 5 });
   await $`\nIn German it translates to`;

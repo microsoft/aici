@@ -28,10 +28,12 @@ SeqId = int
 
 log_level = 1
 
+
 def all_tokens():
     ts = TokenSet()
     ts.set_all(True)
     return ts
+
 
 def get_tokens() -> List[Token]:
     """
@@ -43,7 +45,11 @@ def get_tokens() -> List[Token]:
 
 class Splice:
     def __init__(
-        self, *, when_sampled: List[Token] = [], backtrack: int = 0, ff_tokens: List[Token]
+        self,
+        *,
+        when_sampled: List[Token] = [],
+        backtrack: int = 0,
+        ff_tokens: List[Token],
     ):
         self.when_sampled = when_sampled
         self.backtrack = backtrack
@@ -56,6 +62,14 @@ class Branch:
     ) -> None:
         self.sample_mask = sample_mask
         self.splices = splices
+
+
+def get_prompt_len() -> int:
+    """
+    Get the length of the prompt in the current sequence.
+    """
+    assert AiciAsync.instance
+    return AiciAsync.instance._prompt_len
 
 
 class MidProcessResult:
@@ -283,13 +297,18 @@ class AiciAsync(AiciCallbacks):
         assert AiciAsync.instance is None
         AiciAsync.instance = self
 
+        self._skip_prompt = False
+        self._prompt_len = 0
         self._coro = f
         self._tokens: List[Token] = []
         self._pending_cb: Optional[CbType] = None
         self._fork_group: List[SeqId] = []
         _aici.register(self)
         self.step()
-        assert isinstance(self._cb, NextToken)
+        if isinstance(self._cb, NextToken):
+            self._skip_prompt = True
+        else:
+            assert isinstance(self._cb, GetPrompt)
 
     def step(self):
         if self._pending_cb is not None:
@@ -309,7 +328,14 @@ class AiciAsync(AiciCallbacks):
 
     def init_prompt(self, prompt: List[Token]):
         assert not self._tokens
+        self._prompt_len = len(prompt)
         self._tokens.extend(prompt)
+        if self._skip_prompt:
+            self._skip_prompt = False
+        else:
+            assert isinstance(self._cb, GetPrompt)
+            self._cb.prompt = prompt
+            self.step()
         assert isinstance(self._cb, NextToken)
 
     def pre_process(self) -> PreProcessResult:
@@ -320,7 +346,9 @@ class AiciAsync(AiciCallbacks):
         assert isinstance(r, PreProcessResult)
         return r
 
-    def mid_process(self, backtrack: int, tokens: List[Token], fork_group: List[SeqId]) -> MidProcessResult:
+    def mid_process(
+        self, backtrack: int, tokens: List[Token], fork_group: List[SeqId]
+    ) -> MidProcessResult:
         assert isinstance(self._cb, NextToken)
 
         if backtrack > 0:
@@ -364,6 +392,8 @@ class AiciAsync(AiciCallbacks):
 def start(f: Coroutine[CbType, None, None]):
     """
     Starts the AICI loop.
+    The coroutine may first `await getPrompt()` and then can `await gen_*()` or
+    `await FixedTokens()` multiple times.
     """
     return AiciAsync(f)
 

@@ -49,6 +49,8 @@ async def test_main():
     aici.set_var("test", "hello")
     v = aici.get_var("test")
     print(type(v))
+    prompt = await aici.GetPrompt()
+    print(prompt)
     await aici.FixedTokens("The word 'hello' in French is")
     # try unconstrained output
     await aici.gen_tokens(store_var="french", max_tokens=5)
@@ -138,11 +140,11 @@ async def test_sample():
     # initialization code
     print("I'm going in the logs!")
     # ... more initialization code, it has long time limit
+    prompt = await aici.GetPrompt()
+    # here we're out of initialization code - the time limits are tight
 
     # This appends the exact string to the output; similar to adding it to prompt
     await aici.FixedTokens("The word 'hello' in French is")
-
-    # here we're out of initialization code - the time limits are tight
 
     # generate text (tokens) matching the regex
     french = await aici.gen_text(regex=r' "[^"]+"', max_tokens=5)
