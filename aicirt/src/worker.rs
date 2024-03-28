@@ -3,8 +3,7 @@ use crate::{
     hostimpl::AiciLimits,
     moduleinstance::{ModuleInstance, WasmContext},
     setup_bg_worker_pool,
-    shm::Shm,
-    with_timer, InstantiateReq, TimerRef, UserError,
+    shm::Shm, InstantiateReq, UserError,
 };
 use aici_abi::{MidProcessArg, ProcessResultOffset, StorageCmd, StorageOp, StorageResp, TokenId};
 use aicirt::{
@@ -416,7 +415,6 @@ struct SeqCtx {
     inst_id: ModuleInstId,
     modinst: Option<ModuleInstance>,
     shm: Rc<Shm>,
-    pre_timer: TimerRef,
 }
 
 pub struct SeqWorkerHandle {
@@ -581,7 +579,7 @@ fn forker_dispatcher(
                 server.send_resp(ForkerResp(handle));
             }
             ForkResult::Child { server } => {
-                let pre_timer = wasm_ctx.timers.new_timer("pre_outer");
+                let _pre_timer = wasm_ctx.timers.new_timer("pre_outer");
                 let mut w_ctx = SeqCtx {
                     id: cmd_id,
                     server,
@@ -590,7 +588,6 @@ fn forker_dispatcher(
                     query: None,
                     inst_id: 424242,
                     modinst: None,
-                    pre_timer,
                 };
 
                 if for_compile {

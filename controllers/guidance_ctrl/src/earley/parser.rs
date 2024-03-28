@@ -154,6 +154,7 @@ struct Scratch {
 
 struct RowInfo {
     byte: u8,
+    #[allow(dead_code)]
     commit_item: Item,
 }
 

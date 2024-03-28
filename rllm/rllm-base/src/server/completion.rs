@@ -76,7 +76,7 @@ async fn run_controller(
     let token_ids = check_length(&request, &data);
     bail_if_error!(token_ids);
 
-    let (max_tokens, mut token_ids) = token_ids.unwrap();
+    let (max_tokens, token_ids) = token_ids.unwrap();
 
     let request_id = format!("run-{}", Uuid::new_v4());
 

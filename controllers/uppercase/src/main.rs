@@ -1,5 +1,4 @@
 use aici_abi::{
-    arg_string,
     recognizer::{FunctionalRecognizer, StackRecognizer},
     tokenize,
     toktree::{SpecialToken, TokTrie},
@@ -38,7 +37,6 @@ pub struct Runner {
     toktrie: TokTrie,
     ff_tokens: Vec<u32>,
     tokens: Vec<u32>,
-    prompt: String,
     recognizer: StackRecognizer<usize, QuadUpper>,
 }
 
@@ -46,7 +44,6 @@ impl Runner {
     pub fn new() -> Self {
         Runner {
             toktrie: TokTrie::from_host(),
-            prompt: arg_string() + "\n",
             tokens: Vec::new(),
             ff_tokens: Vec::new(),
             recognizer: StackRecognizer::from(QuadUpper {}),

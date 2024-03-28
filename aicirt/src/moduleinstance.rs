@@ -7,7 +7,7 @@ use crate::{
 };
 use aici_abi::{toktree::TokTrie, InitPromptArg, ProcessResultOffset, TokenId};
 use aicirt::{api::SequenceResult, bail_user, bintokens::ByteTokenizer, user_error};
-use anyhow::{anyhow, bail, ensure, Result};
+use anyhow::{anyhow, ensure, Result};
 use serde::Deserialize;
 use std::{path::PathBuf, sync::Arc, time::Instant};
 use wasmtime;

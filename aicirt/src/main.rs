@@ -8,8 +8,7 @@ use crate::{
     moduleinstance::*,
     msgchannel::MessageChannel,
     shm::Shm,
-    worker::{RtMidProcessArg, WorkerForker},
-    TimerRef, TimerSet,
+    worker::{RtMidProcessArg, WorkerForker}, TimerSet,
 };
 use aici_abi::{bytes::limit_str, toktree::TokTrie, MidProcessArg, SeqId};
 use aicirt::{bintokens::find_tokenizer, futexshm::ServerChannel, *};
