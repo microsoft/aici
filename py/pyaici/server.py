@@ -20,6 +20,7 @@ from pyaici.server_native import (
     append_var,
     eos_token,
     token_repr,
+    tokens_repr,
 )
 import pyaici.server_native as _aici
 
@@ -136,11 +137,21 @@ class NextToken:
     def mid_process(self) -> MidProcessResult:
         """
         This can be overridden to return a bias, fast-forward tokens, backtrack etc.
-        ~20ms time limit.
         """
         return MidProcessResult.bias(all_tokens())
 
-    def expect_splice(self) -> bool:
+    def post_process(
+        self, backtrack: int, tokens: List[int]
+    ) -> Optional[MidProcessResult]:
+        """
+        This can be overridden to do some processing after the token is generated.
+        """
+        pass
+
+    def is_fixed(self) -> bool:
+        """
+        If true, the post_process() has to be empty and always self.mid_process().is_splice()
+        """
         return False
 
     # internals
@@ -149,26 +160,37 @@ class NextToken:
         self._reset()
 
     def _reset(self):
-        self.curr_tokens: Optional[List[Token]] = None
-        self.curr_backtrack: int = 0
         self.fork_group: List[SeqId] = []
+        self.curr_tokens: Optional[List[Token]] = None
+        self.value = None
 
-    def _mid_process(
-        self, backtrack: int, tokens: List[int], fork_group: List[SeqId]
-    ) -> MidProcessResult:
-        self.curr_backtrack = backtrack
-        self.curr_tokens = tokens
+    def _mid_process(self, fork_group: List[SeqId]) -> MidProcessResult:
+        if log_level >= 4:
+            print(f"MID-PROCESS: {self}")
+        self._reset()
         self.fork_group = fork_group
-        spl = self.expect_splice()
+        spl = self.is_fixed()
         r = self.mid_process()
         if spl:
             assert r.is_splice()
         return r
 
+    def _post_process(self, backtrack: int, tokens: List[Token]):
+        if log_level >= 3:
+            print(f"POST-PROCESS: bt={backtrack} {tokens_repr(tokens)} {self}")
+        self.curr_tokens = tokens
+        self.value = tokens
+        self.finished = eos_token() in tokens
+        self.post_process(backtrack, tokens)
+
     def __await__(self):
+        if log_level >= 4:
+            print(f"AWAIT-IN: {self}")
         yield self
+        if log_level >= 4:
+            print(f"AWAIT-OUT: {self}")
         assert self.curr_tokens is not None
-        return self.curr_tokens
+        return self.value
 
 
 class FixedTokens(NextToken):
@@ -180,10 +202,10 @@ class FixedTokens(NextToken):
         super().__init__()
         self.fixed_tokens: List[Token] = tokenize(text)
         if log_level >= 1:
-            print("FIXED", repr(detokenize(self.fixed_tokens).decode(errors="replace")))
+            print(f"FIXED {tokens_repr(self.fixed_tokens)}")
         self.following = following
 
-    def expect_splice(self) -> bool:
+    def is_fixed(self) -> bool:
         return True
 
     def mid_process(self) -> MidProcessResult:
@@ -206,6 +228,9 @@ class StopToken(NextToken):
     def mid_process(self) -> MidProcessResult:
         return MidProcessResult.stop()
 
+    def post_process(self, backtrack: int, tokens: List[int]):
+        self.finished = False  # we're never finished, just keep yelling STOP!
+
 
 class ConstrainedToken(NextToken):
     def __init__(self, mk_constraint: Callable[[], Constraint]):
@@ -222,12 +247,6 @@ class ConstrainedToken(NextToken):
         # TODO remove this
         if self._constraint is None:
             self._constraint = self.mk_constraint()
-        assert self.curr_tokens is not None
-        for t in self.curr_tokens:
-            self._constraint.append_token(t)
-        if self._constraint.eos_forced():
-            self.finished = True
-            return MidProcessResult.skip()
         bias = TokenSet()
         self._constraint.allow_tokens(bias)
         if log_level >= 2:
@@ -237,6 +256,14 @@ class ConstrainedToken(NextToken):
                 print("Constraint doesn't allow any tokens; adding EOS")
             bias[eos_token()] = True
         return MidProcessResult.bias(bias)
+
+    def post_process(self, backtrack: int, tokens: List[int]):
+        assert self._constraint
+        assert backtrack == 0
+        for t in tokens:
+            self._constraint.append_token(t)
+        if self._constraint.eos_forced():
+            self.finished = True
 
 
 class _Fork(NextToken):
@@ -257,6 +284,7 @@ async def fork(forks: Union[int, List[Branch]]):
         forks = [Branch.noop() for _ in range(forks)]
     f = _Fork(forks)
     await f
+    print("FORK", f.fork_group, _aici.self_seq_id())
     return f.fork_group.index(_aici.self_seq_id())
 
 
@@ -334,6 +362,7 @@ class AiciAsync(AiciCallbacks):
         _aici.register(self)
         self._cb = None  # type: ignore
         self._prompt_cb: Optional[GetPrompt] = None
+        self._went_ahead = False
         cb = self._step_core()
         if isinstance(cb, NextToken):
             self._cb: NextToken = cb
@@ -347,6 +376,8 @@ class AiciAsync(AiciCallbacks):
         self._cb = cb
 
     def _step_core(self) -> CbType:
+        if log_level >= 4:
+            print("STEP")
         try:
             return self._coro.send(None)
         except StopIteration:
@@ -366,38 +397,51 @@ class AiciAsync(AiciCallbacks):
             self._prompt_cb.prompt = prompt
             self._prompt_cb = None
             self.step()
+        self._went_ahead = True
         assert isinstance(self._cb, NextToken)
+
+    def _apply_tokens(self, backtrack: int, tokens: List[Token]):
+        if backtrack > 0:
+            del self._tokens[-backtrack:]
+        self._tokens.extend(tokens)
+        self._cb._post_process(backtrack, tokens)
+        self.step()
 
     def mid_process(
         self, backtrack: int, tokens: List[Token], fork_group: List[SeqId]
     ) -> MidProcessResult:
-        r = self.mid_process_inner(backtrack, tokens, fork_group)
-        while r.is_splice() and self._cb.expect_splice():
-            r2 = self.mid_process_inner(0, [], [])
-            assert r2.is_splice()
-            r.branches[0].splices[0].add_splice(r2.branches[0].splices[0])
-        return r
-
-    def mid_process_inner(
-        self, backtrack: int, tokens: List[Token], fork_group: List[SeqId]
-    ) -> MidProcessResult:
         assert isinstance(self._cb, NextToken)
 
-        if backtrack > 0:
-            del self._tokens[-backtrack:]
-        self._tokens.extend(tokens)
+        print("MID", fork_group)
 
-        while True:
-            r: MidProcessResult = self._cb._mid_process(backtrack, tokens, fork_group)
-            assert isinstance(r, MidProcessResult)
-            self.step()
-            if not r.skip_me:
+        if self._went_ahead:
+            self._went_ahead = False
+        else:
+            self._apply_tokens(backtrack, tokens)
+
+        r = self._mid_process_with_skip(fork_group)
+        r0 = r
+        while r0.is_splice():
+            spl = r0.branches[0].splices[0]
+            self._apply_tokens(spl.backtrack, spl.ff_tokens)
+            self._went_ahead = True
+            if not self._cb.is_fixed():
                 break
-            backtrack = 0
-            tokens = []
-            fork_group = []
+            r0 = self._mid_process_with_skip([])
+            assert r0.is_splice()
+            r.branches[0].splices[0].add_splice(r0.branches[0].splices[0])
 
         return r
+
+    def _mid_process_with_skip(self, fork_group: List[SeqId]) -> MidProcessResult:
+        while True:
+            r: MidProcessResult = self._cb._mid_process(fork_group)
+            assert isinstance(r, MidProcessResult)
+            if not r.skip_me:
+                return r
+            self._cb._post_process(0, [])
+            self.step()
+            fork_group = []
 
 
 def start(f: Coroutine[CbType, None, None]):
@@ -507,7 +551,7 @@ async def gen_tokens(
             res += tokens
 
             if log_level >= 2:
-                print("GEN-STEP:", ", ".join([token_repr(t) for t in tokens]))
+                print("GEN-STEP:", tokens_repr(tokens))
 
             # this may get slow when the output is veeeeeery long
             # not a problem for a few k tokens
@@ -521,7 +565,7 @@ async def gen_tokens(
     if store_var is not None:
         set_var(store_var, detokenize(res))
     if log_level >= 1:
-        print("GEN", repr(detokenize(res).decode(errors="replace")))
+        print("GEN:", tokens_repr(res))
     return res
 
 
