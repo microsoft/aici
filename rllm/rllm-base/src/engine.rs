@@ -558,15 +558,6 @@ impl<ME: ModelExec> RllmEngine<ME> {
                             );
                             candidates[0].clone()
                         } else {
-                            let next_token = if seq.has_aici && next_token == self.eos_token_id {
-                                // replace with space, so the model doesn't get confused
-                                // note that aici will still get the real EOS token
-                                info = " -> space";
-                                self.space_token_id
-                            } else {
-                                next_token
-                            };
-
                             Splice {
                                 backtrack: 0,
                                 ff_tokens: vec![next_token],

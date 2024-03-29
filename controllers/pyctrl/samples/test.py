@@ -162,20 +162,6 @@ async def test_sample():
     await aici.gen_text(options=[" pounds", " euros", " dollars"])
 
 
-class SampleEos(aici.NextToken):
-    def mid_process(self) -> aici.MidProcessResult:
-        ts = aici.TokenSet()
-        ts[aici.eos_token()] = True
-        return aici.MidProcessResult.bias(ts)
-
-
-async def test_eos():
-    await aici.FixedTokens("The word 'hello' in French is")
-    await SampleEos()
-    await aici.gen_tokens(regex=r' "[^"]+"', max_tokens=6, store_var="french")
-    aici.check_vars({"french": ' "bonjour"'})
-
-
 async def test_joke():
     await aici.FixedTokens("Do you want a joke or a poem? A")
     answer = await aici.gen_text(options=[" joke", " poem"])
