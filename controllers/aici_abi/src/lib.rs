@@ -191,15 +191,17 @@ pub trait AiciCtrl {
         let arg: MidProcessArg = serde_json::from_slice(&host::process_arg_bytes())
             .expect("aici_mid_process: failed to deserialize MidProcessArg");
         let res = self.mid_process(arg);
-        if res.branches.len() > 1 {
-            panic!("aici_mid_process: multiple branches not yet supported");
-        }
+        let mut used_logits = false;
         let res = ProcessResultOffset {
             branches: res
                 .branches
                 .into_iter()
                 .map(|b| {
                     b.map_mask(|vob| {
+                        if used_logits {
+                            panic!("aici_mid_process: multiple branches with sampling not yet supported");
+                        }
+                        used_logits = true;
                         host::return_logit_bias(&vob);
                         0
                     })

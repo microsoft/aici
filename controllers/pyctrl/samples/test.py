@@ -3,6 +3,8 @@ import re
 
 # asserts for microsoft/Orca-2-13b
 
+aici.log_level = 1
+
 
 async def test_backtrack_one():
     await aici.FixedTokens("3+")
@@ -187,4 +189,4 @@ async def test_joke():
     await aici.gen_text(max_tokens=15)
 
 
-aici.test(test_joke())
+aici.test(test_fork())

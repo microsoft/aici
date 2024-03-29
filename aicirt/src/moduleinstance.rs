@@ -257,7 +257,6 @@ impl ModuleInstance {
         self.store.data_mut().set_mid_process_data(op, shm);
         self.call_func::<WasmAici, ()>("aici_mid_process", self.handle)?;
         let res: ProcessResultOffset = self.proc_result()?;
-        assert!(res.branches.len() <= 1);
         let res = ProcessResultOffset {
             branches: res.branches.iter().map(|b| b.map_mask(|_| off)).collect(),
         };
