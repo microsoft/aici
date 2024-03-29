@@ -32,6 +32,12 @@ def token_repr(token: int) -> str:
     """
     ...
 
+def tokens_repr(tokens: List[int]) -> str:
+    """
+    Return debug string representation of a list of token indices
+    """
+    ...
+
 
 def self_seq_id() -> int:
     """

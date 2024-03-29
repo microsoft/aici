@@ -98,6 +98,13 @@ mod _aici {
     }
 
     #[pyfunction]
+    fn tokens_repr(tokens: PyObjectRef, vm: &VirtualMachine) -> String {
+        let tokens = vm.to_u32_list(tokens);
+        let trie = &mut GLOBAL_STATE.lock().unwrap().trie;
+        trie.tokens_dbg(&tokens)
+    }
+
+    #[pyfunction]
     fn token_repr(token: u32) -> String {
         let trie = &mut GLOBAL_STATE.lock().unwrap().trie;
         trie.token_dbg(token)
@@ -540,7 +547,7 @@ impl AiciCtrl for Runner {
             ));
 
             let branches = vm.to_list(vm.attr(&r, "branches"), |b| {
-                let logit_bias = vm.attr(&r, "sample_mask");
+                let logit_bias = vm.attr(&b, "sample_mask");
                 let sample_mask = if vm.is_none(&logit_bias) {
                     None
                 } else {
