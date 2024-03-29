@@ -297,6 +297,7 @@ declare module "_aici" {
    */
   function substrConstraint(template: string, stop_at: string): Constraint;
 }
+// Generated file, do not edit.
 declare module 'aici' {
 /// 
 import { TokenSet, tokenize, detokenize, regexConstraint, cfgConstraint, substrConstraint, Constraint, getVar, setVar, appendVar, eosToken, panic } from "_aici";
@@ -318,6 +319,10 @@ export function assert(cond: boolean, msg?: string): asserts cond;
  * Get list of tokens in the current sequence, including the prompt.
  */
 export function getTokens(): Token[];
+/**
+ * Get the length of the prompt in the current sequence.
+ */
+export function getPromptLen(): number;
 export class MidProcessResult {
     _n_skip_me: boolean;
     _n_stop: boolean;
@@ -451,13 +456,26 @@ export interface AiciCallbacks {
     mid_process(fork_group: SeqId[]): MidProcessResult;
     post_process(backtrack: number, tokens: Token[]): PostProcessResult;
 }
+/**
+ * Awaiting this returns the prompt passed by the user.
+ * The code before call to this function has a long time limit (~1000ms).
+ * Afterwards, the time limit is ~1ms before awaiting NextToken().
+ */
+export function getPrompt(): Promise<Token[]>;
+class GetPrompt {
+    _resolve?: (value: Token[]) => void;
+    run(): Promise<Token[]>;
+}
 export type CbType = NextToken;
 export class AiciAsync implements AiciCallbacks {
     static instance: AiciAsync;
     _tokens: Token[];
+    _prompt_len: number;
     private _pendingCb;
     private _token;
+    private _getPrompt;
     private midProcessReEntry;
+    _setGetPrompt(g: GetPrompt): void;
     _nextToken(t: NextToken): void;
     constructor(f: () => Promise<void>);
     step(tokens: Token[]): void;
