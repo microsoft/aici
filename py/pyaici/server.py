@@ -160,15 +160,13 @@ class NextToken:
         self._reset()
 
     def _reset(self):
-        self.fork_group: List[SeqId] = []
         self.curr_tokens: Optional[List[Token]] = None
         self.value = None
 
-    def _mid_process(self, fork_group: List[SeqId]) -> MidProcessResult:
+    def _mid_process(self) -> MidProcessResult:
         if log_level >= 4:
             print(f"MID-PROCESS: {self}")
         self._reset()
-        self.fork_group = fork_group
         spl = self.is_fixed()
         r = self.mid_process()
         if spl:
@@ -284,8 +282,9 @@ async def fork(forks: Union[int, List[Branch]]):
         forks = [Branch.noop() for _ in range(forks)]
     f = _Fork(forks)
     await f
-    print("FORK", f.fork_group, _aici.self_seq_id())
-    return f.fork_group.index(_aici.self_seq_id())
+    assert AiciAsync.instance
+    fg = AiciAsync.instance.fork_group
+    return fg.index(_aici.self_seq_id())
 
 
 class _WaitVars(NextToken):
@@ -324,7 +323,7 @@ class AiciCallbacks:
     def init_prompt(self, prompt: List[Token]):
         pass
 
-    def mid_process(self, fork_group: List[SeqId]) -> MidProcessResult:
+    def mid_process(self) -> MidProcessResult:
         ts = TokenSet()
         ts.set_all(True)
         return MidProcessResult.bias(ts)
@@ -358,17 +357,17 @@ class AiciAsync(AiciCallbacks):
         self._prompt_len = 0
         self._coro = f
         self._tokens: List[Token] = []
-        self._fork_group: List[SeqId] = []
         _aici.register(self)
         self._cb = None  # type: ignore
         self._prompt_cb: Optional[GetPrompt] = None
         self._went_ahead = False
+        self.fork_group: List[SeqId] = []
         cb = self._step_core()
         if isinstance(cb, NextToken):
             self._cb: NextToken = cb
         else:
-            assert isinstance(self._cb, GetPrompt)
-            self._prompt_cb = self._cb
+            assert isinstance(cb, GetPrompt)
+            self._prompt_cb = cb
 
     def step(self):
         cb = self._step_core()
@@ -412,14 +411,14 @@ class AiciAsync(AiciCallbacks):
     ) -> MidProcessResult:
         assert isinstance(self._cb, NextToken)
 
-        print("MID", fork_group)
+        self.fork_group = fork_group
 
         if self._went_ahead:
             self._went_ahead = False
         else:
             self._apply_tokens(backtrack, tokens)
 
-        r = self._mid_process_with_skip(fork_group)
+        r = self._mid_process_with_skip()
         r0 = r
         while r0.is_splice():
             spl = r0.branches[0].splices[0]
@@ -427,21 +426,20 @@ class AiciAsync(AiciCallbacks):
             self._went_ahead = True
             if not self._cb.is_fixed():
                 break
-            r0 = self._mid_process_with_skip([])
+            r0 = self._mid_process_with_skip()
             assert r0.is_splice()
             r.branches[0].splices[0].add_splice(r0.branches[0].splices[0])
 
         return r
 
-    def _mid_process_with_skip(self, fork_group: List[SeqId]) -> MidProcessResult:
+    def _mid_process_with_skip(self) -> MidProcessResult:
         while True:
-            r: MidProcessResult = self._cb._mid_process(fork_group)
+            r: MidProcessResult = self._cb._mid_process()
             assert isinstance(r, MidProcessResult)
             if not r.skip_me:
                 return r
             self._cb._post_process(0, [])
             self.step()
-            fork_group = []
 
 
 def start(f: Coroutine[CbType, None, None]):

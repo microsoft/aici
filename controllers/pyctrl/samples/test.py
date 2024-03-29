@@ -189,4 +189,4 @@ async def test_joke():
     await aici.gen_text(max_tokens=15)
 
 
-aici.test(test_fork())
+aici.test(test_main())
