@@ -1,0 +1,8 @@
+[package]
+name = "aici_wasm_guest"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+wit-bindgen = "0.30.0"
+serde = { version = "1.0.192", features = ["derive"] }

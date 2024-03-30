@@ -1,8 +1,8 @@
 use aici_abi::{
-    aici_stop, host_trie,
+    aici_stop, export, tokenizer,
     toktrie::{Recognizer, SpecialToken, TokTrie},
-    AiciCtrl, Branch, InitPromptArg, InitPromptResult, MidProcessArg, MidProcessResult, SimpleVob,
-    Splice, TokenId, VariableStorage,
+    AiciCtrl, Branch, ExportedProgram, Guest, InitPromptArg, InitPromptResult, MidProcessArg,
+    MidProcessResult, Program, SimpleVob, Splice, TokenId,
 };
 use anyhow::Result;
 use lazy_static::lazy_static;
@@ -20,7 +20,6 @@ use std::{
 struct ModuleState {
     cb_obj: Option<PyObjectRef>,
     trie: TokTrie,
-    vars: VariableStorage,
 }
 
 unsafe impl Send for ModuleState {}
@@ -28,8 +27,7 @@ unsafe impl Send for ModuleState {}
 lazy_static! {
     static ref GLOBAL_STATE: Mutex<ModuleState> = Mutex::new(ModuleState {
         cb_obj: None,
-        trie: host_trie(),
-        vars: VariableStorage::new(),
+        trie: TokTrie::from_bytes(&tokenizer::token_trie_bytes()),
         // tokens: vec![],
         // bytes: vec![],
     });
@@ -50,8 +48,10 @@ mod _aici {
         cfg::CfgParser,
         dlex::{self, DynamicLexerRec},
         recognizer::{AnythingGoes, StackRecognizer},
+        runtime,
         rx::RecRx,
         substring::SubStrMatcher,
+        tokenizer,
         toktrie::SpecialToken,
         SimpleVob, TokenId,
     };
@@ -77,8 +77,8 @@ mod _aici {
     }
 
     #[pyfunction]
-    fn self_seq_id() -> u32 {
-        aici_abi::self_seq_id().0
+    fn self_seq_id() -> runtime::SeqId {
+        runtime::sequence_id()
     }
 
     #[pyfunction]
@@ -88,26 +88,19 @@ mod _aici {
 
     #[pyfunction]
     fn tokenize(text: ArgStrOrBytesLike, vm: &VirtualMachine) -> PyResult {
-        let tokens = aici_abi::tokenize_bytes(&text.borrow_bytes());
+        let tokens = tokenizer::tokenize_bytes(&text.borrow_bytes());
         Ok(vm.new_int_list(&tokens).into())
     }
 
     #[pyfunction]
     fn detokenize(tokens: PyObjectRef, vm: &VirtualMachine) -> Vec<u8> {
-        let tokens = vm.to_u32_list(tokens);
+        let tokens = vm.to_list(tokens, |v| vm.to_i32(v) as u32);
         let trie = &mut GLOBAL_STATE.lock().unwrap().trie;
         let bytes = tokens
             .iter()
             .flat_map(|t| trie.token(*t).to_vec())
             .collect();
         bytes
-    }
-
-    #[pyfunction]
-    fn tokens_repr(tokens: PyObjectRef, vm: &VirtualMachine) -> String {
-        let tokens = vm.to_u32_list(tokens);
-        let trie = &mut GLOBAL_STATE.lock().unwrap().trie;
-        trie.tokens_dbg(&tokens)
     }
 
     #[pyfunction]
@@ -119,22 +112,20 @@ mod _aici {
     #[pyfunction]
     fn get_var(name: PyStrRef, _vm: &VirtualMachine) -> Option<Vec<u8>> {
         let name = name.as_str();
-        let v = GLOBAL_STATE.lock().unwrap().vars.get(name);
+        let v = aici_abi::runtime_storage::get(name);
         v
     }
 
     #[pyfunction]
     fn set_var(name: PyStrRef, value: ArgStrOrBytesLike, _vm: &VirtualMachine) {
         let name = name.as_str();
-        let vars = &GLOBAL_STATE.lock().unwrap().vars;
-        vars.set(name, (&value.borrow_bytes()).to_vec());
+        aici_abi::runtime_storage::set(name, &value.borrow_bytes());
     }
 
     #[pyfunction]
     fn append_var(name: PyStrRef, value: ArgStrOrBytesLike, _vm: &VirtualMachine) {
         let name = name.as_str();
-        let vars = &GLOBAL_STATE.lock().unwrap().vars;
-        vars.append(name, (&value.borrow_bytes()).to_vec());
+        aici_abi::runtime_storage::append(name, &value.borrow_bytes());
     }
 
     #[pyfunction]
@@ -146,7 +137,7 @@ mod _aici {
     #[pyfunction]
     fn get_config(name: PyStrRef) -> PyResult<i32> {
         let name = name.as_str();
-        let v = aici_abi::get_config(name);
+        let v = runtime::get_config(name);
         Ok(v)
     }
 
@@ -249,7 +240,7 @@ mod _aici {
     #[pyfunction(name = "CfgConstraint")]
     fn cfg_constraint(cfg: PyStrRef, vm: &VirtualMachine) -> PyResult<Constraint> {
         match CfgParser::from_yacc(cfg.as_str()) {
-            Ok(cfg) => Ok(Constraint::new(cfg)),
+            Ok(cfg) => Ok(Constraint(Mutex::new(Box::new(cfg)))),
             Err(e) => Err(vm.new_runtime_error(format!("{}", e))),
         }
     }
@@ -257,14 +248,14 @@ mod _aici {
     #[pyfunction(name = "SubStrConstraint")]
     fn substr_constraint(templ: PyStrRef, end_str: PyStrRef) -> PyResult<Constraint> {
         let rx = SubStrMatcher::new(templ.as_str(), end_str.as_str()).to_stack_recognizer();
-        Ok(Constraint::new(rx))
+        Ok(Constraint(Mutex::new(Box::new(rx))))
     }
 
     impl Constructor for Constraint {
         type Args = FuncArgs;
         fn py_new(cls: PyTypeRef, _arg: Self::Args, vm: &VirtualMachine) -> PyResult {
             let anything = StackRecognizer::from(AnythingGoes {});
-            Constraint::new(anything)
+            Constraint(Mutex::new(Box::new(anything)))
                 .into_ref_with_type(vm, cls)
                 .map(Into::into)
         }
@@ -361,24 +352,11 @@ mod _aici {
 
 fn _main() -> Result<()> {
     let source = std::fs::read_to_string("samples/test.py").unwrap();
-    let mut runner = Runner::new(source.as_bytes().to_vec());
+    let mut runner = Runner::new(source);
 
     runner.init_prompt(InitPromptArg { prompt: vec![1] });
 
     Ok(())
-}
-
-#[no_mangle]
-pub extern "C" fn aici_main(p: *mut Runner) {
-    let runner = unsafe { &mut *p };
-    let _ = runner;
-    // runner.init(InitPromptArg {
-    //     prompt: vec![1, 2, 3],
-    // });
-}
-
-fn main() {
-    _main().unwrap();
 }
 
 pub struct Runner {
@@ -386,8 +364,7 @@ pub struct Runner {
 }
 
 impl Runner {
-    pub fn new(arg: Vec<u8>) -> Self {
-        let source = String::from_utf8(arg).unwrap();
+    pub fn new(source: String) -> Self {
         let interpreter = rustpython_vm::Interpreter::with_init(Default::default(), |vm| {
             vm.add_native_module(
                 "pyaici.server_native".to_owned(),
@@ -618,7 +595,7 @@ impl AiciCtrl for Runner {
     fn mid_process(&mut self, arg: MidProcessArg) -> MidProcessResult {
         let obj = get_cb_obj();
         self.interpreter.enter(|vm| {
-            let fork_group = vm.new_int_list(&arg.fork_group.iter().map(|v| v.0.clone()).collect());
+            let fork_group = vm.new_int_list(&arg.fork_group.iter().map(|v| *v as u64).collect());
             let tokens = vm.new_int_list(&arg.tokens);
             let bt = vm.ctx.new_int(arg.backtrack as i32);
             let r = vm.catch_exn(vm.call_method(
@@ -636,7 +613,7 @@ impl AiciCtrl for Runner {
                         .payload_if_exact::<_aici::TokenSet>(vm)
                         .expect("expecting TokenSet as sample_mask");
                     let bias = v.0.lock().unwrap();
-                    Some(bias.clone())
+                    Some(bias.clone().into())
                 };
                 let splices = vm.to_list(vm.attr(&b, "splices"), |s| {
                     let backtrack = vm.u32_attr(&s, "backtrack");
@@ -661,8 +638,14 @@ impl AiciCtrl for Runner {
     }
 }
 
-fn runner_from_env() -> Runner {
-    Runner::new(aici_abi::arg_bytes())
+impl Program for Runner {
+    fn new(arg: String) -> Self {
+        Runner::new(arg)
+    }
 }
 
-aici_abi::aici_expose_all!(Runner, runner_from_env());
+impl Guest for Runner {
+    type Runner = ExportedProgram<Runner>;
+}
+
+export!(Runner);

@@ -67,7 +67,7 @@ for f in "$@" ; do
     BN="$BN $(basename $f)"
 done
 
-if [ "$SUFF" = "wasm32-wasi" ] ; then
+if [ "$SUFF" = "wasm32-wasip2" ] ; then
     WASM=
     for B in $BN ; do
         case $B in
@@ -132,7 +132,7 @@ echo >> $T/README.md
 echo '```' >> $T/README.md
 echo >> $T/README.md
 
-if [ "$SUFF" = "wasm32-wasi" ] ; then
+if [ "$SUFF" = "wasm32-wasip2" ] ; then
     cat >> $T/README.md <<'EOF'
 ## Tagging
 
@@ -169,7 +169,7 @@ rm -rf target/dist
 mkdir -p target/dist
 echo -n > target/dist/README.md
 
-release aici-controllers "AICI Controllers" "wasm32-wasi" target/wasm32-wasi/release/*.wasm
+release aici-controllers "AICI Controllers" "wasm32-wasip2" target/wasm32-wasip2/release/*.wasm
 release aicirt "AICI Runtime" "$NATIVE" target/release/aicirt
 
 if test -z "$SKIP_LLAMA_CPP" ; then

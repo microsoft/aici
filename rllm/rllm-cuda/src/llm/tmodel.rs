@@ -8,7 +8,7 @@ use super::{
 use aicirt::{with_timer, TimerRef};
 use anyhow::Result;
 use rand::distributions::Distribution as _;
-use rllm::{config::RllmConfig, AiciBias, LogitsProcessor, ModelExec, SchedulerOutputs};
+use rllm::{config::RllmConfig, AiciBias, LogitsProcessor, ModelExec, SchedulerOutputs, SeqId};
 use std::{sync::Arc, time::Instant};
 use tch::{Device, IndexOp, Tensor};
 
@@ -114,7 +114,7 @@ impl ModelExec for TModel {
         Ok(())
     }
 
-    fn get_logits(&self, seq_id: usize) -> Tensor {
+    fn get_logits(&self, seq_id: SeqId) -> Tensor {
         let _no_grad = tch::no_grad_guard();
         let idx = self.batch_info.as_ref().unwrap().seq_id_to_idx[&seq_id];
         self.logits.as_ref().unwrap().i((idx as i64, ..))

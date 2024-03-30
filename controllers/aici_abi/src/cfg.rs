@@ -1,6 +1,6 @@
-use crate::host::host_trie;
 use crate::lex::{Lexer, LexerState, StateID, VobIdx, VobSet};
 use crate::{
+    tokenizer,
     toktrie::{Recognizer, SpecialToken},
     SimpleVob,
 };
@@ -12,6 +12,7 @@ use cfgrammar::{
 use lrtable::{from_yacc, Action, Minimiser, StIdx, StateTable};
 use rustc_hash::FxHashMap;
 use std::{cell::RefCell, vec};
+use toktrie::TokTrie;
 use vob::{vob, Vob};
 
 type StorageT = u32;
@@ -507,7 +508,7 @@ pub fn cfg_test() -> Result<()> {
     let sample = include_bytes!("../grammars/sample.c");
 
     if true {
-        let trie = host_trie();
+        let trie = TokTrie::from_bytes(&tokenizer::token_trie_bytes());
         let toks = trie.greedy_tokenize(sample);
 
         #[cfg(not(target_arch = "wasm32"))]

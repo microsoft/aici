@@ -19,7 +19,7 @@ jobs:
       - uses: actions/checkout@v3
         with:
           submodules: true
-      - run: rustup target add wasm32-wasi
+      - run: rustup target add wasm32-wasip2
       - uses: hendrikmuhs/ccache-action@v1.2
       - uses: Swatinem/rust-cache@v2
         with:

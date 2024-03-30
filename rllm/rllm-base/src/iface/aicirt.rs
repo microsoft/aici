@@ -1,4 +1,3 @@
-use crate::HashMap;
 use aici_abi::{
     bytes::{limit_bytes, limit_str},
     toktrie::TokTrie,
@@ -12,7 +11,7 @@ use aicirt::{
     futexshm::ClientChannel,
     msgchannel::MessageChannel,
     shm::{Shm, Unlink},
-    user_error,
+    user_error, HashMap,
 };
 use anyhow::Result;
 use futures::future::select_all;

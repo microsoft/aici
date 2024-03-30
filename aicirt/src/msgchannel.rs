@@ -1,4 +1,7 @@
-use crate::{semaphore::Semaphore, shm::{Shm, Unlink}};
+use crate::{
+    semaphore::Semaphore,
+    shm::{Shm, Unlink},
+};
 use anyhow::Result;
 use std::time::Duration;
 

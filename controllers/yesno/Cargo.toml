@@ -1,0 +1,17 @@
+[package]
+name = "aici_yesno"
+version = "0.1.0"
+edition = "2021"
+
+[package.metadata.component]
+package = "component:yesno"
+
+[package.metadata.component.dependencies]
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+aici_abi = { path = "../aici_abi" }
+
+[lib]
+crate-type = ["cdylib"]

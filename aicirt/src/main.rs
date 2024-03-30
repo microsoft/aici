@@ -12,10 +12,13 @@ use crate::{
     TimerSet,
 };
 use aici_abi::{
-    bytes::limit_str, toktrie::TokTrie, Branch, MidProcessArg, ProcessResultOffset, SeqId,
-    TokenizerEnv,
+    bytes::limit_str,
+    toktrie::{self, TokTrie},
+    SeqId, TokenizerEnv,
 };
-use aicirt::{bintokens::find_tokenizer, futexshm::ServerChannel, shm::ShmAllocator, *};
+use aicirt::{
+    bindings::*, bintokens::find_tokenizer, futexshm::ServerChannel, shm::ShmAllocator, *,
+};
 use anyhow::{anyhow, ensure, Result};
 use base64::{self, Engine as _};
 use bintokens::ByteTokenizerEnv;
@@ -144,7 +147,7 @@ struct Cli {
     wasm_max_timeout_steps: usize,
 
     /// Maximum time WASM module can execute initialization code in milliseconds
-    #[arg(long, default_value = "1000")]
+    #[arg(long, default_value = "10000")]
     wasm_max_init_time: u64,
 
     /// Resolution of timer exposed to WASM modules in microseconds; 0 to disable timer
@@ -259,11 +262,12 @@ impl ModuleRegistry {
         self.cache_path.join(format!("tags/{}.json", tagname))
     }
 
-    fn compile_module(&self, module_id: &str, force: bool) -> Result<()> {
+    fn compile_component(&self, module_id: &str, force: bool) -> Result<()> {
         let module = if force {
             Err(anyhow!("force"))
         } else {
-            self.wasm_ctx.deserialize_module(self.elf_path(module_id))
+            self.wasm_ctx
+                .deserialize_component(self.elf_path(module_id))
         };
 
         match module {
@@ -273,7 +277,9 @@ impl ModuleRegistry {
                 let compiled = self.forker.lock().unwrap().compile(wasm_bytes)?;
                 fs::write(self.elf_path(module_id), compiled)?;
                 // make sure we can deserialize it
-                let _ = self.wasm_ctx.deserialize_module(self.elf_path(module_id))?;
+                let _ = self
+                    .wasm_ctx
+                    .deserialize_component(self.elf_path(module_id))?;
             }
             Ok(_) => {}
         };
@@ -285,7 +291,7 @@ impl ModuleRegistry {
 
     fn ensure_module_in_fs(&self, module_id: &str) -> Result<PathBuf> {
         if self.module_needs_check(module_id) {
-            match self.compile_module(module_id, false) {
+            match self.compile_component(module_id, false) {
                 Ok(_) => {}
                 Err(e) => {
                     let mut lck = self.modules.lock().unwrap();
@@ -298,7 +304,7 @@ impl ModuleRegistry {
         Ok(self.elf_path(module_id))
     }
 
-    fn create_module(&self, wasm_bytes: Vec<u8>, auth: AuthInfo) -> Result<MkModuleResp> {
+    fn create_component(&self, wasm_bytes: Vec<u8>, auth: AuthInfo) -> Result<MkModuleResp> {
         ensure_user!(self.wasm_ctx.limits.module_upload, "module upload disabled");
 
         let timer = Instant::now();
@@ -357,17 +363,17 @@ impl ModuleRegistry {
                         "auth": auth,
                     }),
                 )?;
-                self.compile_module(module_id, true)?
+                self.compile_component(module_id, true)?
             } else {
-                self.compile_module(module_id, false)?
+                self.compile_component(module_id, false)?
             },
         )
     }
 
-    fn mk_module(&self, req: MkModuleReq, auth: AuthInfo) -> Result<Value> {
+    fn mk_component(&self, req: MkModuleReq, auth: AuthInfo) -> Result<Value> {
         let wasm_bytes = base64::engine::general_purpose::STANDARD.decode(req.binary)?;
         Ok(serde_json::to_value(
-            &self.create_module(wasm_bytes, auth)?,
+            &self.create_component(wasm_bytes, auth)?,
         )?)
     }
 
@@ -446,7 +452,11 @@ impl ModuleRegistry {
         Ok(json!(resp))
     }
 
-    fn resolve_gh_module(&self, module_id: &str, wasm_override: Option<Vec<u8>>) -> Result<String> {
+    fn resolve_gh_component(
+        &self,
+        module_id: &str,
+        wasm_override: Option<Vec<u8>>,
+    ) -> Result<String> {
         if !module_id.starts_with("gh:") {
             return Ok(module_id.to_string());
         }
@@ -561,7 +571,7 @@ impl ModuleRegistry {
                 .read_to_end(&mut wasm_bytes)?;
             log::info!("downloaded {} bytes", wasm_bytes.len());
         }
-        let resp = self.create_module(
+        let resp = self.create_component(
             wasm_bytes,
             AuthInfo {
                 user: wasm_url.to_string(),
@@ -573,7 +583,7 @@ impl ModuleRegistry {
     }
 
     fn instantiate(&mut self, mut req: InstantiateReq) -> Result<Value> {
-        req.module_id = self.resolve_gh_module(&req.module_id, None)?;
+        req.module_id = self.resolve_gh_component(&req.module_id, None)?;
         if valid_tagname(&req.module_id) {
             let taginfo = self.read_tag(&req.module_id)?;
             req.module_id = taginfo.module_id;
@@ -718,7 +728,7 @@ impl Stepper {
 
     fn aici_mid_process(&mut self, req: AiciMidProcessReq) -> Result<AiciMidProcessResp> {
         let block_elts = self.globals.tokrx_info.vocab_size as usize;
-        let mut outputs = HashMap::default();
+        let mut outputs: SeqMap = HashMap::default();
 
         // first, execute forks
         let mut parents = HashMap::default();
@@ -769,7 +779,7 @@ impl Stepper {
                     .get(&par)
                     .unwrap()
                     .iter()
-                    .map(|id| SeqId(*id as u32))
+                    .map(|id| *id as SeqId)
                     .collect::<Vec<_>>();
                 let op = RtMidProcessArg {
                     op: MidProcessArg {
@@ -848,29 +858,59 @@ impl Stepper {
                     }
 
                     if let Some(r) = &mut data.result {
-                        r.branches = r
+                        let branches = r
                             .branches
                             .iter()
                             .map(|b| {
-                                b.map_mask(|off| {
-                                    let idx = (*off - first_mask_byte_offset) / mask_num_bytes;
-                                    assert!(idx * mask_num_bytes + first_mask_byte_offset == *off);
-                                    max_offset = std::cmp::max(max_offset, *off);
+                                b.map_mask(|vob| {
+                                    let shm = self.shm.clone();
+                                    let off = shm.alloc(id.try_into().unwrap()).unwrap();
+                                    let bias_type =
+                                        BiasType::from_u32(shm.elt_type() & 0xf).unwrap();
+
+                                    bias_type.apply_to_shm_allocator(bytemuck::cast_slice(&vob.data), &shm, off);
+
+                                    let idx = (off - first_mask_byte_offset) / mask_num_bytes;
+                                    assert!(idx * mask_num_bytes + first_mask_byte_offset == off);
+                                    max_offset = std::cmp::max(max_offset, off);
                                     max_idx = std::cmp::max(max_idx, idx);
                                     idx
                                 })
                             })
                             .collect();
+
+                        outputs.insert(
+                            id,
+                            SequenceResult {
+                                result: Some(RtMidProcessResult { branches }),
+                                error: String::new(),
+                                storage: vec![],
+                                logs: String::new(),
+                                micros: start_time.elapsed().as_micros() as u64,
+                            },
+                        );
+                    } else {
+                        outputs.insert(
+                            id,
+                            SequenceResult {
+                                result: Some(RtMidProcessResult {
+                                    branches: vec![toktrie::Branch::noop()],
+                                }),
+                                error: String::new(),
+                                storage: vec![],
+                                logs: String::new(),
+                                micros: start_time.elapsed().as_micros() as u64,
+                            },
+                        );
                     }
-                    outputs.insert(id, data);
                 }
                 Err(e) => {
                     if e.to_string() == "timeout" && prev_timeout < self.limits.max_timeout_steps {
                         outputs.insert(
                             id,
                             SequenceResult {
-                                result: Some(ProcessResultOffset {
-                                    branches: vec![Branch::noop()],
+                                result: Some(RtMidProcessResult {
+                                    branches: vec![toktrie::Branch::noop()],
                                 }),
                                 error: String::new(),
                                 storage: vec![],
@@ -915,8 +955,8 @@ impl Stepper {
 
     fn worker_error<T>(
         &mut self,
-        instid: usize,
-        map: &mut HashMap<usize, SequenceResult<T>>,
+        instid: ModuleInstId,
+        map: &mut HashMap<ModuleInstId, SequenceResult<T>>,
         e: anyhow::Error,
     ) {
         let err = format!("Worker: {e:?}");
@@ -948,7 +988,7 @@ impl Exec for ModuleRegistry {
         match json["op"].as_str() {
             Some("set_tags") => self.set_tags(serde_json::from_value(json)?, auth),
             Some("get_tags") => self.get_tags(serde_json::from_value(json)?),
-            Some("mk_module") => self.mk_module(serde_json::from_value(json)?, auth),
+            Some("mk_module") => self.mk_component(serde_json::from_value(json)?, auth),
             Some("instantiate") => self.instantiate(serde_json::from_value(json)?),
             _ => return Err(anyhow!("bad op")),
         }
@@ -1191,10 +1231,10 @@ fn install_from_cmdline(cli: &Cli, wasm_ctx: WasmContext, shm: Rc<ShmAllocator>)
     let module_id = if name.ends_with(".wasm") {
         let wasm_bytes = fs::read(name).unwrap();
         if let Some(gh) = &cli.gh_module {
-            reg.resolve_gh_module(gh, Some(wasm_bytes)).unwrap()
+            reg.resolve_gh_component(gh, Some(wasm_bytes)).unwrap()
         } else {
             let json = reg
-                .create_module(wasm_bytes, AuthInfo::admin_user())
+                .create_component(wasm_bytes, AuthInfo::admin_user())
                 .unwrap();
             json.module_id
         }

@@ -1,16 +1,16 @@
 use crate::{
     api::ModuleInstId,
+    bindings::MidProcessArg,
     hostimpl::AiciLimits,
     moduleinstance::{ModuleInstance, WasmContext},
     setup_bg_worker_pool,
     shm::Shm,
     InstantiateReq, UserError,
 };
-use aici_abi::{
-    InitPromptResult, MidProcessArg, ProcessResultOffset, StorageCmd, StorageResp, TokenId,
-};
+use aici_abi::{toktrie, StorageCmd, StorageOp, StorageResp};
 use aicirt::{
     api::SequenceResult,
+    bindings::*,
     futexshm::{TypedClient, TypedClientHandle, TypedServer},
     set_max_priority,
     shm::{ShmAllocator, Unlink},
@@ -329,7 +329,7 @@ impl SeqCtx {
             SeqCmd::Compile { wasm } => {
                 let inp_len = wasm.len();
                 let start_time = Instant::now();
-                let binary = self.wasm_ctx.engine.precompile_module(&wasm)?;
+                let binary = self.wasm_ctx.engine.precompile_component(&wasm)?;
                 log::info!(
                     "WASM compile done; {}k -> {}k; {:?}",
                     inp_len / 1024,
@@ -360,16 +360,15 @@ impl SeqCtx {
                 prompt_str,
                 prompt_toks,
             } => {
-                let module = self.wasm_ctx.deserialize_module(module_path).unwrap();
+                let component = self.wasm_ctx.deserialize_component(module_path)?;
                 let _ = module_id;
                 let ch = std::mem::take(&mut self.query);
                 let mut inst = ModuleInstance::new(
                     424242,
                     self.wasm_ctx.clone(),
-                    module,
+                    component,
                     module_arg,
                     ch.unwrap(),
-                    self.shm.clone(),
                 )?;
                 let prompt_toks = if let Some(t) = prompt_toks {
                     t
@@ -401,7 +400,8 @@ impl SeqCtx {
                 })
             }
             SeqCmd::RunMain {} => {
-                self.mutinst().run_main()?;
+                // TODO
+                // self.mutinst().run_main()?;
                 ok()
             }
         }
@@ -519,7 +519,7 @@ impl SeqWorkerHandle {
         Ok(())
     }
 
-    pub fn check_process(&self, timeout: Duration) -> Result<SequenceResult<ProcessResultOffset>> {
+    pub fn check_process(&self, timeout: Duration) -> Result<SequenceResult<MidProcessResult>> {
         match self
             .handle
             .seq_recv_with_timeout("r-process", Timeout::Speculative(timeout))

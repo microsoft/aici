@@ -1,9 +1,5 @@
 use aici_abi::{
-    host_trie,
-    recognizer::{FunctionalRecognizer, StackRecognizer},
-    tokenize,
-    toktrie::{SpecialToken, TokTrie},
-    AiciCtrl, InitPromptArg, InitPromptResult, MidProcessArg, MidProcessResult,
+    export, recognizer::{FunctionalRecognizer, StackRecognizer}, tokenizer, toktrie::{SpecialToken, TokTrie}, AiciCtrl, ExportedProgram, Guest, InitPromptArg, InitPromptResult, MidProcessArg, MidProcessResult
 };
 
 // This constraints enforces an upper case letter every 4th byte
@@ -36,10 +32,10 @@ pub struct Runner {
     recognizer: StackRecognizer<usize, QuadUpper>,
 }
 
-impl Runner {
-    pub fn new() -> Self {
+impl aici_abi::Program for Runner {
+    fn new(prompt: String) -> Self {
         Runner {
-            toktrie: host_trie(),
+            toktrie: TokTrie::from_bytes(&tokenizer::token_trie_bytes()),
             tokens: Vec::new(),
             recognizer: StackRecognizer::from(QuadUpper {}),
         }
@@ -51,7 +47,7 @@ impl AiciCtrl for Runner {
         if arg.prompt.len() <= 1 {
             // in case no prompt was provided, invent some
             InitPromptResult {
-                prompt: tokenize("Here's a tweet:\n"),
+                prompt: tokenizer::tokenize("Here's a tweet:\n"),
             }
         } else {
             InitPromptResult::from_arg(arg)
@@ -82,4 +78,8 @@ fn main() {
     // test code here?
 }
 
-aici_abi::aici_expose_all!(Runner, Runner::new());
+impl Guest for Runner {
+    type Runner = ExportedProgram<Runner>;
+}
+
+export!(Runner);

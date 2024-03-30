@@ -55,7 +55,7 @@ def build_rust(folder: str, features: List[str] = []):
         bin_file = bins[0]["name"]
     print(f'will build {bin_file} from {pkg["manifest_path"]}')
 
-    triple = "wasm32-wasi"
+    triple = "wasm32-wasip2"
     trg_path = (info["target_directory"] + "/" + triple + "/release/" +
                 bin_file + ".wasm")
     # remove file first, so we're sure it's rebuilt
@@ -75,10 +75,25 @@ def build_rust(folder: str, features: List[str] = []):
     )
     if r.returncode != 0:
         sys.exit(1)
+    r = subprocess.run(
+        [
+            "wasm-tools",
+            "component",
+            "new",
+            trg_path,
+            "-o",
+            component_path,
+            "--adapt",
+            reactor_path,
+        ]
+    )
+    if r.returncode != 0:
+        sys.exit(1)
     bb = open(trg_path, "rb").read()
+
     M = 1024 * 1024
-    print(f"built: {trg_path}, {len(bb)/M:.3} MiB")
-    return rest.upload_module(trg_path)
+    print(f"built: {component_path}, {len(bb)/M:.3} MiB")
+    return rest.upload_module(component_path)
 
 
 def run_ctrl(

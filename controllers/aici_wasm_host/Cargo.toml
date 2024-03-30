@@ -1,0 +1,9 @@
+[package]
+name = "aici_wasm_host"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+wasmtime = { version = "24.0.0", default-features = false, features = ["component-model"] }
+serde = { version = "1.0.192", features = ["derive"] }
+toktrie = { path = "../toktrie/core" }

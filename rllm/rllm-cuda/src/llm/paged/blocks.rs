@@ -421,7 +421,7 @@ impl TchSeqMgr {
 impl SequenceManager for TchSeqMgr {
     fn new_sequence(&self) -> SeqId {
         let mut l = self.next.lock().unwrap();
-        let r = SeqId(*l);
+        let r = *l as SeqId;
         *l = *l + 1;
         r
     }

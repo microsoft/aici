@@ -4,6 +4,7 @@ use crate::{
     util::limit_str,
     HashMap, ModelExec, SequenceManager, TBlockSpaceManager,
 };
+use aici_abi::SeqId;
 use aicirt::api::SequenceResult;
 use std::{
     cell::RefCell,
@@ -97,7 +98,7 @@ pub struct Scheduler<ME: ModelExec> {
     pub(crate) config: Arc<RllmConfig<ME>>,
     prompt_limit: usize,
     pub(crate) block_manager: ME::BlockSpaceManager,
-    freed_seq_ids: RefCell<Vec<usize>>,
+    freed_seq_ids: RefCell<Vec<SeqId>>,
     seq_mgr: Arc<ME::SequenceManager>,
 
     queues: Mutex<Vec<Vec<SequenceGroup>>>,
@@ -168,7 +169,7 @@ impl<ME: ModelExec> Scheduler<ME> {
         }
     }
 
-    pub(crate) fn get_freed_seq_ids(&self) -> Vec<usize> {
+    pub(crate) fn get_freed_seq_ids(&self) -> Vec<SeqId> {
         self.freed_seq_ids.borrow_mut().drain(..).collect()
     }
 
@@ -453,7 +454,7 @@ impl<ME: ModelExec> Scheduler<ME> {
             )))
         }
         seq.sched_phase = SchedulingPhase::Finished(reason);
-        self.freed_seq_ids.borrow_mut().push(seq.seq_id.to_num());
+        self.freed_seq_ids.borrow_mut().push(seq.seq_id);
         self.seq_mgr.delete(seq.seq_id);
     }
 
