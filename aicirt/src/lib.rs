@@ -5,6 +5,7 @@ pub mod futexshm;
 pub mod msgchannel;
 pub mod semaphore;
 pub mod shm;
+pub mod bindings;
 
 #[cfg(target_os = "macos")]
 mod macos;

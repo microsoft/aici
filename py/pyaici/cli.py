@@ -16,11 +16,6 @@ def cli_error(msg: str):
 
 
 def build_rust(folder: str):
-    bin_file = ""
-    spl = folder.split("::")
-    if len(spl) > 1:
-        folder = spl[0]
-        bin_file = spl[1]
     if not os.path.exists(folder + "/Cargo.toml"):
         cli_error(f"{folder}/Cargo.toml not found")
     r = subprocess.run(
@@ -41,23 +36,32 @@ def build_rust(folder: str):
     pkg_id = info["workspace_default_members"][0]
     pkg = [pkg for pkg in info["packages"] if pkg["id"] == pkg_id][0]
 
-    bins = [trg for trg in pkg["targets"] if trg["kind"] == ["bin"]]
-    if len(bins) == 0:
-        cli_error("no bin targets found")
-    bins_str = ", ".join([folder + "::" + trg["name"] for trg in bins])
-    if bin_file:
-        if len([trg for trg in bins if trg["name"] == bin_file]) == 0:
-            cli_error(f"{bin_file} not found; try one of {bins_str}")
-    else:
-        if len(bins) > 1:
-            cli_error("more than one bin target found; use one of: " + bins_str)
-        bin_file = bins[0]["name"]
+    libs = [trg for trg in pkg["targets"] if trg["kind"] == ["cdylib"]]
+
+    if len(libs) == 0:
+        cli_error("no cdylib targets found")
+
+    bins_str = ", ".join([folder + "::" + trg["name"] for trg in libs])
+    if len(libs) > 1:
+        cli_error("more than one bin target found; use one of: " + bins_str)
+    bin_file = libs[0]["name"]
     print(f'will build {bin_file} from {pkg["manifest_path"]}')
 
     triple = "wasm32-wasi"
     trg_path = (
         info["target_directory"] + "/" + triple + "/release/" + bin_file + ".wasm"
     )
+
+    component_path = (
+        info["target_directory"]
+        + "/"
+        + triple
+        + "/release/"
+        + bin_file
+        + ".component.wasm"
+    )
+
+    reactor_path = "controllers/wasi_snapshot_preview1.reactor.wasm"
     # remove file first, so we're sure it's rebuilt
     try:
         os.unlink(trg_path)
@@ -75,10 +79,25 @@ def build_rust(folder: str):
     )
     if r.returncode != 0:
         sys.exit(1)
+    r = subprocess.run(
+        [
+            "wasm-tools",
+            "component",
+            "new",
+            trg_path,
+            "-o",
+            component_path,
+            "--adapt",
+            reactor_path,
+        ]
+    )
+    if r.returncode != 0:
+        sys.exit(1)
     bb = open(trg_path, "rb").read()
+
     M = 1024 * 1024
-    print(f"built: {trg_path}, {len(bb)/M:.3} MiB")
-    return rest.upload_module(trg_path)
+    print(f"built: {component_path}, {len(bb)/M:.3} MiB")
+    return rest.upload_module(component_path)
 
 
 def run_ctrl(

@@ -1,19 +1,8 @@
-use crate::TokenId;
-use std::{fmt::Debug, ops::Index};
+use std::ops::Index;
 
-#[derive(Clone)]
-pub struct SimpleVob {
-    data: Vec<u32>,
-}
+use crate::{TokenId, Vocabulary};
 
-impl Debug for SimpleVob {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("SimpleVob")
-            .field("len", &self.len())
-            .finish()
-    }
-}
-
+pub type SimpleVob = Vocabulary;
 impl Default for SimpleVob {
     fn default() -> Self {
         Self::new()
@@ -22,7 +11,7 @@ impl Default for SimpleVob {
 
 const BITS: usize = 32;
 
-impl SimpleVob {
+impl Vocabulary {
     pub fn new() -> Self {
         Self { data: Vec::new() }
     }
@@ -113,7 +102,7 @@ impl SimpleVob {
     }
 }
 
-impl Index<usize> for SimpleVob {
+impl Index<usize> for Vocabulary {
     type Output = bool;
 
     fn index(&self, index: usize) -> &Self::Output {

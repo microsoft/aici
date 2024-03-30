@@ -4,12 +4,8 @@
 use rustc_hash::FxHashMap;
 
 use crate::{
-    bytes::{
-        box_from_bytes, clone_as_bytes, clone_vec_as_bytes, to_hex_string, vec_from_bytes,
-        TokRxInfo, TokenId,
-    },
-    host::trie_bytes,
-    svob::SimpleVob,
+    bytes::{box_from_bytes, clone_as_bytes, clone_vec_as_bytes, to_hex_string, vec_from_bytes, TokRxInfo},
+    tokenizer, SimpleVob, TokenId,
 };
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -121,7 +117,7 @@ impl TrieNode {
 
 impl TokTrie {
     pub fn from_host() -> Self {
-        let buffer = trie_bytes();
+        let buffer = tokenizer::token_trie_bytes();
         Self::from_bytes(&buffer)
     }
 

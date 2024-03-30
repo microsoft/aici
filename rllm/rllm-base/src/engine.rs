@@ -1,6 +1,6 @@
 use crate::{
     config::{ParallelConfig, RllmConfig, SamplingParams, SchedulerConfig},
-    iface::AiciRtIface,
+    iface::aicirt::AiciRtIface,
     seq::{
         AiciSampling, FinishReason, RequestOutput, SchedulingPhase, SeqOutput, Sequence,
         SequenceGroup, Token, TokenUsage,
@@ -422,7 +422,7 @@ impl<ME: ModelExec> RllmEngine<ME> {
                 );
                 seq.splice_tokens(self.seq_mgr.deref(), backtrack as usize, &ff_tokens);
                 Some(AiciPostOp {
-                    id: seq.seq_id.to_num(),
+                    id: seq.seq_id,
                     tokens: ff_tokens,
                     backtrack: backtrack,
                 })
@@ -528,7 +528,7 @@ impl<ME: ModelExec> RllmEngine<ME> {
                 // get it even if no pending - make sure we have them all
                 let pending = std::mem::take(&mut seq.pending_fork_ids);
                 for copy_id in pending {
-                    seq_id_mapping.insert(copy_id.to_num(), seq.seq_id.to_num());
+                    seq_id_mapping.insert(copy_id, seq.seq_id);
                     let copy = seq.fork_as(self.seq_mgr.deref(), copy_id, sg.max_index + 1);
                     sg.max_index += 1;
                     log::debug!("forked: {:?} -> {:?}", seq, copy);
@@ -548,7 +548,7 @@ impl<ME: ModelExec> RllmEngine<ME> {
                     continue;
                 }
 
-                let sidx = seq.seq_id.to_num();
+                let sidx = seq.seq_id;
                 let sidx = seq_id_mapping.get(&sidx).unwrap_or(&sidx);
                 let mut logits = self.tmodel.get_logits(*sidx);
 
@@ -579,7 +579,7 @@ impl<ME: ModelExec> RllmEngine<ME> {
 
                 if seq.has_aici {
                     post_ops.push(AiciPostOp {
-                        id: seq.seq_id.to_num(),
+                        id: seq.seq_id,
                         tokens: vec![next_token],
                         backtrack: 0,
                     });
@@ -661,7 +661,7 @@ impl<ME: ModelExec> RllmEngine<ME> {
         seq: &mut Sequence,
         seqs: &'a HashMap<ModuleInstId, SequenceResult<T>>,
     ) -> Option<&'a T> {
-        if let Some(r) = seqs.get(&seq.seq_id.to_num()) {
+        if let Some(r) = seqs.get(&seq.seq_id) {
             seq.aici_logs.push(r.clone_with(None));
             if r.error.len() > 0 {
                 self.scheduler.finish_seq(seq, FinishReason::Failed);
@@ -690,7 +690,7 @@ impl<ME: ModelExec> RllmEngine<ME> {
                 let seq = &mut sg.seqs[0];
                 seq.has_aici = true;
                 pre_ops.push(AiciPreOp {
-                    id: seq.seq_id.to_num(),
+                    id: seq.seq_id,
                     req_id: sg.request_id.clone(),
                 });
             } else {
@@ -721,7 +721,7 @@ impl<ME: ModelExec> RllmEngine<ME> {
             }
 
             for seq in sg.seqs.iter_mut() {
-                let sid = seq.seq_id.to_num();
+                let sid = seq.seq_id;
 
                 match self.save_aici_log(seq, &aici_res.post_seqs) {
                     Some(r) if r.stop => {
@@ -755,7 +755,7 @@ impl<ME: ModelExec> RllmEngine<ME> {
                             seq.append_tokens(&r.ff_tokens);
                         }
 
-                        while seq.pending_fork_ids.len() < r.num_forks - 1 {
+                        while seq.pending_fork_ids.len() < (r.num_forks as usize - 1) {
                             seq.pending_fork_ids.push(self.seq_mgr.new_sequence());
                         }
                     }
@@ -815,14 +815,14 @@ impl<ME: ModelExec> RllmEngine<ME> {
                 assert!(seq.has_aici);
 
                 mid_ops.push(AiciMidOp {
-                    id: seq.seq_id.to_num(),
+                    id: seq.seq_id,
                     clone_id: None,
                 });
 
                 for copy_id in &seq.pending_fork_ids {
                     mid_ops.push(AiciMidOp {
-                        id: copy_id.to_num(),
-                        clone_id: Some(seq.seq_id.to_num()),
+                        id: *copy_id,
+                        clone_id: Some(seq.seq_id),
                     });
                 }
             }

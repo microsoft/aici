@@ -1,0 +1,11 @@
+interface tokenizer {
+    type token-id = u32;
+
+    eos-token: func() -> token-id;
+
+    tokenize: func(text: string) -> list<token-id>;
+
+    tokenize-bytes: func(text: list<u8>) -> list<token-id>;
+
+    token-trie-bytes: func() -> list<u8>;
+}

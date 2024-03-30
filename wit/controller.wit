@@ -1,0 +1,64 @@
+
+interface controller {
+    use tokenizer.{token-id};
+    use runtime.{seq-id};
+
+    // A bitmap of allowable token IDs.
+    record vocabulary {
+        data: list<u32>,
+    }
+
+    record init-prompt-arg {
+        prompt: list<token-id>,
+    }
+
+    // TODO: WIT does not handle records with no fields currently as unit types.
+
+    // record init-prompt-result {}
+
+    // record pre-process-arg {}
+
+    record pre-process-result {
+        num-forks: u32,
+
+        suspend: bool,
+
+        ff-tokens: list<token-id>,
+    }
+
+    record mid-process-arg {
+        fork-group: list<seq-id>,
+    }
+
+    record sample-with-bias {
+        allowed-tokens: vocabulary,
+    }
+
+    record splice {
+        backtrack: u32,
+        ff-tokens: list<token-id>,
+    }
+
+    variant mid-process-result {
+        stop,
+        sample-with-bias(sample-with-bias),
+        splice(splice),
+    }
+
+    record post-process-arg {
+        tokens: list<token-id>,
+        backtrack: u32,
+    }
+
+    record post-process-result {
+        stop: bool,
+    }
+
+    resource runner {
+        constructor(args: string);
+        init-prompt: func(arg: init-prompt-arg);
+        pre-process: func() -> pre-process-result;
+        mid-process: func(arg: mid-process-arg) -> mid-process-result;
+        post-process: func(arg: post-process-arg) -> post-process-result;
+    }
+}

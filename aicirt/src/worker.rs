@@ -6,11 +6,9 @@ use crate::{
     shm::Shm,
     with_timer, InstantiateReq, TimerRef, UserError,
 };
-use aici_abi::{
-    MidProcessArg, PostProcessArg, PreProcessArg, PreProcessResult, StorageCmd, StorageOp,
-    StorageResp, TokenId,
-};
+use aici_abi::{StorageCmd, StorageOp, StorageResp};
 use aicirt::{
+    bindings::*,
     api::{AiciMidProcessResultInner, AiciPostProcessResultInner, SequenceResult},
     futexshm::{TypedClient, TypedClientHandle, TypedServer},
     set_max_priority,
@@ -299,7 +297,7 @@ impl SeqCtx {
             SeqCmd::Compile { wasm } => {
                 let inp_len = wasm.len();
                 let start_time = Instant::now();
-                let binary = self.wasm_ctx.engine.precompile_module(&wasm)?;
+                let binary = self.wasm_ctx.engine.precompile_component(&wasm)?;
                 log::info!(
                     "WASM compile done; {}k -> {}k; {:?}",
                     inp_len / 1024,
@@ -330,13 +328,13 @@ impl SeqCtx {
                 prompt_str,
                 prompt_toks,
             } => {
-                let module = self.wasm_ctx.deserialize_module(module_path).unwrap();
+                let component = self.wasm_ctx.deserialize_component(&module_path)?;
                 let _ = module_id;
                 let ch = std::mem::take(&mut self.query);
                 let mut inst = ModuleInstance::new(
                     424242,
                     self.wasm_ctx.clone(),
-                    module,
+                    component,
                     module_arg,
                     ch.unwrap(),
                 )?;
@@ -390,7 +388,8 @@ impl SeqCtx {
                 })
             }
             SeqCmd::RunMain {} => {
-                self.mutinst().run_main()?;
+                // TODO
+                // self.mutinst().run_main()?;
                 ok()
             }
         }

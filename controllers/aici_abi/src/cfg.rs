@@ -1,6 +1,6 @@
 use crate::lex::{Lexer, LexerState, StateID, VobIdx, VobSet};
 use crate::{
-    svob::SimpleVob,
+    SimpleVob,
     toktree::{Recognizer, SpecialToken, TokTrie},
 };
 use anyhow::Result;
