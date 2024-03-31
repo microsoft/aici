@@ -1,7 +1,6 @@
-use aici_abi::toktree;
-
 use super::Parser;
 use crate::earley::{from_guidance::earley_grm_from_guidance, parser::ParseResult};
+use aici_abi::toktree;
 
 pub fn earley_test(trie: toktree::TokTrie) {
     let g_bytes = include_bytes!("../../../aici_abi/grammars/json0.guidance");

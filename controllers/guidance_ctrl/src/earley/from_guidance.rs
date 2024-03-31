@@ -1,12 +1,11 @@
-use anyhow::Result;
-use quick_protobuf::MessageRead;
-use rustc_hash::FxHashSet;
-
 use super::{ByteSet, Grammar};
 use crate::{
     earley::grammar::SymbolProps,
     serialization::guidance::{self, mod_GrammarFunction::OneOffunction_type},
 };
+use anyhow::Result;
+use quick_protobuf::MessageRead;
+use rustc_hash::FxHashSet;
 
 #[derive(Debug)]
 pub struct NodeProps {

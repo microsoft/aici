@@ -5,7 +5,7 @@ use rand::distributions::Distribution as _;
 use rllm::{
     config::{ModelMeta, RllmConfig},
     seq::SchedulingPhase,
-    AiciBias, HashMap, LoaderArgs, LogitsProcessor, ModelExec, SchedulerOutputs,
+    AiciBias, HashMap, LoaderArgs, LogitsProcessor, ModelExec, SchedulerOutputs, SeqId,
 };
 use std::{sync::Arc, time::Instant};
 
@@ -20,7 +20,7 @@ pub struct TModel {
     pub(super) model: cpp::Model,
     seq_mgr: Arc<CppSequenceManager>,
     batch: cpp::Batch,
-    seq_id_to_idx: HashMap<usize, usize>,
+    seq_id_to_idx: HashMap<SeqId, usize>,
     t0: Instant,
     step_no: usize,
 }
@@ -80,7 +80,7 @@ impl ModelExec for TModel {
                     let logits = idx + 1 == off + q_len;
                     if logits {
                         self.seq_id_to_idx
-                            .insert(seq.seq_id.to_num(), self.batch.len());
+                            .insert(seq.seq_id, self.batch.len());
                     }
                     self.seq_mgr.with_cpp(seq.seq_id, |cpp| {
                         cpp.assert_model(&self.model);
@@ -101,7 +101,7 @@ impl ModelExec for TModel {
         Ok(())
     }
 
-    fn get_logits(&self, seq_id: usize) -> Tensor {
+    fn get_logits(&self, seq_id: SeqId) -> Tensor {
         let l = self.model.get_logits(self.seq_id_to_idx[&seq_id]);
         Tensor::from_slice(l)
     }

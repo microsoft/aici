@@ -10,16 +10,15 @@
 */
 
 use aici_abi::{
-    aici_expose_all,
     bytes::limit_str,
     cfg::CfgParser,
-    rx::RecRx,
-    rx::RxStackRecognizer,
-    svob::SimpleVob,
-    tokenize, tokenize_bytes,
+    export,
+    rx::{RecRx, RxStackRecognizer},
+    tokenizer,
     toktree::{Recognizer, SpecialToken, TokTrie},
-    AiciCtrl, InitPromptArg, InitPromptResult, MidProcessArg, MidProcessResult, PostProcessArg,
-    PostProcessResult, PreProcessArg, PreProcessResult, TokenId, VariableStorage,
+    ExportedProgram, InitPromptArg, InitPromptResult, MidProcessArg, MidProcessResult,
+    PostProcessArg, PostProcessResult, PreProcessArg, PreProcessResult, SampleWithBias, SimpleVob,
+    Splice, TokenId,
 };
 use core::panic;
 use serde::{Deserialize, Serialize};
@@ -418,7 +417,6 @@ struct TokenInfo {
 
 struct RunnerCtx {
     trie: TokTrie,
-    vars: VariableStorage,
     tokens: Vec<TokenInfo>,
     bytes: Vec<u8>,
 }
@@ -436,7 +434,7 @@ impl RunnerCtx {
     fn do_expand(&self, expr: &Expr, curr_ctx: Option<&StepState>) -> Vec<u8> {
         match expr {
             Expr::String { str } => str.as_bytes().to_vec(),
-            Expr::Var { var } => match self.vars.get(&var.0) {
+            Expr::Var { var } => match aici_abi::runtime_storage::get(&var.0) {
                 Some(r) => r,
                 None => Vec::new(),
             },
@@ -806,7 +804,10 @@ impl StepState {
                             .iter()
                             .filter_map(|e| {
                                 if e.starts_with(pref) {
-                                    Some(tokenize_bytes(&e[pref.len()..]))
+                                    Some({
+                                        let s: &[u8] = &e[pref.len()..];
+                                        tokenizer::tokenize_bytes(s)
+                                    })
                                 } else {
                                     None
                                 }
@@ -864,7 +865,7 @@ impl StepState {
                 Stmt::Set { var, expr } => {
                     let val = runner.expand_with_curr(&expr, self);
                     println!("  set {:?} := {:?}", var, String::from_utf8_lossy(&val));
-                    runner.vars.set(&var.0, val);
+                    aici_abi::runtime_storage::set(&var.0, &val);
                 }
             }
         }
@@ -881,7 +882,7 @@ impl StepState {
                 };
                 let tokens = options
                     .iter()
-                    .map(|v| tokenize_bytes(v))
+                    .map(|v| tokenizer::tokenize_bytes(v))
                     .collect::<Vec<_>>();
                 self.specific = StepSpecific::Options { tokens }
             }
@@ -937,7 +938,6 @@ impl Runner {
                 trie: TokTrie::from_host(),
                 tokens: Vec::new(),
                 bytes: Vec::new(),
-                vars: VariableStorage::new(),
             },
             state_idx: 0,
             prev_state_idx: 0,
@@ -1078,10 +1078,10 @@ impl Runner {
                         tokens[0]
                     );
 
-                    return MidProcessResult::Splice {
+                    return MidProcessResult::Splice(Splice {
                         backtrack,
                         ff_tokens: tokens[0].clone(),
-                    };
+                    });
                 } else {
                     panic!("following on non-options");
                 }
@@ -1125,18 +1125,21 @@ impl Runner {
         self.finish_states();
 
         if let Some(ff_tokens) = ff_tokens {
-            MidProcessResult::Splice {
+            MidProcessResult::Splice(Splice {
                 backtrack: 0,
                 ff_tokens,
-            }
+            })
         } else {
-            MidProcessResult::SampleWithBias { allowed_tokens }
+            MidProcessResult::SampleWithBias(SampleWithBias { allowed_tokens })
         }
     }
 
     fn maybe_wait(&mut self) -> bool {
         if let StepSpecific::Wait { vars } = &self.curr_state().specific {
-            if vars.iter().any(|name| self.ctx.vars.get(&name.0).is_none()) {
+            if vars
+                .iter()
+                .any(|name| aici_abi::runtime_storage::get(&name.0).is_none())
+            {
                 println!("wait {vars:?} suspend");
                 true
             } else {
@@ -1157,7 +1160,7 @@ impl Runner {
     }
 }
 
-impl AiciCtrl for Runner {
+impl aici_abi::AiciCtrl for Runner {
     fn init_prompt(&mut self, arg: InitPromptArg) -> InitPromptResult {
         println!("prompt: {:?}", arg.prompt);
         for t in arg.prompt {
@@ -1227,10 +1230,10 @@ impl AiciCtrl for Runner {
                 .iter()
                 .map(|b| b[0].attention_mask(&self.ctx))
                 .collect::<Vec<_>>();
-            PreProcessResult::new(attention_masks.len())
+            PreProcessResult::new(attention_masks.len() as u32)
         } else {
             let mask = self.curr_state().attention_mask(&self.ctx);
-            PreProcessResult::new(vec![mask].len())
+            PreProcessResult::new(vec![mask].len() as u32)
         }
     }
 
@@ -1245,7 +1248,7 @@ impl AiciCtrl for Runner {
                 let st = self.states.remove(self.state_idx);
                 if let StepSpecific::Fork { mut branches } = st.specific {
                     assert!(arg.fork_group.len() == branches.len());
-                    let my_id = aici_abi::self_seq_id();
+                    let my_id = aici_abi::runtime::sequence_id();
                     let idx = arg.fork_group.iter().position(|id| *id == my_id).unwrap();
                     let branch = branches.remove(idx);
                     self.states.splice(self.state_idx..self.state_idx, branch);
@@ -1257,10 +1260,10 @@ impl AiciCtrl for Runner {
 
         if self.maybe_wait() {
             // this is a bit late in the game, but it's the best we can do
-            MidProcessResult::Splice {
+            MidProcessResult::Splice(Splice {
                 backtrack: 0,
-                ff_tokens: tokenize(" "),
-            }
+                ff_tokens: tokenizer::tokenize(" "),
+            })
 
             // // we pop the useless generated token
             // MidProcessResult::Splice {
@@ -1273,38 +1276,36 @@ impl AiciCtrl for Runner {
     }
 }
 
-fn main() {
-    aici_abi::cfg::cfg_test().unwrap();
-    //    let _run = sample_prog();
-}
-
-fn runner_from_env() -> Runner {
-    let a = aici_abi::arg_bytes();
-    match serde_json::from_slice(&a) {
-        Ok(p) => Runner::new(p),
-        Err(e) => {
-            let mut col = e.column().saturating_sub(1);
-            let mut line = e.line().saturating_sub(1);
-            for off in 0..a.len() {
-                if line == 0 {
-                    col -= 1;
-                    if col == 0 {
-                        println!(
-                            "at: {:?} <HERE> {:?}",
-                            String::from_utf8_lossy(&a[off.saturating_sub(30)..off]),
-                            String::from_utf8_lossy(&a[off..std::cmp::min(a.len(), off + 30)]),
-                        );
-                        break;
+impl aici_abi::Program for Runner {
+    fn new(arg: String) -> Self {
+        match serde_json::from_str(&arg) {
+            Ok(p) => Runner::new(p),
+            Err(e) => {
+                let mut col = e.column().saturating_sub(1);
+                let mut line = e.line().saturating_sub(1);
+                for off in 0..arg.len() {
+                    if line == 0 {
+                        col -= 1;
+                        if col == 0 {
+                            let prefix = &arg[off.saturating_sub(30)..off];
+                            let suffix = &arg[off..std::cmp::min(arg.len(), off + 30)];
+                            println!("at: {:?} <HERE> {:?}", prefix, suffix,);
+                            break;
+                        }
+                    }
+                    if arg.as_bytes()[off] == b'\n' {
+                        line -= 1;
                     }
                 }
-                if a[off] == b'\n' {
-                    line -= 1;
-                }
+                println!("JSON AST parsing error: {:?}", e);
+                panic!()
             }
-            println!("JSON AST parsing error: {:?}", e);
-            panic!()
         }
     }
 }
 
-aici_expose_all!(Runner, runner_from_env());
+impl aici_abi::Guest for Runner {
+    type Runner = ExportedProgram<Runner>;
+}
+
+export!(Runner);

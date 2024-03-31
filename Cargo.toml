@@ -8,6 +8,7 @@ members = [
     "controllers/jsctrl",
     "controllers/guidance_ctrl",
     "controllers/uppercase",
+    "controllers/yesno",
     "rllm/rllm-base",
     "rllm/rllm-cuda",
     "rllm/rllm-llamacpp",

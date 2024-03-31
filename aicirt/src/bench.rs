@@ -1,9 +1,9 @@
+use crate::HashMap;
 use std::{
     fmt::{Display, Write},
     sync::{Arc, Mutex},
     time::{Duration, Instant},
 };
-use crate::HashMap;
 
 #[derive(PartialEq, Eq)]
 enum TimerState {

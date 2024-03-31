@@ -1,0 +1,7 @@
+interface runtime {
+    type seq-id = u64;
+
+    sequence-id: func() -> seq-id;
+
+    stop: func();
+}

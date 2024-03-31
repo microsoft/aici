@@ -1,10 +1,10 @@
 use aici_abi::{
-    arg_string,
+    export,
     recognizer::{FunctionalRecognizer, StackRecognizer},
-    tokenize,
+    tokenizer,
     toktree::{SpecialToken, TokTrie},
-    AiciCtrl, MidProcessArg, MidProcessResult, PostProcessArg, PostProcessResult, PreProcessArg,
-    PreProcessResult,
+    AiciCtrl, ExportedProgram, Guest, MidProcessArg, MidProcessResult, PostProcessArg,
+    PostProcessResult, PreProcessArg, PreProcessResult, SampleWithBias,
 };
 
 // This constraints enforces an upper case letter every 4th byte
@@ -42,11 +42,11 @@ pub struct Runner {
     recognizer: StackRecognizer<usize, QuadUpper>,
 }
 
-impl Runner {
-    pub fn new() -> Self {
+impl aici_abi::Program for Runner {
+    fn new(prompt: String) -> Self {
         Runner {
             toktrie: TokTrie::from_host(),
-            prompt: arg_string() + "\n",
+            prompt: prompt + "\n",
             tokens: Vec::new(),
             recognizer: StackRecognizer::from(QuadUpper {}),
         }
@@ -62,7 +62,7 @@ impl AiciCtrl for Runner {
             } else {
                 &self.prompt
             };
-            let toks = tokenize(prompt);
+            let toks = tokenizer::tokenize(prompt);
             PreProcessResult::ff_tokens(toks)
         } else {
             // otherwise just continue - the other option is to suspend
@@ -79,9 +79,9 @@ impl AiciCtrl for Runner {
         // otherwise, compute bias according to our recognizer
         let mut set = self.toktrie.alloc_token_set();
         self.toktrie.compute_bias(&mut self.recognizer, &mut set);
-        MidProcessResult::SampleWithBias {
+        MidProcessResult::SampleWithBias(SampleWithBias {
             allowed_tokens: set,
-        }
+        })
     }
 
     fn post_process(&mut self, arg: PostProcessArg) -> PostProcessResult {
@@ -99,4 +99,8 @@ fn main() {
     // test code here?
 }
 
-aici_abi::aici_expose_all!(Runner, Runner::new());
+impl Guest for Runner {
+    type Runner = ExportedProgram<Runner>;
+}
+
+export!(Runner);

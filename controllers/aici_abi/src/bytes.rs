@@ -1,8 +1,6 @@
-use std::{mem::size_of, slice::from_raw_parts};
-
+use crate::TokenId;
 use anyhow::{anyhow, Result};
-
-pub(crate) type TokenId = u32;
+use std::{mem::size_of, slice::from_raw_parts};
 
 #[repr(C)]
 #[derive(Clone, PartialEq, Eq, Debug)]

@@ -1,0 +1,8 @@
+[build]
+target = "wasm32-wasi"
+
+[profile.dev]
+strip = "debuginfo"
+
+[profile.release]
+strip = "debuginfo"

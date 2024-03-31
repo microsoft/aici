@@ -16,6 +16,5 @@ anyhow = "1.0.75"
 vob = "3.0.3"
 rustc-hash = "1.1.0"
 
-[[bin]]
-name = "aici_declctrl"
-path = "src/declctrl.rs"
+[lib]
+crate-type = ["cdylib"]

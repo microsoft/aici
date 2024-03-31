@@ -1,9 +1,9 @@
 use aici_abi::{
-    aici_stop,
-    svob::SimpleVob,
+    aici_stop, export,
     toktree::{Recognizer, SpecialToken, TokTrie},
-    AiciCtrl, InitPromptArg, InitPromptResult, MidProcessArg, MidProcessResult, PostProcessArg,
-    PostProcessResult, PreProcessArg, PreProcessResult, TokenId, VariableStorage,
+    AiciCtrl, ExportedProgram, Guest, InitPromptArg, InitPromptResult, MidProcessArg,
+    MidProcessResult, PostProcessArg, PostProcessResult, PreProcessArg, PreProcessResult, Program,
+    SampleWithBias, SimpleVob, Splice, TokenId,
 };
 use anyhow::Result;
 use lazy_static::lazy_static;
@@ -17,7 +17,6 @@ use std::{ops::Deref, sync::Mutex, vec};
 struct ModuleState {
     cb_obj: Option<PyObjectRef>,
     trie: TokTrie,
-    vars: VariableStorage,
 }
 
 unsafe impl Send for ModuleState {}
@@ -26,7 +25,6 @@ lazy_static! {
     static ref GLOBAL_STATE: Mutex<ModuleState> = Mutex::new(ModuleState {
         cb_obj: None,
         trie: TokTrie::from_host(),
-        vars: VariableStorage::new(),
         // tokens: vec![],
         // bytes: vec![],
     });
@@ -46,11 +44,12 @@ mod _aici {
     use aici_abi::{
         cfg::CfgParser,
         recognizer::{AnythingGoes, StackRecognizer},
+        runtime,
         rx::RecRx,
         substring::SubStrMatcher,
-        svob::SimpleVob,
+        tokenizer,
         toktree::SpecialToken,
-        TokenId,
+        SimpleVob, TokenId,
     };
     use once_cell::sync::Lazy;
     use rustpython_derive::pyclass;
@@ -71,8 +70,8 @@ mod _aici {
     }
 
     #[pyfunction]
-    fn self_seq_id() -> u32 {
-        aici_abi::self_seq_id().0
+    fn self_seq_id() -> runtime::SeqId {
+        runtime::sequence_id()
     }
 
     #[pyfunction]
@@ -82,7 +81,7 @@ mod _aici {
 
     #[pyfunction]
     fn tokenize(text: ArgStrOrBytesLike, vm: &VirtualMachine) -> PyResult {
-        let tokens = aici_abi::tokenize_bytes(&text.borrow_bytes());
+        let tokens = tokenizer::tokenize_bytes(&text.borrow_bytes());
         Ok(vm.new_int_list(&tokens).into())
     }
 
@@ -106,22 +105,20 @@ mod _aici {
     #[pyfunction]
     fn get_var(name: PyStrRef, _vm: &VirtualMachine) -> Option<Vec<u8>> {
         let name = name.as_str();
-        let v = GLOBAL_STATE.lock().unwrap().vars.get(name);
+        let v = aici_abi::runtime_storage::get(name);
         v
     }
 
     #[pyfunction]
     fn set_var(name: PyStrRef, value: ArgStrOrBytesLike, _vm: &VirtualMachine) {
         let name = name.as_str();
-        let vars = &GLOBAL_STATE.lock().unwrap().vars;
-        vars.set(name, (&value.borrow_bytes()).to_vec());
+        aici_abi::runtime_storage::set(name, &value.borrow_bytes());
     }
 
     #[pyfunction]
     fn append_var(name: PyStrRef, value: ArgStrOrBytesLike, _vm: &VirtualMachine) {
         let name = name.as_str();
-        let vars = &GLOBAL_STATE.lock().unwrap().vars;
-        vars.append(name, (&value.borrow_bytes()).to_vec());
+        aici_abi::runtime_storage::append(name, &value.borrow_bytes());
     }
 
     #[pyfunction]
@@ -296,24 +293,11 @@ mod _aici {
 
 fn _main() -> Result<()> {
     let source = std::fs::read_to_string("samples/test.py").unwrap();
-    let mut runner = Runner::new(source.as_bytes().to_vec());
+    let mut runner = Runner::new(source);
 
     runner.init_prompt(InitPromptArg { prompt: vec![1] });
 
     Ok(())
-}
-
-#[no_mangle]
-pub extern "C" fn aici_main(p: *mut Runner) {
-    let runner = unsafe { &mut *p };
-    let _ = runner;
-    // runner.init(InitPromptArg {
-    //     prompt: vec![1, 2, 3],
-    // });
-}
-
-fn main() {
-    _main().unwrap();
 }
 
 pub struct Runner {
@@ -321,8 +305,7 @@ pub struct Runner {
 }
 
 impl Runner {
-    pub fn new(arg: Vec<u8>) -> Self {
-        let source = String::from_utf8(arg).unwrap();
+    pub fn new(source: String) -> Self {
         let interpreter = rustpython_vm::Interpreter::with_init(Default::default(), |vm| {
             vm.add_native_module(
                 "pyaici.server_native".to_owned(),
@@ -515,7 +498,7 @@ impl AiciCtrl for Runner {
         self.interpreter.enter(|vm| {
             let r = vm.catch_exn(vm.call_method(obj.deref(), "pre_process", vec![]));
             let suspend = vm.bool_attr(&r, "suspended");
-            let num_forks = vm.int_attr(&r, "num_forks") as usize;
+            let num_forks = vm.int_attr(&r, "num_forks") as u32;
             let ff_tokens = vm.to_list(vm.attr(&r, "ff_tokens"), |v| vm.to_i32(v) as u32);
             PreProcessResult {
                 num_forks,
@@ -528,7 +511,7 @@ impl AiciCtrl for Runner {
     fn mid_process(&mut self, arg: MidProcessArg) -> MidProcessResult {
         let obj = get_cb_obj();
         self.interpreter.enter(|vm| {
-            let fork_group = vm.new_int_list(&arg.fork_group.iter().map(|v| v.0.clone()).collect());
+            let fork_group = vm.new_int_list(&arg.fork_group.iter().copied().collect());
             let r =
                 vm.catch_exn(vm.call_method(obj.deref(), "mid_process", vec![fork_group.into()]));
             let stop = vm.bool_attr(&r, "stop");
@@ -539,20 +522,19 @@ impl AiciCtrl for Runner {
                 let ff_tokens = vm.to_list(vm.attr(&r, "ff_tokens"), |v| vm.to_i32(v) as u32);
 
                 if backtrack > 0 || ff_tokens.len() > 0 {
-                    MidProcessResult::Splice {
+                    MidProcessResult::Splice(Splice {
                         backtrack,
                         ff_tokens,
-                    }
+                    })
                 } else {
                     let logit_bias = vm.attr(&r, "logit_bias");
                     let v = logit_bias
                         .payload_if_exact::<_aici::TokenSet>(vm)
                         .expect("expecting TokenSet as logit_bias");
                     let bias = v.0.lock().unwrap();
-                    aici_abi::return_logit_bias(&bias);
-                    MidProcessResult::SampleWithBias {
-                        allowed_tokens: SimpleVob::new(),
-                    }
+                    MidProcessResult::SampleWithBias(SampleWithBias {
+                        allowed_tokens: bias.clone(),
+                    })
                 }
             }
         })
@@ -574,8 +556,14 @@ impl AiciCtrl for Runner {
     }
 }
 
-fn runner_from_env() -> Runner {
-    Runner::new(aici_abi::arg_bytes())
+impl Program for Runner {
+    fn new(arg: String) -> Self {
+        Runner::new(arg)
+    }
 }
 
-aici_abi::aici_expose_all!(Runner, runner_from_env());
+impl Guest for Runner {
+    type Runner = ExportedProgram<Runner>;
+}
+
+export!(Runner);

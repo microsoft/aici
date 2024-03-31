@@ -12,6 +12,12 @@ quick-protobuf = "0.8.1"
 rustc-hash = "1.1.0"
 base64 = "0.22.0"
 
+[lib]
+crate-type = ["rlib", "cdylib"]
+
 [[bin]]
-name = "aici_guidance_ctrl"
-path = "src/gctrl.rs"
+name = "aici_earley_bench"
+path = "src/earley_bench.rs"
+
+[build-dependencies]
+glob = "0.3.1"

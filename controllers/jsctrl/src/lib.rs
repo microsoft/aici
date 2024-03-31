@@ -1,21 +1,19 @@
-use std::sync::Mutex;
-
 use aici_abi::{
-    aici_stop,
+    aici_stop, export,
     recognizer::{AnythingGoes, StackRecognizer},
-    svob::SimpleVob,
     toktree::{Recognizer, SpecialToken, TokTrie},
-    AiciCtrl, InitPromptArg, InitPromptResult, MidProcessArg, MidProcessResult, PostProcessArg,
-    PostProcessResult, PreProcessArg, PreProcessResult, TokenId, VariableStorage,
+    AiciCtrl, ExportedProgram, Guest, InitPromptArg, InitPromptResult, MidProcessArg,
+    MidProcessResult, PostProcessArg, PostProcessResult, PreProcessArg, PreProcessResult, Program,
+    SampleWithBias, SeqId, SimpleVob, Splice, TokenId,
 };
 use rquickjs::{
     class::Trace, function::IntoArgs, ArrayBuffer, Context, Ctx, FromJs, Function, IntoAtom,
     IntoJs, Module, Object, Result, Runtime, TypedArray, Value,
 };
+use std::sync::Mutex;
 
 struct ModuleState {
     trie: TokTrie,
-    vars: VariableStorage,
 }
 
 unsafe impl Send for ModuleState {}
@@ -23,7 +21,6 @@ unsafe impl Send for ModuleState {}
 lazy_static::lazy_static! {
     static ref GLOBAL_STATE: Mutex<ModuleState> = Mutex::new(ModuleState {
         trie: TokTrie::from_host(),
-        vars: VariableStorage::new(),
     });
 }
 
@@ -233,25 +230,23 @@ impl<'js> IntoJs<'js> for Buffer {
 #[rquickjs::module]
 #[allow(non_snake_case)]
 mod aici_mod {
-    use crate::{Buffer, CtxExt};
-
-    pub use super::{Constraint, TokenSet};
-
     use super::GLOBAL_STATE;
+    pub use super::{Constraint, TokenSet};
+    use crate::{Buffer, CtxExt};
     use aici_abi::{
-        aici_stop, cfg::CfgParser, rx::RecRx, substring::SubStrMatcher, toktree::SpecialToken,
-        TokenId,
+        aici_stop, cfg::CfgParser, runtime, rx::RecRx, substring::SubStrMatcher, tokenizer,
+        toktree::SpecialToken, SeqId, TokenId,
     };
     use rquickjs::{Ctx, Exception, Result, Value};
 
     #[rquickjs::function]
-    pub fn selfSeqId() -> u32 {
-        aici_abi::self_seq_id().0
+    pub fn selfSeqId() -> SeqId {
+        runtime::sequence_id()
     }
 
     #[rquickjs::function]
     pub fn tokenize(text: Buffer) -> Vec<TokenId> {
-        aici_abi::tokenize_bytes(&text.0)
+        tokenizer::tokenize_bytes(&text.0)
     }
 
     #[rquickjs::function]
@@ -279,22 +274,20 @@ mod aici_mod {
     #[rquickjs::function]
     pub fn getVar(name: String) -> Option<Buffer> {
         let name = name.as_str();
-        let v = GLOBAL_STATE.lock().unwrap().vars.get(name);
+        let v = aici_abi::runtime_storage::get(name);
         v.map(Buffer)
     }
 
     #[rquickjs::function]
     pub fn setVar(name: String, value: Buffer) {
         let name = name.as_str();
-        let vars = &GLOBAL_STATE.lock().unwrap().vars;
-        vars.set(name, value.0);
+        aici_abi::runtime_storage::set(name, &value.0);
     }
 
     #[rquickjs::function]
     pub fn appendVar(name: String, value: Buffer) {
         let name = name.as_str();
-        let vars = &GLOBAL_STATE.lock().unwrap().vars;
-        vars.append(name, value.0);
+        aici_abi::runtime_storage::append(name, &value.0);
     }
 
     #[rquickjs::function]
@@ -381,8 +374,6 @@ mod aici_mod {
     }
 }
 
-fn main() {}
-
 trait PyConstraint {
     fn eos_allowed(&mut self) -> bool;
     fn eos_forced(&mut self) -> bool;
@@ -426,9 +417,7 @@ fn _print(msg: String) {
 }
 
 impl Runner {
-    pub fn new(arg: Vec<u8>) -> Self {
-        let source = String::from_utf8(arg).unwrap();
-
+    pub fn new(source: String) -> Self {
         let rt = Runtime::new().unwrap();
         let s = Self {
             context: Context::full(&rt).unwrap(),
@@ -521,7 +510,7 @@ impl AiciCtrl for Runner {
         loop {
             let res = self.with_cb("mid_process", |ctx| {
                 let cb: Function = ctx.eval2("globalThis._aici_cb.mid_process");
-                let fg: Vec<u32> = arg.fork_group.iter().map(|v| v.0.clone()).collect();
+                let fg: Vec<SeqId> = arg.fork_group.iter().copied().collect();
 
                 let r: Object = cb.call2((&fg,));
                 let skip_me: bool = r.get2("_n_skip_me");
@@ -535,17 +524,16 @@ impl AiciCtrl for Runner {
                     let ff_tokens: Vec<TokenId> = r.get2("_n_ff_tokens");
 
                     if backtrack > 0 || ff_tokens.len() > 0 {
-                        Some(MidProcessResult::Splice {
+                        Some(MidProcessResult::Splice(Splice {
                             backtrack,
                             ff_tokens,
-                        })
+                        }))
                     } else {
                         // TODO perf - clone on TokenSet
                         let logit_bias: TokenSet = r.get2("_n_logit_bias");
-                        aici_abi::return_logit_bias(&logit_bias.inner);
-                        Some(MidProcessResult::SampleWithBias {
-                            allowed_tokens: SimpleVob::new(),
-                        })
+                        Some(MidProcessResult::SampleWithBias(SampleWithBias {
+                            allowed_tokens: logit_bias.inner,
+                        }))
                     }
                 }
             });
@@ -566,8 +554,14 @@ impl AiciCtrl for Runner {
     }
 }
 
-fn runner_from_env() -> Runner {
-    Runner::new(aici_abi::arg_bytes())
+impl Program for Runner {
+    fn new(arg: String) -> Self {
+        Runner::new(arg)
+    }
 }
 
-aici_abi::aici_expose_all!(Runner, runner_from_env());
+impl Guest for Runner {
+    type Runner = ExportedProgram<Runner>;
+}
+
+export!(Runner);
