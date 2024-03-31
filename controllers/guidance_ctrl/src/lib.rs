@@ -1,16 +1,14 @@
+use crate::earley::ParseResult;
 use aici_abi::{
-    arg_bytes, bytes::to_hex_string, tokenize_bytes, toktree::TokTrie, AiciCtrl, MidProcessArg,
-    MidProcessResult, PostProcessArg, PostProcessResult, PreProcessArg, PreProcessResult, TokenId,
+    bytes::to_hex_string, export, tokenizer, toktree::TokTrie, AiciCtrl, ExportedProgram, Guest,
+    MidProcessArg, MidProcessResult, PostProcessArg, PostProcessResult, PreProcessArg,
+    PreProcessResult, Program, SampleWithBias, Splice, TokenId,
 };
-
 use base64::{self, Engine as _};
 use earley::{earley_grm_from_guidance, Parser};
 use serde::{Deserialize, Serialize};
-use serde_json::json;
 
-use crate::earley::ParseResult;
-
-mod earley;
+pub mod earley;
 mod serialization;
 
 const INFO: bool = true;
@@ -89,7 +87,7 @@ impl AiciCtrl for Runner {
         let start_time = std::time::Instant::now();
         let _ = self.parser.force_bytes();
         let fixed_bytes = self.parser.get_bytes();
-        let mut fixed_tokens = tokenize_bytes(&fixed_bytes);
+        let mut fixed_tokens = tokenizer::tokenize_bytes(&fixed_bytes);
         let mut suff = Vec::new();
         let mut chop_tokens = 0;
         let mut chop_bytes = 0;
@@ -118,7 +116,7 @@ impl AiciCtrl for Runner {
                 self.llm_tokens = fixed_tokens;
                 self.is_ff = true;
                 self.report_captures();
-                return MidProcessResult::Splice(Splice{
+                return MidProcessResult::Splice(Splice {
                     backtrack,
                     ff_tokens,
                 });
@@ -163,7 +161,7 @@ impl AiciCtrl for Runner {
 
         self.report_captures();
 
-        MidProcessResult::SampleWithBias(SampleWithBias{
+        MidProcessResult::SampleWithBias(SampleWithBias {
             allowed_tokens: set,
         })
     }

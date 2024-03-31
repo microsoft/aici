@@ -1,5 +1,5 @@
 use aici_abi::{
-    export, exports,
+    export,
     recognizer::{FunctionalRecognizer, StackRecognizer},
     tokenizer,
     toktree::{SpecialToken, TokTrie},

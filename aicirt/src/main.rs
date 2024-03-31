@@ -13,8 +13,8 @@ use crate::{
 };
 use aici_abi::{bytes::limit_str, toktree::TokTrie};
 use aicirt::{
-    bintokens::find_tokenizer,
     bindings::{MidProcessArg, PostProcessArg, PreProcessArg, SeqId},
+    bintokens::find_tokenizer,
     futexshm::ServerChannel,
     *,
 };

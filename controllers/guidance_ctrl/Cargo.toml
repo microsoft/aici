@@ -13,7 +13,11 @@ rustc-hash = "1.1.0"
 base64 = "0.22.0"
 
 [lib]
-crate-type = ["cdylib"]
+crate-type = ["rlib", "cdylib"]
+
+[[bin]]
+name = "aici_earley_bench"
+path = "src/earley_bench.rs"
 
 [build-dependencies]
 glob = "0.3.1"

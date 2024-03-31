@@ -1,6 +1,6 @@
 use aici_abi::{
-    export, exports, tokenizer, toktree::TokTrie, AiciCtrl, ExportedProgram, Guest, MidProcessArg,
-    MidProcessResult, PostProcessArg, PostProcessResult, PreProcessResult,
+    export, tokenizer, toktree::TokTrie, AiciCtrl, ExportedProgram, Guest, MidProcessArg,
+    MidProcessResult, PostProcessArg, PostProcessResult, PreProcessArg, PreProcessResult,
     SampleWithBias, TokenId,
 };
 
@@ -31,7 +31,7 @@ impl aici_abi::Program for Runner {
 }
 
 impl AiciCtrl for Runner {
-    fn pre_process(&mut self) -> PreProcessResult {
+    fn pre_process(&mut self, _arg: PreProcessArg) -> PreProcessResult {
         if self.tokens.is_empty() {
             PreProcessResult::ff_tokens(self.question.clone())
         } else {

@@ -1,8 +1,6 @@
-use std::{mem::size_of, slice::from_raw_parts};
-
-use anyhow::{anyhow, Result};
-
 use crate::TokenId;
+use anyhow::{anyhow, Result};
+use std::{mem::size_of, slice::from_raw_parts};
 
 #[repr(C)]
 #[derive(Clone, PartialEq, Eq, Debug)]

@@ -1,14 +1,13 @@
 use crate::shm::{Shm, Unlink};
 use anyhow::{anyhow, Result};
+#[cfg(target_os = "linux")]
+use linux_futex::AsFutex;
 use serde::{Deserialize, Serialize};
 use std::{
     ptr,
     sync::atomic::{AtomicU32, Ordering},
     time::{Duration, Instant},
 };
-
-#[cfg(target_os = "linux")]
-use linux_futex::AsFutex;
 #[cfg(target_os = "linux")]
 type Futex = linux_futex::Futex<linux_futex::Shared>;
 

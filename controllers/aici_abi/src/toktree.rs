@@ -1,12 +1,14 @@
 // use 8:24 encoding - num_ch:tok_id (ch_byte:ch_off)* - 8 bytes per tree node
 // special case num_ch=0xff -> num_ch=0x100
 
-use rustc_hash::FxHashMap;
-
 use crate::{
-    bytes::{box_from_bytes, clone_as_bytes, clone_vec_as_bytes, to_hex_string, vec_from_bytes, TokRxInfo},
+    bytes::{
+        box_from_bytes, clone_as_bytes, clone_vec_as_bytes, to_hex_string, vec_from_bytes,
+        TokRxInfo,
+    },
     tokenizer, SimpleVob, TokenId,
 };
+use rustc_hash::FxHashMap;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum SpecialToken {

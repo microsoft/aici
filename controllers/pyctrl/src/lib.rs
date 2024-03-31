@@ -1,5 +1,5 @@
 use aici_abi::{
-    aici_stop, export, exports,
+    aici_stop, export,
     toktree::{Recognizer, SpecialToken, TokTrie},
     AiciCtrl, ExportedProgram, Guest, InitPromptArg, InitPromptResult, MidProcessArg,
     MidProcessResult, PostProcessArg, PostProcessResult, PreProcessArg, PreProcessResult, Program,

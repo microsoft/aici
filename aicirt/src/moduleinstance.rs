@@ -9,12 +9,11 @@ use crate::{
 use aici_abi::toktree::TokTrie;
 use aicirt::{
     api::{AiciMidProcessResultInner, AiciPostProcessResultInner, SequenceResult},
-    bintokens::ByteTokenizer,
     bindings::{self, exports::aici::abi::controller::*, InitPromptResult, PreProcessArg},
+    bintokens::ByteTokenizer,
     user_error,
 };
 use anyhow::{bail, ensure, Result};
-use serde::Deserialize;
 use std::{path::Path, sync::Arc, time::Instant};
 use wasmtime;
 
@@ -124,7 +123,10 @@ impl ModuleInstance {
 
         let component_instance = ctx.component_linker.instantiate(&mut store, &component)?;
         let aici = bindings::Aici::new(&mut store, &component_instance)?;
-        let runner = aici.aici_abi_controller().runner().call_constructor(&mut store, &module_arg)?;
+        let runner = aici
+            .aici_abi_controller()
+            .runner()
+            .call_constructor(&mut store, &module_arg)?;
 
         Ok(ModuleInstance {
             store,
@@ -187,13 +189,15 @@ impl ModuleInstance {
             .call_pre_process(&mut self.store, self.runner)
     }
 
-    fn do_mid_process(&mut self, op: RtMidProcessArg, shm: &Shm) -> Result<Option<AiciMidProcessResultInner>> {
+    fn do_mid_process(
+        &mut self,
+        op: RtMidProcessArg,
+        shm: &Shm,
+    ) -> Result<Option<AiciMidProcessResultInner>> {
         let vocab_size = self.store.data().globals.tokrx_info.vocab_size as usize;
         assert!(op.logit_size == vocab_size * 4);
         let logit_ptr = shm.slice_at_byte_offset(op.logit_offset, vocab_size);
-        logit_ptr
-            .iter_mut()
-            .for_each(|x| *x = LOGIT_BIAS_DISALLOW);
+        logit_ptr.iter_mut().for_each(|x| *x = LOGIT_BIAS_DISALLOW);
 
         match self.aici.aici_abi_controller().runner().call_mid_process(
             &mut self.store,
@@ -209,12 +213,10 @@ impl ModuleInstance {
                     }
                 }
                 Ok(None)
-            },
+            }
             MidProcessResult::Stop { .. } => {
                 let eos = self.store.data().globals.tokrx_info.tok_eos;
-                logit_ptr
-                    .iter_mut()
-                    .for_each(|v| *v = LOGIT_BIAS_DISALLOW);
+                logit_ptr.iter_mut().for_each(|v| *v = LOGIT_BIAS_DISALLOW);
                 logit_ptr[eos as usize] = LOGIT_BIAS_ALLOW;
                 Ok(None)
             }
@@ -242,9 +244,7 @@ impl ModuleInstance {
                     } else {
                         // we don't really care about biases, as we'lre going to backtrack this token anyways
                         // but just in case, allow all
-                        logit_ptr
-                            .iter_mut()
-                            .for_each(|v| *v = LOGIT_BIAS_DISALLOW);
+                        logit_ptr.iter_mut().for_each(|v| *v = LOGIT_BIAS_DISALLOW);
                         // don't remove anything from ff_tokens - they all need to be appended after backtracking
 
                         // backtrack needs to include also the next token to be generated

@@ -27,9 +27,8 @@ pub mod bin_string {
 }
 
 pub mod hex_string {
-    use serde::{Deserialize, Deserializer, Serialize, Serializer};
-
     use crate::bytes::{from_hex_string, to_hex_string};
+    use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
     pub fn serialize<S: Serializer>(v: &Vec<u8>, s: S) -> Result<S::Ok, S::Error> {
         let hexstr = to_hex_string(v);

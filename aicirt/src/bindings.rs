@@ -3,9 +3,10 @@ use wasmtime::component::bindgen;
 
 bindgen!("aici" in "../wit");
 
-pub use self::aici::abi::runtime::SeqId;
-pub use self::aici::abi::tokenizer::TokenId;
-pub use self::exports::aici::abi::controller::*;
+pub use self::{
+    aici::abi::{runtime::SeqId, tokenizer::TokenId},
+    exports::aici::abi::controller::*,
+};
 
 pub trait Json {
     fn to_json(&self) -> String;
@@ -30,9 +31,6 @@ impl From<()> for PreProcessArg {
         PreProcessArg()
     }
 }
-
-
-
 
 #[derive(Serialize, Deserialize)]
 #[serde(remote = "Vocabulary")]
@@ -91,7 +89,6 @@ struct PostProcessArgDef {
 struct PostProcessResultDef {
     stop: bool,
 }
-
 
 macro_rules! serde_wrapper {
     ($name:ident, $wrapper:ident) => {

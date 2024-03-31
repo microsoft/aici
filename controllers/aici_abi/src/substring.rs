@@ -1,11 +1,10 @@
-use std::fmt::Display;
-
 use crate::{
     bytes::limit_str,
     recognizer::{FunctionalRecognizer, StackRecognizer},
     toktree::SpecialToken,
 };
 use serde_json::json;
+use std::fmt::Display;
 
 enum Node {
     Inner { children: Vec<(u8, usize)> },

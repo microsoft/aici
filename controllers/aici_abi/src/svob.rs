@@ -1,6 +1,5 @@
-use std::ops::Index;
-
 use crate::{TokenId, Vocabulary};
+use std::ops::Index;
 
 pub type SimpleVob = Vocabulary;
 impl Default for SimpleVob {

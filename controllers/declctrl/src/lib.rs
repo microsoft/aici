@@ -12,7 +12,7 @@
 use aici_abi::{
     bytes::limit_str,
     cfg::CfgParser,
-    export, exports,
+    export,
     rx::{RecRx, RxStackRecognizer},
     tokenizer,
     toktree::{Recognizer, SpecialToken, TokTrie},

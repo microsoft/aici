@@ -1,6 +1,5 @@
 use crate::{
     bindings::aici::abi::{self, tokenizer::TokenId},
-    shm::Shm,
     worker::{GroupCmd, GroupHandle, GroupResp},
 };
 use aici_abi::{
@@ -192,9 +191,9 @@ impl abi::runtime_storage::Host for ModuleData {
 
         match res {
             GroupResp::StorageResp { resp } => match resp {
-                aici_abi::StorageResp::ReadVar { version, value } => Ok(Some(value)),
+                aici_abi::StorageResp::ReadVar { version: _, value } => Ok(Some(value)),
                 aici_abi::StorageResp::VariableMissing {} => Ok(None),
-                aici_abi::StorageResp::WriteVar { version } => Err(anyhow!("unexpected WriteVar")),
+                aici_abi::StorageResp::WriteVar { .. } => Err(anyhow!("unexpected WriteVar")),
             },
         }
     }
@@ -210,13 +209,11 @@ impl abi::runtime_storage::Host for ModuleData {
         let res = self.group_channel.send_cmd(GroupCmd::StorageCmd { cmd })?;
         match res {
             GroupResp::StorageResp { resp } => match resp {
-                aici_abi::StorageResp::ReadVar { version, value } => {
-                    Err(anyhow!("unexpected ReadVar"))
-                }
-                aici_abi::StorageResp::VariableMissing {} => {
+                aici_abi::StorageResp::ReadVar { .. } => Err(anyhow!("unexpected ReadVar")),
+                aici_abi::StorageResp::VariableMissing { .. } => {
                     Err(anyhow!("unexpected VariableMissing"))
                 }
-                aici_abi::StorageResp::WriteVar { version } => Ok(()),
+                aici_abi::StorageResp::WriteVar { .. } => Ok(()),
             },
         }
     }
@@ -232,13 +229,11 @@ impl abi::runtime_storage::Host for ModuleData {
         let res = self.group_channel.send_cmd(GroupCmd::StorageCmd { cmd })?;
         match res {
             GroupResp::StorageResp { resp } => match resp {
-                aici_abi::StorageResp::ReadVar { version, value } => {
-                    Err(anyhow!("unexpected ReadVar"))
-                }
-                aici_abi::StorageResp::VariableMissing {} => {
+                aici_abi::StorageResp::ReadVar { .. } => Err(anyhow!("unexpected ReadVar")),
+                aici_abi::StorageResp::VariableMissing { .. } => {
                     Err(anyhow!("unexpected VariableMissing"))
                 }
-                aici_abi::StorageResp::WriteVar { version } => Ok(()),
+                aici_abi::StorageResp::WriteVar { .. } => Ok(()),
             },
         }
     }

@@ -1,29 +1,25 @@
 pub mod api;
 mod bench;
+pub mod bindings;
 pub mod bintokens;
 pub mod futexshm;
 pub mod msgchannel;
 pub mod semaphore;
 pub mod shm;
-pub mod bindings;
 
 #[cfg(target_os = "macos")]
 mod macos;
 
-use std::fmt::Write;
-
 use anyhow::Result;
 pub use bench::*;
-use flexi_logger::style;
-use flexi_logger::{DeferredNow, Logger, WriteMode};
+use flexi_logger::{style, DeferredNow, Logger, WriteMode};
+pub use fxhash::{FxHashMap as HashMap, FxHashSet as HashSet};
 use log::Record;
+use std::fmt::Write;
 use thread_priority::{
     set_thread_priority_and_policy, thread_native_id, RealtimeThreadSchedulePolicy, ThreadPriority,
     ThreadSchedulePolicy,
 };
-
-pub use fxhash::FxHashMap as HashMap;
-pub use fxhash::FxHashSet as HashSet;
 
 pub enum LogMode {
     Normal,

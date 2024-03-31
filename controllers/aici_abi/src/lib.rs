@@ -1,6 +1,7 @@
-use std::sync::{Arc, Mutex};
 use serde::{Deserialize, Serialize};
+use std::sync::{Arc, Mutex};
 
+#[doc(hidden)]
 pub mod bindings {
     wit_bindgen::generate!({
         world: "aici",
@@ -9,14 +10,21 @@ pub mod bindings {
         pub_export_macro: true
     });
 
-    pub use self::aici::abi::*;
-    pub use self::exports::aici::abi::*;
+    pub use self::{aici::abi::*, exports::aici::abi::*};
 }
 
-pub use bindings::controller::*;
-pub use bindings::{export, exports, runtime, runtime_storage, tokenizer};
+pub use bindings::{controller::*, runtime, runtime_storage, tokenizer};
 pub mod svob;
 pub use svob::SimpleVob;
+
+#[macro_export]
+macro_rules! export {
+    ($ty:ident) => {
+        #[doc(hidden)]
+        #[cfg(target_arch = "wasm32")]
+        $crate::bindings::export!($ty with_types_in $crate::bindings);
+    };
+}
 
 pub mod bytes;
 mod host;

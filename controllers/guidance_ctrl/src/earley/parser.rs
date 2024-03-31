@@ -1,8 +1,6 @@
-use std::{fmt::Debug, hash::Hash, ops::Range, vec};
-
-use aici_abi::toktree::{Recognizer, SpecialToken};
-
 use super::grammar::{CGrammar, CSymIdx, ModelVariable, RuleIdx, SimpleHash};
+use aici_abi::toktree::{Recognizer, SpecialToken};
+use std::{fmt::Debug, hash::Hash, ops::Range, vec};
 
 const DEBUG: bool = false;
 const INFO: bool = true;

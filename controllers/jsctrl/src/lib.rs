@@ -1,12 +1,16 @@
-use std::sync::Mutex;
-
 use aici_abi::{
-    aici_stop, export, exports, recognizer::{AnythingGoes, StackRecognizer}, toktree::{Recognizer, SpecialToken, TokTrie}, AiciCtrl, ExportedProgram, Guest, InitPromptArg, InitPromptResult, MidProcessArg, MidProcessResult, PostProcessArg, PostProcessResult, PreProcessArg, PreProcessResult, Program, SampleWithBias, SeqId, SimpleVob, Splice, TokenId
+    aici_stop, export,
+    recognizer::{AnythingGoes, StackRecognizer},
+    toktree::{Recognizer, SpecialToken, TokTrie},
+    AiciCtrl, ExportedProgram, Guest, InitPromptArg, InitPromptResult, MidProcessArg,
+    MidProcessResult, PostProcessArg, PostProcessResult, PreProcessArg, PreProcessResult, Program,
+    SampleWithBias, SeqId, SimpleVob, Splice, TokenId,
 };
 use rquickjs::{
     class::Trace, function::IntoArgs, ArrayBuffer, Context, Ctx, FromJs, Function, IntoAtom,
     IntoJs, Module, Object, Result, Runtime, TypedArray, Value,
 };
+use std::sync::Mutex;
 
 struct ModuleState {
     trie: TokTrie,
@@ -226,13 +230,12 @@ impl<'js> IntoJs<'js> for Buffer {
 #[rquickjs::module]
 #[allow(non_snake_case)]
 mod aici_mod {
-    use crate::{Buffer, CtxExt};
-
-    pub use super::{Constraint, TokenSet};
-
     use super::GLOBAL_STATE;
+    pub use super::{Constraint, TokenSet};
+    use crate::{Buffer, CtxExt};
     use aici_abi::{
-        aici_stop, cfg::CfgParser, runtime, rx::RecRx, substring::SubStrMatcher, tokenizer, toktree::SpecialToken, SeqId, TokenId
+        aici_stop, cfg::CfgParser, runtime, rx::RecRx, substring::SubStrMatcher, tokenizer,
+        toktree::SpecialToken, SeqId, TokenId,
     };
     use rquickjs::{Ctx, Exception, Result, Value};
 

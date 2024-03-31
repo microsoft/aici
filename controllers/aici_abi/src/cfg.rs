@@ -1,7 +1,7 @@
-use crate::lex::{Lexer, LexerState, StateID, VobIdx, VobSet};
 use crate::{
-    SimpleVob,
+    lex::{Lexer, LexerState, StateID, VobIdx, VobSet},
     toktree::{Recognizer, SpecialToken, TokTrie},
+    SimpleVob,
 };
 use anyhow::Result;
 use cfgrammar::{

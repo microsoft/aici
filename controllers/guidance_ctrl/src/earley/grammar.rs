@@ -1,9 +1,7 @@
-use std::fmt::Debug;
-
-use aici_abi::{svob::SimpleVob, toktree::SpecialToken};
-
 use super::ByteSet;
+use aici_abi::{svob::SimpleVob, toktree::SpecialToken};
 use rustc_hash::FxHashMap;
+use std::fmt::Debug;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct SymIdx(u32);
