@@ -191,6 +191,10 @@ impl TokTrie {
         }
     }
 
+    pub fn eos_token(&self) -> TokenId {
+        self.info.tok_eos
+    }
+
     pub fn vocab_size(&self) -> usize {
         self.info.vocab_size as usize
     }
@@ -504,7 +508,7 @@ impl TokTrie {
         }
         // all prefixes of 'start' are also allowed
         if start.len() > 0 {
-            for len in 1..start.len() - 1 {
+            for len in 1..=start.len() {
                 let bytes = &start[0..len];
                 if let Some(tok) = self.token_id(bytes) {
                     logits.allow_token(tok);

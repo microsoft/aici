@@ -63,9 +63,9 @@ def main():
     grm = (
         "<joke>Parallel lines have so much in common. It’s a shame they’ll never meet.</joke>\n"
         + "<joke>"
-        + gen(regex=r'[A-Z].*', stop="</joke>")
-        + "\nScore (of 10): "
-        + gen(regex=r"\d{1,3}")
+        + capture(gen(regex=r'[A-Z\(].*', stop="</joke>"), "joke")
+        + "</joke>\nScore (of 10): "
+        + capture(gen(regex=r"\d{1,3}"), "score")
         + "\n"
     )
     print(base64.b64encode(grm.serialize()).decode("utf-8"))
