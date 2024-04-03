@@ -29,6 +29,9 @@ while [ "$1" != "" ] ; do
         --loop )
             LOOP=1
             ;;
+        --timer )
+            ADD_ARGS="-A--wasm-timer-resolution-us=1"
+            ;;
         --cuda )
             if [ "$CPP" = 1 ] ; then
               VER="$VER --features cuda"
