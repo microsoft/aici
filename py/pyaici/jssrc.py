@@ -19,7 +19,8 @@ tsconfig_json = r"""{
   }
 }"""
 
-aici_types_d_t = r"""// Top-level symbols
+aici_types_d_t = r"""// Generated file, do not edit.
+// Top-level symbols
 
 type Token = number;
 type Buffer = Uint8Array;
@@ -170,6 +171,11 @@ declare module "_aici" {
   function tokenRepr(token: number): string;
 
   /**
+   * Return debug string representation of a given token string
+   */
+  function tokensRepr(tokens: number[]): string;
+
+  /**
    * Return identifier of the current sequence.
    * Most useful with fork_group parameter in mid_process() callback.
    * Best use aici.fork() instead.
@@ -215,6 +221,8 @@ declare module "_aici" {
    * Return a string like `b"..."` that represents the given buffer.
    */
   function bufferRepr(b: Buffer): string;
+
+  function _midProcessReturn(midProcessResult: any): void;
 
   /**
    * Represents a set of tokens.
@@ -297,13 +305,13 @@ declare module "_aici" {
    */
   function substrConstraint(template: string, stop_at: string): Constraint;
 }
-// Generated file, do not edit.
 declare module 'aici' {
 /// 
-import { TokenSet, tokenize, detokenize, regexConstraint, cfgConstraint, substrConstraint, Constraint, getVar, setVar, appendVar, eosToken, panic } from "_aici";
-export { TokenSet, tokenize, detokenize, getVar, setVar, appendVar, eosToken };
+import { TokenSet, tokenize, detokenize, regexConstraint, cfgConstraint, substrConstraint, Constraint, getVar, setVar, appendVar, eosToken, panic, tokenRepr, tokensRepr } from "_aici";
+export { TokenSet, tokenize, detokenize, getVar, setVar, appendVar, eosToken, tokenRepr, tokensRepr };
 export type SeqId = number;
 type int = number;
+export function setLogLevel(level: number): void;
 /**
  * Return debug representation of the argument, suitable for printing in the console.
  */
@@ -323,61 +331,63 @@ export function getTokens(): Token[];
  * Get the length of the prompt in the current sequence.
  */
 export function getPromptLen(): number;
-export class MidProcessResult {
-    _n_skip_me: boolean;
-    _n_stop: boolean;
-    _n_logit_bias: TokenSet | null;
-    _n_backtrack: number;
-    _n_ff_tokens: Token[];
-    constructor();
+/**
+ * Represents a splice operation.
+ */
+class Splice {
+    backtrack: number;
+    ffTokens: Token[];
+    whenSampled: Token[];
+    constructor(backtrack: number, ffTokens: Token[], whenSampled?: Token[]);
     /**
-     * Stop the current sequence.
+     * Adds a splice to the current splice.
+     */
+    addSplice(other: Splice): void;
+}
+class Branch {
+    splices: Splice[];
+    sampleMask: TokenSet | null;
+    constructor({ splices, sampleMask, }: {
+        splices?: Splice[];
+        sampleMask?: TokenSet | null;
+    });
+    /**
+     * Checks if the branch is a single splice.
+     */
+    isSplice(): boolean;
+    static noop(): Branch;
+}
+export class MidProcessResult {
+    skip_me: boolean;
+    branches: Branch[];
+    /**
+     * Constructs a MidProcessResult object.
+     * @param branches - The list of branches.
+     */
+    constructor(branches: Branch[]);
+    /**
+     * Checks if the result is a single splice.
+     */
+    isSplice(): boolean;
+    static bias(bias: TokenSet): MidProcessResult;
+    static splice(backtrack: number, ff_tokens: Token[]): MidProcessResult;
+    /**
+     * Stops the generation process early.
      */
     static stop(): MidProcessResult;
-    /**
-     * Sample one of the tokens from the set.
-     */
-    static bias(allowedTokens: TokenSet): MidProcessResult;
-    /**
-     * Backtrack given number of tokens and then appends the given tokens to the prompt.
-     */
-    static splice(backtrack: number, tokens: Token[]): MidProcessResult;
+    static noop(): MidProcessResult;
     static skipMe(): MidProcessResult;
 }
-export class PreProcessResult {
-    _n_suspended: boolean;
-    _n_ff_tokens: Token[];
-    _n_num_forks: number;
-    constructor();
-    static continue_(): PreProcessResult;
-    static suspend(): PreProcessResult;
-    static fork(numForks: number): PreProcessResult;
-    static ffTokens(toks: Token[]): PreProcessResult;
-}
-export class PostProcessResult {
-    _n_stop_seq: boolean;
-    constructor(stop_seq?: boolean);
-    static continue_(): PostProcessResult;
-    static stop(): PostProcessResult;
-    static fromTokens(tokens: Token[]): PostProcessResult;
-}
+export function allTokens(): TokenSet;
 export class NextToken {
     finished: boolean;
     currTokens: Token[] | null;
-    forkGroup: SeqId[];
     _resolve?: (value: Token[]) => void;
     constructor();
     /**
      * Awaiting this will return generated token (or tokens, if fast-forwarding requested by self.mid_process()).
-     * You have only ~1ms to process the results before awaiting a new instance of NextToken() again.
      */
     run(): Promise<Token[]>;
-    /**
-     * Override to suspend, if the model cannot continue generating tokens
-     * now (for example, not all variables are available to compute bias).
-     * ~1ms time limit.
-     */
-    preProcess(): PreProcessResult;
     /**
      * This can be overridden to return a bias, fast-forward tokens, backtrack etc.
      * ~20ms time limit.
@@ -388,10 +398,13 @@ export class NextToken {
      * ~1ms time limit.
      * @param tokens tokens generated in the last step
      */
-    postProcess(tokens: Token[]): PostProcessResult;
-    _pre_process(): PreProcessResult;
-    _mid_process(fork_group: SeqId[]): MidProcessResult;
-    _post_process(_backtrack: int, tokens: Token[]): PostProcessResult;
+    postProcess(backtrack: number, tokens: Token[]): void;
+    /**
+     * If true, the postProcess() has to be empty and always self.midProcess().isSplice()
+     */
+    isFixed(): boolean;
+    _mid_process(): MidProcessResult;
+    _post_process(backtrack: int, tokens: Token[]): void;
     private reset;
 }
 /**
@@ -410,7 +423,7 @@ class FixedTokens extends NextToken {
     fixedTokens: Token[];
     following: Label | null;
     constructor(text: string | Buffer, following?: Label | null);
-    preProcess(): PreProcessResult;
+    isFixed(): boolean;
     midProcess(): MidProcessResult;
 }
 /**
@@ -419,7 +432,7 @@ class FixedTokens extends NextToken {
 class StopToken extends NextToken {
     constructor();
     midProcess(): MidProcessResult;
-    postProcess(_tokens: Token[]): PostProcessResult;
+    postProcess(): void;
 }
 /**
  * Generates a token that satisfies the given constraint.
@@ -430,17 +443,14 @@ export class ConstrainedToken extends NextToken {
     _constraint: Constraint | null;
     constructor(mkConstraint: () => Constraint);
     midProcess(): MidProcessResult;
-    postProcess(tokens: Token[]): PostProcessResult;
-}
-export class PreToken extends NextToken {
-    midProcess(): MidProcessResult;
+    postProcess(backtrack: number, tokens: Token[]): void;
 }
 /**
  * Forks the execution into `numForks` branches.
  * @param numForks how many branches
  * @returns a number from 0 to `numForks`-1, indicating the branch
  */
-export function fork(numForks: number): Promise<number>;
+export function fork(forks: number | Branch[]): Promise<number>;
 /**
  * Suspends execution until all variables are available.
  * @param vars names of variables
@@ -452,9 +462,7 @@ export function waitVars(...vars: string[]): Promise<Buffer[]>;
  */
 export interface AiciCallbacks {
     init_prompt(prompt: Token[]): void;
-    pre_process(): PreProcessResult;
-    mid_process(fork_group: SeqId[]): MidProcessResult;
-    post_process(backtrack: number, tokens: Token[]): PostProcessResult;
+    mid_process(backtrack: number, tokens: Token[], fork_group: SeqId[]): void;
 }
 /**
  * Awaiting this returns the prompt passed by the user.
@@ -471,18 +479,20 @@ export class AiciAsync implements AiciCallbacks {
     static instance: AiciAsync;
     _tokens: Token[];
     _prompt_len: number;
-    private _pendingCb;
+    _fork_group: SeqId[];
+    _went_ahead: boolean;
+    private _nextTokenCb?;
     private _token;
     private _getPrompt;
-    private midProcessReEntry;
     _setGetPrompt(g: GetPrompt): void;
     _nextToken(t: NextToken): void;
     constructor(f: () => Promise<void>);
-    step(tokens: Token[]): void;
+    step(tokens: Token[]): Promise<void>;
     init_prompt(prompt: Token[]): void;
-    pre_process(): PreProcessResult;
-    mid_process(fork_group: SeqId[]): MidProcessResult;
-    post_process(backtrack: number, tokens: Token[]): PostProcessResult;
+    private applyTokens;
+    private midProcessWithSkip;
+    mid_process(backtrack: number, tokens: Token[], fork_group: SeqId[]): void;
+    private mid_process_inner;
 }
 /**
  * Starts the AICI loop.

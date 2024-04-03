@@ -13,6 +13,9 @@ async function jsonInt() {
     await gen({ regex: /\d+/ })
 }
 
+/**
+ * @param {string} name 
+ */
 async function jsonField(name) {
     await $`    "${name}": `
 }

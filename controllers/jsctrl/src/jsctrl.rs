@@ -16,6 +16,7 @@ use rquickjs::{
 struct ModuleState {
     trie: TokTrie,
     vars: VariableStorage,
+    mid_process_result: Option<MidProcessResult>,
 }
 
 unsafe impl Send for ModuleState {}
@@ -24,6 +25,7 @@ lazy_static::lazy_static! {
     static ref GLOBAL_STATE: Mutex<ModuleState> = Mutex::new(ModuleState {
         trie: TokTrie::from_host(),
         vars: VariableStorage::new(),
+        mid_process_result: None,
     });
 }
 
@@ -77,7 +79,19 @@ impl<'js> CtxExt<'js> for Ctx<'js> {
     fn error_to_string(&self, e: rquickjs::Error) -> String {
         match e {
             rquickjs::Error::Exception => self.error_value_to_string(self.catch()),
-            _ => format!("{e}"),
+            _ => {
+                // let stack = match self.eval("new Error().stack") {
+                //     Ok(v) => v,
+                //     Err(e) => {
+                //         format!("Error getting stack: {e}")
+                //     }
+                // };
+                // let exn = rquickjs::Exception::from_message(self.clone(), &format!("{e}")).unwrap();
+                // let _ = exn.throw();
+                // self.error_to_string(rquickjs::Error::Exception)
+                // format!("{e}\n{}", exn.stack().unwrap_or("No stack".to_string()))
+                format!("{e}")
+            }
         }
     }
 
@@ -233,16 +247,16 @@ impl<'js> IntoJs<'js> for Buffer {
 #[rquickjs::module]
 #[allow(non_snake_case)]
 mod aici_mod {
-    use crate::{Buffer, CtxExt};
+    use crate::{Buffer, CtxExt, ObjectExt};
 
     pub use super::{Constraint, TokenSet};
 
     use super::GLOBAL_STATE;
     use aici_abi::{
         aici_stop, cfg::CfgParser, rx::RecRx, substring::SubStrMatcher, toktree::SpecialToken,
-        TokenId,
+        Branch, MidProcessResult, Splice, TokenId,
     };
-    use rquickjs::{Ctx, Exception, Result, Value};
+    use rquickjs::{Ctx, Exception, Object, Result, Value};
 
     #[rquickjs::function]
     pub fn selfSeqId() -> u32 {
@@ -277,6 +291,12 @@ mod aici_mod {
     }
 
     #[rquickjs::function]
+    pub fn tokensRepr(tokens: Vec<TokenId>) -> String {
+        let trie = &mut GLOBAL_STATE.lock().unwrap().trie;
+        trie.tokens_dbg(&tokens)
+    }
+
+    #[rquickjs::function]
     pub fn getVar(name: String) -> Option<Buffer> {
         let name = name.as_str();
         let v = GLOBAL_STATE.lock().unwrap().vars.get(name);
@@ -295,6 +315,34 @@ mod aici_mod {
         let name = name.as_str();
         let vars = &GLOBAL_STATE.lock().unwrap().vars;
         vars.append(name, value.0);
+    }
+
+    #[rquickjs::function]
+    pub fn _midProcessReturn(obj: Object<'_>) {
+        let branches: Vec<Object> = obj.get2("branches");
+        let res = MidProcessResult {
+            branches: branches
+                .into_iter()
+                .map(|b| {
+                    let sample_mask: Option<TokenSet> = b.get2("sampleMask");
+                    let splices: Vec<Object> = b.get2("splices");
+                    Branch {
+                        sample_mask: sample_mask.map(|ts| ts.inner),
+                        splices: splices
+                            .into_iter()
+                            .map(|s| Splice {
+                                when_sampled: s.get2("whenSampled"),
+                                ff_tokens: s.get2("ffTokens"),
+                                backtrack: s.get2("backtrack"),
+                            })
+                            .collect(),
+                    }
+                })
+                .collect(),
+        };
+
+        let mut st = GLOBAL_STATE.lock().unwrap();
+        st.mid_process_result = Some(res);
     }
 
     #[rquickjs::function]
@@ -487,15 +535,6 @@ impl Runner {
     }
 }
 
-/*
-export interface AiciCallbacks {
-  init_prompt(prompt: Token[]): void;
-  pre_process(): PreProcessResult;
-  mid_process(fork_group: SeqId[]): MidProcessResult;
-  post_process(backtrack: number, tokens: Token[]): PostProcessResult;
-}
-*/
-
 impl AiciCtrl for Runner {
     fn init_prompt(&mut self, arg: InitPromptArg) -> InitPromptResult {
         self.with_cb("init_prompt", |ctx| {
@@ -506,34 +545,17 @@ impl AiciCtrl for Runner {
     }
 
     fn mid_process(&mut self, arg: MidProcessArg) -> MidProcessResult {
-        loop {
-            let res = self.with_cb("mid_process", |ctx| {
-                let cb: Function = ctx.eval2("globalThis._aici_cb.mid_process");
-                let fg: Vec<u32> = arg.fork_group.iter().map(|v| v.0.clone()).collect();
-
-                let r: Object = cb.call2((&fg,));
-                let skip_me: bool = r.get2("_n_skip_me");
-                let stop: bool = r.get2("_n_stop");
-                if skip_me {
-                    None
-                } else if stop {
-                    Some(MidProcessResult::stop())
-                } else {
-                    let backtrack: u32 = r.get2("_n_backtrack");
-                    let ff_tokens: Vec<TokenId> = r.get2("_n_ff_tokens");
-
-                    if backtrack > 0 || ff_tokens.len() > 0 {
-                        Some(MidProcessResult::splice(backtrack, ff_tokens))
-                    } else {
-                        let logit_bias: TokenSet = r.get2("_n_logit_bias");
-                        Some(MidProcessResult::sample(logit_bias.inner))
-                    }
-                }
-            });
-            match res {
-                Some(r) => return r,
-                None => {}
-            }
+        self.with_cb("mid_process", |ctx| {
+            let cb: Function = ctx.eval2("globalThis._aici_cb.mid_process");
+            let fg: Vec<u32> = arg.fork_group.iter().map(|v| v.0.clone()).collect();
+            let _: Value = cb.call2((arg.backtrack, &arg.tokens, &fg));
+            ()
+        });
+        let st = &mut GLOBAL_STATE.lock().unwrap();
+        if st.mid_process_result.is_some() {
+            st.mid_process_result.take().unwrap()
+        } else {
+            panic!("mid_process did not return a result")
         }
     }
 }

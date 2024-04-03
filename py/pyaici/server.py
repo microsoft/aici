@@ -140,9 +140,7 @@ class NextToken:
         """
         return MidProcessResult.bias(all_tokens())
 
-    def post_process(
-        self, backtrack: int, tokens: List[int]
-    ) -> Optional[MidProcessResult]:
+    def post_process(self, backtrack: int, tokens: List[int]):
         """
         This can be overridden to do some processing after the token is generated.
         """
@@ -323,10 +321,10 @@ class AiciCallbacks:
     def init_prompt(self, prompt: List[Token]):
         pass
 
-    def mid_process(self) -> MidProcessResult:
-        ts = TokenSet()
-        ts.set_all(True)
-        return MidProcessResult.bias(ts)
+    def mid_process(
+        self, backtrack: int, tokens: List[Token], fork_group: List[SeqId]
+    ) -> MidProcessResult:
+        return MidProcessResult.bias(all_tokens())
 
 
 class GetPrompt:

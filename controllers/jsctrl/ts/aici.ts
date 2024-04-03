@@ -13,14 +13,22 @@ import {
   appendVar,
   eosToken,
   panic,
+  tokenRepr,
+  tokensRepr,
 } from "_aici";
 
-export { TokenSet, tokenize, detokenize, getVar, setVar, appendVar, eosToken };
+export { TokenSet, tokenize, detokenize, getVar, setVar, appendVar, eosToken, tokenRepr, tokensRepr };
 
 import * as _aici from "_aici";
 
 export type SeqId = number;
 type int = number;
+
+let logLevel = 1;
+
+export function setLogLevel(level: number) {
+  logLevel = level;
+}
 
 function dbgArg(arg: any, depth: number): string {
   const maxElts = 20;
@@ -77,7 +85,7 @@ export function log(...args: any[]) {
   (console as any)._print(args.map((x) => inspect(x)).join(" "));
 }
 
-export class AssertionError extends Error {}
+export class AssertionError extends Error { }
 
 /**
  * Throw an exception if the condition is not met.
@@ -102,113 +110,130 @@ export function getPromptLen(): number {
   return AiciAsync.instance._prompt_len;
 }
 
-export class MidProcessResult {
-  _n_skip_me = false;
-  _n_stop = false;
-  _n_logit_bias: TokenSet | null = null;
-  _n_backtrack: number = 0;
-  _n_ff_tokens: Token[] = [];
-
-  constructor() {}
+/**
+ * Represents a splice operation.
+ */
+class Splice {
+  // the field names below are used by native
+  constructor(
+    public backtrack: number,
+    public ffTokens: Token[],
+    public whenSampled: Token[] = []
+  ) { }
 
   /**
-   * Stop the current sequence.
+   * Adds a splice to the current splice.
+   */
+  addSplice(other: Splice) {
+    assert(this.whenSampled.length === 0);
+    if (other.backtrack >= this.ffTokens.length) {
+      this.backtrack += other.backtrack - this.ffTokens.length;
+      this.ffTokens = other.ffTokens.slice();
+    } else {
+      if (other.backtrack > 0) this.ffTokens.splice(-other.backtrack);
+      this.ffTokens.push(...other.ffTokens);
+    }
+  }
+}
+
+class Branch {
+  // field names used by native
+  splices: Splice[];
+  sampleMask: TokenSet | null;
+
+  constructor({
+    splices = [],
+    sampleMask = null,
+  }: {
+    splices?: Splice[];
+    sampleMask?: TokenSet | null;
+  }) {
+    this.splices = splices;
+    this.sampleMask = sampleMask;
+  }
+
+  /**
+   * Checks if the branch is a single splice.
+   */
+  isSplice(): boolean {
+    return (
+      this.splices.length === 1 && this.splices[0].whenSampled.length === 0
+    );
+  }
+
+  static noop(): Branch {
+    return new Branch({ splices: [new Splice(0, [])] });
+  }
+}
+
+export class MidProcessResult {
+  skip_me: boolean;
+  // field name used by native
+  branches: Branch[];
+
+  /**
+   * Constructs a MidProcessResult object.
+   * @param branches - The list of branches.
+   */
+  constructor(branches: Branch[]) {
+    assert(Array.isArray(branches));
+    assert(branches.every((b) => b instanceof Branch));
+    this.skip_me = false;
+    this.branches = branches;
+  }
+
+  /**
+   * Checks if the result is a single splice.
+   */
+  isSplice(): boolean {
+    return this.branches.length === 1 && this.branches[0].isSplice();
+  }
+
+  static bias(bias: TokenSet): MidProcessResult {
+    return new MidProcessResult([new Branch({ sampleMask: bias })]);
+  }
+
+  static splice(backtrack: number, ff_tokens: Token[]): MidProcessResult {
+    return new MidProcessResult([
+      new Branch({
+        splices: [new Splice(backtrack, ff_tokens)],
+      }),
+    ]);
+  }
+
+  /**
+   * Stops the generation process early.
    */
   static stop(): MidProcessResult {
-    const res = new MidProcessResult();
-    res._n_stop = true;
-    return res;
+    return new MidProcessResult([]);
   }
 
-  /**
-   * Sample one of the tokens from the set.
-   */
-  static bias(allowedTokens: TokenSet): MidProcessResult {
-    const res = new MidProcessResult();
-    res._n_logit_bias = allowedTokens;
-    return res;
-  }
-
-  /**
-   * Backtrack given number of tokens and then appends the given tokens to the prompt.
-   */
-  static splice(backtrack: number, tokens: Token[]): MidProcessResult {
-    const res = new MidProcessResult();
-    assert(backtrack >= 0);
-    assert(Array.isArray(tokens));
-    res._n_backtrack = backtrack;
-    res._n_ff_tokens = tokens;
-    return res;
+  static noop(): MidProcessResult {
+    return new MidProcessResult([Branch.noop()]);
   }
 
   static skipMe(): MidProcessResult {
-    const res = new MidProcessResult();
-    res._n_skip_me = true;
-    return res;
+    const result = new MidProcessResult([]);
+    result.skip_me = true;
+    return result;
   }
 }
 
-export class PreProcessResult {
-  _n_suspended = false;
-  _n_ff_tokens: Token[] = [];
-  _n_num_forks: number = 1;
-
-  constructor() {}
-
-  static continue_(): PreProcessResult {
-    return new PreProcessResult();
-  }
-
-  static suspend(): PreProcessResult {
-    const res = new PreProcessResult();
-    res._n_suspended = true;
-    return res;
-  }
-
-  static fork(numForks: number): PreProcessResult {
-    const res = new PreProcessResult();
-    res._n_num_forks = numForks;
-    return res;
-  }
-
-  static ffTokens(toks: Token[]): PreProcessResult {
-    const res = new PreProcessResult();
-    res._n_ff_tokens = toks;
-    return res;
-  }
-}
-
-export class PostProcessResult {
-  _n_stop_seq: boolean;
-
-  constructor(stop_seq = false) {
-    this._n_stop_seq = stop_seq;
-  }
-
-  static continue_(): PostProcessResult {
-    return new PostProcessResult();
-  }
-
-  static stop(): PostProcessResult {
-    return new PostProcessResult(true);
-  }
-
-  static fromTokens(tokens: Token[]): PostProcessResult {
-    return new PostProcessResult(tokens.includes(eosToken()));
-  }
+export function allTokens() {
+  const ts = new TokenSet();
+  ts.setAll(true);
+  return ts;
 }
 
 export class NextToken {
   finished = false;
   currTokens: Token[] | null = null;
-  forkGroup: SeqId[] = [];
   _resolve?: (value: Token[]) => void;
 
-  constructor() {}
+  constructor() { }
 
   /**
    * Awaiting this will return generated token (or tokens, if fast-forwarding requested by self.mid_process()).
-   * You have only ~1ms to process the results before awaiting a new instance of NextToken() again.
    */
   run(): Promise<Token[]> {
     assert(!this._resolve);
@@ -219,20 +244,11 @@ export class NextToken {
   }
 
   /**
-   * Override to suspend, if the model cannot continue generating tokens
-   * now (for example, not all variables are available to compute bias).
-   * ~1ms time limit.
-   */
-  preProcess(): PreProcessResult {
-    return PreProcessResult.continue_();
-  }
-
-  /**
    * This can be overridden to return a bias, fast-forward tokens, backtrack etc.
    * ~20ms time limit.
    */
   midProcess(): MidProcessResult {
-    return MidProcessResult.bias(new TokenSet());
+    return MidProcessResult.bias(allTokens());
   }
 
   /**
@@ -240,33 +256,38 @@ export class NextToken {
    * ~1ms time limit.
    * @param tokens tokens generated in the last step
    */
-  postProcess(tokens: Token[]): PostProcessResult {
-    return PostProcessResult.continue_();
+  postProcess(backtrack: number, tokens: Token[]) { }
+
+  /**
+   * If true, the postProcess() has to be empty and always self.midProcess().isSplice()
+   */
+  isFixed() {
+    return false;
   }
 
   //
   // Internal methods
   //
 
-  _pre_process(): PreProcessResult {
+  _mid_process(): MidProcessResult {
     this.reset();
-    return this.preProcess();
+    const spl = this.isFixed();
+    const r = this.midProcess();
+    if (spl)
+      assert(r.isSplice());
+    return r;
   }
 
-  _mid_process(fork_group: SeqId[]): MidProcessResult {
-    this.forkGroup = fork_group;
-    return this.midProcess();
-  }
-
-  _post_process(_backtrack: int, tokens: Token[]): PostProcessResult {
+  _post_process(backtrack: int, tokens: Token[]) {
+    if (logLevel >= 3)
+      console.log(`POST-PROCESS: bt:${backtrack} ${tokensRepr(tokens)}`);
     this.currTokens = tokens;
     this.finished = tokens.includes(eosToken());
-    return this.postProcess(tokens);
+    this.postProcess(backtrack, tokens);
   }
 
   private reset(): void {
     this.currTokens = null;
-    this.forkGroup = [];
   }
 }
 
@@ -300,23 +321,22 @@ class FixedTokens extends NextToken {
   constructor(text: string | Buffer, following: Label | null = null) {
     super();
     this.fixedTokens = tokenize(text);
-    console.log("FIXED", JSON.stringify(detokenize(this.fixedTokens).decode()));
+    if (logLevel >= 1)
+      console.log("FIXED", tokensRepr(this.fixedTokens));
     this.following = following;
   }
 
-  preProcess(): PreProcessResult {
-    if (this.following === null) {
-      return PreProcessResult.ffTokens(this.fixedTokens);
-    }
-    return PreProcessResult.continue_();
+  override isFixed(): boolean {
+    return true;
   }
 
-  midProcess(): MidProcessResult {
+  override midProcess(): MidProcessResult {
     let backtrack = 0;
     if (this.following !== null) {
       backtrack = getTokens().length - this.following.ptr;
       assert(backtrack >= 0);
-      console.log("BACKTRACK", backtrack);
+      if (logLevel >= 1)
+        console.log("BACKTRACK", backtrack);
     }
     return MidProcessResult.splice(backtrack, this.fixedTokens);
   }
@@ -330,13 +350,12 @@ class StopToken extends NextToken {
     super();
   }
 
-  midProcess(): MidProcessResult {
+  override midProcess(): MidProcessResult {
     return MidProcessResult.stop();
   }
 
-  postProcess(_tokens: Token[]): PostProcessResult {
+  override postProcess() {
     this.finished = false; // we're never finished, just keep yelling STOP!
-    return PostProcessResult.stop();
   }
 }
 
@@ -351,44 +370,40 @@ export class ConstrainedToken extends NextToken {
     super();
   }
 
-  midProcess(): MidProcessResult {
+  override midProcess(): MidProcessResult {
     const bias = new TokenSet();
     if (this._constraint === null) {
       this._constraint = this.mkConstraint();
     }
     this._constraint.allowTokens(bias);
-    console.log("ALLOW:", bias.toString());
+    if (logLevel >= 2)
+      console.log("ALLOW:", bias.toString());
     if (bias.numSet() === 0) {
-      console.log("Constraint doesn't allow any tokens; adding EOS")
-      return MidProcessResult.stop();
+      if (logLevel >= 1)
+        console.log("Constraint doesn't allow any tokens; adding EOS");
+      bias.add(eosToken());
     }
     return MidProcessResult.bias(bias);
   }
 
-  postProcess(tokens: Token[]): PostProcessResult {
+  override postProcess(backtrack: number, tokens: Token[]) {
     const c = this._constraint;
     assert(!!c);
+    assert(backtrack == 0);
     tokens.forEach((t) => c.appendToken(t));
     if (c.eosForced()) {
       this.finished = true;
     }
-    return PostProcessResult.continue_();
   }
 }
 
-export class PreToken extends NextToken {
-  midProcess(): MidProcessResult {
-    return MidProcessResult.skipMe();
-  }
-}
-
-class Fork extends PreToken {
-  constructor(public numForks: number) {
+class Fork extends NextToken {
+  constructor(public forks: Branch[]) {
     super();
   }
 
-  preProcess(): PreProcessResult {
-    return PreProcessResult.fork(this.numForks);
+  override midProcess(): MidProcessResult {
+    return new MidProcessResult(this.forks);
   }
 }
 
@@ -397,13 +412,18 @@ class Fork extends PreToken {
  * @param numForks how many branches
  * @returns a number from 0 to `numForks`-1, indicating the branch
  */
-export async function fork(numForks: number): Promise<number> {
-  const f = new Fork(numForks);
+export async function fork(forks: number | Branch[]): Promise<number> {
+  if (typeof forks === "number") {
+    forks = Array.from({ length: forks }, () => Branch.noop());
+  }
+  const f = new Fork(forks);
   await f.run();
-  return f.forkGroup.indexOf(_aici.selfSeqId());
+  const r = AiciAsync.instance._fork_group.indexOf(_aici.selfSeqId());
+  assert(r >= 0);
+  return r;
 }
 
-class WaitVars extends PreToken {
+class WaitVars extends NextToken {
   vars: string[];
   values: Buffer[];
 
@@ -413,13 +433,12 @@ class WaitVars extends PreToken {
     this.values = [];
   }
 
-  preProcess(): PreProcessResult {
+  override midProcess(): MidProcessResult {
     const values = this.vars.map((v) => getVar(v));
-    if (values.includes(null)) {
-      return PreProcessResult.suspend();
-    }
+    if (values.includes(null))
+      return MidProcessResult.noop();
     this.values = values as Buffer[];
-    return PreProcessResult.continue_();
+    return MidProcessResult.skipMe();
   }
 }
 
@@ -429,8 +448,11 @@ class WaitVars extends PreToken {
  * @returns values of the variables
  */
 export async function waitVars(...vars: string[]): Promise<Buffer[]> {
+  if (vars.length === 0)
+    return [];
   const w = new WaitVars(vars);
-  await w.run();
+  while (w.values.length == 0)
+    await w.run();
   return w.values;
 }
 
@@ -439,9 +461,11 @@ export async function waitVars(...vars: string[]): Promise<Buffer[]> {
  */
 export interface AiciCallbacks {
   init_prompt(prompt: Token[]): void;
-  pre_process(): PreProcessResult;
-  mid_process(fork_group: SeqId[]): MidProcessResult;
-  post_process(backtrack: number, tokens: Token[]): PostProcessResult;
+  mid_process(
+    backtrack: number,
+    tokens: Token[],
+    fork_group: SeqId[]
+  ): void;
 }
 
 /**
@@ -470,10 +494,11 @@ export class AiciAsync implements AiciCallbacks {
 
   _tokens: Token[] = [];
   _prompt_len = 0;
-  private _pendingCb: CbType | undefined;
+  _fork_group: SeqId[] = [];
+  _went_ahead = false;
+  private _nextTokenCb?: () => void;
   private _token: CbType | undefined;
   private _getPrompt: GetPrompt | undefined;
-  private midProcessReEntry = false;
 
   _setGetPrompt(g: GetPrompt) {
     assert(!this._getPrompt);
@@ -487,6 +512,9 @@ export class AiciAsync implements AiciCallbacks {
     assert(!this._getPrompt);
     assert(t instanceof NextToken);
     this._token = t;
+    const f = this._nextTokenCb;
+    this._nextTokenCb = undefined;
+    if (f) f();
   }
 
   constructor(f: () => Promise<void>) {
@@ -495,19 +523,18 @@ export class AiciAsync implements AiciCallbacks {
     (globalThis as any)._aici_cb = this;
 
     this.init_prompt = this.init_prompt.bind(this);
-    this.pre_process = this.pre_process.bind(this);
     this.mid_process = this.mid_process.bind(this);
-    this.post_process = this.post_process.bind(this);
 
     f()
       .then(async () => {
-        console.log("JsCtrl: done");
+        if (logLevel >= 1)
+          console.log("JsCtrl: done");
         while (true) {
           await new StopToken().run();
         }
       })
       .then(
-        () => {},
+        () => { },
         (e) => {
           // make sure we catch errors from promises, otherwise they silently stop a thread
           panic(e);
@@ -522,25 +549,18 @@ export class AiciAsync implements AiciCallbacks {
     }
   }
 
-  step(tokens: Token[]): void {
-    if (this._pendingCb != null) {
-      // TODO
-      this._token = this._pendingCb;
-      this._pendingCb = undefined;
-      return;
-    }
-
+  async step(tokens: Token[]) {
     const nextToken = this._token;
     assert(nextToken instanceof NextToken);
     const resolve = nextToken._resolve;
     assert(!!resolve);
-    // console.log("reset");
     this._token = undefined;
     nextToken._resolve = undefined;
     resolve(tokens);
-    // console.log("t2", this._token, resolve);
-    // this happens only in the deferred jobs...
-    // assert((this._token as any) instanceof NextToken);
+    await new Promise<void>((resolve) => {
+      assert(!this._nextTokenCb);
+      this._nextTokenCb = resolve;
+    })
   }
 
   init_prompt(prompt: Token[]): void {
@@ -554,60 +574,64 @@ export class AiciAsync implements AiciCallbacks {
     } else {
       assert(this._token instanceof NextToken);
     }
+    this._went_ahead = true;
   }
 
-  pre_process(): PreProcessResult {
-    // console.log("tok", this._token);
-    assert(this._token instanceof NextToken, "pre_process - jobs finished");
-    if (this._token.finished) {
-      this._token = new StopToken();
-    }
-    const r = this._token._pre_process();
-    assert(r instanceof PreProcessResult);
-    return r;
-  }
-
-  mid_process(fork_group: SeqId[]): MidProcessResult {
-    assert(this._token instanceof NextToken, "mid_process - no token");
-
-    if (this.midProcessReEntry) {
-      const r2 = this._token._pre_process();
-      assert(r2 instanceof PreProcessResult);
-      assert(r2._n_num_forks === 1, "nested fork not allowed");
-      if (r2._n_suspended) {
-        // Need to generate one fake token...
-        this._pendingCb = this._token;
-        const f = new FixedTokens(" ");
-        assert(f.fixedTokens.length === 1);
-        this._token = f;
-      }
-      this.midProcessReEntry = false;
-    }
-
-    const r = this._token._mid_process(fork_group);
-    assert(r instanceof MidProcessResult);
-
-    if (r._n_skip_me) {
-      this.step([]);
-      this.midProcessReEntry = true;
-      return r;
-    } else {
-      assert(Array.isArray(r._n_ff_tokens));
-      return r;
-    }
-  }
-
-  post_process(backtrack: number, tokens: Token[]): PostProcessResult {
+  private async applyTokens(backtrack: number, tokens: Token[]) {
     if (backtrack > 0) {
       this._tokens.splice(-backtrack);
     }
     this._tokens.push(...tokens);
-
     assert(this._token instanceof NextToken);
-    const r = this._token._post_process(backtrack, tokens.slice());
-    assert(r instanceof PostProcessResult);
-    this.step(tokens);
-    return r;
+    this._token._post_process(backtrack, tokens.slice());
+    await this.step(tokens);
+  }
+
+  private async midProcessWithSkip() {
+    while (true) {
+      const r = this._token!._mid_process();
+      assert(r instanceof MidProcessResult);
+      if (!r.skip_me)
+        return r;
+      await this.applyTokens(0, [])
+    }
+  }
+
+  mid_process(backtrack: number, tokens: Token[], fork_group: SeqId[]) {
+    this.mid_process_inner(backtrack, tokens, fork_group).then(() => { }, e => {
+      panic(e)
+    });
+  }
+
+  private async mid_process_inner(backtrack: number, tokens: Token[], fork_group: SeqId[]) {
+    if (logLevel >= 2)
+      console.log("MID-PROCESS", backtrack, tokensRepr(tokens), fork_group);
+
+    this._fork_group = fork_group;
+    assert(this._token instanceof NextToken, "mid_process - no token");
+
+    if (this._went_ahead)
+      this._went_ahead = false;
+    else
+      await this.applyTokens(backtrack, tokens);
+
+    const r = await this.midProcessWithSkip();
+    let r0 = r;
+
+    while (r0.isSplice()) {
+      const s = r0.branches[0].splices[0];
+      await this.applyTokens(s.backtrack, s.ffTokens);
+      this._went_ahead = true;
+      if (!this._token.isFixed())
+        break;
+      r0 = await this.midProcessWithSkip();
+      assert(r0.isSplice());
+      r.branches[0].splices[0].addSplice(r0.branches[0].splices[0]);
+    }
+
+    if (logLevel >= 2)
+      console.log("MID-PROCESS-RETURN", r);
+    _aici._midProcessReturn(r);
   }
 }
 
@@ -704,7 +728,8 @@ export class ChooseConstraint extends Constraint {
 }
 
 export async function genTokens(options: GenOptions): Promise<Token[]> {
-  console.log("GEN-OPT", options);
+  if (logLevel >= 2)
+    console.log("GEN-OPT", options);
   const res: Token[] = [];
   const {
     regex,
@@ -739,28 +764,31 @@ export async function genTokens(options: GenOptions): Promise<Token[]> {
 
   for (let i = 0; i < maxTokens; i++) {
     const tokens = await next_token.run();
-    res.push(...tokens);
 
-    console.log("GEN-STEP:", tokens.map(t => _aici.tokenRepr(t)).join(", "));
+    if (tokens?.length) {
+      res.push(...tokens);
 
-    const text = detokenize(res).decode();
+      if (logLevel >= 2)
+        console.log("GEN-STEP:", tokensRepr(tokens));
 
-    if (stopAt !== undefined && text.includes(stopAt)) {
-      break;
+      const text = detokenize(res).decode();
+
+      if (stopAt !== undefined && text.includes(stopAt)) {
+        break;
+      }
     }
-
-    // console.log(`GEN-${i}`, next_token);
 
     if (next_token.finished) {
       break;
     }
   }
 
-  if (storeVar !== undefined) {
+  if (storeVar !== undefined)
     setVar(storeVar, detokenize(res));
-  }
 
-  console.log("GEN", JSON.stringify(detokenize(res).decode()));
+  if (logLevel >= 1)
+    console.log("GEN", tokensRepr(res));
+
   return res;
 }
 

@@ -149,6 +149,11 @@ declare module "_aici" {
   function tokenRepr(token: number): string;
 
   /**
+   * Return debug string representation of a given token string
+   */
+  function tokensRepr(tokens: number[]): string;
+
+  /**
    * Return identifier of the current sequence.
    * Most useful with fork_group parameter in mid_process() callback.
    * Best use aici.fork() instead.
@@ -194,6 +199,8 @@ declare module "_aici" {
    * Return a string like `b"..."` that represents the given buffer.
    */
   function bufferRepr(b: Buffer): string;
+
+  function _midProcessReturn(midProcessResult: any): void;
 
   /**
    * Represents a set of tokens.
