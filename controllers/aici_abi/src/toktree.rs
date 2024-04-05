@@ -52,6 +52,7 @@ pub trait Recognizer {
     fn try_push_byte(&mut self, byte: u8) -> bool;
 }
 
+#[derive(Clone)]
 pub struct TokTrie {
     info: TokRxInfo,
     token_offsets: Vec<u32>,
@@ -76,6 +77,7 @@ impl TokTrieHeader {
     const MAGIC: u32 = 0x558b6fd3;
 }
 
+#[derive(Clone)]
 #[repr(C)]
 pub struct TrieNode {
     // byte:token

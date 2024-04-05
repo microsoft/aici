@@ -1,6 +1,7 @@
 use crate::{
     bytes::{vec_from_bytes, TokenId},
     svob::SimpleVob,
+    toktree::TokTrie,
     SeqId,
 };
 use serde::{Deserialize, Serialize};
@@ -58,18 +59,58 @@ fn read_blob(blob: BlobId, prefetch_size: usize) -> Vec<u8> {
     buffer
 }
 
+#[cfg(target_arch = "wasm32")]
 fn init_panic() {
-    #[cfg(target_arch = "wasm32")]
     std::panic::set_hook(Box::new(|info| {
         // skip 'run with `RUST_BACKTRACE=1`' message (not relevant for remote running)
         println!("{}", info);
     }))
 }
 
+#[cfg(target_arch = "wasm32")]
 #[no_mangle]
 pub extern "C" fn aici_init() {
     init_panic();
     set_host(Box::new(WasmHost {}));
+}
+
+pub trait TokenizerEnv: Send {
+    fn stop(&self) -> !;
+    fn tok_trie(&self) -> &TokTrie;
+    fn tokenize_bytes(&self, s: &[u8]) -> Vec<TokenId>;
+
+    fn tokenize(&self, s: &str) -> Vec<TokenId> {
+        self.tokenize_bytes(s.as_bytes())
+    }
+    fn eos_token(&self) -> TokenId {
+        self.tok_trie().eos_token()
+    }
+}
+
+pub struct WasmTokenizerEnv {
+    toktrie: TokTrie,
+}
+
+impl Default for WasmTokenizerEnv {
+    fn default() -> Self {
+        WasmTokenizerEnv {
+            toktrie: TokTrie::from_bytes(&trie_bytes()),
+        }
+    }
+}
+
+impl TokenizerEnv for WasmTokenizerEnv {
+    fn stop(&self) -> ! {
+        aici_stop()
+    }
+
+    fn tok_trie(&self) -> &TokTrie {
+        &self.toktrie
+    }
+
+    fn tokenize_bytes(&self, s: &[u8]) -> Vec<TokenId> {
+        tokenize_bytes(s)
+    }
 }
 
 /**

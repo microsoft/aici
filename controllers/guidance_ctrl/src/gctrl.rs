@@ -32,8 +32,11 @@ impl Runner {
             .decode(arg.guidance_b64)
             .expect("invalid base64");
         Runner {
-            tok_parser: TokenParser::from_guidance_protobuf(&guidance)
-                .expect("invalid guidance protobuf"),
+            tok_parser: TokenParser::from_guidance_protobuf(
+                Box::new(aici_abi::WasmTokenizerEnv::default()),
+                &guidance,
+            )
+            .expect("invalid guidance protobuf"),
             reported_captures: 0,
         }
     }

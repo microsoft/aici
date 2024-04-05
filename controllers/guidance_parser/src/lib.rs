@@ -6,6 +6,8 @@ use aici_native::{
 };
 use anyhow::Result;
 
+pub use aici_guidance_ctrl::*;
+
 struct ParserHost {
     trie_bytes: Vec<u8>,
     tokenizer: ByteTokenizer,

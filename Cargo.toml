@@ -14,6 +14,7 @@ members = [
     "rllm/rllm-llamacpp",
     "rllm/tch-cuda",
     "rllm/llama-cpp-low",
+    "py/guidance/guidance/_rust",
 ]
 resolver = "2"
 

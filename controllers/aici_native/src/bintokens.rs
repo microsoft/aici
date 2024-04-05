@@ -1,4 +1,4 @@
-use aici_abi::bytes::TokRxInfo;
+use aici_abi::{bytes::TokRxInfo, toktree::TokTrie, TokenId, TokenizerEnv};
 use anyhow::{anyhow, bail, Result};
 use rustc_hash::FxHashMap;
 use serde::{Deserialize, Serialize};
@@ -322,5 +322,45 @@ impl ByteTokenizer {
     }
     pub fn token_bytes(&self) -> Vec<Vec<u8>> {
         self.token_bytes.clone()
+    }
+}
+
+pub struct ByteTokenizerEnv {
+    pub tokenizer: ByteTokenizer,
+    tok_trie: TokTrie,
+}
+
+impl ByteTokenizerEnv {
+    pub fn load(tokenizer_name: &str) -> Result<ByteTokenizerEnv> {
+        let tokenizer = find_tokenizer(tokenizer_name)?;
+        Ok(Self::new(tokenizer))
+    }
+    pub fn new(tokenizer: ByteTokenizer) -> ByteTokenizerEnv {
+        let tok_trie = TokTrie::from(&tokenizer.tokrx_info(), &tokenizer.token_bytes());
+        ByteTokenizerEnv {
+            tokenizer,
+            tok_trie,
+        }
+    }
+}
+
+impl TokenizerEnv for ByteTokenizerEnv {
+    fn stop(&self) -> ! {
+        panic!("stop called")
+    }
+
+    fn tok_trie(&self) -> &TokTrie {
+        &self.tok_trie
+    }
+
+    fn tokenize_bytes(&self, s: &[u8]) -> Vec<TokenId> {
+        let tokens = self
+            .tokenizer
+            .hf_tokenizer
+            .encode(String::from_utf8_lossy(s), false);
+        match tokens {
+            Err(e) => panic!("tokenize error: {e}"),
+            Ok(tokens) => Vec::from(tokens.get_ids()),
+        }
     }
 }

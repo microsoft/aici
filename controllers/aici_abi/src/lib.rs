@@ -22,7 +22,7 @@ pub type TokenId = bytes::TokenId;
 
 pub use host::{
     aici_stop, arg_bytes, arg_string, self_seq_id, tokenize, tokenize_bytes, StorageCmd, StorageOp,
-    StorageResp, VariableStorage,
+    StorageResp, TokenizerEnv, VariableStorage, WasmTokenizerEnv,
 };
 
 #[cfg(not(target_arch = "wasm32"))]
