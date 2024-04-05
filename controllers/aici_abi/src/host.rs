@@ -69,14 +69,104 @@ fn init_panic() {
 #[no_mangle]
 pub extern "C" fn aici_init() {
     init_panic();
+    set_host(Box::new(WasmHost {}));
+}
+
+/**
+ * This is normally implemented straightforwardly by wasm callbacks.
+ * It can be overridden with set_host() when compiling to native.
+ */
+pub trait HostInterface {
+    fn arg_bytes(&self) -> Vec<u8>;
+    fn trie_bytes(&self) -> Vec<u8>;
+    fn return_logit_bias(&self, vob: &SimpleVob);
+    fn process_arg_bytes(&self) -> Vec<u8>;
+    fn return_process_result(&self, res: &[u8]);
+    fn storage_cmd(&self, cmd: StorageCmd) -> StorageResp;
+    fn tokenize_bytes(&self, s: &[u8]) -> Vec<TokenId>;
+    fn self_seq_id(&self) -> SeqId;
+    fn eos_token(&self) -> TokenId;
+    fn stop(&self) -> !;
+}
+
+static mut HOST: Option<Box<dyn HostInterface>> = None;
+
+struct WasmHost {}
+impl HostInterface for WasmHost {
+    fn arg_bytes(&self) -> Vec<u8> {
+        read_blob(unsafe { aici_host_module_arg() }, 1024)
+    }
+
+    fn trie_bytes(&self) -> Vec<u8> {
+        read_blob(unsafe { aici_host_token_trie() }, 0)
+    }
+
+    fn return_logit_bias(&self, vob: &SimpleVob) {
+        assert!(vob.len() > 0);
+        unsafe {
+            aici_host_return_logit_bias(vob.as_ptr());
+        }
+    }
+
+    fn process_arg_bytes(&self) -> Vec<u8> {
+        read_blob(unsafe { aici_host_process_arg() }, 1024)
+    }
+
+    fn return_process_result(&self, res: &[u8]) {
+        unsafe {
+            aici_host_return_process_result(res.as_ptr(), res.len() as u32);
+        }
+    }
+
+    fn storage_cmd(&self, cmd: StorageCmd) -> StorageResp {
+        let cmd_bytes = serde_json::to_vec(&cmd).unwrap();
+        let res_id = unsafe { aici_host_storage_cmd(cmd_bytes.as_ptr(), cmd_bytes.len() as u32) };
+        let resp_bytes = read_blob(res_id, 1024);
+        serde_json::from_slice(&resp_bytes).unwrap()
+    }
+
+    fn stop(&self) -> ! {
+        unsafe { aici_host_stop() };
+        panic!("didn't stop")
+    }
+
+    fn tokenize_bytes(&self, s: &[u8]) -> Vec<TokenId> {
+        let id = unsafe { aici_host_tokenize(s.as_ptr(), s.len() as u32) };
+        let r = read_blob(id, 4 * (s.len() / 3 + 10));
+        let res = vec_from_bytes(&r);
+        // println!(
+        //     "tokenize_bytes: {:?} -> {:?}",
+        //     String::from_utf8_lossy(s),
+        //     res
+        // );
+        res
+    }
+
+    fn self_seq_id(&self) -> SeqId {
+        unsafe { SeqId(aici_host_self_seq_id()) }
+    }
+
+    fn eos_token(&self) -> TokenId {
+        unsafe { aici_host_eos_token() }
+    }
+}
+
+fn get_host() -> &'static Box<dyn HostInterface> {
+    unsafe { HOST.as_ref().unwrap() }
+}
+
+pub fn set_host(host: Box<dyn HostInterface>) {
+    unsafe {
+        assert!(HOST.is_none());
+        HOST = Some(host);
+    }
 }
 
 pub fn arg_bytes() -> Vec<u8> {
-    #[cfg(target_arch = "wasm32")]
-    return read_blob(unsafe { aici_host_module_arg() }, 1024);
+    get_host().arg_bytes()
 
-    #[cfg(not(target_arch = "wasm32"))]
-    return std::fs::read("arg.json").unwrap();
+    // #[cfg(not(target_arch = "wasm32"))]
+    // return std::fs::read("arg.json").unwrap();
 }
 
 pub fn arg_string() -> String {
@@ -84,22 +174,17 @@ pub fn arg_string() -> String {
 }
 
 pub fn trie_bytes() -> Vec<u8> {
-    #[cfg(target_arch = "wasm32")]
-    return read_blob(unsafe { aici_host_token_trie() }, 0);
-
-    #[cfg(not(target_arch = "wasm32"))]
-    return std::fs::read("tokenizer.bin").unwrap();
+    get_host().trie_bytes()
+    // #[cfg(not(target_arch = "wasm32"))]
+    // return std::fs::read("tokenizer.bin").unwrap();
 }
 
 pub fn return_logit_bias(vob: &SimpleVob) {
-    assert!(vob.len() > 0);
-    unsafe {
-        aici_host_return_logit_bias(vob.as_ptr());
-    }
+    get_host().return_logit_bias(vob);
 }
 
 pub fn process_arg_bytes() -> Vec<u8> {
-    return read_blob(unsafe { aici_host_process_arg() }, 1024);
+    get_host().process_arg_bytes()
 }
 
 pub fn return_process_result(res: &[u8]) {
@@ -238,38 +323,25 @@ impl VariableStorage {
 
 /// Tokenize given byte string.
 pub fn tokenize_bytes(s: &[u8]) -> Vec<TokenId> {
-    let id = unsafe { aici_host_tokenize(s.as_ptr(), s.len() as u32) };
-    let r = read_blob(id, 4 * (s.len() / 3 + 10));
-    let res = vec_from_bytes(&r);
-    // println!(
-    //     "tokenize_bytes: {:?} -> {:?}",
-    //     String::from_utf8_lossy(s),
-    //     res
-    // );
-    res
+    get_host().tokenize_bytes(s)
 }
 
 /// Tokenize given UTF8 string.
 pub fn tokenize(s: &str) -> Vec<TokenId> {
-    let id = unsafe { aici_host_tokenize(s.as_ptr(), s.len() as u32) };
-    let r = read_blob(id, 4 * (s.len() / 3 + 10));
-    let res = vec_from_bytes(&r);
-    // println!("tokenize: {:?} -> {:?}", s, res);
-    res
+    get_host().tokenize_bytes(s.as_bytes())
 }
 
 /// Return the ID of the current process.
 pub fn self_seq_id() -> SeqId {
-    unsafe { SeqId(aici_host_self_seq_id()) }
+    get_host().self_seq_id()
 }
 
 /// Return the ID of the EOS token.
 pub fn eos_token() -> TokenId {
-    unsafe { aici_host_eos_token() }
+    get_host().eos_token()
 }
 
 /// Stop the program - any error info is assumed to have been printed already.
 pub fn aici_stop() -> ! {
-    unsafe { aici_host_stop() };
-    panic!("didn't stop");
+    get_host().stop();
 }

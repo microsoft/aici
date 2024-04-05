@@ -3,15 +3,16 @@ use crate::{
     hostimpl::AiciLimits,
     moduleinstance::{ModuleInstance, WasmContext},
     setup_bg_worker_pool,
-    shm::Shm, InstantiateReq, UserError,
+    shm::Shm,
+    InstantiateReq, UserError,
 };
-use aici_abi::{MidProcessArg, ProcessResultOffset, StorageCmd, StorageOp, StorageResp, TokenId};
+use aici_abi::{MidProcessArg, ProcessResultOffset, StorageCmd, StorageResp, TokenId};
 use aicirt::{
     api::SequenceResult,
     futexshm::{TypedClient, TypedClientHandle, TypedServer},
     set_max_priority,
     shm::Unlink,
-    user_error, HashMap,
+    user_error, variables::Variables,
 };
 use anyhow::{anyhow, Result};
 use libc::pid_t;
@@ -401,7 +402,7 @@ impl SeqCtx {
 }
 
 struct GroupCtx {
-    variables: HashMap<String, (u64, Vec<u8>)>,
+    variables: Variables,
     server: TypedServer<GroupCmd, GroupResp>,
     limits: AiciLimits,
 }
@@ -479,49 +480,7 @@ impl SeqWorkerHandle {
 
 impl GroupCtx {
     fn dispatch_storage_cmd(&mut self, cmd: StorageCmd) -> StorageResp {
-        match cmd {
-            StorageCmd::ReadVar { name } => match self.variables.get(&name).map(|x| x.clone()) {
-                None => StorageResp::VariableMissing {},
-                Some((version, value)) => StorageResp::ReadVar { value, version },
-            },
-            StorageCmd::WriteVar {
-                name,
-                value,
-                when_version_is,
-                op,
-            } => {
-                let curr = self.variables.get(&name).map(|x| x.clone());
-                match curr {
-                    Some((prev_version, prev_val)) => match when_version_is {
-                        Some(v) if v != prev_version => StorageResp::ReadVar {
-                            version: prev_version,
-                            value: prev_val,
-                        },
-                        _ => {
-                            let value = match op {
-                                StorageOp::Append => {
-                                    let mut v = prev_val.clone();
-                                    v.extend(value);
-                                    v
-                                }
-                                StorageOp::Set => value,
-                            };
-                            let version = prev_version + 1;
-                            self.variables.insert(name, (version, value));
-                            StorageResp::WriteVar { version }
-                        }
-                    },
-
-                    None => match when_version_is {
-                        None => {
-                            self.variables.insert(name, (1, value));
-                            StorageResp::WriteVar { version: 1 }
-                        }
-                        Some(_) => StorageResp::VariableMissing {},
-                    },
-                }
-            }
-        }
+        self.variables.process_cmd(cmd)
     }
 
     fn dispatch_cmd(&mut self, cmd: GroupCmd) -> GroupResp {
@@ -607,7 +566,7 @@ fn forker_dispatcher(
                     ForkResult::Child { server } => {
                         set_max_priority();
                         let mut grp_ctx = GroupCtx {
-                            variables: HashMap::default(),
+                            variables: Variables::default(),
                             server,
                             limits: w_ctx.wasm_ctx.limits,
                         };

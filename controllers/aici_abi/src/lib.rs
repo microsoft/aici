@@ -25,6 +25,9 @@ pub use host::{
     StorageResp, VariableStorage,
 };
 
+#[cfg(not(target_arch = "wasm32"))]
+pub use host::{set_host, HostInterface};
+
 #[derive(Serialize, Deserialize, Debug)]
 pub struct InitPromptArg {
     pub prompt: Vec<TokenId>,

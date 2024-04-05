@@ -5,7 +5,7 @@ import ujson as json
 
 
 import guidance
-from guidance import one_or_more, select, zero_or_more, byte_range, capture, gen
+from guidance import one_or_more, select, zero_or_more, byte_range, capture, gen, substring
 
 
 @guidance(stateless=True)
@@ -68,13 +68,18 @@ def main():
         + capture(gen(regex=r"\d{1,3}"), "score")
         + "\n"
     )
-    print(base64.b64encode(grm.serialize()).decode("utf-8"))
+    # read current script file
+    with open(__file__) as f:
+        script = f.read()
+    grm = "```python\n" + substring(script[0:1400])
+    b64 = base64.b64encode(grm.serialize()).decode("utf-8")
+    print(len(b64))
     mod_id = pyaici.cli.build_rust(".")
     pyaici.rest.log_level = 2
     res = pyaici.rest.run_controller(
         controller=mod_id,
         controller_arg=json.dumps(
-            {"guidance_b64": base64.b64encode(grm.serialize()).decode("utf-8")}
+            {"guidance_b64": b64}
         ),
         max_tokens=100,
     )

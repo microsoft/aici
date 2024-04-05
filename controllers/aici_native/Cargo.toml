@@ -1,0 +1,20 @@
+[package]
+name = "aici_native"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+name = "aici_native"
+
+[dependencies]
+aici_abi = { path = "../aici_abi" }
+vob = { version = "3.0.3", optional = true }
+serde = { version = "1.0.192", features = ["derive"] }
+serde_json = "1.0.108"
+anyhow = "1.0.75"
+rustc-hash = "1.1.0"
+base64 = "0.22.0"
+fxhash = "0.2.1"
+tokenizers = { version = "0.15.0", features = ["http"] }
+log = "0.4.21"
+flexi_logger = "0.28.0"

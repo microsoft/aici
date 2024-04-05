@@ -283,6 +283,23 @@ dependencies = [
 ]
 
 [[package]]
+name = "aici_native"
+version = "0.1.0"
+dependencies = [
+ "aici_abi",
+ "anyhow",
+ "base64 0.22.0",
+ "flexi_logger 0.28.0",
+ "fxhash",
+ "log",
+ "rustc-hash",
+ "serde",
+ "serde_json",
+ "tokenizers",
+ "vob",
+]
+
+[[package]]
 name = "aici_pyctrl"
 version = "0.1.0"
 dependencies = [
@@ -314,12 +331,13 @@ name = "aicirt"
 version = "0.1.0"
 dependencies = [
  "aici_abi",
+ "aici_native",
  "anyhow",
  "base64 0.21.5",
  "bincode",
  "cap",
  "clap",
- "flexi_logger",
+ "flexi_logger 0.27.3",
  "fxhash",
  "hex",
  "ipc-channel",
@@ -1323,6 +1341,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "flexi_logger"
+version = "0.28.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f248c29a6d4bc5d065c9e9068d858761a0dcd796759f7801cc14db35db23abd8"
+dependencies = [
+ "chrono",
+ "glob",
+ "is-terminal",
+ "log",
+ "nu-ansi-term",
+ "regex",
+ "thiserror",
+]
+
+[[package]]
 name = "fnv"
 version = "1.0.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1498,6 +1531,18 @@ name = "glob"
 version = "0.3.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d2fabcfbdc87f4758337ca535fb41a6d701b65693ce38287d856d1674551ec9b"
+
+[[package]]
+name = "guidance_parser"
+version = "0.1.0"
+dependencies = [
+ "aici_abi",
+ "aici_native",
+ "anyhow",
+ "log",
+ "serde",
+ "serde_json",
+]
 
 [[package]]
 name = "h2"
@@ -2008,9 +2053,9 @@ dependencies = [
 
 [[package]]
 name = "log"
-version = "0.4.20"
+version = "0.4.21"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b5e6163cb8c49088c2c36f57875e58ccd8c87c7427f7fbd50ea6710b2f3f2e8f"
+checksum = "90ed8c1e510134f979dbc4f070f87d4313098b704861a105fe34231c70a3901c"
 
 [[package]]
 name = "lrlex"

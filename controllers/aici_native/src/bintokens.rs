@@ -1,6 +1,6 @@
-use crate::HashMap;
 use aici_abi::bytes::TokRxInfo;
 use anyhow::{anyhow, bail, Result};
+use fxhash::FxHashMap;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use tokenizers::{normalizers::Sequence, FromPretrainedParameters, NormalizerWrapper, Tokenizer};
@@ -96,8 +96,8 @@ fn is_self_mapped(c: char) -> bool {
     }
 }
 
-fn build_char_map() -> HashMap<char, u8> {
-    let mut res = HashMap::default();
+fn build_char_map() -> FxHashMap<char, u8> {
+    let mut res = FxHashMap::default();
     let mut k = 0x100u32;
     for byte in 0..=255u8 {
         let c = byte as char;
