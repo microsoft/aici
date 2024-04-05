@@ -18,8 +18,8 @@ pub use logits::LogitsProcessor;
 pub use scheduler::*;
 use std::sync::atomic::AtomicBool;
 
-pub use fxhash::FxHashMap as HashMap;
-pub use fxhash::FxHashSet as HashSet;
+pub use aicirt::HashMap;
+pub use aicirt::HashSet;
 
 pub struct LoaderArgs {
     pub tokenizer: String, // one of aici_tokenizer; eg "llama"

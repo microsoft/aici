@@ -1,5 +1,5 @@
 use aici_abi::{StorageCmd, StorageOp, StorageResp};
-use fxhash::FxHashMap;
+use rustc_hash::FxHashMap;
 
 #[derive(Default)]
 pub struct Variables {

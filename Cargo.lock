@@ -241,8 +241,6 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "cfgrammar",
- "lrlex",
- "lrpar",
  "lrtable",
  "regex-automata 0.4.5",
  "rustc-hash",
@@ -271,13 +269,8 @@ dependencies = [
  "aici_abi",
  "anyhow",
  "glob",
- "indexmap 2.1.0",
  "lazy_static",
- "libc",
- "num-traits",
- "once_cell",
  "rquickjs",
- "rquickjs-sys",
  "serde",
  "serde_json",
 ]
@@ -288,15 +281,12 @@ version = "0.1.0"
 dependencies = [
  "aici_abi",
  "anyhow",
- "base64 0.22.0",
- "flexi_logger 0.28.0",
- "fxhash",
+ "flexi_logger",
  "log",
  "rustc-hash",
  "serde",
  "serde_json",
  "tokenizers",
- "vob",
 ]
 
 [[package]]
@@ -307,9 +297,7 @@ dependencies = [
  "anyhow",
  "crossbeam-utils",
  "glob",
- "indexmap 2.1.0",
  "lazy_static",
- "libc",
  "num-traits",
  "once_cell",
  "rustpython-derive",
@@ -337,10 +325,7 @@ dependencies = [
  "bincode",
  "cap",
  "clap",
- "flexi_logger 0.27.3",
- "fxhash",
  "hex",
- "ipc-channel",
  "libc",
  "linux-futex",
  "log",
@@ -644,12 +629,6 @@ dependencies = [
  "libc",
  "pkg-config",
 ]
-
-[[package]]
-name = "cactus"
-version = "1.0.6"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "cf034765b7d19a011c6d619e880582bf95e8186b580e6fab56589872dd87dcf5"
 
 [[package]]
 name = "cap"
@@ -996,16 +975,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "crossbeam-channel"
-version = "0.5.10"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "82a9b73a36529d9c47029b9fb3a6f0ea3cc916a261195352ba19e770fc1748b2"
-dependencies = [
- "cfg-if",
- "crossbeam-utils",
-]
-
-[[package]]
 name = "crossbeam-deque"
 version = "0.8.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1303,18 +1272,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "filetime"
-version = "0.2.23"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1ee447700ac8aa0b2f2bd7bc4462ad686ba06baa6727ac149a2d6277f0d240fd"
-dependencies = [
- "cfg-if",
- "libc",
- "redox_syscall",
- "windows-sys 0.52.0",
-]
-
-[[package]]
 name = "flate2"
 version = "1.0.28"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1322,22 +1279,6 @@ checksum = "46303f565772937ffe1d394a4fac6f411c6013172fadde9dcdb1e147a086940e"
 dependencies = [
  "crc32fast",
  "miniz_oxide",
-]
-
-[[package]]
-name = "flexi_logger"
-version = "0.27.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2ac35b454b60e1836602173e2eb7ef531173388c0212e02ec7f9fac086159ee5"
-dependencies = [
- "chrono",
- "glob",
- "is-terminal",
- "lazy_static",
- "log",
- "nu-ansi-term",
- "regex",
- "thiserror",
 ]
 
 [[package]]
@@ -1472,15 +1413,6 @@ dependencies = [
  "pin-project-lite",
  "pin-utils",
  "slab",
-]
-
-[[package]]
-name = "fxhash"
-version = "0.2.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c31b6d751ae2c7f11320402d34e41349dd1016f8d5d45e48c4312bc8625af50c"
-dependencies = [
- "byteorder",
 ]
 
 [[package]]
@@ -1812,25 +1744,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "ipc-channel"
-version = "0.18.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7ab3a34c91b7e84a72643bd75d1bac3afd241f78f9859fe0b5e5b2a6a75732c2"
-dependencies = [
- "bincode",
- "crossbeam-channel",
- "fnv",
- "lazy_static",
- "libc",
- "mio",
- "rand",
- "serde",
- "tempfile",
- "uuid",
- "windows 0.48.0",
-]
-
-[[package]]
 name = "is-macro"
 version = "0.3.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2058,46 +1971,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "90ed8c1e510134f979dbc4f070f87d4313098b704861a105fe34231c70a3901c"
 
 [[package]]
-name = "lrlex"
-version = "0.13.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4d3c956ecfc913cb0e89575c5dd74d2558ec6e12c18f23baabc2985dc48ead28"
-dependencies = [
- "cfgrammar",
- "getopts",
- "lazy_static",
- "lrpar",
- "num-traits",
- "quote",
- "regex",
- "regex-syntax 0.7.5",
- "serde",
- "vergen",
-]
-
-[[package]]
-name = "lrpar"
-version = "0.13.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c3f2acdd7023dc9f0eb51b13a615477c245519f593537667116874d2c699972d"
-dependencies = [
- "bincode",
- "cactus",
- "cfgrammar",
- "filetime",
- "indexmap 2.1.0",
- "lazy_static",
- "lrtable",
- "num-traits",
- "packedvec",
- "regex",
- "serde",
- "static_assertions",
- "vergen",
- "vob",
-]
-
-[[package]]
 name = "lrtable"
 version = "0.13.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2106,7 +1979,6 @@ dependencies = [
  "cfgrammar",
  "fnv",
  "num-traits",
- "serde",
  "sparsevec",
  "vob",
 ]
@@ -3015,7 +2887,6 @@ dependencies = [
  "base64 0.21.5",
  "clap",
  "futures",
- "fxhash",
  "half 2.3.1",
  "hf-hub",
  "lazy_static",
@@ -3423,7 +3294,7 @@ dependencies = [
  "wasm-bindgen",
  "which",
  "widestring",
- "windows 0.52.0",
+ "windows",
  "windows-sys 0.52.0",
  "winreg",
 ]
@@ -3800,12 +3671,12 @@ name = "tch-cuda"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "fxhash",
  "glob",
  "half 2.3.1",
  "libc",
  "num_cpus",
  "rayon",
+ "rustc-hash",
  "tch",
  "torch-sys",
 ]
@@ -4290,17 +4161,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "accd4ea62f7bb7a82fe23066fb0957d48ef677f6eeb8215f372f52e48bb32426"
 
 [[package]]
-name = "vergen"
-version = "8.2.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8b3c89c2c7e50f33e4d35527e5bf9c11d6d132226dbbd1753f0fbe9f19ef88c6"
-dependencies = [
- "anyhow",
- "rustversion",
- "time",
-]
-
-[[package]]
 name = "version_check"
 version = "0.9.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4639,15 +4499,6 @@ name = "winapi-x86_64-pc-windows-gnu"
 version = "0.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "712e227841d057c1ee1cd2fb22fa7e5a5461ae8e48fa2ca79ec42cfc1931183f"
-
-[[package]]
-name = "windows"
-version = "0.48.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e686886bc078bc1b0b600cac0147aadb815089b6e4da64016cbd754b6342700f"
-dependencies = [
- "windows-targets 0.48.5",
-]
 
 [[package]]
 name = "windows"

@@ -4,5 +4,5 @@ pub mod variables;
 
 pub use log::*;
 
-pub use fxhash::FxHashMap as HashMap;
-pub use fxhash::FxHashSet as HashSet;
+pub use rustc_hash::FxHashMap as HashMap;
+pub use rustc_hash::FxHashSet as HashSet;

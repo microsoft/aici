@@ -16,9 +16,6 @@ use thread_priority::{
     ThreadSchedulePolicy,
 };
 
-pub use fxhash::FxHashMap as HashMap;
-pub use fxhash::FxHashSet as HashSet;
-
 pub fn get_unix_time() -> u64 {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)

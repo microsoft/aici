@@ -1,6 +1,6 @@
 use aici_abi::bytes::TokRxInfo;
 use anyhow::{anyhow, bail, Result};
-use fxhash::FxHashMap;
+use rustc_hash::FxHashMap;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use tokenizers::{normalizers::Sequence, FromPretrainedParameters, NormalizerWrapper, Tokenizer};

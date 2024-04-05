@@ -1,7 +1,7 @@
 use std::fmt::Display;
 use tch::{Kind, Tensor};
 use torch_sys::C_tensor;
-use fxhash::FxHashMap as HashMap;
+use rustc_hash::FxHashMap as HashMap;
 
 mod event;
 mod stream;
