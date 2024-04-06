@@ -59,7 +59,12 @@ impl MidProcessArg {
     }
 
     pub fn save_tokens(&self, acc_tokens: &mut Vec<TokenId>) {
-        acc_tokens.truncate(acc_tokens.len() - self.backtrack as usize);
+        let bt = self.backtrack as usize;
+        assert!(
+            bt <= acc_tokens.len(),
+            "attempting to backtrack past beginning"
+        );
+        acc_tokens.truncate(acc_tokens.len() - bt);
         acc_tokens.extend_from_slice(&self.tokens);
     }
 }

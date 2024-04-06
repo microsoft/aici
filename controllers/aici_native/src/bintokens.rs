@@ -327,7 +327,7 @@ impl ByteTokenizer {
 
 pub struct ByteTokenizerEnv {
     pub tokenizer: ByteTokenizer,
-    tok_trie: TokTrie,
+    pub tok_trie: TokTrie,
 }
 
 impl ByteTokenizerEnv {

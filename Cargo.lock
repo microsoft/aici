@@ -1486,6 +1486,8 @@ dependencies = [
  "aici_native",
  "anyhow",
  "pyo3",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]
