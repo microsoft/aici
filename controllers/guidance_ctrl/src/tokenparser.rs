@@ -13,7 +13,7 @@ macro_rules! infoln {
 }
 
 pub struct TokenParser {
-    token_env: Box<dyn TokenizerEnv>,
+    pub token_env: Box<dyn TokenizerEnv>,
     pub parser: Parser,
     // tokens currently in KV cache
     llm_tokens: Vec<TokenId>,
