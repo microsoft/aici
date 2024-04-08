@@ -44,7 +44,8 @@ pub trait Recognizer {
     /// check if stack.top() transitions via tok to a viable state
     fn special_allowed(&mut self, tok: SpecialToken) -> bool;
     /// Called when iteration over the trie is finished
-    /// Stack has exactly one element then.
+    /// Stack has exactly one element then, except when iteration started from non-root node.
+    /// In that case, the stack may have more than one element, and trie_finished() needs to pop the excessive elements.
     fn trie_finished(&mut self);
     /// Called when iteration over the trie is started
     fn trie_started(&mut self) {}
