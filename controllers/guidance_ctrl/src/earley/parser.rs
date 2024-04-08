@@ -251,7 +251,14 @@ impl Parser {
         self.rows.len()
     }
 
-    pub fn pop_rows(&mut self, n: usize) {
+    fn pop_row_infos(&mut self, n: usize) {
+        assert!(!self.speculative);
+        assert!(self.row_infos.len() == self.rows.len());
+        unsafe { self.row_infos.set_len(self.row_infos.len() - n) }
+        self.pop_rows(n);
+    }
+
+    fn pop_rows(&mut self, n: usize) {
         unsafe { self.rows.set_len(self.rows.len() - n) }
         // self.rows.drain(self.rows.len() - n..);
     }
@@ -337,8 +344,9 @@ impl Parser {
         info!("hide_item: {} {}", self.grammar.sym_data(sym).name, row_idx);
 
         let row_range = self.rows[row_idx].item_indices();
+        let last_byte = self.row_infos[row_idx].byte;
         let agenda_ptr = row_range.start;
-        self.pop_rows(self.num_rows() - row_idx);
+        self.pop_row_infos(self.num_rows() - row_idx);
         assert!(self.num_rows() == row_idx);
 
         let mut items_to_add = vec![];
@@ -360,7 +368,7 @@ impl Parser {
             self.scratch.add_unique(item, &self.grammar, "hide");
         }
 
-        self.push_row(agenda_ptr, self.row_infos[row_idx].byte)
+        self.push_row(agenda_ptr, last_byte)
     }
 
     #[inline(always)]
@@ -537,10 +545,18 @@ impl Recognizer for Parser {
     }
 
     fn trie_started(&mut self) {
+        // println!("trie_started: rows={} infos={}", self.num_rows(), self.row_infos.len());
+        assert!(self.speculative == false);
+        assert!(self.row_infos.len() == self.num_rows());
         self.speculative = true;
     }
 
     fn trie_finished(&mut self) {
+        // println!("trie_finished: rows={} infos={}", self.num_rows(), self.row_infos.len());
+        assert!(self.speculative == true);
+        assert!(self.row_infos.len() <= self.num_rows());
+        // clean up stack
+        self.pop_rows(self.num_rows() - self.row_infos.len());
         self.speculative = false;
     }
 

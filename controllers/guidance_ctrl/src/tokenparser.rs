@@ -19,16 +19,12 @@ pub struct TokenParser {
     llm_tokens: Vec<TokenId>,
 }
 
-
 impl TokenParser {
     fn toktrie(&self) -> &TokTrie {
         self.token_env.tok_trie()
     }
 
-    pub fn from_guidance_protobuf(
-        token_env: Box<dyn TokenizerEnv>,
-        buf: &[u8],
-    ) -> Result<Self> {
+    pub fn from_guidance_protobuf(token_env: Box<dyn TokenizerEnv>, buf: &[u8]) -> Result<Self> {
         let grm = earley_grm_from_guidance(buf)?;
         infoln!("original: {:?}", grm);
         let grm = grm.optimize();
@@ -43,18 +39,39 @@ impl TokenParser {
     }
 
     pub fn mid_process(&mut self, arg: MidProcessArg) -> MidProcessResult {
+        let start_time = std::time::Instant::now();
+
+        infoln!("\n");
+
         infoln!("post tokens: {}", self.toktrie().tokens_dbg(&arg.tokens));
         arg.save_tokens(&mut self.llm_tokens);
+
+        {
+            let llm_bytes = self.toktrie().decode(&self.llm_tokens);
+            let grm_bytes = self.parser.get_bytes();
+            // if the LLM is not out of sync with the grammar, walk the parser forward
+            if llm_bytes.starts_with(&grm_bytes) {
+                for b in llm_bytes[grm_bytes.len()..].iter() {
+                    let r = self.parser.scan(*b);
+                    if r == ParseResult::Reject {
+                        infoln!("rejected byte: {:?}", b);
+                        break;
+                    }
+                }
+            }
+        }
+
+        // force after scanning tokens from LLM (this may walk the parser some more)
+        let _ = self.parser.force_bytes();
 
         if arg.tokens.contains(&self.toktrie().eos_token()) {
             return MidProcessResult::stop();
         }
 
-        let start_time = std::time::Instant::now();
-        let _ = self.parser.force_bytes();
         // tokens/bytes forced by the grammar
         let full_grm_bytes = self.parser.get_bytes();
         let mut grm_tokens = self.token_env.tokenize_bytes(&full_grm_bytes);
+        infoln!("forced: {}", self.toktrie().tokens_dbg(&grm_tokens));
         let mut suff = Vec::new();
         let mut chop_tokens = 0;
         let mut chop_bytes = 0;
@@ -63,12 +80,16 @@ impl TokenParser {
             if suff.len() > self.toktrie().max_token_len() {
                 break;
             }
-            // TODO do we have to consider if the extensions match the grammar?
-            if self.toktrie().has_extensions(&suff) {
+            if self
+                .token_env
+                .tok_trie()
+                .has_valid_extensions(&mut self.parser, &suff)
+            {
                 chop_tokens = idx + 1;
                 chop_bytes = suff.len();
             }
         }
+
         // here we remove a suffix from grm_tokens that could be possibly tokenized differently
         grm_tokens.truncate(grm_tokens.len() - chop_tokens);
 
@@ -82,7 +103,7 @@ impl TokenParser {
                     backtrack,
                     self.toktrie().tokens_dbg(&ff_tokens),
                 );
-                infoln!("fixed_tokens: {:?}", self.toktrie().tokens_dbg(&grm_tokens));
+                infoln!("fixed_tokens: {}", self.toktrie().tokens_dbg(&grm_tokens));
                 return MidProcessResult::splice(backtrack, ff_tokens);
             }
         }

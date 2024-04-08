@@ -562,6 +562,48 @@ impl TokTrie {
         ok
     }
 
+    /// Check if add_bias() would have returned any tokens.
+    #[inline(never)]
+    pub fn has_valid_extensions(&self, r: &mut impl Recognizer, start: &[u8]) -> bool {
+        let n = self.child_at_bytes(self.root(), start);
+        if n.is_none() {
+            return false;
+        }
+        let n = n.unwrap();
+        r.trie_started();
+        let off = self.node_offset(n);
+        let mut p = off + 1;
+        let endp = off + n.subtree_size();
+        let mut ok = false;
+        let mut next_pop = 0;
+        while p < endp {
+            r.pop_bytes(next_pop);
+            let n = &self.nodes[p];
+            let b = n.byte();
+            if r.try_push_byte(b) {
+                if n.token_id().is_some() {
+                    ok = true;
+                    break;
+                }
+                next_pop = if n.subtree_size() == 1 {
+                    n.num_parents()
+                } else {
+                    0
+                };
+                p += 1;
+            } else {
+                p += n.subtree_size();
+                next_pop = n.num_parents() - 1;
+            }
+        }
+        if start.len() == 0 {
+            // if start was non-empty, trie_finished() is supposed to clean this up
+            r.pop_bytes(next_pop);
+        }
+        r.trie_finished();
+        ok
+    }
+
     #[inline(never)]
     pub fn add_bias(&self, r: &mut impl Recognizer, toks: &mut SimpleVob, start: &[u8]) {
         r.trie_started();
@@ -570,22 +612,27 @@ impl TokTrie {
         let off = self.node_offset(n);
         let mut p = off + 1;
         let endp = off + n.subtree_size();
+        let mut next_pop = 0;
         while p < endp {
+            r.pop_bytes(next_pop);
             let n = &self.nodes[p];
             let b = n.byte();
             if r.try_push_byte(b) {
                 toks.allow_token(n.token_id().unwrap_or(defl_tok));
-                r.pop_bytes(if n.subtree_size() == 1 {
+                next_pop = if n.subtree_size() == 1 {
                     n.num_parents()
                 } else {
                     0
-                });
-
+                };
                 p += 1;
             } else {
                 p += n.subtree_size();
-                r.pop_bytes(n.num_parents() - 1);
+                next_pop = n.num_parents() - 1;
             }
+        }
+        if start.len() == 0 {
+            // if start was non-empty, trie_finished() is supposed to clean this up
+            r.pop_bytes(next_pop);
         }
         r.trie_finished();
         // revert the fake token
