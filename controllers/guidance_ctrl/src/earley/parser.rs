@@ -1,6 +1,9 @@
 use std::{fmt::Debug, hash::Hash, ops::Range, vec};
 
-use aici_abi::toktree::{Recognizer, SpecialToken};
+use aici_abi::{
+    toktree::{Recognizer, SpecialToken, TokTrie},
+    TokenId,
+};
 
 use super::grammar::{CGrammar, CSymIdx, ModelVariable, RuleIdx, SimpleHash};
 
@@ -154,6 +157,7 @@ struct Scratch {
 
 struct RowInfo {
     byte: u8,
+    token_idx: usize,
     #[allow(dead_code)]
     commit_item: Item,
 }
@@ -168,6 +172,7 @@ pub struct Parser {
     is_accepting: bool,
     last_collapse: usize,
     speculative: bool,
+    token_idx: usize,
 }
 
 impl Scratch {
@@ -222,6 +227,7 @@ impl Parser {
             is_accepting: false,
             last_collapse: 0,
             speculative: false,
+            token_idx: 0,
         };
         for rule in r.grammar.rules_of(start).to_vec() {
             r.scratch.add_unique(Item::new(rule, 0), &r.grammar, "init");
@@ -269,14 +275,46 @@ impl Parser {
         self.stats = Stats::default();
     }
 
-    pub fn get_bytes(&self) -> Vec<u8> {
+    fn non_trie(&self) {
         assert!(!self.speculative);
         assert!(self.num_rows() == self.row_infos.len());
+    }
+
+    pub fn get_bytes(&self) -> Vec<u8> {
+        self.non_trie();
         self.row_infos.iter().skip(1).map(|ri| ri.byte).collect()
     }
 
+    pub fn apply_tokens(&mut self, trie: &TokTrie, tokens: &[TokenId]) -> &'static str {
+        self.non_trie();
+        let mut byte_idx = 1; // row_infos[0] has just the 0 byte
+        let mut tok_idx = 0;
+        for t in tokens {
+            for b in trie.token(*t).iter() {
+                if byte_idx >= self.row_infos.len() {
+                    if self.scan(*b) == ParseResult::Reject {
+                        return "parse reject";
+                    }
+                    if byte_idx >= self.row_infos.len() {
+                        return "hidden item";
+                    }
+                }
+                let info = &mut self.row_infos[byte_idx];
+                if info.byte != *b {
+                    println!("byte mismatch: {} != {} at {}", info.byte, b, byte_idx);
+                    return "static reject";
+                }
+                info.token_idx = tok_idx;
+                byte_idx += 1;
+            }
+            tok_idx += 1;
+        }
+        self.token_idx = tok_idx;
+        return "";
+    }
+
     pub fn force_bytes(&mut self) -> Vec<u8> {
-        assert!(!self.speculative);
+        self.non_trie();
         let mut bytes = vec![];
         while let Some(b) = self.forced_byte() {
             let res = self.scan(b);
@@ -474,6 +512,16 @@ impl Parser {
                 }
             } else {
                 let sym_data = self.grammar.sym_data(after_dot);
+                // if no max_tokens, no point looking in row_infos
+                // if start_pos() is recent enough, not to make it into row_infos, also no point checking
+                // otherwise, if we exceeded max_tokens, don't add anything
+                if sym_data.props.max_tokens != usize::MAX
+                    && item.start_pos() < self.row_infos.len()
+                    && self.token_idx - self.row_infos[item.start_pos()].token_idx
+                        >= sym_data.props.max_tokens
+                {
+                    continue;
+                }
                 if sym_data.is_nullable {
                     self.scratch
                         .add_unique(item.advance_dot(), &self.grammar, "null");
@@ -502,7 +550,11 @@ impl Parser {
 
         if !self.speculative {
             self.row_infos.drain((self.rows.len() - 1)..);
-            self.row_infos.push(RowInfo { byte, commit_item });
+            self.row_infos.push(RowInfo {
+                byte,
+                commit_item,
+                token_idx: self.token_idx,
+            });
         }
 
         if self.is_accepting {

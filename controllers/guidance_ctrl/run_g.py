@@ -61,17 +61,17 @@ def main():
         + capture(number(), "num")
     )
     grm = (
-        "<joke>Parallel lines have so much in common. It’s a shame they’ll never meet.</joke>\n"
+        "<joke>Parallel lines have so much in common. It’s a shame they’ll never meet.</joke>\nScore: 8/10\n"
         + "<joke>"
-        + capture(gen(regex=r'[A-Z\(].*', stop="</joke>"), "joke")
-        + "</joke>\nScore (of 10): "
+        + capture(gen(regex=r'[A-Z\(].*', max_tokens=50, stop="</joke>"), "joke")
+        + "</joke>\nScore: "
         + capture(gen(regex=r"\d{1,3}"), "score")
-        + "\n"
+        + "/10\n"
     )
     # read current script file
-    with open(__file__) as f:
-        script = f.read()
-    grm = "```python\n" + substring(script[0:1400])
+    # with open(__file__) as f:
+    #     script = f.read()
+    # grm = "```python\n" + substring(script[0:1400])
     b64 = base64.b64encode(grm.serialize()).decode("utf-8")
     print(len(b64))
     mod_id = pyaici.cli.build_rust(".")
@@ -81,6 +81,7 @@ def main():
         controller_arg=json.dumps(
             {"guidance_b64": b64}
         ),
+        temperature=0.5,
         max_tokens=100,
     )
     print("Usage:", res["usage"])
