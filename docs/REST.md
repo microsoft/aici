@@ -33,6 +33,8 @@ The `controller_arg` is the argument to pass to the module; it can be either JSO
 or a JSON string (which will be passed as is).
 The `jsctrl` expects an argument that is the string, which is the program to execute.
 
+TODO: the `prompt` arg is back!
+
 ```json
 // POST /v1/run
 {

@@ -86,6 +86,7 @@ def run_ctrl(
     *,
     controller: str,
     controller_arg="",
+    prompt="",
     temperature: Optional[float] = None,
     max_tokens: Optional[int] = None,
     print_response: bool = True,
@@ -102,6 +103,7 @@ def run_ctrl(
         controller=controller,
         controller_arg=controller_arg,
         temperature=temperature,
+        prompt=prompt,
         max_tokens=max_tokens,
     )
     if print_response:
@@ -207,6 +209,7 @@ def main_rest(args):
             args,
             controller=controller,
             controller_arg=controller_arg,
+            prompt=args.prompt,
         )
 
 
@@ -244,6 +247,10 @@ def main_inner():
         Similarly, it's 'gh:microsoft/aici/jsctrl' for .js and 'gh:microsoft/aici/declctrl' for .json.
         """,
     )
+    run_cmd.add_argument(
+        "--prompt", "-p", type=str, default="", help="initial prompt if any"
+    )
+
     run_cmd.add_argument(
         "controller_arg",
         metavar="FILE",

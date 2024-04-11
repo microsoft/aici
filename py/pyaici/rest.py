@@ -159,6 +159,7 @@ def run_controller(
     *,
     controller,
     controller_arg="",
+    prompt="",
     temperature: Optional[float] = None,
     max_tokens: Optional[int] = 200,
     base_url: Optional[str] = None,
@@ -166,6 +167,7 @@ def run_controller(
     data = {
         "controller": controller,
         "controller_arg": controller_arg,
+        "prompt": prompt,
         "max_tokens": max_tokens,
         "temperature": temperature,
     }

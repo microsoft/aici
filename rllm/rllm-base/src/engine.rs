@@ -351,7 +351,6 @@ impl<ME: ModelExec> RllmEngine<ME> {
         }
 
         let mid_res = self.aicirt.as_mut().unwrap().finish_mid_process()?;
-        let mut max_offset = 0;
 
         for sg in sched_out.next_seq_groups.iter_mut() {
             if sg.sampling_params.controller.is_none() {
@@ -370,7 +369,6 @@ impl<ME: ModelExec> RllmEngine<ME> {
                             continue;
                         }
                         for (idx, b) in resp.branches.iter().enumerate() {
-                            b.sample_mask.map(|m| max_offset = max_offset.max(m));
                             if idx == 0 {
                                 seq.aici_sampling = Some(b.clone());
                                 seq.mid_op = Some(seq.defl_mid_op());
@@ -400,7 +398,7 @@ impl<ME: ModelExec> RllmEngine<ME> {
         }
 
         let vocab_bytes = vocab_size * 4;
-        let num_seqs = max_offset / vocab_bytes + 1;
+        let num_seqs = mid_res.mask_num_bytes / vocab_bytes;
         let shm = &self.aicirt.as_mut().unwrap().bin_shm;
         let slice = shm.slice_at_byte_offset::<f32>(0, num_seqs * vocab_size);
         Ok((

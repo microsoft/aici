@@ -8,7 +8,8 @@ use crate::{
     moduleinstance::*,
     msgchannel::MessageChannel,
     shm::Shm,
-    worker::{RtMidProcessArg, WorkerForker}, TimerSet,
+    worker::{RtMidProcessArg, WorkerForker},
+    TimerSet,
 };
 use aici_abi::{bytes::limit_str, toktree::TokTrie, MidProcessArg, SeqId};
 use aicirt::{bintokens::find_tokenizer, futexshm::ServerChannel, *};
@@ -707,6 +708,7 @@ impl Stepper {
         let slice = self
             .shm
             .slice_at_byte_offset::<f32>(0, num_seqs * block_elts);
+        let mask_num_bytes = slice.len() * 4;
         slice.iter_mut().for_each(|v| *v = 0.0);
 
         for op in req.ops.into_iter() {
@@ -775,7 +777,10 @@ impl Stepper {
             self.instances.remove(&id);
         }
 
-        Ok(AiciMidProcessResp { seqs: outputs })
+        Ok(AiciMidProcessResp {
+            seqs: outputs,
+            mask_num_bytes,
+        })
     }
 
     fn logit_bias_at_byte_offset(&self, off: usize) -> &'static mut [f32] {

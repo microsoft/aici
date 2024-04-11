@@ -14,11 +14,13 @@ pub struct AiciMidProcessReq {
 #[derive(Serialize, Deserialize)]
 pub struct AiciMidProcessResp {
     pub seqs: HashMap<ModuleInstId, SequenceResult<ProcessResultOffset>>,
+    /// This is the number of bytes in the bias/sample_mask tensor.
+    pub mask_num_bytes: usize,
 }
 
 #[derive(Clone, Serialize, Deserialize, Debug)]
-/// At least one of clone_id or req_id should be None.
-/// If either of them is not None, then id should be fresh.
+/// At most one of clone_id or req_id should be set.
+/// If either of them is set, then id should be fresh.
 pub struct AiciMidOp {
     pub id: ModuleInstId,
     /// Set to None, except upon first call for a branch after forking.

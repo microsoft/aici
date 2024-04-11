@@ -44,6 +44,13 @@ async def test_backtrack_lang():
     aici.check_vars({"french": ' "bonjour"', "german": ' "hallo"'})
 
 
+async def test_hello():
+    aici.log_level = 10
+    prompt = await aici.GetPrompt()
+    print("prompt", prompt)
+    await aici.gen_tokens(regex=r"[A-Z].*", max_tokens=5)
+
+
 async def test_main():
     # init
     print("start")
@@ -175,4 +182,4 @@ async def test_joke():
     await aici.gen_text(max_tokens=15)
 
 
-aici.test(test_main())
+aici.test(test_hello())

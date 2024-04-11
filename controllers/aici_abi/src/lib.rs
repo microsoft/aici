@@ -173,6 +173,7 @@ impl MidProcessResult {
 
 #[derive(Serialize, Deserialize)]
 pub struct ProcessResultOffset {
+    /// Branches use byte offsets into the bias tensor.
     pub branches: Vec<Branch<usize>>,
 }
 

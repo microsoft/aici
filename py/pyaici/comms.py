@@ -1,3 +1,4 @@
+from dataclasses import dataclass, field
 import posix_ipc
 import mmap
 import os
@@ -237,6 +238,59 @@ class CmdChannel:
         return resp
 
 
+
+@dataclass
+class Splice:
+    # If one of the tokens in when_sampled is sampled, this sequence is appended.
+    # When empty, this sequence is appended unconditionally, regardless of sampling.
+    when_sampled: List[int]
+    # Backtrack this much before appending this sequence (this includes sampled token if any).
+    backtrack: int
+    # Append these tokens after backtracking.
+    ff_tokens: List[int]
+
+    @staticmethod
+    def from_json(obj: dict) -> "Splice":
+        return Splice(
+            when_sampled=obj["when_sampled"],
+            backtrack=obj["backtrack"],
+            ff_tokens=obj["ff_tokens"],
+        )
+
+
+@dataclass
+class Branch:
+    mask: Optional[int] = None
+    splices: List[Splice] = field(default_factory=list)
+
+    def is_splice(self) -> bool:
+        return len(self.splices) == 1 and self.splices[0].when_sampled == []
+
+    @staticmethod
+    def from_json(obj: dict) -> "Branch":
+        return Branch(
+            mask=obj.get("sample_mask"),
+            splices=[ Splice.from_json(q) for q in obj["splices"] ],
+        )
+
+@dataclass
+class MidResult:
+    error: str
+    storage: List[dict]
+    logs: str
+    micros: int
+    branches: List[Branch]
+
+    @staticmethod
+    def from_json(obj: dict) -> "MidResult":
+        return MidResult(
+            error=obj["error"],
+            storage=obj["storage"],
+            logs=obj["logs"],
+            micros=obj["micros"],
+            branches=[Branch.from_json(q) for q in obj.get("result", {}).get("branches", [])],
+        )
+
 class AiciRunner:
     instance = None
 
@@ -276,14 +330,11 @@ class AiciRunner:
 
         self.logit_pending = False
 
-        self.post_ops = []
-        self.pre_ops = []
+        self.pending_req_ids: Dict[int, str] = {}
         self.mid_ops = []
         self.freed_seq_ids = []
         self.pending_instantiate_results = {}
-
-        self.wasm_pre_timer = BenchTimer("wasm_pre")
-        self.wasm_pre_timer_send = BenchTimer("wasm_pre_send")
+        self.pending_generated_tokens: Dict[int, Tuple[List[int], int]] = {}
 
         self.cmd = CmdChannel(
             pref=pref, suff="", json_size=json_size, trace_file=self.trace_file
@@ -392,7 +443,7 @@ class AiciRunner:
             return self.run_json([r], self.usage_json(0, 0))
         else:
             self.pending_instantiate_results[req_id] = res
-            return res["result"]["ff_tokens"]
+            return None
 
     def initial_json(self, req_id: str, model: str):
         return {
@@ -474,13 +525,13 @@ class AiciRunner:
             res = self.pending_instantiate_results[req_id]
             del self.pending_instantiate_results[req_id]
             self.logs_by_seqid[str(seq_id)] = [res]
-        self.pre_ops.append({"req_id": req_id, "id": seq_id})
+        self.pending_req_ids[seq_id] = req_id
 
     def tokens_generated(self, seq_id: int, tokens: List[int], backtrack: int = 0):
         """
         Informs aicirt tokens have been generated.
         """
-        self.post_ops.append({"id": seq_id, "tokens": tokens, "backtrack": backtrack})
+        self.pending_generated_tokens[seq_id] = (tokens, backtrack)
 
     def seq_freed(self, id: Union[int, list[int]]):
         """
@@ -494,9 +545,6 @@ class AiciRunner:
     def _add_logs(self, by_seqid: Dict[str, dict]):
         d = self.logs_by_seqid
         for k, v in by_seqid.items():
-            r = v.get("result", None) or {}
-            if v["error"] or r.get("stop", False) or r.get("num_forks", 1) == 0:
-                self.seqs_to_stop.add(int(k))
             if k in d:
                 d[k].append(v)
             else:
@@ -507,58 +555,11 @@ class AiciRunner:
         self.seqs_to_stop = set()
         return r
 
-    def exec_post_pre(self):
-        """
-        Send step data to the aicirt process.
-        """
-        cmd = {
-            "op": "post_pre_process",
-            "post_ops": self.post_ops,
-            "pre_ops": self.pre_ops,
-            "freed": self.freed_seq_ids,
-        }
-        self.freed_seq_ids = []
-        self.pre_ops = []
-        self.post_ops = []
-
-        assert not self.logit_pending
-
-        with self.wasm_pre_timer_send:
-            self.cmd.resp_ch.track = True
-            self.cmd.send(cmd)
-        with self.wasm_pre_timer:
-            response = self.cmd.expect("recv")["data"]
-        self._add_logs(response["post_seqs"])
-        self._add_logs(response["pre_seqs"])
-        self.last_resp: Dict[str, dict] = response["pre_seqs"]
-
-    def pre_status(self, seq_id: int) -> Tuple[bool, int, List[int]]:
-        """
-        Get the status of a given sequence ID after post_pre_process.
-        Returns: (suspend, num_forks, ff_tokens)
-        """
-        r = self.last_resp.get(str(seq_id), {})
-        res = r.get("result", None)
-        if res is not None:
-            return (
-                res.get("suspend", False),
-                res.get("num_forks", 1),
-                res.get("ff_tokens", []),
-            )
-        else:
-            return False, 0, []
-
-    def mid_status(self, seq_id: int) -> Tuple[List[int], int]:
+    def mid_status(self, seq_id: int) -> MidResult:
         """
         Get the status of a given sequence ID after mid_process.
-        Returns: (ff_tokens, backtrack)
         """
-        r = self.last_resp.get(str(seq_id), {})
-        res = r.get("result", None) or {}
-        return (
-            res.get("ff_tokens", []),
-            res.get("backtrack", 0),
-        )
+        return self.last_resp[seq_id]
 
     def _fork_result(self, index: int, lst: List[dict], text="", finish_reason=None) -> dict:
         return {
@@ -605,11 +606,23 @@ class AiciRunner:
         for seq_id in self.pending_logs():
             self.print_logs_for(seq_id)
 
-    def add_mid(self, id: int, clone_id: Optional[int] = None):
+    def add_mid(self, id: int, clone_id: Optional[int] = None, clone_idx: Optional[int] = None):
         assert not self.logit_pending
-        obj = {"id": id}
+        tokens, backtrack = self.pending_generated_tokens.get(id, ([], 0))
+        if id in self.pending_generated_tokens:
+            del self.pending_generated_tokens[id]
+        obj: Dict[str, Any] = {
+            "id": id,
+            "backtrack": backtrack,
+            "tokens": tokens,
+        }
+        if id in self.pending_req_ids:
+            obj["req_id"] = self.pending_req_ids[id]
+            del self.pending_req_ids[id]
         if clone_id is not None:
+            assert clone_idx is not None
             obj["clone_id"] = clone_id
+            obj["clone_idx"] = clone_idx
         self.mid_ops.append(obj)
 
     def needs_exec_mid(self):
@@ -620,8 +633,10 @@ class AiciRunner:
         cmd = {
             "op": "mid_process",
             "ops": self.mid_ops,
+            "freed": self.freed_seq_ids,
         }
         self.cmd.send(cmd)
+        self.freed_seq_ids = []
         self.logit_pending = True
 
     def flush_logit_bias(self):
@@ -640,16 +655,26 @@ class AiciRunner:
         assert self.logit_pending
         self.logit_pending = False
         data = self.cmd.expect("recv")["data"]
-        self.last_resp = data["seqs"]
-        self._add_logs(self.last_resp)
-        n: int = data["num_seqs"]
-        assert len(self.mid_ops) == n
-        seq_id_to_idx = {int(q["id"]): i for i, q in enumerate(self.mid_ops)}
+        seqs: dict = data["seqs"]
+        self._add_logs(seqs)
+        last_resp: dict[int, MidResult] = {}
+        vocab_bytes = self.vocab_size * 4
+        for id, seq_res in seqs.items():
+            r = MidResult.from_json(seq_res)
+            if r.error or not r.branches:
+                self.seqs_to_stop.add(int(id))
+            for b in r.branches:
+                if b.mask is not None:
+                    b.mask //= vocab_bytes
+            last_resp[int(id)] = r
+        self.last_resp = last_resp
+        n = data["mask_num_bytes"] // vocab_bytes
+        assert n == len(self.mid_ops)
         self.mid_ops = []
         arr = np.frombuffer(
             self.bin_shm, dtype=np.float32, offset=0, count=n * self.vocab_size
         ).reshape([n, self.vocab_size])
-        return seq_id_to_idx, arr
+        return last_resp, arr
 
     def stop(self):
         """
