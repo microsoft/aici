@@ -253,8 +253,8 @@ mod aici_mod {
 
     use super::GLOBAL_STATE;
     use aici_abi::{
-        aici_stop, cfg::CfgParser, rx::RecRx, substring::SubStrMatcher, toktree::SpecialToken,
-        Branch, MidProcessResult, Splice, TokenId,
+        aici_stop, cfg::CfgParser, get_config, rx::RecRx, substring::SubStrMatcher,
+        toktree::SpecialToken, Branch, MidProcessResult, Splice, TokenId,
     };
     use rquickjs::{Ctx, Exception, Object, Result, Value};
 
@@ -315,6 +315,12 @@ mod aici_mod {
         let name = name.as_str();
         let vars = &GLOBAL_STATE.lock().unwrap().vars;
         vars.append(name, value.0);
+    }
+
+    #[rquickjs::function]
+    pub fn getConfig(name: String) -> i32 {
+        let name = name.as_str();
+        get_config(name)
     }
 
     #[rquickjs::function]

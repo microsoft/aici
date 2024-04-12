@@ -6,7 +6,7 @@ use crate::{
     TimerSet, UserError,
 };
 use aici_abi::{toktree::TokTrie, InitPromptArg, ProcessResultOffset, TokenId};
-use aicirt::{api::SequenceResult, bail_user, bintokens::ByteTokenizer, user_error};
+use aicirt::{api::{InferenceCapabilities, SequenceResult}, bail_user, bintokens::ByteTokenizer, user_error};
 use anyhow::{anyhow, ensure, Result};
 use serde::Deserialize;
 use std::{path::PathBuf, sync::Arc, time::Instant};
@@ -75,6 +75,7 @@ impl WasmContext {
             tokrx_info: tokenizer.tokrx_info(),
             trie_bytes: Arc::new(bytes),
             hf_tokenizer: Arc::new(tokenizer.hf_tokenizer),
+            inference_caps: InferenceCapabilities::default(),
         };
 
         Ok(Self {

@@ -6,7 +6,7 @@ use aici_abi::{
     bytes::{clone_vec_as_bytes, limit_str, vec_from_bytes, TokRxInfo},
     StorageCmd,
 };
-use aicirt::user_error;
+use aicirt::{api::InferenceCapabilities, user_error};
 use anyhow::{anyhow, Result};
 use std::{
     rc::Rc,
@@ -228,6 +228,7 @@ impl ModuleData {
 
 #[derive(Clone)]
 pub struct GlobalInfo {
+    pub inference_caps: InferenceCapabilities,
     pub tokrx_info: TokRxInfo,
     pub trie_bytes: Arc<Vec<u8>>,
     pub hf_tokenizer: Arc<Tokenizer>,
@@ -480,6 +481,20 @@ pub fn setup_linker(engine: &wasmtime::Engine) -> Result<Arc<wasmtime::Linker<Mo
         "env",
         "aici_host_self_seq_id",
         |caller: wasmtime::Caller<'_, ModuleData>| caller.data().id as u32,
+    )?;
+
+    linker.func_wrap(
+        "env",
+        "aici_host_get_config",
+        |caller: wasmtime::Caller<'_, ModuleData>, name: u32, name_size: u32| {
+            let m = read_caller_mem(&caller, name, name_size);
+            let name = String::from_utf8_lossy(&m);
+            let caps = serde_json::to_value(caller.data().globals.inference_caps.clone()).unwrap();
+            if caps[name.as_ref()].as_bool().unwrap_or(false) {
+                return 1;
+            }
+            return 0;
+        },
     )?;
 
     linker.func_wrap(

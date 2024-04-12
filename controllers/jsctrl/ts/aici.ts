@@ -15,9 +15,21 @@ import {
   panic,
   tokenRepr,
   tokensRepr,
+  getConfig,
 } from "_aici";
 
-export { TokenSet, tokenize, detokenize, getVar, setVar, appendVar, eosToken, tokenRepr, tokensRepr };
+export {
+  TokenSet,
+  tokenize,
+  detokenize,
+  getVar,
+  setVar,
+  appendVar,
+  getConfig,
+  eosToken,
+  tokenRepr,
+  tokensRepr,
+};
 
 import * as _aici from "_aici";
 
@@ -85,7 +97,7 @@ export function log(...args: any[]) {
   (console as any)._print(args.map((x) => inspect(x)).join(" "));
 }
 
-export class AssertionError extends Error { }
+export class AssertionError extends Error {}
 
 /**
  * Throw an exception if the condition is not met.
@@ -119,7 +131,7 @@ class Splice {
     public backtrack: number,
     public ffTokens: Token[],
     public whenSampled: Token[] = []
-  ) { }
+  ) {}
 
   /**
    * Adds a splice to the current splice.
@@ -230,7 +242,7 @@ export class NextToken {
   currTokens: Token[] | null = null;
   _resolve?: (value: Token[]) => void;
 
-  constructor() { }
+  constructor() {}
 
   /**
    * Awaiting this will return generated token (or tokens, if fast-forwarding requested by self.mid_process()).
@@ -256,7 +268,7 @@ export class NextToken {
    * ~1ms time limit.
    * @param tokens tokens generated in the last step
    */
-  postProcess(backtrack: number, tokens: Token[]) { }
+  postProcess(backtrack: number, tokens: Token[]) {}
 
   /**
    * If true, the postProcess() has to be empty and always self.midProcess().isSplice()
@@ -273,8 +285,7 @@ export class NextToken {
     this.reset();
     const spl = this.isFixed();
     const r = this.midProcess();
-    if (spl)
-      assert(r.isSplice());
+    if (spl) assert(r.isSplice());
     return r;
   }
 
@@ -321,8 +332,7 @@ class FixedTokens extends NextToken {
   constructor(text: string | Buffer, following: Label | null = null) {
     super();
     this.fixedTokens = tokenize(text);
-    if (logLevel >= 1)
-      console.log("FIXED", tokensRepr(this.fixedTokens));
+    if (logLevel >= 1) console.log("FIXED", tokensRepr(this.fixedTokens));
     this.following = following;
   }
 
@@ -335,8 +345,7 @@ class FixedTokens extends NextToken {
     if (this.following !== null) {
       backtrack = getTokens().length - this.following.ptr;
       assert(backtrack >= 0);
-      if (logLevel >= 1)
-        console.log("BACKTRACK", backtrack);
+      if (logLevel >= 1) console.log("BACKTRACK", backtrack);
     }
     return MidProcessResult.splice(backtrack, this.fixedTokens);
   }
@@ -376,8 +385,7 @@ export class ConstrainedToken extends NextToken {
       this._constraint = this.mkConstraint();
     }
     this._constraint.allowTokens(bias);
-    if (logLevel >= 2)
-      console.log("ALLOW:", bias.toString());
+    if (logLevel >= 2) console.log("ALLOW:", bias.toString());
     if (bias.numSet() === 0) {
       if (logLevel >= 1)
         console.log("Constraint doesn't allow any tokens; adding EOS");
@@ -416,6 +424,9 @@ export async function fork(forks: number | Branch[]): Promise<number> {
   if (typeof forks === "number") {
     forks = Array.from({ length: forks }, () => Branch.noop());
   }
+  if (!getConfig("forks") && forks.length > 1) {
+    throw new AssertionError("Forking is disabled on this host");
+  }
   const f = new Fork(forks);
   await f.run();
   const r = AiciAsync.instance._fork_group.indexOf(_aici.selfSeqId());
@@ -435,8 +446,7 @@ class WaitVars extends NextToken {
 
   override midProcess(): MidProcessResult {
     const values = this.vars.map((v) => getVar(v));
-    if (values.includes(null))
-      return MidProcessResult.noop();
+    if (values.includes(null)) return MidProcessResult.noop();
     this.values = values as Buffer[];
     return MidProcessResult.skipMe();
   }
@@ -448,11 +458,9 @@ class WaitVars extends NextToken {
  * @returns values of the variables
  */
 export async function waitVars(...vars: string[]): Promise<Buffer[]> {
-  if (vars.length === 0)
-    return [];
+  if (vars.length === 0) return [];
   const w = new WaitVars(vars);
-  while (w.values.length == 0)
-    await w.run();
+  while (w.values.length == 0) await w.run();
   return w.values;
 }
 
@@ -461,11 +469,7 @@ export async function waitVars(...vars: string[]): Promise<Buffer[]> {
  */
 export interface AiciCallbacks {
   init_prompt(prompt: Token[]): void;
-  mid_process(
-    backtrack: number,
-    tokens: Token[],
-    fork_group: SeqId[]
-  ): void;
+  mid_process(backtrack: number, tokens: Token[], fork_group: SeqId[]): void;
 }
 
 /**
@@ -527,14 +531,13 @@ export class AiciAsync implements AiciCallbacks {
 
     f()
       .then(async () => {
-        if (logLevel >= 1)
-          console.log("JsCtrl: done");
+        if (logLevel >= 1) console.log("JsCtrl: done");
         while (true) {
           await new StopToken().run();
         }
       })
       .then(
-        () => { },
+        () => {},
         (e) => {
           // make sure we catch errors from promises, otherwise they silently stop a thread
           panic(e);
@@ -560,7 +563,7 @@ export class AiciAsync implements AiciCallbacks {
     await new Promise<void>((resolve) => {
       assert(!this._nextTokenCb);
       this._nextTokenCb = resolve;
-    })
+    });
   }
 
   init_prompt(prompt: Token[]): void {
@@ -591,29 +594,33 @@ export class AiciAsync implements AiciCallbacks {
     while (true) {
       const r = this._token!._mid_process();
       assert(r instanceof MidProcessResult);
-      if (!r.skip_me)
-        return r;
-      await this.applyTokens(0, [])
+      if (!r.skip_me) return r;
+      await this.applyTokens(0, []);
     }
   }
 
   mid_process(backtrack: number, tokens: Token[], fork_group: SeqId[]) {
-    this.mid_process_inner(backtrack, tokens, fork_group).then(() => { }, e => {
-      panic(e)
-    });
+    this.mid_process_inner(backtrack, tokens, fork_group).then(
+      () => {},
+      (e) => {
+        panic(e);
+      }
+    );
   }
 
-  private async mid_process_inner(backtrack: number, tokens: Token[], fork_group: SeqId[]) {
+  private async mid_process_inner(
+    backtrack: number,
+    tokens: Token[],
+    fork_group: SeqId[]
+  ) {
     if (logLevel >= 2)
       console.log("MID-PROCESS", backtrack, tokensRepr(tokens), fork_group);
 
     this._fork_group = fork_group;
     assert(this._token instanceof NextToken, "mid_process - no token");
 
-    if (this._went_ahead)
-      this._went_ahead = false;
-    else
-      await this.applyTokens(backtrack, tokens);
+    if (this._went_ahead) this._went_ahead = false;
+    else await this.applyTokens(backtrack, tokens);
 
     const r = await this.midProcessWithSkip();
     let r0 = r;
@@ -622,15 +629,13 @@ export class AiciAsync implements AiciCallbacks {
       const s = r0.branches[0].splices[0];
       await this.applyTokens(s.backtrack, s.ffTokens);
       this._went_ahead = true;
-      if (!this._token.isFixed())
-        break;
+      if (!this._token.isFixed()) break;
       r0 = await this.midProcessWithSkip();
       assert(r0.isSplice());
       r.branches[0].splices[0].addSplice(r0.branches[0].splices[0]);
     }
 
-    if (logLevel >= 2)
-      console.log("MID-PROCESS-RETURN", r);
+    if (logLevel >= 2) console.log("MID-PROCESS-RETURN", r);
     _aici._midProcessReturn(r);
   }
 }
@@ -728,8 +733,7 @@ export class ChooseConstraint extends Constraint {
 }
 
 export async function genTokens(options: GenOptions): Promise<Token[]> {
-  if (logLevel >= 2)
-    console.log("GEN-OPT", options);
+  if (logLevel >= 2) console.log("GEN-OPT", options);
   const res: Token[] = [];
   const {
     regex,
@@ -768,8 +772,7 @@ export async function genTokens(options: GenOptions): Promise<Token[]> {
     if (tokens?.length) {
       res.push(...tokens);
 
-      if (logLevel >= 2)
-        console.log("GEN-STEP:", tokensRepr(tokens));
+      if (logLevel >= 2) console.log("GEN-STEP:", tokensRepr(tokens));
 
       const text = detokenize(res).decode();
 
@@ -783,11 +786,9 @@ export async function genTokens(options: GenOptions): Promise<Token[]> {
     }
   }
 
-  if (storeVar !== undefined)
-    setVar(storeVar, detokenize(res));
+  if (storeVar !== undefined) setVar(storeVar, detokenize(res));
 
-  if (logLevel >= 1)
-    console.log("GEN", tokensRepr(res));
+  if (logLevel >= 1) console.log("GEN", tokensRepr(res));
 
   return res;
 }

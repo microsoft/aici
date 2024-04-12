@@ -181,6 +181,11 @@ declare module "_aici" {
   function appendVar(name: string, value: string | Buffer): void;
 
   /**
+   * Get the value of a configuration parameter like "forks".
+   */
+  function getConfig(name: string): number;
+
+  /**
    * Index of the end of sequence token.
    */
   function eosToken(): number;

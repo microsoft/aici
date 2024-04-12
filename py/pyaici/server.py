@@ -4,7 +4,7 @@
 # It will not work with the standard Python interpreter.
 #
 
-from typing import Any, Optional, Coroutine, Union, Callable, List, Union, Dict
+from typing import Any, Optional, Coroutine, Union, Callable, List, Dict
 
 # these are to provide re-exports
 from pyaici.server_native import (
@@ -15,6 +15,7 @@ from pyaici.server_native import (
     CfgConstraint,
     SubStrConstraint,
     Constraint,
+    get_config,
     get_var,
     set_var,
     append_var,
@@ -278,6 +279,8 @@ async def fork(forks: Union[int, List[Branch]]):
     """
     if isinstance(forks, int):
         forks = [Branch.noop() for _ in range(forks)]
+    if not get_config("forks") and len(forks) > 1:
+        raise ValueError("Forking is disabled on this host")
     f = _Fork(forks)
     await f
     assert AiciAsync.instance

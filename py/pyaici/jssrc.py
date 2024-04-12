@@ -203,6 +203,11 @@ declare module "_aici" {
   function appendVar(name: string, value: string | Buffer): void;
 
   /**
+   * Get the value of a configuration parameter like "forks".
+   */
+  function getConfig(name: string): number;
+
+  /**
    * Index of the end of sequence token.
    */
   function eosToken(): number;
@@ -307,8 +312,8 @@ declare module "_aici" {
 }
 declare module 'aici' {
 /// 
-import { TokenSet, tokenize, detokenize, regexConstraint, cfgConstraint, substrConstraint, Constraint, getVar, setVar, appendVar, eosToken, panic, tokenRepr, tokensRepr } from "_aici";
-export { TokenSet, tokenize, detokenize, getVar, setVar, appendVar, eosToken, tokenRepr, tokensRepr };
+import { TokenSet, tokenize, detokenize, regexConstraint, cfgConstraint, substrConstraint, Constraint, getVar, setVar, appendVar, eosToken, panic, tokenRepr, tokensRepr, getConfig } from "_aici";
+export { TokenSet, tokenize, detokenize, getVar, setVar, appendVar, getConfig, eosToken, tokenRepr, tokensRepr, };
 export type SeqId = number;
 type int = number;
 export function setLogLevel(level: number): void;
