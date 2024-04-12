@@ -419,7 +419,7 @@ class Fork extends NextToken {
  * Check if fork() is supported on this host.
  */
 export function forkSupported(): boolean {
-  return getConfig("forks") != 0;
+  return getConfig("fork") != 0;
 }
 
 /**

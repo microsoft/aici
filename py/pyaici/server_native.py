@@ -77,7 +77,7 @@ def eos_token() -> int:
 
 def get_config(name: str) -> int:
     """
-    Get the value of a configuration parameter like "forks"
+    Get the value of a configuration parameter like "fork"
     """
     ...
 

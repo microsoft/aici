@@ -181,7 +181,7 @@ declare module "_aici" {
   function appendVar(name: string, value: string | Buffer): void;
 
   /**
-   * Get the value of a configuration parameter like "forks".
+   * Get the value of a configuration parameter like "fork".
    */
   function getConfig(name: string): number;
 

@@ -283,7 +283,7 @@ def fork_supported():
     """
     Check if the current host supports forking.
     """
-    return get_config("forks") != 0
+    return get_config("fork") != 0
 
 
 async def fork(forks: Union[int, List[Branch]]):

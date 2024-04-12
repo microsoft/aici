@@ -41,7 +41,7 @@ extern "C" {
     // This can be also obtained from the TokTrie.
     fn aici_host_eos_token() -> TokenId;
 
-    // Get value of configuration parameters, like "forks".
+    // Get value of configuration parameters, like "fork".
     fn aici_host_get_config(src: *const u8, src_size: u32) -> i32;
 
     // Stop the program - any error info is assumed to have been printed already.
