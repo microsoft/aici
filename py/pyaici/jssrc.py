@@ -451,6 +451,10 @@ export class ConstrainedToken extends NextToken {
     postProcess(backtrack: number, tokens: Token[]): void;
 }
 /**
+ * Check if fork() is supported on this host.
+ */
+export function forkSupported(): boolean;
+/**
  * Forks the execution into `numForks` branches.
  * @param numForks how many branches
  * @returns a number from 0 to `numForks`-1, indicating the branch

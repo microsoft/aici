@@ -272,6 +272,13 @@ class _Fork(NextToken):
         return MidProcessResult(self.forks)
 
 
+def fork_supported():
+    """
+    Check if the current host supports forking.
+    """
+    return get_config("forks") != 0
+
+
 async def fork(forks: Union[int, List[Branch]]):
     """
     Forks the execution into `num_forks` branches.
@@ -279,7 +286,7 @@ async def fork(forks: Union[int, List[Branch]]):
     """
     if isinstance(forks, int):
         forks = [Branch.noop() for _ in range(forks)]
-    if not get_config("forks") and len(forks) > 1:
+    if not fork_supported() and len(forks) > 1:
         raise ValueError("Forking is disabled on this host")
     f = _Fork(forks)
     await f

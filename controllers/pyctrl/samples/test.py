@@ -19,6 +19,9 @@ async def test_backtrack_one():
 
 
 async def test_fork():
+    if not aici.fork_supported():
+        print("skipping fork test")
+        return
     await aici.FixedTokens("The word 'hello' in")
     id = await aici.fork(3)
     if id == 0:
@@ -188,4 +191,4 @@ async def test_joke():
     await aici.gen_text(max_tokens=15)
 
 
-aici.test(test_drugs())
+aici.test(test_fork())

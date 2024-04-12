@@ -416,6 +416,13 @@ class Fork extends NextToken {
 }
 
 /**
+ * Check if fork() is supported on this host.
+ */
+export function forkSupported(): boolean {
+  return getConfig("forks") != 0;
+}
+
+/**
  * Forks the execution into `numForks` branches.
  * @param numForks how many branches
  * @returns a number from 0 to `numForks`-1, indicating the branch
@@ -424,7 +431,7 @@ export async function fork(forks: number | Branch[]): Promise<number> {
   if (typeof forks === "number") {
     forks = Array.from({ length: forks }, () => Branch.noop());
   }
-  if (!getConfig("forks") && forks.length > 1) {
+  if (!forkSupported() && forks.length > 1) {
     throw new AssertionError("Forking is disabled on this host");
   }
   const f = new Fork(forks);
@@ -543,13 +550,6 @@ export class AiciAsync implements AiciCallbacks {
           panic(e);
         }
       );
-
-    if (this._getPrompt) {
-      assert(this._getPrompt instanceof GetPrompt);
-      assert(!this._token);
-    } else {
-      assert(this._token instanceof NextToken);
-    }
   }
 
   async step(tokens: Token[]) {
@@ -567,6 +567,13 @@ export class AiciAsync implements AiciCallbacks {
   }
 
   init_prompt(prompt: Token[]): void {
+    if (this._getPrompt) {
+      assert(this._getPrompt instanceof GetPrompt);
+      assert(!this._token);
+    } else {
+      assert(this._token instanceof NextToken);
+    }
+
     assert(!this._tokens.length);
     this._prompt_len = prompt.length;
     this._tokens.push(...prompt);
