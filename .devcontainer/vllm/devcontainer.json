@@ -20,6 +20,7 @@
 			"extensions": [
 				"ms-python.python",
 				"ms-python.black-formatter",
+				"eeyore.yapf",
 				"1YiB.rust-bundle",
 				"dtsvet.vscode-wasm",
 				"ms-vscode.cpptools",

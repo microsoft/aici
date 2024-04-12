@@ -169,6 +169,10 @@ impl MidProcessResult {
             }],
         }
     }
+
+    pub fn noop() -> Self {
+        Self::splice(0, vec![])
+    }
 }
 
 #[derive(Serialize, Deserialize)]
