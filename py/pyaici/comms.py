@@ -361,7 +361,10 @@ class AiciRunner:
             "--bin-size=" + str(bin_size),
             "--name=" + pref,
             "--server",
-        ] + rtargs
+        ]
+        if fork_supported:
+            args.append("--cap-fork")
+        args += rtargs
 
         print("running: ", args)
         self.proc = subprocess.Popen(args)
@@ -378,11 +381,6 @@ class AiciRunner:
         atexit.register(cleanup)
 
         self.cmd.exec("ping")
-        self.cmd.exec("inference_caps", {
-            "backtrack": True,
-            "ff_tokens": True,
-            "fork": fork_supported,
-        })
         resp = self.cmd.exec("tokens")
         self.vocab_size = resp["data"]["vocab_size"]
 

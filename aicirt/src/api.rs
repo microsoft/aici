@@ -5,7 +5,7 @@ use serde_json::Value;
 
 pub type ModuleInstId = usize;
 
-#[derive(Serialize, Deserialize, Default, Clone)]
+#[derive(Serialize, Deserialize, Clone)]
 pub struct InferenceCapabilities {
     #[serde(default)]
     pub backtrack: bool,

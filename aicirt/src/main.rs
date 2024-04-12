@@ -74,9 +74,9 @@ struct Cli {
     #[arg(long)]
     bench: bool,
 
-    /// Fork test
+    /// Allow fork() in controllers.
     #[arg(long)]
-    fork: bool,
+    cap_fork: bool,
 
     /// Enable futex comms
     #[arg(long, default_value_t = false)]
@@ -660,11 +660,6 @@ impl Stepper {
         Ok(())
     }
 
-    fn inference_caps(&mut self, caps: InferenceCapabilities) -> Result<Value> {
-        self.globals.inference_caps = caps;
-        Ok(json!({}))
-    }
-
     fn aici_mid_process(&mut self, req: AiciMidProcessReq) -> Result<AiciMidProcessResp> {
         let block_elts = self.globals.tokrx_info.vocab_size as usize;
         let mut outputs = HashMap::default();
@@ -822,14 +817,7 @@ impl Exec for Stepper {
     #[inline(never)]
     fn exec(&mut self, json: Value, _auth: AuthInfo) -> Result<Value> {
         match json["op"].as_str() {
-            Some("inference_caps") => Ok(self.inference_caps(serde_json::from_value(json)?)?),
-            Some("tokens") => {
-                let caps = &self.globals.inference_caps;
-                if !caps.backtrack || !caps.ff_tokens {
-                    bail_user!("need at least backtrack and ff_tokens inference_caps")
-                }
-                Ok(json!({ "vocab_size": self.globals.tokrx_info.vocab_size }))
-            }
+            Some("tokens") => Ok(json!({ "vocab_size": self.globals.tokrx_info.vocab_size })),
             Some("mid_process") => Ok(serde_json::to_value(
                 &self.aici_mid_process(serde_json::from_value(json)?)?,
             )?),
@@ -1119,9 +1107,15 @@ fn main() -> () {
         return ();
     }
 
+    let inference_caps = InferenceCapabilities {
+        fork: cli.cap_fork,
+        backtrack: true,
+        ff_tokens: true,
+    };
+
     let tokenizer = find_tokenizer(&cli.tokenizer).unwrap();
     let token_bytes = tokenizer.token_bytes();
-    let wasm_ctx = WasmContext::new(limits.clone(), tokenizer).unwrap();
+    let wasm_ctx = WasmContext::new(inference_caps, limits.clone(), tokenizer).unwrap();
 
     if cli.save_tokenizer.is_some() {
         save_tokenizer(&cli);

@@ -5,8 +5,8 @@ use aici_abi::{
 };
 use aicirt::{
     api::{
-        AiciMidProcessReq, AiciMidProcessResp, AuthInfo, GetTagsResp, InferenceCapabilities,
-        InstantiateReq, MkModuleReq, MkModuleResp, SequenceResult, SetTagsReq, TokensResp,
+        AiciMidProcessReq, AiciMidProcessResp, AuthInfo, GetTagsResp, InstantiateReq, MkModuleReq,
+        MkModuleResp, SequenceResult, SetTagsReq, TokensResp,
     },
     futexshm::ClientChannel,
     msgchannel::MessageChannel,
@@ -154,7 +154,8 @@ impl AiciRtIface {
             .arg(&args.bin_size.to_string())
             .arg("--name")
             .arg(&args.shm_prefix)
-            .arg("--futex");
+            .arg("--futex")
+            .arg("--cap-fork");
         for a in &args.add_args {
             cmd_bld.arg(a);
         }
@@ -204,15 +205,6 @@ impl AiciRtIface {
         };
 
         let _: Value = r.cmd.exec("ping", json!({}))?;
-
-        let _: Value = r.cmd.exec(
-            "inference_caps",
-            serde_json::to_value(InferenceCapabilities {
-                backtrack: true,
-                ff_tokens: true,
-                fork: true,
-            })?,
-        )?;
 
         let tokens: TokensResp = r
             .cmd

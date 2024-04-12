@@ -6,7 +6,12 @@ use crate::{
     TimerSet, UserError,
 };
 use aici_abi::{toktree::TokTrie, InitPromptArg, ProcessResultOffset, TokenId};
-use aicirt::{api::{InferenceCapabilities, SequenceResult}, bail_user, bintokens::ByteTokenizer, user_error};
+use aicirt::{
+    api::{InferenceCapabilities, SequenceResult},
+    bail_user,
+    bintokens::ByteTokenizer,
+    user_error,
+};
 use anyhow::{anyhow, ensure, Result};
 use serde::Deserialize;
 use std::{path::PathBuf, sync::Arc, time::Instant};
@@ -26,7 +31,11 @@ impl WasmContext {
         unsafe { wasmtime::Module::deserialize_file(&self.engine, path) }
     }
 
-    pub fn new(limits: AiciLimits, tokenizer: ByteTokenizer) -> Result<Self> {
+    pub fn new(
+        inference_caps: InferenceCapabilities,
+        limits: AiciLimits,
+        tokenizer: ByteTokenizer,
+    ) -> Result<Self> {
         let mut cfg = wasmtime::Config::default();
         // these are defaults as of 13.0.0, but we specify them anyways for stability
         cfg.debug_info(false)
@@ -75,7 +84,7 @@ impl WasmContext {
             tokrx_info: tokenizer.tokrx_info(),
             trie_bytes: Arc::new(bytes),
             hf_tokenizer: Arc::new(tokenizer.hf_tokenizer),
-            inference_caps: InferenceCapabilities::default(),
+            inference_caps,
         };
 
         Ok(Self {
