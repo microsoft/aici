@@ -154,6 +154,21 @@ async def test_prompt_backtrack():
     await aici.gen_tokens(max_tokens=2)
 
 
+async def test_noop():
+    await aici.FixedTokens("2 + 2 = ")
+    await aici.Noop()
+    await aici.Noop()
+    await aici.Noop()
+    await aici.gen_tokens(regex=r"\d", store_var="r4")
+    await aici.FixedTokens("\n2 + 2")
+    l = aici.Label()
+    await aici.FixedTokens("2 = ")
+    await aici.gen_tokens(regex=r"\d", store_var="r2")
+    await aici.FixedTokens("", following=l)
+    await aici.gen_tokens(regex=r" = \d", store_var="r4p")
+    aici.check_vars({"r4": "4", "r2": "2", "r4p": " = 4"})
+
+
 async def test_sample():
     # initialization code
     print("I'm going in the logs!")
@@ -191,4 +206,4 @@ async def test_joke():
     await aici.gen_text(max_tokens=15)
 
 
-aici.test(test_fork())
+aici.test(test_noop())

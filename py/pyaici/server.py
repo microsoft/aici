@@ -190,6 +190,13 @@ class NextToken:
         return self.value
 
 
+class Noop(NextToken):
+    def __init__(self):
+        super().__init__()
+
+    def mid_process(self) -> MidProcessResult:
+        return MidProcessResult.noop()
+
 class FixedTokens(NextToken):
     def __init__(self, text: Union[str, bytes], following: Optional["Label"] = None):
         """
