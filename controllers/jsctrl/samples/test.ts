@@ -6,6 +6,7 @@ import {
   waitVars,
   getVar,
   setVar,
+  forkSupported,
 } from "aici";
 
 async function main() {
@@ -50,6 +51,7 @@ async function test_backtrack_one() {
 }
 
 async function test_fork() {
+  if (!forkSupported()) return;
   await $`The word 'hello' in`;
   const id = await fork(3);
   if (id === 0) {

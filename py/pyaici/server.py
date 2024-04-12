@@ -4,7 +4,7 @@
 # It will not work with the standard Python interpreter.
 #
 
-from typing import Any, Optional, Coroutine, Union, Callable, List, Union, Dict
+from typing import Any, Optional, Coroutine, Union, Callable, List, Dict
 
 # these are to provide re-exports
 from pyaici.server_native import (
@@ -15,6 +15,7 @@ from pyaici.server_native import (
     CfgConstraint,
     SubStrConstraint,
     Constraint,
+    get_config,
     get_var,
     set_var,
     append_var,
@@ -189,6 +190,13 @@ class NextToken:
         return self.value
 
 
+class Noop(NextToken):
+    def __init__(self):
+        super().__init__()
+
+    def mid_process(self) -> MidProcessResult:
+        return MidProcessResult.noop()
+
 class FixedTokens(NextToken):
     def __init__(self, text: Union[str, bytes], following: Optional["Label"] = None):
         """
@@ -271,6 +279,13 @@ class _Fork(NextToken):
         return MidProcessResult(self.forks)
 
 
+def fork_supported():
+    """
+    Check if the current host supports forking.
+    """
+    return get_config("forks") != 0
+
+
 async def fork(forks: Union[int, List[Branch]]):
     """
     Forks the execution into `num_forks` branches.
@@ -278,6 +293,8 @@ async def fork(forks: Union[int, List[Branch]]):
     """
     if isinstance(forks, int):
         forks = [Branch.noop() for _ in range(forks)]
+    if not fork_supported() and len(forks) > 1:
+        raise ValueError("Forking is disabled on this host")
     f = _Fork(forks)
     await f
     assert AiciAsync.instance

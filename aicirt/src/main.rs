@@ -660,6 +660,11 @@ impl Stepper {
         Ok(())
     }
 
+    fn inference_caps(&mut self, caps: InferenceCapabilities) -> Result<Value> {
+        self.globals.inference_caps = caps;
+        Ok(json!({}))
+    }
+
     fn aici_mid_process(&mut self, req: AiciMidProcessReq) -> Result<AiciMidProcessResp> {
         let block_elts = self.globals.tokrx_info.vocab_size as usize;
         let mut outputs = HashMap::default();
@@ -747,6 +752,18 @@ impl Stepper {
             let timeout = deadline.saturating_duration_since(Instant::now());
             match h.check_process(timeout) {
                 Ok(data) => {
+                    if !self.globals.inference_caps.fork {
+                        if let Some(r) = &data.result {
+                            if r.branches.len() > 1 {
+                                self.worker_error(
+                                    id,
+                                    &mut outputs,
+                                    user_error!("forking not enabled in this host"),
+                                );
+                                continue;
+                            }
+                        }
+                    }
                     outputs.insert(id, data);
                     if log::log_enabled!(log::Level::Debug) {
                         let slice = self.logit_bias_at_byte_offset(off);
@@ -805,7 +822,14 @@ impl Exec for Stepper {
     #[inline(never)]
     fn exec(&mut self, json: Value, _auth: AuthInfo) -> Result<Value> {
         match json["op"].as_str() {
-            Some("tokens") => Ok(json!({ "vocab_size": self.globals.tokrx_info.vocab_size })),
+            Some("inference_caps") => Ok(self.inference_caps(serde_json::from_value(json)?)?),
+            Some("tokens") => {
+                let caps = &self.globals.inference_caps;
+                if !caps.backtrack || !caps.ff_tokens {
+                    bail_user!("need at least backtrack and ff_tokens inference_caps")
+                }
+                Ok(json!({ "vocab_size": self.globals.tokrx_info.vocab_size }))
+            }
             Some("mid_process") => Ok(serde_json::to_value(
                 &self.aici_mid_process(serde_json::from_value(json)?)?,
             )?),

@@ -5,6 +5,16 @@ use serde_json::Value;
 
 pub type ModuleInstId = usize;
 
+#[derive(Serialize, Deserialize, Default, Clone)]
+pub struct InferenceCapabilities {
+    #[serde(default)]
+    pub backtrack: bool,
+    #[serde(default)]
+    pub ff_tokens: bool,
+    #[serde(default)]
+    pub fork: bool,
+}
+
 #[derive(Serialize, Deserialize)]
 pub struct AiciMidProcessReq {
     pub ops: Vec<AiciMidOp>,
@@ -39,8 +49,8 @@ pub struct AiciMidOp {
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct SequenceResult<T = ()> {
-    pub error: String,
     pub result: Option<T>,
+    pub error: String,
     // StorageCmd::ReadVar are not recorded
     pub storage: Vec<StorageCmd>,
     pub logs: String,

@@ -67,6 +67,8 @@ The `ping` command is used to check if the AICIrt is alive.
 The requests always have an `op` field, and the responses always have a `type` field,
 which is either `"ok"` or `"error"`, as well as a `data` field.
 
+TODO: add inference_caps
+
 The `tokens` command gives the size of the vocabulary of the loaded tokenizer.
 
 ```json

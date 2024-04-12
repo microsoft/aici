@@ -41,6 +41,9 @@ extern "C" {
     // This can be also obtained from the TokTrie.
     fn aici_host_eos_token() -> TokenId;
 
+    // Get value of configuration parameters, like "forks".
+    fn aici_host_get_config(src: *const u8, src_size: u32) -> i32;
+
     // Stop the program - any error info is assumed to have been printed already.
     // Backtraces will be limited.
     fn aici_host_stop();
@@ -127,6 +130,7 @@ pub trait HostInterface {
     fn tokenize_bytes(&self, s: &[u8]) -> Vec<TokenId>;
     fn self_seq_id(&self) -> SeqId;
     fn eos_token(&self) -> TokenId;
+    fn get_config(&self, name: &str) -> i32;
     fn stop(&self) -> !;
 }
 
@@ -190,6 +194,12 @@ impl HostInterface for WasmHost {
     fn eos_token(&self) -> TokenId {
         unsafe { aici_host_eos_token() }
     }
+
+    fn get_config(&self, name: &str) -> i32 {
+        let name_bytes = name.as_bytes();
+        let res = unsafe { aici_host_get_config(name_bytes.as_ptr(), name_bytes.len() as u32) };
+        res
+    }
 }
 
 fn get_host() -> &'static Box<dyn HostInterface> {
@@ -232,6 +242,10 @@ pub fn return_process_result(res: &[u8]) {
     unsafe {
         aici_host_return_process_result(res.as_ptr(), res.len() as u32);
     }
+}
+
+pub fn get_config(name: &str) -> i32 {
+    get_host().get_config(name)
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]

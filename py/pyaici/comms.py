@@ -10,7 +10,6 @@ import ujson as json
 import numpy as np
 import base64
 import time
-import argparse
 import asyncio
 import concurrent.futures
 import threading
@@ -296,7 +295,7 @@ class MidResult:
             storage=obj["storage"],
             logs=obj["logs"],
             micros=obj["micros"],
-            branches=[Branch.from_json(q) for q in obj.get("result", {}).get("branches", [])],
+            branches=[Branch.from_json(q) for q in (obj.get("result", None) or {}).get("branches", [])],
         )
 
 class AiciRunner:
@@ -305,6 +304,7 @@ class AiciRunner:
     def __init__(
         self,
         rtpath,
+        fork_supported=False,
         tokenizer="llama",
         json_size=128,
         bin_size=128,
@@ -378,6 +378,11 @@ class AiciRunner:
         atexit.register(cleanup)
 
         self.cmd.exec("ping")
+        self.cmd.exec("inference_caps", {
+            "backtrack": True,
+            "ff_tokens": True,
+            "fork": fork_supported,
+        })
         resp = self.cmd.exec("tokens")
         self.vocab_size = resp["data"]["vocab_size"]
 

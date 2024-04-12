@@ -35,6 +35,10 @@ impl HostInterface for ParserHost {
         todo!()
     }
 
+    fn get_config(&self, _name: &str) -> i32 {
+        0
+    }
+
     fn storage_cmd(&self, cmd: StorageCmd) -> StorageResp {
         let mut vars = self.vars.lock().unwrap();
         vars.process_cmd(cmd)

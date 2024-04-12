@@ -137,6 +137,13 @@ mod _aici {
         trie.special_token(SpecialToken::EndOfSentence)
     }
 
+    #[pyfunction]
+    fn get_config(name: PyStrRef) -> PyResult<i32> {
+        let name = name.as_str();
+        let v = aici_abi::get_config(name);
+        Ok(v)
+    }
+
     #[pyattr]
     #[pyclass(name)]
     #[derive(PyPayload)]

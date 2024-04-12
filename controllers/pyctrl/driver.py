@@ -34,11 +34,12 @@ class Tester:
                 max_tokens=2000,
             )
             logs = "\n".join(r["logs"])
+            nlogs = "\n" + logs
             if (
-                "\nTEST OK\n" in logs
-                and not "\nPanicked at" in logs
-                and not "wasm `unreachable`" in logs
-                and not "aici_host_stop" in logs
+                "\nTEST OK\n" in nlogs
+                and "\nPanicked at" not in nlogs
+                and "wasm `unreachable`" not in nlogs
+                and "aici_host_stop" not in nlogs
             ):
                 self.ok(id, logs)
             else:
