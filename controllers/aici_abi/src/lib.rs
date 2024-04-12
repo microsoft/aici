@@ -132,6 +132,21 @@ impl<S> Branch<S> {
             splices: self.splices.clone(),
         }
     }
+
+    pub fn splice(backtrack: u32, ff_tokens: Vec<TokenId>) -> Self {
+        Branch {
+            sample_mask: None,
+            splices: vec![Splice {
+                when_sampled: vec![],
+                backtrack,
+                ff_tokens,
+            }],
+        }
+    }
+
+    pub fn noop() -> Self {
+        Self::splice(0, vec![])
+    }
 }
 
 #[derive(Debug)]
@@ -159,14 +174,7 @@ impl MidProcessResult {
 
     pub fn splice(backtrack: u32, ff_tokens: Vec<TokenId>) -> Self {
         MidProcessResult {
-            branches: vec![Branch {
-                sample_mask: None,
-                splices: vec![Splice {
-                    when_sampled: vec![],
-                    backtrack,
-                    ff_tokens,
-                }],
-            }],
+            branches: vec![Branch::splice(backtrack, ff_tokens)],
         }
     }
 

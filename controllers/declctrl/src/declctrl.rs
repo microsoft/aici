@@ -13,12 +13,11 @@ use aici_abi::{
     aici_expose_all,
     bytes::limit_str,
     cfg::CfgParser,
-    rx::RecRx,
-    rx::RxStackRecognizer,
+    rx::{RecRx, RxStackRecognizer},
     svob::SimpleVob,
-    tokenize, tokenize_bytes,
+    tokenize_bytes,
     toktree::{Recognizer, SpecialToken, TokTrie},
-    AiciCtrl, InitPromptArg, InitPromptResult, MidProcessArg, MidProcessResult, TokenId,
+    AiciCtrl, Branch, InitPromptArg, InitPromptResult, MidProcessArg, MidProcessResult, TokenId,
     VariableStorage,
 };
 use core::panic;
@@ -747,6 +746,7 @@ impl StepState {
         self.check_eos(false)
     }
 
+    #[allow(dead_code)]
     fn attention_mask(&self, ctx: &RunnerCtx) -> Vec<f32> {
         if self.mask_tags.len() == 0 {
             vec![]
@@ -1220,17 +1220,6 @@ impl AiciCtrl for Runner {
             }
         }
 
-        if let StepSpecific::Fork { branches } = &self.curr_state().specific {
-            let attention_masks = branches
-                .iter()
-                .map(|b| b[0].attention_mask(&self.ctx))
-                .collect::<Vec<_>>();
-            PreProcessResult::new(attention_masks.len())
-        } else {
-            let mask = self.curr_state().attention_mask(&self.ctx);
-            PreProcessResult::new(vec![mask].len())
-        }
-
         //
         // MID
         //
@@ -1255,18 +1244,16 @@ impl AiciCtrl for Runner {
             }
         }
 
+        if let StepSpecific::Fork { branches } = &self.curr_state().specific {
+            assert!(branches.len() > 1);
+            return MidProcessResult {
+                branches: branches.iter().map(|_| Branch::noop()).collect(),
+            };
+        }
+
         if self.maybe_wait() {
             // this is a bit late in the game, but it's the best we can do
-            MidProcessResult::Splice {
-                backtrack: 0,
-                ff_tokens: tokenize(" "),
-            }
-
-            // // we pop the useless generated token
-            // MidProcessResult::Splice {
-            //     backtrack: 1,
-            //     ff_tokens: vec![],
-            // }
+            MidProcessResult::noop()
         } else {
             self.try_backtrack()
         }

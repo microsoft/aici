@@ -13,7 +13,6 @@ class Tester:
         self.mod = pyaici.cli.build_rust(".")
         self.oks = []
         self.failures = []
-        pyaici.rest.log_level = 0
 
     def fail(self, id: str, logs: str):
         print(f"FAIL")
@@ -68,6 +67,14 @@ def main():
     )
 
     parser.add_argument(
+        "--log-level",
+        "-l",
+        type=int,
+        default=0,
+        help="AICI log level",
+    )
+
+    parser.add_argument(
         "--only",
         "-k",
         type=str,
@@ -82,7 +89,10 @@ def main():
         help="files to test",
     )
 
+
     args = parser.parse_args()
+
+    pyaici.rest.log_level = args.log_level
 
     files = args.test_file
 
