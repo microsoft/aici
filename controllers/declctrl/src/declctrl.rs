@@ -18,8 +18,8 @@ use aici_abi::{
     svob::SimpleVob,
     tokenize, tokenize_bytes,
     toktree::{Recognizer, SpecialToken, TokTrie},
-    AiciCtrl, InitPromptArg, InitPromptResult, MidProcessArg, MidProcessResult, PostProcessArg,
-    PostProcessResult, PreProcessArg, PreProcessResult, TokenId, VariableStorage,
+    AiciCtrl, InitPromptArg, InitPromptResult, MidProcessArg, MidProcessResult, TokenId,
+    VariableStorage,
 };
 use core::panic;
 use serde::{Deserialize, Serialize};
@@ -1078,10 +1078,7 @@ impl Runner {
                         tokens[0]
                     );
 
-                    return MidProcessResult::Splice {
-                        backtrack,
-                        ff_tokens: tokens[0].clone(),
-                    };
+                    return MidProcessResult::splice(backtrack, tokens[0].clone());
                 } else {
                     panic!("following on non-options");
                 }
@@ -1125,12 +1122,9 @@ impl Runner {
         self.finish_states();
 
         if let Some(ff_tokens) = ff_tokens {
-            MidProcessResult::Splice {
-                backtrack: 0,
-                ff_tokens,
-            }
+            MidProcessResult::splice(0, ff_tokens)
         } else {
-            MidProcessResult::SampleWithBias { allowed_tokens }
+            MidProcessResult::sample(allowed_tokens)
         }
     }
 
@@ -1170,7 +1164,11 @@ impl AiciCtrl for Runner {
         InitPromptResult::default()
     }
 
-    fn post_process(&mut self, arg: PostProcessArg) -> PostProcessResult {
+    fn mid_process(&mut self, arg: MidProcessArg) -> MidProcessResult {
+        //
+        // POST
+        //
+
         self.finish_states();
 
         if arg.backtrack > 0 {
@@ -1184,35 +1182,35 @@ impl AiciCtrl for Runner {
 
         // if in wait state, don't do anything...
         if let StepSpecific::Wait { .. } = &self.curr_state().specific {
-            return PostProcessResult::continue_();
-        }
+            // ???
+        } else {
+            let tokens = arg.tokens;
+            let ntok = tokens.len();
+            if ntok > 1 && LOG_ADVANCE {
+                println!("<<< {} tokens", ntok);
+            }
+            for token in tokens {
+                self.advance(token);
+            }
+            if ntok > 1 && LOG_ADVANCE {
+                println!(">>>");
+            }
 
-        let tokens = arg.tokens;
-        let ntok = tokens.len();
-        if ntok > 1 && LOG_ADVANCE {
-            println!("<<< {} tokens", ntok);
+            self.finish_states();
         }
-        for token in tokens {
-            self.advance(token);
-        }
-        if ntok > 1 && LOG_ADVANCE {
-            println!(">>>");
-        }
-
-        self.finish_states();
 
         if let StepSpecific::Stop = &self.curr_state().specific {
-            PostProcessResult::stop()
-        } else {
-            PostProcessResult::continue_()
+            return MidProcessResult::stop();
         }
-    }
 
-    fn pre_process(&mut self, _arg: PreProcessArg) -> PreProcessResult {
+        //
+        // PRE
+        //
+
         self.finish_states();
 
         if self.maybe_wait() {
-            return PreProcessResult::suspend();
+            return MidProcessResult::noop();
         }
 
         // moving to Fork state is greedy
@@ -1232,9 +1230,11 @@ impl AiciCtrl for Runner {
             let mask = self.curr_state().attention_mask(&self.ctx);
             PreProcessResult::new(vec![mask].len())
         }
-    }
 
-    fn mid_process(&mut self, arg: MidProcessArg) -> MidProcessResult {
+        //
+        // MID
+        //
+
         self.finish_states();
 
         if arg.fork_group.len() > 1 {

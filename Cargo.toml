@@ -4,6 +4,7 @@ members = [
     "aicirt",
     "controllers/aici_abi",
     "controllers/aici_native",
+    "controllers/declctrl",
     "controllers/pyctrl",
     "controllers/jsctrl",
     "controllers/guidance_ctrl",
