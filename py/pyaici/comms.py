@@ -263,6 +263,14 @@ class Branch:
     mask: Optional[int] = None
     splices: List[Splice] = field(default_factory=list)
 
+    def find_splice(self, token: Optional[int]) -> Optional[Splice]:
+        if self.mask is None:
+            token = None
+        for splice in self.splices:
+            if not splice.when_sampled or token in splice.when_sampled:
+                return splice
+        return None
+
     def is_splice(self) -> bool:
         return len(self.splices) == 1 and self.splices[0].when_sampled == []
 

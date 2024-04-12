@@ -13,6 +13,8 @@ RUST_LOG=info,tokenizers=error,aicirt=trace \
 PYTHONPATH=py:py/vllm \
 python3 -m vllm.entrypoints.openai.api_server \
     --enforce-eager \
+    --use-v2-block-manager \
+    --enable-chunked-prefill \
     --aici-rt ./target/release/aicirt \
     --aici-tokenizer $AICI_TOK \
     --model $MODEL \

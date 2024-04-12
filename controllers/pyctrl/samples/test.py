@@ -45,10 +45,15 @@ async def test_backtrack_lang():
 
 
 async def test_hello():
-    aici.log_level = 10
+    aici.log_level = 3
     prompt = await aici.GetPrompt()
     print("prompt", prompt)
     await aici.gen_tokens(regex=r"[A-Z].*", max_tokens=5)
+    l = aici.Label()
+    await aici.FixedTokens("\n2 + 2 = ")
+    await aici.gen_tokens(regex=r"\d+", max_tokens=1)
+    await aici.FixedTokens("\n3 + 3 = ", following=l)
+    await aici.gen_tokens(regex=r"\d+", max_tokens=1)
 
 
 async def test_main():
