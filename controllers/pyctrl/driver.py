@@ -1,6 +1,7 @@
 import sys
 import os
 import re
+import argparse
 
 import pyaici.rest
 import pyaici.util
@@ -51,10 +52,38 @@ def main():
     js_mode = False
     cmt = "#"
 
-    files = sys.argv[1:]
-    if not files:
-        print("need some python files as input")
-        return
+    parser = argparse.ArgumentParser(
+        description="Run pyctrl or jsctrl tests",
+        prog="ctrldriver",
+    )
+
+    parser.add_argument(
+        "--skip",
+        "-s",
+        type=str,
+        default=[],
+        action="append",
+        help="skip tests matching string",
+    )
+
+    parser.add_argument(
+        "--only",
+        "-k",
+        type=str,
+        default=[],
+        action="append",
+        help="only run tests matching string",
+    )
+
+    parser.add_argument(
+        "test_file",
+        nargs="+",
+        help="files to test",
+    )
+
+    args = parser.parse_args()
+
+    files = args.test_file
 
     if files[0].endswith(".js"):
         js_mode = True
@@ -77,6 +106,10 @@ def main():
         else:
             tests = re.findall(r"^async def (test_\w+)\(.*", arg, flags=re.MULTILINE)
         for t in tests:
+            if any([s in t for s in args.skip]):
+                continue
+            if args.only and not any([s in t for s in args.only]):
+                continue
             if js_mode:
                 arg_t = f"{arg}\ntest({t});\n"
             else:

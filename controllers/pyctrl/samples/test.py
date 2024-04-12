@@ -49,10 +49,11 @@ async def test_hello():
     prompt = await aici.GetPrompt()
     print("prompt", prompt)
     await aici.gen_tokens(regex=r"[A-Z].*", max_tokens=5)
+    await aici.FixedTokens("\n2 +")
     l = aici.Label()
-    await aici.FixedTokens("\n2 + 2 = ")
+    await aici.FixedTokens(" 2 = ")
     await aici.gen_tokens(regex=r"\d+", max_tokens=1)
-    await aici.FixedTokens("\n3 + 3 = ", following=l)
+    await aici.FixedTokens(" 3 = ", following=l)
     await aici.gen_tokens(regex=r"\d+", max_tokens=1)
 
 
@@ -187,4 +188,4 @@ async def test_joke():
     await aici.gen_text(max_tokens=15)
 
 
-aici.test(test_hello())
+aici.test(test_drugs())
