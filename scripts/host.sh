@@ -77,6 +77,7 @@ fi
 if [ "$PULL" = 1 ] ; then
     echo "Pulling..."
     git pull
+    git submodule update --init --recursive
     (cd tmp/ws-http-tunnel && git pull)
 fi
 
