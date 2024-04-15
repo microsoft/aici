@@ -34,6 +34,7 @@ def runner_from_cli(args):
         tokenizer=tokenizer,
         trace_file=args.aici_trace,
         rtargs=args.aici_rtarg,
+        pref=args.aici_shm_prefix,
     )
     return aici
 
@@ -44,6 +45,12 @@ def add_cli_args(parser: argparse.ArgumentParser, single=False):
         type=str,
         required=True,
         help="path to aicirt",
+    )
+    parser.add_argument(
+        "--aici-shm-prefix",
+        type=str,
+        default="/aici0-",
+        help="prefix for shared memory communication channels",
     )
     parser.add_argument(
         "--aici-tokenizer",
