@@ -1,3 +1,5 @@
+# Deprecated
+
 import re
 from typing import Optional, List, Union
 

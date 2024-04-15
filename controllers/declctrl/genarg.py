@@ -1,7 +1,7 @@
 # run as:
 # PYTHONPATH=.. python genarg.py 
 import ujson
-import pyaici.ast as ast
+import pyaici._ast as ast
 
 def main():
     aa = {
