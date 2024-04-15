@@ -65,7 +65,7 @@ fi
 if [ "$INNER" = "model" ] ; then
     echo "in server for $MODEL in $FOLDER"
     PREF="cd $FOLDER && CUDA_VISIBLE_DEVICES=$CUDA_VISIBLE_DEVICES"
-    ARGS="--port $FWD_PORT --shm-prefix /aici-${MODEL}-"
+    ARGS="--port $FWD_PORT --shm-prefix /aici-${MODEL}- -A--wasm-timer-resolution-us=10"
     if [ "$CPP" -eq 1 ] ; then
         docker_cmd "$PREF /workspaces/aici/rllm/rllm-llamacpp/server.sh --loop --cuda $MODEL $ARGS"
     else
