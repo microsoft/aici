@@ -154,4 +154,11 @@ impl AuthInfo {
             is_admin: false,
         }
     }
+
+    pub fn admin_user() -> Self {
+        AuthInfo {
+            user: "admin".to_string(),
+            is_admin: true,
+        }
+    }
 }

@@ -62,6 +62,10 @@ struct Cli {
     #[arg(short, long)]
     run: bool,
 
+    /// Tag the module just added; can be specified multiple times.
+    #[arg(long)]
+    tag: Vec<String>,
+
     /// Path to argument to pass.
     #[arg(long)]
     run_arg: Option<PathBuf>,
@@ -1052,7 +1056,7 @@ fn install_from_cmdline(cli: &Cli, wasm_ctx: WasmContext, shm: Shm) {
     let module_id = if name.ends_with(".wasm") {
         let wasm_bytes = fs::read(name).unwrap();
         let json = reg
-            .create_module(wasm_bytes, AuthInfo::local_user())
+            .create_module(wasm_bytes, AuthInfo::admin_user())
             .unwrap();
         json.module_id
     } else {
@@ -1060,6 +1064,15 @@ fn install_from_cmdline(cli: &Cli, wasm_ctx: WasmContext, shm: Shm) {
     };
 
     println!("{}", module_id);
+
+    if cli.tag.len() > 0 {
+        let req = SetTagsReq {
+            module_id: module_id.clone(),
+            tags: cli.tag.clone(),
+        };
+        let resp = reg.set_tags(req, AuthInfo::admin_user()).unwrap();
+        println!("{}", serde_json::to_string_pretty(&resp).unwrap());
+    }
 
     if cli.run {
         let req_id = "main".to_string();
