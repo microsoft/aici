@@ -133,6 +133,13 @@ class MessageChannel:
 
 M = 1024 * 1024
 
+def bad_response(cmd: str, message: str):
+    raise ChildProcessError(f"Bad response to {cmd}: {message}")
+
+def bad_response_fast_api(cmd: str, message: str):
+    from fastapi import HTTPException
+    raise HTTPException(status_code=400, detail=message)
+
 
 class PendingRequest:
     def __init__(self, *, cmd: Dict[str, Any]) -> None:
@@ -142,7 +149,7 @@ class PendingRequest:
 
 
 class CmdChannel:
-    def __init__(self, *, json_size: int, pref: str, suff: str, trace_file) -> None:
+    def __init__(self, *, json_size: int, pref: str, suff: str, trace_file, bad_response=bad_response) -> None:
         self.pending_reqs: Dict[str, PendingRequest] = {}
         self.executor = None
         self.suff = suff
@@ -151,6 +158,7 @@ class CmdChannel:
         self.cmd_ch = MessageChannel(pref + "cmd" + suff, json_size * M)
         self.resp_ch = MessageChannel(pref + "resp" + suff, json_size * M)
         self.trace_file = trace_file
+        self.bad_response = bad_response
 
     def send(self, data):
         assert self.executor is None
@@ -200,7 +208,8 @@ class CmdChannel:
                 info = resp["error"][0:20000]
             else:
                 info = json.dumps(resp)[0:20000]
-            raise ChildProcessError(f"Bad response to async {op}: {info}")
+            self.bad_response(op, info)
+            assert False
 
         return resp["data"]
 
@@ -385,6 +394,10 @@ class AiciRunner:
         self.vocab_size = resp["data"]["vocab_size"]
 
         AiciRunner.instance = self
+
+    def fast_api(self):
+        self.side_cmd.bad_response = bad_response_fast_api
+        self.cmd.bad_response = bad_response_fast_api
 
     def bench(self):
         cnt = 100
