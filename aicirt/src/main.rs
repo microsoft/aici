@@ -58,6 +58,10 @@ struct Cli {
     #[arg(long)]
     gh_module: Option<String>,
 
+    /// Do not allow any new controller upload
+    #[arg(long)]
+    restricted: bool,
+
     /// Save the --tokenizer=... to specified file
     #[arg(long)]
     save_tokenizer: Option<String>,
@@ -270,6 +274,8 @@ impl ModuleRegistry {
     }
 
     fn create_module(&self, wasm_bytes: Vec<u8>, auth: AuthInfo) -> Result<MkModuleResp> {
+        ensure_user!(self.wasm_ctx.limits.module_upload, "module upload disabled");
+
         let timer = Instant::now();
 
         let mut hasher = <Sha256 as Digest>::new();
@@ -341,7 +347,8 @@ impl ModuleRegistry {
     }
 
     fn set_tags(&self, req: SetTagsReq, auth: AuthInfo) -> Result<Value> {
-        ensure!(valid_module_id(&req.module_id), "invalid module_id");
+        ensure_user!(self.wasm_ctx.limits.module_upload, "module upload disabled");
+        ensure_user!(valid_module_id(&req.module_id), "invalid module_id");
         let _ = self.ensure_module_in_fs(&req.module_id)?;
 
         let user_pref = if auth.is_admin {
@@ -454,7 +461,12 @@ impl ModuleRegistry {
         );
         let cache_path = self.url_path(&url);
         let meta = cache_path.metadata();
-        if !(meta.is_ok()
+
+        if !self.wasm_ctx.limits.gh_download {
+            if !meta.is_ok() {
+                bail_user!("gh: download disabled (meta missing)");
+            }
+        } else if !(meta.is_ok()
             && meta.unwrap().modified()? > SystemTime::now().sub(Duration::from_secs(120)))
         {
             log::info!("fetching {} to {:?}", url, cache_path);
@@ -506,6 +518,11 @@ impl ModuleRegistry {
                 .ok_or_else(|| anyhow!("invalid json"))?
                 .to_string());
         }
+
+        if !self.wasm_ctx.limits.gh_download {
+            bail_user!("gh: download disabled (wasm missing)");
+        }
+
         let mut wasm_bytes = vec![];
         if let Some(bytes) = wasm_override {
             wasm_bytes = bytes;
@@ -1125,6 +1142,10 @@ fn main() -> () {
         logit_memory_bytes: cli.bin_size * MEGABYTE,
         busy_wait_duration: Duration::from_millis(cli.busy_wait_time),
         max_forks: cli.wasm_max_forks,
+
+        module_upload: !cli.restricted,
+        gh_download: !cli.restricted,
+        tokenizer_download: !cli.restricted,
     };
 
     if cli.bench {

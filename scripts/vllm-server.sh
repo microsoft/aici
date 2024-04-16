@@ -19,7 +19,8 @@ python3 -m vllm.entrypoints.openai.api_server \
     --aici-tokenizer $AICI_TOK \
     --model $MODEL \
     --revision $MODEL_REV \
-    --port 4242 --host 127.0.0.1
+    --port 4242 --host 127.0.0.1 \
+    "$@"
 
 #    --aici-rtarg="--wasm-max-step-time=50" \
 #    --aici-rtarg="--wasm-max-pre-step-time=2" \
