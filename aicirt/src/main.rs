@@ -46,13 +46,17 @@ pub static ALLOCATOR: cap::Cap<std::alloc::System> =
 
 #[derive(Parser, Clone)]
 struct Cli {
+    /// Tokenizer to use; try --tokenizer list to see options
+    #[arg(short, long, default_value = "llama")]
+    tokenizer: String,
+
     /// Path to .wasm module to install
     #[arg(short, long)]
     module: Option<String>,
 
-    /// Tokenizer to use; try --tokenizer list to see options
-    #[arg(short, long, default_value = "llama")]
-    tokenizer: String,
+    /// GitHub module identifier, eg. gh:microsoft/aici/pyctrl
+    #[arg(long)]
+    gh_module: Option<String>,
 
     /// Save the --tokenizer=... to specified file
     #[arg(long)]
@@ -410,7 +414,7 @@ impl ModuleRegistry {
         Ok(json!(resp))
     }
 
-    fn resolve_gh_module(&self, module_id: &str) -> Result<String> {
+    fn resolve_gh_module(&self, module_id: &str, wasm_override: Option<Vec<u8>>) -> Result<String> {
         if !module_id.starts_with("gh:") {
             return Ok(module_id.to_string());
         }
@@ -502,15 +506,19 @@ impl ModuleRegistry {
                 .ok_or_else(|| anyhow!("invalid json"))?
                 .to_string());
         }
-        log::info!("downloading {}", wasm_url);
         let mut wasm_bytes = vec![];
-        ureq::get(wasm_url)
-            .set("User-Agent", "AICI")
-            .call()
-            .map_err(|e| anyhow!("gh: download failed: {}", e))?
-            .into_reader()
-            .read_to_end(&mut wasm_bytes)?;
-        log::info!("downloaded {} bytes", wasm_bytes.len());
+        if let Some(bytes) = wasm_override {
+            wasm_bytes = bytes;
+        } else {
+            log::info!("downloading {}", wasm_url);
+            ureq::get(wasm_url)
+                .set("User-Agent", "AICI")
+                .call()
+                .map_err(|e| anyhow!("gh: download failed: {}", e))?
+                .into_reader()
+                .read_to_end(&mut wasm_bytes)?;
+            log::info!("downloaded {} bytes", wasm_bytes.len());
+        }
         let resp = self.create_module(
             wasm_bytes,
             AuthInfo {
@@ -523,7 +531,7 @@ impl ModuleRegistry {
     }
 
     fn instantiate(&mut self, mut req: InstantiateReq) -> Result<Value> {
-        req.module_id = self.resolve_gh_module(&req.module_id)?;
+        req.module_id = self.resolve_gh_module(&req.module_id, None)?;
         if valid_tagname(&req.module_id) {
             let taginfo = self.read_tag(&req.module_id)?;
             req.module_id = taginfo.module_id;
@@ -1055,10 +1063,14 @@ fn install_from_cmdline(cli: &Cli, wasm_ctx: WasmContext, shm: Shm) {
     let mut reg = ModuleRegistry::new(wasm_ctx, shm).unwrap();
     let module_id = if name.ends_with(".wasm") {
         let wasm_bytes = fs::read(name).unwrap();
-        let json = reg
-            .create_module(wasm_bytes, AuthInfo::admin_user())
-            .unwrap();
-        json.module_id
+        if let Some(gh) = &cli.gh_module {
+            reg.resolve_gh_module(gh, Some(wasm_bytes)).unwrap()
+        } else {
+            let json = reg
+                .create_module(wasm_bytes, AuthInfo::admin_user())
+                .unwrap();
+            json.module_id
+        }
     } else {
         name.to_string()
     };
