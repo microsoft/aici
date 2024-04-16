@@ -113,13 +113,14 @@ fn build_char_map() -> FxHashMap<char, u8> {
 
 pub fn list_tokenizers() -> String {
     format!(
-        "Available tokenizers for -t or --tokenizer:\n{}\n{}",
+        "Available tokenizers for -t or --tokenizer:\n{}\n{}\n{}",
         tokenizers()
             .iter()
             .map(|t| format!("  -t {:16} {}", t.name, t.description))
             .collect::<Vec<_>>()
             .join("\n"),
-        "You can also use a HuggingFace model name, in format 'user/modelname'."
+        "You can also use a HuggingFace model name, in format 'user/modelname',",
+        "or a local file in format './path/to/tokenizer.json'."
     )
 }
 
@@ -165,15 +166,20 @@ pub fn find_tokenizer(mut name: &str) -> Result<ByteTokenizer> {
 
     log::info!("loading tokenizer: {}", name);
 
-    let mut name2 = name.to_string();
-    let mut args = FromPretrainedParameters::default();
+    let loaded = if name.starts_with(".") {
+        Tokenizer::from_file(name)
+    } else {
+        let mut name2 = name.to_string();
+        let mut args = FromPretrainedParameters::default();
 
-    match strip_suffix("@", &mut name2) {
-        Some(s) => args.revision = s,
-        None => {}
-    }
+        match strip_suffix("@", &mut name2) {
+            Some(s) => args.revision = s,
+            None => {}
+        }
+        Tokenizer::from_pretrained(name2, Some(args))
+    };
 
-    match Tokenizer::from_pretrained(name2, Some(args)) {
+    match loaded {
         Err(e) => {
             let msg = format!("can't load tokenizer {}: {}", name, e);
             println!("{}\n{}", msg, list_tokenizers());

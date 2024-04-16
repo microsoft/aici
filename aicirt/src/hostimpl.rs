@@ -30,7 +30,6 @@ pub struct AiciLimits {
 
     pub module_upload: bool,
     pub gh_download: bool,
-    pub tokenizer_download: bool,
 }
 
 type ModuleInstId = crate::api::ModuleInstId;

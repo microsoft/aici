@@ -1145,7 +1145,6 @@ fn main() -> () {
 
         module_upload: !cli.restricted,
         gh_download: !cli.restricted,
-        tokenizer_download: !cli.restricted,
     };
 
     if cli.bench {
