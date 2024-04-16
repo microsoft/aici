@@ -50,6 +50,10 @@ struct Cli {
     #[arg(short, long, default_value = "llama")]
     tokenizer: String,
 
+    /// Use if the tokenizer is smaller then the dimension of logits
+    #[arg(long)]
+    logits_size: Option<usize>,
+
     /// Path to .wasm module to install
     #[arg(short, long)]
     module: Option<String>,
@@ -1158,7 +1162,10 @@ fn main() -> () {
         ff_tokens: true,
     };
 
-    let tokenizer = find_tokenizer(&cli.tokenizer).unwrap();
+    let mut tokenizer = find_tokenizer(&cli.tokenizer).unwrap();
+    if let Some(logits_size) = cli.logits_size {
+        tokenizer.add_missing_tokens(logits_size);
+    }
     let token_bytes = tokenizer.token_bytes();
     let wasm_ctx = WasmContext::new(inference_caps, limits.clone(), tokenizer).unwrap();
 

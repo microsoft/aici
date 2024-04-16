@@ -317,9 +317,7 @@ impl ByteTokenizer {
 
         Ok(res)
     }
-}
 
-impl ByteTokenizer {
     pub fn tokrx_info(&self) -> TokRxInfo {
         TokRxInfo {
             vocab_size: self.vocab_size,
@@ -328,6 +326,19 @@ impl ByteTokenizer {
     }
     pub fn token_bytes(&self) -> Vec<Vec<u8>> {
         self.token_bytes.clone()
+    }
+
+    pub fn add_missing_tokens(&mut self, vocab_size: usize) {
+        assert!(self.vocab_size == self.token_bytes.len() as u32);
+        assert!(vocab_size >= self.token_bytes.len());
+        assert!(vocab_size - self.token_bytes.len() <= 200);
+        while self.token_bytes.len() < vocab_size {
+            let idx = self.token_bytes.len();
+            let name = format!("<AddedToken_{idx}>");
+            self.token_bytes.push(name.as_bytes().to_vec());
+            self.vocab_size += 1;
+            self.special.insert(name, idx as u32);
+        }
     }
 }
 
