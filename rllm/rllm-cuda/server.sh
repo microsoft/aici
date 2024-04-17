@@ -41,6 +41,38 @@ while [ "$1" != "" ] ; do
               exit 1
             fi
             ;;
+        --sycl )
+            if [ "$CPP" = 1 ] ; then
+              VER="$VER --features sycl"
+            else
+              echo "--sycl only valid for llama.cpp"
+              exit 1
+            fi
+            ;;
+        --sycl-fp16 )
+            if [ "$CPP" = 1 ] ; then
+              VER="$VER --features \"sycl,sycl-fp16\""
+            else
+              echo "--sycl-fp16 only valid for llama.cpp"
+              exit 1
+            fi
+            ;;
+        --sycl-nvidia )
+            if [ "$CPP" = 1 ] ; then
+              VER="$VER --features \"sycl,sycl-nvidia\""
+            else
+              echo "--sycl-nvidia only valid for llama.cpp"
+              exit 1
+            fi
+            ;;
+        --sycl-nvidia-fp16 )
+            if [ "$CPP" = 1 ] ; then
+              VER="$VER --features \"sycl,sycl-nvidia,sycl-fp16\""
+            else
+              echo "--sycl-nvidia-fp16 only valid for llama.cpp"
+              exit 1
+            fi
+            ;;
         --trace )
             R_LOG=info,tokenizers=error,rllm=trace,aicirt=info,llama_cpp_low=trace
             ;;
@@ -84,7 +116,7 @@ if [ "$CPP" = 1 ] ; then
     * )
     SELF="server.sh"
     cat <<EOF
-usage: $SELF [--loop] [--cuda] [--debug] [model_name] [rllm_args...]
+usage: $SELF [--loop] [--cuda] [--sycl] [--sycl-fp16] [--sycl-nvidia] [--debug] [model_name] [rllm_args...]
 
 model_name can a HuggingFace URL pointing to a .gguf file, or one of the following:
 
@@ -96,9 +128,14 @@ model_name can a HuggingFace URL pointing to a .gguf file, or one of the followi
 
 Additionally, "$SELF build" will just build the server, and not run a model.
 
-  --cuda   try to build llama.cpp against installed CUDA
-  --loop   restart server when it crashes and store logs in ./logs
-  --debug  don't build in --release mode
+  --cuda              try to build llama.cpp against installed CUDA
+  --sycl              try to build llama.cpp against SYCL with fp32 support
+  --sycl-fp16         try to build llama.cpp against SYCL with fp16 support
+  --sycl-nvidia       try to build llama.cpp against SYCL with nvidia support
+  --sycl-nvidia-fp16  try to build llama.cpp against SYCL with fp16 and nvidia support
+  --sycl              try to build llama.cpp against installed SYCL (Plz make sure to )
+  --loop              restart server when it crashes and store logs in ./logs
+  --debug             don't build in --release mode
 
 Try $SELF phi2 --help to see available rllm_args
 EOF
