@@ -16,3 +16,6 @@ cmake = "0.1.50"
 [features]
 default = []
 cuda = []
+sycl = []
+sycl_fp16 = []
+sycl_nvidia = []
