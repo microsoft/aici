@@ -6,6 +6,9 @@ const SUBMODULE_DIR: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/llama.cpp");
 fn main() {
     let ccache = true;
     let cuda = std::env::var("CARGO_FEATURE_CUDA").unwrap_or(String::new());
+    let sycl = std::env::var("CARGO_FEATURE_SYCL").unwrap_or(String::new());
+    let sycl_fp16 = std::env::var("CARGO_FEATURE_SYCL_FP16").unwrap_or(String::new());
+    let sycl_nvidia = std::env::var("CARGO_FEATURE_SYCL_NVIDIA").unwrap_or(String::new());
 
     let submodule_dir = &PathBuf::from(SUBMODULE_DIR);
     let header_path = submodule_dir.join("llama.h");
@@ -29,6 +32,11 @@ fn main() {
             .configure_arg("-DCMAKE_CUDA_COMPILER_LAUNCHER=ccache");
     }
 
+    if cuda == "1" && sycl == "1" {
+        // Only cuda or sycl can be enabled at the same time
+        panic!("Only cuda or sycl can be activated at the same time!");
+    }
+
     if cuda == "1" {
         cmake.configure_arg("-DLLAMA_CUBLAS=ON");
         println!("cargo:rustc-link-search=/usr/local/cuda/lib64");
@@ -36,7 +44,18 @@ fn main() {
         println!("cargo:rustc-link-lib=cudart");
         println!("cargo:rustc-link-lib=cublas");
         println!("cargo:rustc-link-lib=cupti");
+    } else if sycl == "1" {
+        cmake.configure_arg("-DLLAMA_SYCL=ON");
+        cmake.configure_arg("-DCMAKE_C_COMPILER=icx");
+        cmake.configure_arg("-DCMAKE_CXX_COMPILER=icpx");
     }
+    if sycl_fp16 == "1" {
+        cmake.configure_arg("-DLLAMA_SYCL_F16=ON");
+    }
+    if sycl_nvidia == "1" {
+        cmake.configure_arg("-DLLAMA_SYCL_TARGET=NVIDIA");
+    }
+
 
     let dst = cmake.build();
 

@@ -21,3 +21,6 @@ path = "src/rllm-llamacpp.rs"
 [features]
 default = []
 cuda = ["llama_cpp_low/cuda"]
+sycl = ["llama_cpp_low/sycl"]
+sycl_fp16 = ["llama_cpp_low/sycl_fp16"]
+sycl_nvidia = ["llama_cpp_low/sycl_nvidia"]
