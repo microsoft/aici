@@ -3,9 +3,11 @@
 set -e
 set -x
 
-MODEL="microsoft/Orca-2-13b"
-MODEL_REV="refs/pr/22"
-AICI_TOK=orca
+if [ -z "$FOLDER" ]; then
+    MODEL_ARGS="--model microsoft/Orca-2-13b --revision refs/pr/22 --aici-tokenizer orca"
+else
+    MODEL_ARGS="--model ./$FOLDER --aici-tokenizer ./$FOLDER/tokenizer.json --tokenizer ./$FOLDER"
+fi
 
 (cd aicirt && cargo build --release)
 
@@ -16,9 +18,7 @@ python3 -m vllm.entrypoints.openai.api_server \
     --use-v2-block-manager \
     --enable-chunked-prefill \
     --aici-rt ./target/release/aicirt \
-    --aici-tokenizer $AICI_TOK \
-    --model $MODEL \
-    --revision $MODEL_REV \
+    $MODEL_ARGS \
     --port 4242 --host 127.0.0.1 \
     "$@"
 

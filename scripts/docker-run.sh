@@ -10,6 +10,13 @@ case "$1" in
 		shift
 		ADD_ARGS="--model microsoft/Orca-2-13b --revision refs/pr/22 --aici-tokenizer=orca"
 		;;
+	--folder)
+		shift
+		D=`cd $1; pwd`
+		DOCKER_ARGS="--mount type=bind,source=$D,target=/vllm-workspace/model"
+		ADD_ARGS="--model ./model --aici-tokenizer ./model/tokenizer.json --tokenizer ./model"
+		shift
+		;;
 	--shell)
 		shift
 		DOCKER_ARGS="--entrypoint /bin/bash -it"
@@ -17,6 +24,7 @@ case "$1" in
 		;;
 esac
 
+set -x
 docker run \
 		--privileged \
 		--gpus=all \
