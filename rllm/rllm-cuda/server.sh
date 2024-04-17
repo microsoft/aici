@@ -51,7 +51,7 @@ while [ "$1" != "" ] ; do
             ;;
         --sycl-fp16 )
             if [ "$CPP" = 1 ] ; then
-              VER="$VER --features \"sycl,sycl-fp16\""
+              VER="$VER --features sycl,sycl_fp16"
             else
               echo "--sycl-fp16 only valid for llama.cpp"
               exit 1
@@ -59,7 +59,7 @@ while [ "$1" != "" ] ; do
             ;;
         --sycl-nvidia )
             if [ "$CPP" = 1 ] ; then
-              VER="$VER --features \"sycl,sycl-nvidia\""
+              VER="$VER --features sycl,sycl_nvidia"
             else
               echo "--sycl-nvidia only valid for llama.cpp"
               exit 1
@@ -67,7 +67,7 @@ while [ "$1" != "" ] ; do
             ;;
         --sycl-nvidia-fp16 )
             if [ "$CPP" = 1 ] ; then
-              VER="$VER --features \"sycl,sycl-nvidia,sycl-fp16\""
+              VER="$VER --features sycl,sycl_nvidia,sycl_fp16"
             else
               echo "--sycl-nvidia-fp16 only valid for llama.cpp"
               exit 1
@@ -129,11 +129,10 @@ model_name can a HuggingFace URL pointing to a .gguf file, or one of the followi
 Additionally, "$SELF build" will just build the server, and not run a model.
 
   --cuda              try to build llama.cpp against installed CUDA
-  --sycl              try to build llama.cpp against SYCL with fp32 support
+  --sycl              try to build llama.cpp against SYCL with fp32 support (Make sure the required sycl environement variables are set)
   --sycl-fp16         try to build llama.cpp against SYCL with fp16 support
   --sycl-nvidia       try to build llama.cpp against SYCL with nvidia support
   --sycl-nvidia-fp16  try to build llama.cpp against SYCL with fp16 and nvidia support
-  --sycl              try to build llama.cpp against installed SYCL (Plz make sure to )
   --loop              restart server when it crashes and store logs in ./logs
   --debug             don't build in --release mode
 
