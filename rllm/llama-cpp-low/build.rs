@@ -46,6 +46,46 @@ fn main() {
         cmake.configure_arg("-DLLAMA_SYCL=ON");
         cmake.configure_arg("-DCMAKE_C_COMPILER=icx");
         cmake.configure_arg("-DCMAKE_CXX_COMPILER=icpx");
+
+        let dirs = [
+            "/opt/intel/oneapi/compiler/latest/lib",
+            "/opt/intel/oneapi/mkl/latest/lib",
+            //"/opt/intel/oneapi/dnnl/latest/lib",
+        ];
+
+        // *.a => static
+        // *.so => dynamic
+        for dir in dirs.iter() {
+            println!("cargo:rustc-link-search={}", dir);
+            for file in std::fs::read_dir(dir).unwrap() {
+                let file = file.unwrap();
+                let file_name = file.file_name();
+                let file_name = file_name.to_str().unwrap();
+                if !file_name.starts_with("lib") { continue; }
+                if file_name.contains("lp64") && !file_name.contains("ilp64") { continue; }
+                if file_name.contains("seq") { continue; }
+                if file_name == "libmkl_gnu_thread.so" { continue; }
+                let file_name = file_name.trim_start_matches("lib");
+
+                if file_name.ends_with(".so") {
+                    let file_name = &file_name[..file_name.len()-3];
+                    println!("cargo:rustc-link-lib=dylib={}", file_name);
+                } else if file_name.ends_with(".a") {
+                    let file_name = &file_name[..file_name.len()-2];
+                    println!("cargo:rustc-link-lib=static={}", file_name);
+                }
+            }
+        }
+        //panic!("stop here");
+
+        //println!("cargo:rustc-link-search=native=/opt/intel/oneapi/compiler/latest/lib");
+        //println!("cargo:rustc-link-lib=intlc");
+        //println!("cargo:rustc-link-lib=svml");
+        //println!("cargo:rustc-link-lib=sycl");
+        //println!("cargo:rustc-link-search=native=/opt/intel/oneapi/mkl/latest/lib");
+        //println!("cargo:rustc-link-lib=mkl_core");
+        //println!("cargo:rustc-link-lib=mkl_sycl_blas");
+        //println!("cargo:rustc-link-lib=mkl_sycl");
     }
     if sycl_fp16 == "1" {
         cmake.configure_arg("-DLLAMA_SYCL_F16=ON");
@@ -53,7 +93,7 @@ fn main() {
     if sycl_nvidia == "1" {
         cmake.configure_arg("-DLLAMA_SYCL_TARGET=NVIDIA");
     }
-
+    cmake.very_verbose(true);
     
     let dst = cmake.build();
 
