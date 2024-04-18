@@ -1,5 +1,6 @@
-use crate::HashMap;
+use crate::{shm::ShmAllocator, HashMap};
 use aici_abi::{ProcessResultOffset, StorageCmd, TokenId};
+use anyhow::{anyhow, Result};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
@@ -159,6 +160,116 @@ impl AuthInfo {
         AuthInfo {
             user: "admin".to_string(),
             is_admin: true,
+        }
+    }
+}
+
+pub enum BiasType {
+    F32,
+    F16,
+    BF16,
+    Bool,
+}
+
+impl BiasType {
+    pub fn from_u32(v: u32) -> Result<Self> {
+        match v {
+            1 => Ok(BiasType::F32),
+            2 => Ok(BiasType::F16),
+            3 => Ok(BiasType::BF16),
+            4 => Ok(BiasType::Bool),
+            _ => Err(anyhow!("invalid BiasType")),
+        }
+    }
+
+    pub fn to_u32(&self) -> u32 {
+        match self {
+            BiasType::F32 => 1,
+            BiasType::F16 => 2,
+            BiasType::BF16 => 3,
+            BiasType::Bool => 4,
+        }
+    }
+
+    pub fn size_in_bytes(&self, vocab_size: usize) -> usize {
+        match self {
+            BiasType::F32 => vocab_size * 4,
+            BiasType::F16 => vocab_size * 2,
+            BiasType::BF16 => vocab_size * 2,
+            BiasType::Bool => 4 * (vocab_size + 31) / 32,
+        }
+    }
+
+    pub fn from_str(s: &str) -> Result<Self> {
+        match s {
+            "f32" => Ok(BiasType::F32),
+            "f16" => Ok(BiasType::F16),
+            "bf16" => Ok(BiasType::BF16),
+            "bool" => Ok(BiasType::Bool),
+            _ => Err(anyhow!("invalid BiasType")),
+        }
+    }
+
+    pub fn to_string(&self) -> String {
+        match self {
+            BiasType::F32 => "f32".to_string(),
+            BiasType::F16 => "f16".to_string(),
+            BiasType::BF16 => "bf16".to_string(),
+            BiasType::Bool => "bool".to_string(),
+        }
+    }
+
+    const LOGIT_BIAS_ALLOW: f32 = 0.0;
+    const LOGIT_BIAS_DISALLOW: f32 = -f32::INFINITY;
+    const LOGIT_BIAS_ALLOW_F16: u16 = 0;
+    const LOGIT_BIAS_DISALLOW_F16: u16 = 0b1111_1100_0000_0000; // -inf
+    const LOGIT_BIAS_ALLOW_BF16: u16 = 0;
+    const LOGIT_BIAS_DISALLOW_BF16: u16 = 0b1111_1111_1000_0000; // -inf
+
+    pub fn apply_to_shm_allocator(
+        &self,
+        src: &[u8],
+        shm: &ShmAllocator,
+        off: usize,
+        vocab_size: usize,
+    ) {
+        match self {
+            BiasType::F32 => apply_to_slice(
+                src,
+                &mut shm.slice_at_byte_offset::<f32>(off, vocab_size),
+                Self::LOGIT_BIAS_ALLOW,
+                Self::LOGIT_BIAS_DISALLOW,
+            ),
+            BiasType::F16 => apply_to_slice(
+                src,
+                &mut shm.slice_at_byte_offset::<u16>(off, vocab_size),
+                Self::LOGIT_BIAS_ALLOW_F16,
+                Self::LOGIT_BIAS_DISALLOW_F16,
+            ),
+            BiasType::BF16 => apply_to_slice(
+                src,
+                &mut shm.slice_at_byte_offset::<u16>(off, vocab_size),
+                Self::LOGIT_BIAS_ALLOW_BF16,
+                Self::LOGIT_BIAS_DISALLOW_BF16,
+            ),
+            BiasType::Bool => {
+                let trg = shm.slice_at_byte_offset::<u8>(off, self.size_in_bytes(vocab_size));
+                trg.copy_from_slice(&src[0..trg.len()]);
+            }
+        }
+    }
+}
+
+fn apply_to_slice<T: Copy>(src: &[u8], dst: &mut [T], allow: T, disallow: T) {
+    let mut dp = 0;
+    for idx in 0..src.len() {
+        let sb = src[idx];
+        for bit in 0..8 {
+            let mask = 1 << bit;
+            if dp < dst.len() {
+                dst[dp] = if sb & mask != 0 { allow } else { disallow };
+                dp += 1;
+            }
         }
     }
 }

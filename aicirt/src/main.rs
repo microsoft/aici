@@ -97,6 +97,10 @@ struct Cli {
     #[arg(long)]
     cap_fork: bool,
 
+    /// Specify the type of bias to pass using shared memory (f32, f16, bf16, bool)
+    #[arg(long, default_value = "f32")]
+    bias_type: String,
+
     /// Enable futex comms
     #[arg(long, default_value_t = false)]
     futex: bool,
@@ -1164,6 +1168,14 @@ fn main() -> () {
         std::process::exit(1);
     }
 
+    let bias_type = match BiasType::from_str(&cli.bias_type) {
+        Ok(x) => x,
+        Err(e) => {
+            eprintln!("invalid bias_type: {}", e);
+            std::process::exit(1);
+        }
+    };
+
     let limits = AiciLimits {
         ipc_shm_bytes: cli.json_size * MEGABYTE,
         timer_resolution_ns: cli.wasm_timer_resolution_us * 1000,
@@ -1215,9 +1227,12 @@ fn main() -> () {
     .unwrap();
 
     let vocab_size = wasm_ctx.globals.tokrx_info.vocab_size as usize;
-    let elt_type = 0;
-    let shm_alloc = ShmAllocator::new(bin_shm, 4 * (vocab_size + 32), elt_type);
-    let shm_alloc = Rc::new(shm_alloc);
+    let shm_alloc = Rc::new(ShmAllocator::new(
+        bin_shm,
+        // allow for a little leeway
+        bias_type.size_in_bytes(vocab_size + 1000),
+        bias_type.to_u32(),
+    ));
 
     if cli.module.is_some() {
         install_from_cmdline(&cli, wasm_ctx, shm_alloc.clone());

@@ -3,7 +3,7 @@ use aici_abi::{
     bytes::{clone_vec_as_bytes, limit_str, vec_from_bytes, TokRxInfo},
     StorageCmd,
 };
-use aicirt::{api::InferenceCapabilities, shm::ShmAllocator, user_error};
+use aicirt::{api::{BiasType, InferenceCapabilities}, shm::ShmAllocator, user_error};
 use anyhow::{anyhow, Result};
 use std::{
     rc::Rc,
@@ -55,9 +55,6 @@ pub struct ModuleData {
 }
 
 const MAXLOG: usize = 64 * 1024;
-
-pub const LOGIT_BIAS_ALLOW: f32 = 0.0;
-pub const LOGIT_BIAS_DISALLOW: f32 = -100.0;
 
 pub struct BlobId(u32);
 
@@ -464,25 +461,18 @@ pub fn setup_linker(engine: &wasmtime::Engine) -> Result<Arc<wasmtime::Linker<Mo
             let shm = data.logit_shm.clone();
             let id: u32 = data.id.try_into().unwrap();
             let numbytes = 4 * ((numtok + 31) / 32);
+            let mem = caller.data().memory.unwrap();
+            let sptr = src as usize;
+            let slice = &mem.data(&caller)[sptr..sptr + numbytes];
 
-            // TODO two unnecessary copies here
-            let m = read_caller_mem(&caller, src, numbytes as u32);
-            let masks = vec_from_bytes::<u32>(&m);
-
+            let bias_type = BiasType::from_u32(shm.elt_type() & 0xf).unwrap();
             let off = shm.alloc(id).unwrap();
-            let ptr = shm.slice_at_byte_offset::<f32>(off, numtok);
 
-            for idx in 0..numtok {
-                let mask = masks[idx / 32];
-                let bit = 1 << (idx % 32);
-                if mask & bit != 0 {
-                    ptr[idx] = LOGIT_BIAS_ALLOW;
-                } else {
-                    ptr[idx] = LOGIT_BIAS_DISALLOW;
-                }
-            }
+            bias_type.apply_to_shm_allocator(slice, &shm, off, numtok);
 
-            caller.data_mut().logit_offsets.push(off as u32);
+            let off32: u32 = off.try_into().unwrap();
+            caller.data_mut().logit_offsets.push(off32);
+            off32
         },
     )?;
 
