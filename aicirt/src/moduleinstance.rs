@@ -1,7 +1,6 @@
 use crate::{
     api::ModuleInstId,
     hostimpl::{setup_linker, AiciLimits, GlobalInfo, ModuleData},
-    shm::Shm,
     worker::{GroupHandle, RtMidProcessArg},
     TimerSet, UserError,
 };
@@ -10,11 +9,12 @@ use aicirt::{
     api::{InferenceCapabilities, SequenceResult},
     bail_user,
     bintokens::ByteTokenizer,
+    shm::ShmAllocator,
     user_error,
 };
 use anyhow::{anyhow, ensure, Result};
 use serde::Deserialize;
-use std::{path::PathBuf, sync::Arc, time::Instant};
+use std::{path::PathBuf, rc::Rc, sync::Arc, time::Instant};
 use wasmtime;
 
 #[derive(Clone)]
@@ -186,6 +186,7 @@ impl ModuleInstance {
         module: wasmtime::Module,
         module_arg: String,
         group_channel: GroupHandle,
+        shm: Rc<ShmAllocator>,
     ) -> Result<Self> {
         let engine = module.engine();
 
@@ -199,6 +200,7 @@ impl ModuleInstance {
                 &ctx.linker,
                 ctx.globals,
                 group_channel,
+                shm,
             ),
         );
         store.limiter(|state| &mut state.store_limits);
@@ -258,17 +260,25 @@ impl ModuleInstance {
         }
     }
 
-    fn do_mid_process(
-        &mut self,
-        op: RtMidProcessArg,
-        shm: &Shm,
-    ) -> Result<Option<ProcessResultOffset>> {
-        let off = op.logit_offset;
-        self.store.data_mut().set_mid_process_data(op, shm);
+    fn do_mid_process(&mut self, op: RtMidProcessArg) -> Result<Option<ProcessResultOffset>> {
+        self.store.data_mut().set_mid_process_data(op);
         self.call_func::<WasmAici, ()>("aici_mid_process", self.handle)?;
         let res: ProcessResultOffset = self.proc_result()?;
+        let offs = &self.store.data().logit_offsets;
         let res = ProcessResultOffset {
-            branches: res.branches.iter().map(|b| b.map_mask(|_| off)).collect(),
+            branches: res
+                .branches
+                .iter()
+                .map(|b| {
+                    b.map_mask(|o| {
+                        let o32 = *o as u32;
+                        if !offs.contains(&o32) {
+                            panic!("logit offset not found: {}", o);
+                        }
+                        *o
+                    })
+                })
+                .collect(),
         };
         Ok(Some(res))
     }
@@ -307,13 +317,9 @@ impl ModuleInstance {
         }
     }
 
-    pub fn mid_process(
-        &mut self,
-        op: RtMidProcessArg,
-        shm: &Shm,
-    ) -> SequenceResult<ProcessResultOffset> {
+    pub fn mid_process(&mut self, op: RtMidProcessArg) -> SequenceResult<ProcessResultOffset> {
         let t0 = Instant::now();
-        let res = self.do_mid_process(op, shm);
+        let res = self.do_mid_process(op);
         // log::info!("mid_process: {:?}", t0.elapsed());
         self.seq_result("mid", t0, res)
     }

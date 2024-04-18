@@ -1,5 +1,9 @@
 use anyhow::{anyhow, ensure, Result};
-use std::{ffi::CString, io, ptr};
+use std::{
+    ffi::CString,
+    io, ptr,
+    sync::atomic::{AtomicU32, Ordering},
+};
 
 pub struct Shm {
     addr: *mut u8,
@@ -145,5 +149,112 @@ impl Drop for Shm {
         unsafe {
             libc::munmap(self.addr as *mut libc::c_void, self.size);
         }
+    }
+}
+
+pub struct ShmAllocator {
+    pub shm: Shm,
+}
+
+#[repr(C)]
+struct ShmAllocatorHeader {
+    pub magic: u32,
+    pub elt_size: u32,
+    pub num_elts: u32,
+    pub elt_type: u32,
+}
+
+impl ShmAllocator {
+    const MAGIC: u32 = 0xf01291b7;
+    const HEADER_SIZE: usize = 64;
+    const FREE: u32 = u32::MAX;
+
+    pub fn new(shm: Shm, elt_size: usize, elt_type: u32) -> Self {
+        let mut s = Self::new_no_init(shm);
+        s.init(elt_size, elt_type);
+        s
+    }
+
+    pub fn new_no_init(shm: Shm) -> Self {
+        Self { shm }
+    }
+
+    fn get_header(&self) -> &mut ShmAllocatorHeader {
+        &mut self.shm.slice_at_byte_offset::<ShmAllocatorHeader>(0, 1)[0]
+    }
+
+    fn alloc_table(&self) -> &mut [AtomicU32] {
+        self.shm
+            .slice_at_byte_offset(Self::HEADER_SIZE, self.num_elts())
+    }
+
+    pub fn num_elts(&self) -> usize {
+        self.get_header().num_elts as usize
+    }
+
+    pub fn elt_size(&self) -> usize {
+        self.get_header().elt_size as usize
+    }
+
+    pub fn elt_type(&self) -> u32 {
+        self.get_header().elt_type
+    }
+
+    fn init(&mut self, elt_size: usize, elt_type: u32) {
+        assert!(elt_size <= 0x1000_0000);
+        assert!(std::mem::size_of::<ShmAllocatorHeader>() <= Self::HEADER_SIZE);
+        let header = self.get_header();
+        header.magic = Self::MAGIC;
+        header.elt_size = elt_size as u32;
+        header.num_elts = (self.shm.size as u32 - 128) / (elt_size + 8) as u32;
+        header.elt_type = elt_type;
+        assert!(header.num_elts > 0);
+        self.alloc_table()
+            .iter_mut()
+            .for_each(|x| x.store(Self::FREE, Ordering::SeqCst));
+    }
+
+    fn data_off(&self) -> usize {
+        Self::HEADER_SIZE + ((self.num_elts() + 3) & !3) * std::mem::size_of::<AtomicU32>()
+    }
+
+    pub fn free(&self, max_offset: usize, condition: impl Fn(u32) -> bool) {
+        let table = self.alloc_table();
+        let max_ent = std::cmp::min(
+            table.len(),
+            (max_offset - self.data_off()) / self.elt_size() + 1,
+        );
+        for i in 0..max_ent {
+            let e = table[i].load(Ordering::Relaxed);
+            if e != 0 && condition(e) {
+                table[i].store(0, Ordering::Relaxed);
+            }
+        }
+    }
+
+    pub fn slice_at_byte_offset<T>(&self, off: usize, num_elts: usize) -> &'static mut [T] {
+        assert!(num_elts * std::mem::size_of::<T>() <= self.elt_size());
+        self.shm.slice_at_byte_offset(off, num_elts)
+    }
+
+    pub fn alloc(&self, client_id: u32) -> Result<usize> {
+        assert!(client_id != Self::FREE);
+        let table = self.alloc_table();
+        for i in 0..table.len() {
+            let mut current = table[i].load(Ordering::Relaxed);
+            while current == 0 {
+                if table[i]
+                    .compare_exchange_weak(current, client_id, Ordering::SeqCst, Ordering::Relaxed)
+                    .is_ok()
+                {
+                    let elt_size = self.elt_size();
+                    let elt_off = self.data_off() + i * elt_size;
+                    assert!(elt_off + elt_size <= self.shm.size);
+                    return Ok(elt_off);
+                }
+                current = table[i].load(Ordering::Relaxed);
+            }
+        }
+        Err(anyhow!("no free slots"))
     }
 }

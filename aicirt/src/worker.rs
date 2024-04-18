@@ -11,7 +11,7 @@ use aicirt::{
     api::SequenceResult,
     futexshm::{TypedClient, TypedClientHandle, TypedServer},
     set_max_priority,
-    shm::Unlink,
+    shm::{ShmAllocator, Unlink},
     user_error,
     variables::Variables,
 };
@@ -121,8 +121,6 @@ struct ForkerCmd {
 #[derive(Serialize, Deserialize, Debug)]
 pub struct RtMidProcessArg {
     pub op: MidProcessArg,
-    pub logit_offset: usize,
-    pub logit_size: usize, // bytes
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -353,6 +351,7 @@ impl SeqCtx {
                     module,
                     module_arg,
                     ch.unwrap(),
+                    self.shm.clone(),
                 )?;
                 let prompt_toks = if let Some(t) = prompt_toks {
                     t
@@ -378,8 +377,7 @@ impl SeqCtx {
                 ok()
             }
             SeqCmd::MidProcess { data } => {
-                let shm = self.shm.clone();
-                let res = self.mutinst().mid_process(data, &shm);
+                let res = self.mutinst().mid_process(data);
                 Ok(SeqResp::MidProcess {
                     json: serde_json::to_string(&res)?,
                 })
@@ -442,7 +440,7 @@ struct SeqCtx {
     query: Option<GroupHandle>,
     inst_id: ModuleInstId,
     modinst: Option<ModuleInstance>,
-    shm: Rc<Shm>,
+    shm: Rc<ShmAllocator>,
 }
 
 pub struct SeqWorkerHandle {
@@ -533,7 +531,7 @@ pub struct WorkerForker {
 fn forker_dispatcher(
     mut server: TypedServer<ForkerCmd, ForkerResp>,
     wasm_ctx: WasmContext,
-    shm: Shm,
+    shm: Rc<ShmAllocator>,
 ) -> ! {
     loop {
         // wait for any children that might have exited to prevent zombies
@@ -568,7 +566,7 @@ fn forker_dispatcher(
                     id: cmd_id,
                     server,
                     wasm_ctx,
-                    shm: Rc::new(shm),
+                    shm,
                     query: None,
                     inst_id: 424242,
                     modinst: None,
@@ -638,7 +636,7 @@ pub fn stop_process() -> ! {
 // }
 
 impl WorkerForker {
-    pub fn new(wasm_ctx: WasmContext, shm: Shm) -> Self {
+    pub fn new(wasm_ctx: WasmContext, shm: Rc<ShmAllocator>) -> Self {
         // create a new process group
         let pid = unsafe { libc::getpid() };
         unsafe {

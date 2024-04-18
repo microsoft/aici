@@ -1,12 +1,9 @@
-use crate::{
-    shm::Shm,
-    worker::{GroupCmd, GroupHandle, GroupResp, RtMidProcessArg},
-};
+use crate::worker::{GroupCmd, GroupHandle, GroupResp, RtMidProcessArg};
 use aici_abi::{
     bytes::{clone_vec_as_bytes, limit_str, vec_from_bytes, TokRxInfo},
     StorageCmd,
 };
-use aicirt::{api::InferenceCapabilities, user_error};
+use aicirt::{api::InferenceCapabilities, shm::ShmAllocator, user_error};
 use anyhow::{anyhow, Result};
 use std::{
     rc::Rc,
@@ -43,7 +40,8 @@ pub struct ModuleData {
     pub globals: GlobalInfo,
     pub group_channel: GroupHandle,
     pub process_result: Vec<u8>,
-    pub logit_ptr: &'static mut [f32],
+    pub logit_shm: Rc<ShmAllocator>,
+    pub logit_offsets: Vec<u32>,
     pub limits: AiciLimits,
     pub linker: Arc<wasmtime::Linker<ModuleData>>,
     pub instance: Option<wasmtime::Instance>,
@@ -85,6 +83,7 @@ impl ModuleData {
         linker: &Arc<wasmtime::Linker<ModuleData>>,
         globals: GlobalInfo,
         group_channel: GroupHandle,
+        logit_shm: Rc<ShmAllocator>,
     ) -> Self {
         let store_limits = wasmtime::StoreLimitsBuilder::new()
             .memories(1)
@@ -107,7 +106,8 @@ impl ModuleData {
             memory: None,
             store_limits,
             process_result: Vec::new(),
-            logit_ptr: &mut [],
+            logit_shm,
+            logit_offsets: Vec::new(),
             had_error: false,
             storage_log: Vec::new(),
             start_time: Instant::now(),
@@ -130,15 +130,10 @@ impl ModuleData {
         self.set_blob(BlobId::PROCESS_ARG, bytes);
     }
 
-    pub fn set_mid_process_data(&mut self, data: RtMidProcessArg, shm: &Shm) {
+    pub fn set_mid_process_data(&mut self, data: RtMidProcessArg) {
         let bytes = serde_json::to_vec(&data.op).unwrap();
         self.set_process_arg(bytes);
-        let nument = self.globals.tokrx_info.vocab_size as usize;
-        assert!(data.logit_size == nument * 4);
-        self.logit_ptr = shm.slice_at_byte_offset(data.logit_offset, nument);
-        self.logit_ptr
-            .iter_mut()
-            .for_each(|x| *x = LOGIT_BIAS_DISALLOW);
+        self.logit_offsets.clear();
     }
 
     pub fn tokenize(&mut self, s: &str) -> Result<Vec<u32>> {
@@ -463,21 +458,31 @@ pub fn setup_linker(engine: &wasmtime::Engine) -> Result<Arc<wasmtime::Linker<Mo
         "env",
         "aici_host_return_logit_bias",
         |mut caller: wasmtime::Caller<'_, ModuleData>, src: u32| {
-            let numtok = caller.data().globals.tokrx_info.vocab_size as usize;
+            let data = caller.data();
+
+            let numtok = data.globals.tokrx_info.vocab_size as usize;
+            let shm = data.logit_shm.clone();
+            let id: u32 = data.id.try_into().unwrap();
             let numbytes = 4 * ((numtok + 31) / 32);
-            if caller.data().logit_ptr.len() == 0 {
-                return fatal_error(&mut caller, "logit_ptr is empty");
-            }
+
+            // TODO two unnecessary copies here
             let m = read_caller_mem(&caller, src, numbytes as u32);
             let masks = vec_from_bytes::<u32>(&m);
-            let ptr = &mut caller.data_mut().logit_ptr;
+
+            let off = shm.alloc(id).unwrap();
+            let ptr = shm.slice_at_byte_offset::<f32>(off, numtok);
+
             for idx in 0..numtok {
                 let mask = masks[idx / 32];
                 let bit = 1 << (idx % 32);
                 if mask & bit != 0 {
                     ptr[idx] = LOGIT_BIAS_ALLOW;
+                } else {
+                    ptr[idx] = LOGIT_BIAS_DISALLOW;
                 }
             }
+
+            caller.data_mut().logit_offsets.push(off as u32);
         },
     )?;
 

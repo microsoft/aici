@@ -14,7 +14,7 @@ use crate::{
 use aici_abi::{
     bytes::limit_str, toktree::TokTrie, Branch, MidProcessArg, ProcessResultOffset, SeqId,
 };
-use aicirt::{bintokens::find_tokenizer, futexshm::ServerChannel, *};
+use aicirt::{bintokens::find_tokenizer, futexshm::ServerChannel, shm::ShmAllocator, *};
 use anyhow::{anyhow, ensure, Result};
 use base64::{self, Engine as _};
 use clap::Parser;
@@ -28,6 +28,7 @@ use std::{
     fs,
     ops::Sub,
     path::PathBuf,
+    rc::Rc,
     sync::{Arc, Mutex},
     time::{Duration, Instant, SystemTime},
 };
@@ -171,8 +172,7 @@ struct Stepper {
     num_timeouts: HashMap<ModuleInstId, usize>,
     limits: AiciLimits,
     globals: GlobalInfo,
-    // for debugging
-    shm: Shm,
+    shm: Rc<ShmAllocator>,
     token_bytes: Vec<Vec<u8>>,
 }
 
@@ -193,7 +193,7 @@ fn write_json<T: Serialize>(filename: &PathBuf, json: &T) -> Result<()> {
 }
 
 impl ModuleRegistry {
-    pub fn new(wasm_ctx: WasmContext, shm: Shm) -> Result<Self> {
+    pub fn new(wasm_ctx: WasmContext, shm: Rc<ShmAllocator>) -> Result<Self> {
         let forker = WorkerForker::new(wasm_ctx.clone(), shm);
 
         Ok(Self {
@@ -624,7 +624,7 @@ impl Stepper {
     pub fn new(
         reg: &ModuleRegistry,
         limits: AiciLimits,
-        shm: Shm,
+        shm: Rc<ShmAllocator>,
         token_bytes: Vec<Vec<u8>>,
     ) -> Result<Self> {
         Ok(Self {
@@ -645,6 +645,7 @@ impl Stepper {
             .ok_or_else(|| anyhow!("invalid id {}", id))?)
     }
 
+    #[allow(dead_code)]
     fn token_name(&self, idx: usize) -> String {
         if idx >= self.token_bytes.len() {
             format!("<{idx}>")
@@ -742,7 +743,6 @@ impl Stepper {
             "shm size too small"
         );
 
-        let mut logit_offset = 0;
         let mut used_ids = Vec::new();
 
         // initialize shm
@@ -770,30 +770,28 @@ impl Stepper {
                         tokens: op.tokens.clone(),
                         fork_group,
                     },
-                    logit_offset,
-                    logit_size,
                 };
                 if self.num_timeouts.get(&instid).is_some() {
                     assert!(op.op.backtrack == 0);
                     assert!(op.op.tokens.is_empty());
                     // TODO logit_offset!
                     log::debug!("{instid} still pending (timeout in previous round)");
-                    used_ids.push((logit_offset, instid));
+                    used_ids.push(instid);
                 } else {
                     match h.start_process(op) {
-                        Ok(_) => used_ids.push((logit_offset, instid)),
+                        Ok(_) => used_ids.push(instid),
                         Err(e) => self.worker_error(instid, &mut outputs, e),
                     }
                 }
             } else {
                 log::info!("invalid id {}", instid);
             }
-            logit_offset += logit_size;
         }
 
         let deadline = Instant::now() + std::time::Duration::from_millis(self.limits.max_step_ms);
+        let mut max_offset = 0;
 
-        for (off, id) in used_ids {
+        for id in used_ids {
             let prev_timeout = self.num_timeouts.remove(&id).unwrap_or(0);
             let h = self.get_worker(id).unwrap();
             let timeout = deadline.saturating_duration_since(Instant::now());
@@ -811,26 +809,14 @@ impl Stepper {
                             }
                         }
                     }
-                    outputs.insert(id, data);
-                    if log::log_enabled!(log::Level::Debug) {
-                        let slice = self.logit_bias_at_byte_offset(off);
-                        let allow_set = slice
-                            .iter()
-                            .enumerate()
-                            .filter_map(|(idx, v)| if *v >= 0.0 { Some(idx) } else { None })
-                            .collect::<Vec<_>>();
-                        let list = if allow_set.len() > 10000 {
-                            "...".to_string()
-                        } else {
-                            allow_set
-                                .iter()
-                                .take(50)
-                                .map(|idx| self.token_name(*idx))
-                                .collect::<Vec<_>>()
-                                .join(", ")
-                        };
-                        log::trace!("logits: {} allow; tokens: {}", allow_set.len(), list);
+                    if let Some(r) = &data.result {
+                        for b in &r.branches {
+                            if let Some(off) = b.sample_mask {
+                                max_offset = std::cmp::max(max_offset, off);
+                            }
+                        }
                     }
+                    outputs.insert(id, data);
                 }
                 Err(e) => {
                     if e.to_string() == "timeout" && prev_timeout < self.limits.max_timeout_steps {
@@ -864,15 +850,15 @@ impl Stepper {
             self.instances.remove(&id);
         }
 
+        self.shm.free(max_offset, |client_id| {
+            let id = client_id as ModuleInstId;
+            !self.num_timeouts.contains_key(&id)
+        });
+
         Ok(AiciMidProcessResp {
             seqs: outputs,
             mask_num_bytes,
         })
-    }
-
-    fn logit_bias_at_byte_offset(&self, off: usize) -> &'static mut [f32] {
-        self.shm
-            .slice_at_byte_offset(off, self.globals.tokrx_info.vocab_size as usize)
     }
 
     fn worker_error<T>(
@@ -1121,7 +1107,7 @@ fn save_tokenizer(cli: &Cli) {
     println!("wrote {}, {} bytes", filename, bytes.len());
 }
 
-fn install_from_cmdline(cli: &Cli, wasm_ctx: WasmContext, shm: Shm) {
+fn install_from_cmdline(cli: &Cli, wasm_ctx: WasmContext, shm: Rc<ShmAllocator>) {
     let name = cli.module.as_deref().unwrap();
     let mut reg = ModuleRegistry::new(wasm_ctx, shm).unwrap();
     let module_id = if name.ends_with(".wasm") {
@@ -1228,8 +1214,13 @@ fn main() -> () {
     )
     .unwrap();
 
+    let vocab_size = wasm_ctx.globals.tokrx_info.vocab_size as usize;
+    let elt_type = 0;
+    let shm_alloc = ShmAllocator::new(bin_shm, 4 * (vocab_size + 32), elt_type);
+    let shm_alloc = Rc::new(shm_alloc);
+
     if cli.module.is_some() {
-        install_from_cmdline(&cli, wasm_ctx, bin_shm);
+        install_from_cmdline(&cli, wasm_ctx, shm_alloc.clone());
         return ();
     }
 
@@ -1242,18 +1233,12 @@ fn main() -> () {
 
     set_max_priority();
 
-    let reg = ModuleRegistry::new(wasm_ctx, bin_shm).unwrap();
+    let reg = ModuleRegistry::new(wasm_ctx, shm_alloc.clone()).unwrap();
 
     // needs to be done after WorkerForker is spawned
     setup_bg_worker_pool();
 
-    let debug_shm = Shm::new(
-        &MessageChannel::shm_name(&cli.prefixed_name("bin", "")),
-        limits.logit_memory_bytes,
-        shm::Unlink::None,
-    )
-    .unwrap();
-    let exec = Stepper::new(&reg, limits, debug_shm, token_bytes).unwrap();
+    let exec = Stepper::new(&reg, limits, shm_alloc, token_bytes).unwrap();
     let cli2 = cli.clone();
     rayon::spawn(move || {
         let reg_disp = CmdRespChannel::new("-side", &cli2).unwrap();
