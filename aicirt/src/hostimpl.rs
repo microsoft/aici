@@ -24,6 +24,7 @@ pub struct AiciLimits {
     pub max_step_ms: u64,
     pub max_init_ms: u64,
     pub max_compile_ms: u64,
+    pub max_timeout_steps: usize,
     pub logit_memory_bytes: usize,
     pub busy_wait_duration: Duration,
     pub max_forks: usize,

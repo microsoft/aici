@@ -12,7 +12,8 @@ use aicirt::{
     futexshm::{TypedClient, TypedClientHandle, TypedServer},
     set_max_priority,
     shm::Unlink,
-    user_error, variables::Variables,
+    user_error,
+    variables::Variables,
 };
 use anyhow::{anyhow, Result};
 use libc::pid_t;
@@ -25,7 +26,8 @@ use std::{
     time::{Duration, Instant},
 };
 
-const QUICK_OP_MS: u64 = 10;
+const QUICK_OP_MS: u64 = 3;
+const QUICK_OP_RETRY_MS: u64 = 100;
 
 #[derive(Serialize, Deserialize, Debug)]
 pub enum GroupCmd {
@@ -174,6 +176,18 @@ enum SeqResp {
     Error { msg: String, is_user_error: bool },
 }
 
+pub enum Timeout {
+    Quick,
+    Strict(Duration),
+    Speculative(Duration),
+}
+
+impl Timeout {
+    pub fn from_millis(millis: u64) -> Self {
+        Timeout::Strict(Duration::from_millis(millis))
+    }
+}
+
 impl<Cmd, Resp> ProcessHandle<Cmd, Resp>
 where
     Cmd: for<'d> Deserialize<'d> + Serialize + Debug,
@@ -208,29 +222,42 @@ where
         unsafe { libc::kill(self.pid, libc::SIGKILL) }
     }
 
-    fn recv_with_timeout(&self, lbl: &str, timeout: Duration) -> Result<Resp> {
+    fn recv_with_timeout(&self, lbl: &str, timeout: Timeout) -> Result<Resp> {
         let t0 = Instant::now();
-        match self.recv_with_timeout_inner(timeout) {
-            Some(r) => Ok(r),
-            None => {
-                let second_try = Duration::from_millis(200);
-                let r = if timeout < second_try {
-                    let r = self.recv_with_timeout_inner(second_try);
-                    let dur = t0.elapsed();
-                    log::warn!("{lbl}: timeout {dur:?} (allowed: {timeout:?})");
-                    r
-                } else {
-                    None
-                };
-                match r {
-                    Some(r) => Ok(r),
-                    None => {
-                        let dur = t0.elapsed();
-                        log::error!("{lbl}: timeout {dur:?} (allowed: {timeout:?})");
-                        Err(anyhow!("timeout"))
+        let d = match timeout {
+            Timeout::Quick => Duration::from_millis(QUICK_OP_MS),
+            Timeout::Strict(d) => d,
+            Timeout::Speculative(d) => d,
+        };
+        let r = match timeout {
+            Timeout::Quick => match self.recv_with_timeout_inner(d) {
+                None => {
+                    match self.recv_with_timeout_inner(Duration::from_millis(QUICK_OP_RETRY_MS)) {
+                        Some(r) => {
+                            let dur = t0.elapsed();
+                            log::warn!("{lbl}: slow quick op: {dur:?}");
+                            Some(r)
+                        }
+                        None => None,
                     }
                 }
-            }
+                r => r,
+            },
+            _ => self.recv_with_timeout_inner(d),
+        };
+
+        match r {
+            Some(r) => Ok(r),
+            None => match r {
+                Some(r) => Ok(r),
+                None => {
+                    if !matches!(timeout, Timeout::Speculative(_)) {
+                        let dur = t0.elapsed();
+                        log::error!("{lbl}: timeout {dur:?} (allowed: {d:?})");
+                    }
+                    Err(anyhow!("timeout"))
+                }
+            },
         }
     }
 
@@ -246,7 +273,7 @@ where
 }
 
 impl SeqHandle {
-    fn send_cmd_expect_ok(&self, cmd: SeqCmd, timeout: Duration) -> Result<()> {
+    fn send_cmd_expect_ok(&self, cmd: SeqCmd, timeout: Timeout) -> Result<()> {
         let tag = cmd.tag();
         self.just_send(cmd)?;
         match self.seq_recv_with_timeout(tag, timeout) {
@@ -256,7 +283,7 @@ impl SeqHandle {
         }
     }
 
-    fn seq_recv_with_timeout(&self, lbl: &str, timeout: Duration) -> Result<SeqResp> {
+    fn seq_recv_with_timeout(&self, lbl: &str, timeout: Timeout) -> Result<SeqResp> {
         match self.recv_with_timeout(lbl, timeout) {
             Ok(SeqResp::Error { msg, is_user_error }) => {
                 if is_user_error {
@@ -269,7 +296,7 @@ impl SeqHandle {
         }
     }
 
-    fn send_cmd_with_timeout(&self, cmd: SeqCmd, timeout: Duration) -> Result<SeqResp> {
+    fn send_cmd_with_timeout(&self, cmd: SeqCmd, timeout: Timeout) -> Result<SeqResp> {
         let tag = cmd.tag();
         self.just_send(cmd)?;
         self.seq_recv_with_timeout(tag, timeout)
@@ -431,31 +458,26 @@ impl Drop for SeqWorkerHandle {
 
 impl SeqWorkerHandle {
     pub fn set_id(&self, id: ModuleInstId) -> Result<()> {
-        self.handle.send_cmd_expect_ok(
-            SeqCmd::SetId { inst_id: id },
-            Duration::from_millis(QUICK_OP_MS),
-        )
+        self.handle
+            .send_cmd_expect_ok(SeqCmd::SetId { inst_id: id }, Timeout::Quick)
     }
 
     pub fn run_main(&self) -> Result<()> {
         self.handle
-            .send_cmd_expect_ok(SeqCmd::RunMain {}, Duration::from_secs(120))
+            .send_cmd_expect_ok(SeqCmd::RunMain {}, Timeout::from_millis(120_000))
     }
 
     pub fn fork(&self, target_id: ModuleInstId) -> Result<SeqWorkerHandle> {
-        match self.handle.send_cmd_with_timeout(
-            SeqCmd::Fork { inst_id: target_id },
-            Duration::from_millis(QUICK_OP_MS),
-        )? {
+        match self
+            .handle
+            .send_cmd_with_timeout(SeqCmd::Fork { inst_id: target_id }, Timeout::Quick)?
+        {
             SeqResp::Fork { handle } => {
                 let res = SeqWorkerHandle {
                     req_id: self.req_id.clone(),
                     handle: handle.to_client(),
                 };
-                match res
-                    .handle
-                    .recv_with_timeout("r-fork", Duration::from_millis(QUICK_OP_MS))?
-                {
+                match res.handle.recv_with_timeout("r-fork", Timeout::Quick)? {
                     SeqResp::Ok {} => Ok(res),
                     r => Err(anyhow!("unexpected response (fork, child) {r:?}")),
                 }
@@ -470,7 +492,10 @@ impl SeqWorkerHandle {
     }
 
     pub fn check_process(&self, timeout: Duration) -> Result<SequenceResult<ProcessResultOffset>> {
-        match self.handle.seq_recv_with_timeout("r-process", timeout) {
+        match self
+            .handle
+            .seq_recv_with_timeout("r-process", Timeout::Speculative(timeout))
+        {
             Ok(SeqResp::MidProcess { json }) => Ok(serde_json::from_str(&json)?),
             Ok(r) => Err(anyhow!("unexpected response (process) {r:?}")),
             Err(e) => Err(e.into()),
@@ -682,7 +707,7 @@ impl WorkerForker {
                 prompt_str,
                 prompt_toks,
             },
-            Duration::from_millis(self.limits.max_init_ms),
+            Timeout::from_millis(self.limits.max_init_ms),
         )? {
             SeqResp::InitPrompt { json } => {
                 let r: SequenceResult<()> = serde_json::from_str(&json)?;
@@ -706,7 +731,7 @@ impl WorkerForker {
         };
         match res.handle.send_cmd_with_timeout(
             SeqCmd::Compile { wasm },
-            Duration::from_millis(self.limits.max_compile_ms),
+            Timeout::from_millis(self.limits.max_compile_ms),
         )? {
             SeqResp::Compile { binary } => Ok(binary),
             r => Err(anyhow!("unexpected response (compile) {r:?}")),

@@ -11,7 +11,9 @@ use crate::{
     worker::{RtMidProcessArg, WorkerForker},
     TimerSet,
 };
-use aici_abi::{bytes::limit_str, toktree::TokTrie, MidProcessArg, SeqId};
+use aici_abi::{
+    bytes::limit_str, toktree::TokTrie, Branch, MidProcessArg, ProcessResultOffset, SeqId,
+};
 use aicirt::{bintokens::find_tokenizer, futexshm::ServerChannel, *};
 use anyhow::{anyhow, ensure, Result};
 use base64::{self, Engine as _};
@@ -119,8 +121,12 @@ struct Cli {
     wasm_max_memory: usize,
 
     /// Maximum time WASM module can execute step in milliseconds
-    #[arg(long, default_value = "150")]
+    #[arg(long, default_value = "50")]
     wasm_max_step_time: u64,
+
+    /// How many steps have to timeout before the sequenace is terminated
+    #[arg(long, default_value = "10")]
+    wasm_max_timeout_steps: usize,
 
     /// Maximum time WASM module can execute initialization code in milliseconds
     #[arg(long, default_value = "1000")]
@@ -162,6 +168,7 @@ struct ModuleRegistry {
 struct Stepper {
     req_instances: Arc<Mutex<HashMap<String, SeqWorkerHandle>>>,
     instances: HashMap<ModuleInstId, SeqWorkerHandle>,
+    num_timeouts: HashMap<ModuleInstId, usize>,
     limits: AiciLimits,
     globals: GlobalInfo,
     // for debugging
@@ -623,6 +630,7 @@ impl Stepper {
         Ok(Self {
             req_instances: reg.req_instances.clone(),
             instances: HashMap::default(),
+            num_timeouts: HashMap::default(),
             limits,
             globals: reg.wasm_ctx.globals.clone(),
             shm,
@@ -744,6 +752,8 @@ impl Stepper {
         let mask_num_bytes = slice.len() * 4;
         slice.iter_mut().for_each(|v| *v = 0.0);
 
+        let start_time = Instant::now();
+
         for op in req.ops.into_iter() {
             let instid = op.id;
             if let Ok(h) = self.get_worker(instid) {
@@ -763,10 +773,18 @@ impl Stepper {
                     logit_offset,
                     logit_size,
                 };
-                match h.start_process(op) {
-                    Ok(_) => used_ids.push((logit_offset, instid)),
-                    Err(e) => self.worker_error(instid, &mut outputs, e),
-                };
+                if self.num_timeouts.get(&instid).is_some() {
+                    assert!(op.op.backtrack == 0);
+                    assert!(op.op.tokens.is_empty());
+                    // TODO logit_offset!
+                    log::debug!("{instid} still pending (timeout in previous round)");
+                    used_ids.push((logit_offset, instid));
+                } else {
+                    match h.start_process(op) {
+                        Ok(_) => used_ids.push((logit_offset, instid)),
+                        Err(e) => self.worker_error(instid, &mut outputs, e),
+                    }
+                }
             } else {
                 log::info!("invalid id {}", instid);
             }
@@ -776,6 +794,7 @@ impl Stepper {
         let deadline = Instant::now() + std::time::Duration::from_millis(self.limits.max_step_ms);
 
         for (off, id) in used_ids {
+            let prev_timeout = self.num_timeouts.remove(&id).unwrap_or(0);
             let h = self.get_worker(id).unwrap();
             let timeout = deadline.saturating_duration_since(Instant::now());
             match h.check_process(timeout) {
@@ -813,7 +832,30 @@ impl Stepper {
                         log::trace!("logits: {} allow; tokens: {}", allow_set.len(), list);
                     }
                 }
-                Err(e) => self.worker_error(id, &mut outputs, e),
+                Err(e) => {
+                    if e.to_string() == "timeout" && prev_timeout < self.limits.max_timeout_steps {
+                        outputs.insert(
+                            id,
+                            SequenceResult {
+                                result: Some(ProcessResultOffset {
+                                    branches: vec![Branch::noop()],
+                                }),
+                                error: String::new(),
+                                storage: vec![],
+                                logs: format!(
+                                    "⏲ timeout [deadline: {}ms; step {}/{}]\n",
+                                    self.limits.max_step_ms,
+                                    prev_timeout + 1,
+                                    self.limits.max_timeout_steps
+                                ),
+                                micros: start_time.elapsed().as_micros() as u64,
+                            },
+                        );
+                        self.num_timeouts.insert(id, prev_timeout + 1);
+                    } else {
+                        self.worker_error(id, &mut outputs, e)
+                    }
+                }
             }
         }
 
@@ -1142,6 +1184,7 @@ fn main() -> () {
         max_memory_bytes: cli.wasm_max_memory * MEGABYTE,
         max_init_ms: cli.wasm_max_init_time,
         max_step_ms: cli.wasm_max_step_time,
+        max_timeout_steps: cli.wasm_max_timeout_steps,
         max_compile_ms: 10_000,
         logit_memory_bytes: cli.bin_size * MEGABYTE,
         busy_wait_duration: Duration::from_millis(cli.busy_wait_time),
