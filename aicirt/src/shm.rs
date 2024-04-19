@@ -170,13 +170,22 @@ impl ShmAllocator {
     const FREE: u32 = u32::MAX;
 
     pub fn new(shm: Shm, elt_size: usize, elt_type: u32) -> Self {
-        let mut s = Self::new_no_init(shm);
+        let mut s = Self { shm };
         s.init(elt_size, elt_type);
+        s.validate();
         s
     }
 
     pub fn new_no_init(shm: Shm) -> Self {
-        Self { shm }
+        let r = Self { shm };
+        r.validate();
+        r
+    }
+
+    pub fn validate(&self) {
+        let header = self.get_header();
+        assert!(header.magic == Self::MAGIC);
+        assert!(header.elt_size > 0);
     }
 
     fn get_header(&self) -> &mut ShmAllocatorHeader {
@@ -201,6 +210,7 @@ impl ShmAllocator {
     }
 
     fn init(&mut self, elt_size: usize, elt_type: u32) {
+        assert!(elt_size > 0);
         assert!(elt_size <= 0x1000_0000);
         assert!(std::mem::size_of::<ShmAllocatorHeader>() <= Self::HEADER_SIZE);
         let header = self.get_header();
@@ -214,11 +224,12 @@ impl ShmAllocator {
             .for_each(|x| x.store(Self::FREE, Ordering::SeqCst));
     }
 
-    fn data_off(&self) -> usize {
+    pub fn data_off(&self) -> usize {
         Self::HEADER_SIZE + ((self.num_elts() + 3) & !3) * std::mem::size_of::<AtomicU32>()
     }
 
     pub fn free(&self, max_offset: usize, condition: impl Fn(u32) -> bool) {
+        self.validate();
         let table = self.alloc_table();
         let max_ent = std::cmp::min(
             table.len(),

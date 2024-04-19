@@ -3,7 +3,7 @@ import re
 
 # asserts for microsoft/Orca-2-13b
 
-aici.log_level = 1
+aici.log_level = 10
 
 
 async def test_backtrack_one():

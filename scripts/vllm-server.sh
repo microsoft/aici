@@ -12,6 +12,7 @@ fi
 (cd aicirt && cargo build --release)
 
 RUST_LOG=info,tokenizers=error,aicirt=trace \
+RUST_BACKTRACE=1 \
 PYTHONPATH=py:py/vllm \
 python3 -m vllm.entrypoints.openai.api_server \
     --enforce-eager \

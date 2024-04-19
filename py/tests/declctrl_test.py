@@ -5,7 +5,7 @@ import pytest
 import pyaici
 import pyaici.rest
 import pyaici.util
-import pyaici._ast as ast
+import pyaici.ast_ as ast
 
 model_name = "microsoft/Orca-2-13b"
 

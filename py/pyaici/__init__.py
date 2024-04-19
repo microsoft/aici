@@ -1,7 +1,7 @@
 import argparse
 
 
-def runner_from_cli(args):
+def runner_from_cli(args, dtype: str = 'f32'):
     from pyaici.comms import AiciRunner
 
     tokenizer = args.aici_tokenizer
@@ -35,6 +35,7 @@ def runner_from_cli(args):
         trace_file=args.aici_trace,
         rtargs=args.aici_rtarg,
         pref=args.aici_shm_prefix,
+        dtype=dtype,
     )
     return aici
 

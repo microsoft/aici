@@ -23,7 +23,7 @@ impl HostInterface for ParserHost {
         self.trie_bytes.clone()
     }
 
-    fn return_logit_bias(&self, _vob: &aici_abi::svob::SimpleVob) {
+    fn return_logit_bias(&self, _vob: &aici_abi::svob::SimpleVob) -> u32 {
         todo!()
     }
 

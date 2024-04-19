@@ -30,7 +30,7 @@ extern "C" {
     fn aici_host_tokenize(src: *const u8, src_size: u32) -> BlobId;
 
     // Set logit bias based on bit-mask in src.
-    fn aici_host_return_logit_bias(src: *const u32);
+    fn aici_host_return_logit_bias(src: *const u32) -> u32;
 
     fn aici_host_self_seq_id() -> u32;
 
@@ -123,7 +123,7 @@ impl TokenizerEnv for WasmTokenizerEnv {
 pub trait HostInterface {
     fn arg_bytes(&self) -> Vec<u8>;
     fn trie_bytes(&self) -> Vec<u8>;
-    fn return_logit_bias(&self, vob: &SimpleVob);
+    fn return_logit_bias(&self, vob: &SimpleVob) -> u32;
     fn process_arg_bytes(&self) -> Vec<u8>;
     fn return_process_result(&self, res: &[u8]);
     fn storage_cmd(&self, cmd: StorageCmd) -> StorageResp;
@@ -146,10 +146,10 @@ impl HostInterface for WasmHost {
         read_blob(unsafe { aici_host_token_trie() }, 0)
     }
 
-    fn return_logit_bias(&self, vob: &SimpleVob) {
+    fn return_logit_bias(&self, vob: &SimpleVob) -> u32 {
         assert!(vob.len() > 0);
         unsafe {
-            aici_host_return_logit_bias(vob.as_ptr());
+            aici_host_return_logit_bias(vob.as_ptr())
         }
     }
 
@@ -230,8 +230,8 @@ pub fn trie_bytes() -> Vec<u8> {
     // return std::fs::read("tokenizer.bin").unwrap();
 }
 
-pub fn return_logit_bias(vob: &SimpleVob) {
-    get_host().return_logit_bias(vob);
+pub fn return_logit_bias(vob: &SimpleVob) -> u32 {
+    get_host().return_logit_bias(vob)
 }
 
 pub fn process_arg_bytes() -> Vec<u8> {

@@ -25,8 +25,11 @@ pub struct AiciMidProcessReq {
 #[derive(Serialize, Deserialize)]
 pub struct AiciMidProcessResp {
     pub seqs: HashMap<ModuleInstId, SequenceResult<ProcessResultOffset>>,
-    /// This is the number of bytes in the bias/sample_mask tensor.
+    pub dtype: String,
+    pub first_mask_byte_offset: usize,
     pub mask_num_bytes: usize,
+    pub mask_num_elts: usize,
+    pub num_masks: usize,
 }
 
 #[derive(Clone, Serialize, Deserialize, Debug)]
@@ -191,12 +194,26 @@ impl BiasType {
         }
     }
 
+    pub fn elt_size(&self) -> Option<usize> {
+        match self {
+            BiasType::F32 => Some(4),
+            BiasType::F16 => Some(2),
+            BiasType::BF16 => Some(2),
+            BiasType::Bool => None,
+        }
+    }
+
+    pub fn bytes_to_elts(&self, bytes: usize) -> usize {
+        match self {
+            BiasType::Bool => bytes * 8,
+            _ => bytes / self.elt_size().unwrap(),
+        }
+    }
+
     pub fn size_in_bytes(&self, vocab_size: usize) -> usize {
         match self {
-            BiasType::F32 => vocab_size * 4,
-            BiasType::F16 => vocab_size * 2,
-            BiasType::BF16 => vocab_size * 2,
             BiasType::Bool => 4 * (vocab_size + 31) / 32,
+            _ => vocab_size * self.elt_size().unwrap(),
         }
     }
 
@@ -226,13 +243,9 @@ impl BiasType {
     const LOGIT_BIAS_ALLOW_BF16: u16 = 0;
     const LOGIT_BIAS_DISALLOW_BF16: u16 = 0b1111_1111_1000_0000; // -inf
 
-    pub fn apply_to_shm_allocator(
-        &self,
-        src: &[u8],
-        shm: &ShmAllocator,
-        off: usize,
-        vocab_size: usize,
-    ) {
+    pub fn apply_to_shm_allocator(&self, src: &[u8], shm: &ShmAllocator, off: usize) {
+        let vocab_size = self.bytes_to_elts(shm.elt_size());
+        assert!(src.len() * 8 <= vocab_size);
         match self {
             BiasType::F32 => apply_to_slice(
                 src,
@@ -254,7 +267,7 @@ impl BiasType {
             ),
             BiasType::Bool => {
                 let trg = shm.slice_at_byte_offset::<u8>(off, self.size_in_bytes(vocab_size));
-                trg.copy_from_slice(&src[0..trg.len()]);
+                trg[0..src.len()].copy_from_slice(src);
             }
         }
     }
@@ -266,10 +279,12 @@ fn apply_to_slice<T: Copy>(src: &[u8], dst: &mut [T], allow: T, disallow: T) {
         let sb = src[idx];
         for bit in 0..8 {
             let mask = 1 << bit;
-            if dp < dst.len() {
-                dst[dp] = if sb & mask != 0 { allow } else { disallow };
-                dp += 1;
-            }
+            dst[dp] = if sb & mask != 0 { allow } else { disallow };
+            dp += 1;
         }
+    }
+    while dp < dst.len() {
+        dst[dp] = disallow;
+        dp += 1;
     }
 }

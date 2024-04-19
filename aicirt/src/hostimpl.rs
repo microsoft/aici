@@ -468,7 +468,7 @@ pub fn setup_linker(engine: &wasmtime::Engine) -> Result<Arc<wasmtime::Linker<Mo
             let bias_type = BiasType::from_u32(shm.elt_type() & 0xf).unwrap();
             let off = shm.alloc(id).unwrap();
 
-            bias_type.apply_to_shm_allocator(slice, &shm, off, numtok);
+            bias_type.apply_to_shm_allocator(slice, &shm, off);
 
             let off32: u32 = off.try_into().unwrap();
             caller.data_mut().logit_offsets.push(off32);

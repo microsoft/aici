@@ -223,8 +223,7 @@ pub trait AiciCtrl {
                             panic!("aici_mid_process: multiple branches with sampling not yet supported");
                         }
                         used_logits = true;
-                        host::return_logit_bias(&vob);
-                        0
+                        host::return_logit_bias(&vob) as usize
                     })
                 })
                 .collect(),

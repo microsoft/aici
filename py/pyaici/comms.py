@@ -7,7 +7,6 @@ import subprocess
 import ujson as json
 
 # import json as json
-import numpy as np
 import base64
 import time
 import asyncio
@@ -320,6 +319,7 @@ class AiciRunner:
         pref=DEFAULT_SHM_PREF,
         trace_file=None,
         rtargs=[],
+        dtype="f32",
     ) -> None:
         """
         Start a new aicirt process and initialize comms channels.
@@ -339,6 +339,11 @@ class AiciRunner:
         self.logs_by_seqid: Dict[str, list[dict]] = {}
         self.seqs_to_stop: set[int] = set()
         self.space_token = -1
+        self.dtype = dtype
+
+        allowed_dtype = ["f32", "f16", "bf16"]
+        if self.dtype not in allowed_dtype:
+            raise ValueError(f"Invalid dtype {self.dtype}, must be one of {allowed_dtype}")
 
         if trace_file:
             self.trace_file = open(trace_file, "w")
@@ -368,6 +373,7 @@ class AiciRunner:
             "--tokenizer=" + tokenizer,
             "--json-size=" + str(json_size),
             "--bin-size=" + str(bin_size),
+            "--bias-dtype=" + self.dtype,
             "--name=" + pref,
             "--server",
         ]
@@ -672,7 +678,38 @@ class AiciRunner:
             self.logit_pending = False
             self.cmd.expect("flush")
 
-    def recv_logit_bias(self):
+    def recv_logit_bias_numpy(self):
+        import numpy
+        dtype_map = {
+            'f32': numpy.float32,
+            'f16': numpy.float16,
+        }
+        data = self._recv_logit_bias()
+        vocab_size = data["mask_num_elts"]
+        num_masks = data["num_masks"]
+        arr = numpy.frombuffer(self.bin_shm, 
+                               dtype=dtype_map[self.dtype], 
+                               offset=data["first_mask_byte_offset"],
+                               count=vocab_size * num_masks).reshape([num_masks, vocab_size])
+        return self.last_resp, arr
+
+    def recv_logit_bias_torch(self):
+        import torch
+        dtype_map = {
+            'f32': torch.float32,
+            'f16': torch.float16,
+            'bf16': torch.bfloat16,
+        }
+        data = self._recv_logit_bias()
+        vocab_size = data["mask_num_elts"]
+        num_masks = data["num_masks"]
+        arr = torch.frombuffer(self.bin_shm, 
+                               dtype=dtype_map[self.dtype], 
+                               offset=data["first_mask_byte_offset"],
+                               count=vocab_size * num_masks).reshape([num_masks, vocab_size])
+        return self.last_resp, arr
+
+    def _recv_logit_bias(self):
         """
         Retrieve the logit bias for the step last executed with `step_finish()`.
         """
@@ -682,23 +719,14 @@ class AiciRunner:
         seqs: dict = data["seqs"]
         self._add_logs(seqs)
         last_resp: dict[int, MidResult] = {}
-        vocab_bytes = self.vocab_size * 4
         for id, seq_res in seqs.items():
             r = MidResult.from_json(seq_res)
             if r.error or not r.branches:
                 self.seqs_to_stop.add(int(id))
-            for b in r.branches:
-                if b.mask is not None:
-                    b.mask //= vocab_bytes
             last_resp[int(id)] = r
         self.last_resp = last_resp
-        n = data["mask_num_bytes"] // vocab_bytes
-        assert n == len(self.mid_ops)
         self.mid_ops = []
-        arr = np.frombuffer(
-            self.bin_shm, dtype=np.float32, offset=0, count=n * self.vocab_size
-        ).reshape([n, self.vocab_size])
-        return last_resp, arr
+        return data
 
     def stop(self):
         """

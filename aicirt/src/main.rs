@@ -99,7 +99,7 @@ struct Cli {
 
     /// Specify the type of bias to pass using shared memory (f32, f16, bf16, bool)
     #[arg(long, default_value = "f32")]
-    bias_type: String,
+    bias_dtype: String,
 
     /// Enable futex comms
     #[arg(long, default_value_t = false)]
@@ -749,13 +749,6 @@ impl Stepper {
 
         let mut used_ids = Vec::new();
 
-        // initialize shm
-        let slice = self
-            .shm
-            .slice_at_byte_offset::<f32>(0, num_seqs * block_elts);
-        let mask_num_bytes = slice.len() * 4;
-        slice.iter_mut().for_each(|v| *v = 0.0);
-
         let start_time = Instant::now();
 
         for op in req.ops.into_iter() {
@@ -794,13 +787,16 @@ impl Stepper {
 
         let deadline = Instant::now() + std::time::Duration::from_millis(self.limits.max_step_ms);
         let mut max_offset = 0;
+        let mut max_idx = 0;
+        let first_mask_byte_offset = self.shm.data_off();
+        let mask_num_bytes = self.shm.elt_size();
 
         for id in used_ids {
             let prev_timeout = self.num_timeouts.remove(&id).unwrap_or(0);
             let h = self.get_worker(id).unwrap();
             let timeout = deadline.saturating_duration_since(Instant::now());
             match h.check_process(timeout) {
-                Ok(data) => {
+                Ok(mut data) => {
                     if !self.globals.inference_caps.fork {
                         if let Some(r) = &data.result {
                             if r.branches.len() > 1 {
@@ -813,12 +809,20 @@ impl Stepper {
                             }
                         }
                     }
-                    if let Some(r) = &data.result {
-                        for b in &r.branches {
-                            if let Some(off) = b.sample_mask {
-                                max_offset = std::cmp::max(max_offset, off);
-                            }
-                        }
+                    if let Some(r) = &mut data.result {
+                        r.branches = r
+                            .branches
+                            .iter()
+                            .map(|b| {
+                                b.map_mask(|off| {
+                                    let idx = (*off - first_mask_byte_offset) / mask_num_bytes;
+                                    assert!(idx * mask_num_bytes + first_mask_byte_offset == *off);
+                                    max_offset = std::cmp::max(max_offset, *off);
+                                    max_idx = std::cmp::max(max_idx, idx);
+                                    idx
+                                })
+                            })
+                            .collect();
                     }
                     outputs.insert(id, data);
                 }
@@ -859,9 +863,15 @@ impl Stepper {
             !self.num_timeouts.contains_key(&id)
         });
 
+        let bias_type = BiasType::from_u32(self.shm.elt_type() & 0xf).unwrap();
+
         Ok(AiciMidProcessResp {
             seqs: outputs,
             mask_num_bytes,
+            first_mask_byte_offset,
+            num_masks: max_idx + 1,
+            dtype: bias_type.to_string(),
+            mask_num_elts: bias_type.bytes_to_elts(mask_num_bytes),
         })
     }
 
@@ -1168,7 +1178,7 @@ fn main() -> () {
         std::process::exit(1);
     }
 
-    let bias_type = match BiasType::from_str(&cli.bias_type) {
+    let bias_type = match BiasType::from_str(&cli.bias_dtype) {
         Ok(x) => x,
         Err(e) => {
             eprintln!("invalid bias_type: {}", e);
@@ -1230,7 +1240,7 @@ fn main() -> () {
     let shm_alloc = Rc::new(ShmAllocator::new(
         bin_shm,
         // allow for a little leeway
-        bias_type.size_in_bytes(vocab_size + 1000),
+        bias_type.size_in_bytes((vocab_size + 1000) & !63),
         bias_type.to_u32(),
     ));
 
