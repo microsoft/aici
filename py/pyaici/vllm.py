@@ -41,7 +41,9 @@ def install(runner: AiciRunner):
         steps: List[tuple[SequenceGroup, Sequence]] = []
         for seq_group in scheduler_outputs.scheduled_seq_groups:
             seqs = seq_group.get_seqs(status=SequenceStatus.RUNNING)
-            ff_seqs = [seq for seq in seqs if seq.data.num_pending_ff_tokens > 0]
+            ff_seqs = [
+                seq for seq in seqs if seq.data.num_pending_ff_tokens > 0
+            ]
             is_ff = len(ff_seqs) > 0
             if is_ff:
                 # print("FF", [(seq.seq_id, seq.data.num_pending_ff_tokens, seq.skip_round) for seq in seqs])
@@ -108,11 +110,8 @@ def install(runner: AiciRunner):
             scheduler.free_seq(seq)
 
     def apply_dynamic_logit_bias(logits: torch.Tensor):
-        bias = (
-            torch.from_numpy(runner.recv_logit_bias())
-            .to(logits.device)
-            .to(logits.dtype)
-        )
+        bias = (torch.from_numpy(runner.recv_logit_bias()).to(
+            logits.device).to(logits.dtype))
         logits += bias
 
     def recv_attention_mask():
@@ -129,7 +128,8 @@ def install(runner: AiciRunner):
             assert not seq.skip_round
             runner.recent_seqs[seq.seq_id] = seq
             # lookup by parent - the child wasn't born yet when response was generated
-            resp = runner.response_by_seq_id(parent.seq_id).get("result", None) or {}
+            resp = runner.response_by_seq_id(parent.seq_id).get(
+                "result", None) or {}
             backtrack: int = resp.get("backtrack", 0)
             ff: List[int] = resp.get("ff_tokens", []).copy()
             if backtrack:
@@ -141,19 +141,16 @@ def install(runner: AiciRunner):
                 seq.append_token_id(t, {t: 0.0})
             elif ff:
                 t = ff.pop(0)
-                assert t == seq.data.output_token_ids[-1], ("FF", t, seq.data.output_token_ids, ff)
+                assert t == seq.data.output_token_ids[-1], (
+                    "FF", t, seq.data.output_token_ids, ff)
             last_tok = seq.data.output_token_ids[-1]
             # replace sampled EOS with space - at least Llama models get confused by EOS
-            if (
-                not backtrack
-                and not ff
-                and last_tok == llm_engine.tokenizer.eos_token_id
-            ):
+            if (not backtrack and not ff
+                    and last_tok == llm_engine.tokenizer.eos_token_id):
                 if runner.space_token == -1:
                     sp = llm_engine.tokenizer.tokenize(" ")[-1]
                     runner.space_token = cast(
-                        int, llm_engine.tokenizer.convert_tokens_to_ids(sp)
-                    )
+                        int, llm_engine.tokenizer.convert_tokens_to_ids(sp))
                 # note that we keep last_tok as EOS, to pass to the post_process()
                 seq.data.output_token_ids[-1] = runner.space_token
             toks = [last_tok]
@@ -184,4 +181,4 @@ def install(runner: AiciRunner):
     SamplingParams.initiate_step = initiate_step
     SamplingParams.finish_sampling = finish_sampling
     SamplingParams.append_ff_tokens = append_ff_tokens
-    SamplingParams.recv_attention_mask = recv_attention_mask # type: ignore
+    SamplingParams.recv_attention_mask = recv_attention_mask  # type: ignore

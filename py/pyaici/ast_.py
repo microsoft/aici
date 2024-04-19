@@ -36,11 +36,25 @@ def e_ifeq(a: dict, b: dict, eq: dict, neq: dict):
 
 
 def e_extract_one(rx: str, src: dict, template: str = "$1"):
-    return {"Extract": {"from": src, "rx": rx, "template": template, "list": False}}
+    return {
+        "Extract": {
+            "from": src,
+            "rx": rx,
+            "template": template,
+            "list": False
+        }
+    }
 
 
 def e_extract_all(rx: str, src: dict, template: str = "$1"):
-    return {"Extract": {"from": src, "rx": rx, "template": template, "list": True}}
+    return {
+        "Extract": {
+            "from": src,
+            "rx": rx,
+            "template": template,
+            "list": True
+        }
+    }
 
 
 def stmt_set(var: str, expr: dict):
@@ -76,7 +90,9 @@ def gen(
     if set_var is not None:
         stmts.append(stmt_set(set_var, e_current()))
     if append_to_var is not None:
-        stmts.append(stmt_set(append_to_var, e_concat(e_var(append_to_var), e_current())))
+        stmts.append(
+            stmt_set(append_to_var, e_concat(e_var(append_to_var),
+                                             e_current())))
     if set is not None:
         for var, expr in set.items():
             stmts.append(stmt_set(var, expr))
@@ -138,7 +154,7 @@ def compile_pattern(text: str):
             break
 
         # Extract the text inside '{{' and '}}'
-        parts.append(e_var(text[open_brace + 2 : close_brace]))
+        parts.append(e_var(text[open_brace + 2:close_brace]))
 
         # Update the start position for the next search
         start = close_brace + 2
@@ -185,9 +201,8 @@ def choose(options: Union[dict, List[str]]):
 
 
 def is_step(d: dict):
-    return len(d) == 1 and (
-        "Fixed" in d or "Gen" in d or "Choose" in d or "Fork" in d or "Wait" in d
-    )
+    return len(d) == 1 and ("Fixed" in d or "Gen" in d or "Choose" in d
+                            or "Fork" in d or "Wait" in d)
 
 
 # currently we fail for possibly empty rx, so put + not * at the end
@@ -265,7 +280,8 @@ def json_to_steps(json_value):
     for step in steps:
         if "Fixed" in step:
             if len(new_steps) > 0 and "Fixed" in new_steps[-1]:
-                new_steps[-1]["Fixed"]["text"]["String"]["str"] += step["Fixed"]["text"]["String"]["str"]
+                new_steps[-1]["Fixed"]["text"]["String"]["str"] += step[
+                    "Fixed"]["text"]["String"]["str"]
                 continue
         new_steps.append(step)
     return new_steps

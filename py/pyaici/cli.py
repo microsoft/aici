@@ -50,14 +50,14 @@ def build_rust(folder: str):
             cli_error(f"{bin_file} not found; try one of {bins_str}")
     else:
         if len(bins) > 1:
-            cli_error("more than one bin target found; use one of: " + bins_str)
+            cli_error("more than one bin target found; use one of: " +
+                      bins_str)
         bin_file = bins[0]["name"]
     print(f'will build {bin_file} from {pkg["manifest_path"]}')
 
     triple = "wasm32-wasi"
-    trg_path = (
-        info["target_directory"] + "/" + triple + "/release/" + bin_file + ".wasm"
-    )
+    trg_path = (info["target_directory"] + "/" + triple + "/release/" +
+                bin_file + ".wasm")
     # remove file first, so we're sure it's rebuilt
     try:
         os.unlink(trg_path)
@@ -91,6 +91,7 @@ def run_ctrl(
     max_tokens: Optional[int] = None,
     print_response: bool = True,
 ):
+
     def attr(name: str, default: Any):
         r = getattr(cmd_args, name)
         if r is not None:
@@ -121,9 +122,10 @@ def run_ctrl(
 
 
 def infer_args(cmd: argparse.ArgumentParser):
-    cmd.add_argument(
-        "--max-tokens", "-t", type=int, help="maximum number of tokens to generate"
-    )
+    cmd.add_argument("--max-tokens",
+                     "-t",
+                     type=int,
+                     help="maximum number of tokens to generate")
     cmd.add_argument(
         "--temperature",
         type=float,
@@ -199,8 +201,8 @@ def main_rest(args):
                     controller = "gh:microsoft/aici/declctrl"
                 else:
                     cli_error(
-                        "Can't determine AICI Controller type from file name: " + fn
-                    )
+                        "Can't determine AICI Controller type from file name: "
+                        + fn)
                 print(f"Running with tagged AICI Controller: {controller}")
         if not controller:
             cli_error("no AICI Controller specified to run")
@@ -215,7 +217,8 @@ def main_rest(args):
 
 def main_inner():
     parser = argparse.ArgumentParser(
-        description="Upload an AICI Controller and completion request to rllm or vllm",
+        description=
+        "Upload an AICI Controller and completion request to rllm or vllm",
         prog="aici",
     )
 
@@ -223,13 +226,15 @@ def main_inner():
         "--log-level",
         "-l",
         type=int,
-        help="log level (higher is more); default 3 (except in 'infer', where it's 1)",
+        help=
+        "log level (higher is more); default 3 (except in 'infer', where it's 1)",
     )
 
     parser.add_argument(
         "--all-prefixes",
         action="store_true",
-        help="attempt the action for all detected prefixes (models/deployments)",
+        help=
+        "attempt the action for all detected prefixes (models/deployments)",
     )
 
     subparsers = parser.add_subparsers(dest="subcommand", required=True)
@@ -247,9 +252,11 @@ def main_inner():
         Similarly, it's 'gh:microsoft/aici/jsctrl' for .js and 'gh:microsoft/aici/declctrl' for .json.
         """,
     )
-    run_cmd.add_argument(
-        "--prompt", "-p", type=str, default="", help="initial prompt if any"
-    )
+    run_cmd.add_argument("--prompt",
+                         "-p",
+                         type=str,
+                         default="",
+                         help="initial prompt if any")
 
     run_cmd.add_argument(
         "controller_arg",
@@ -270,14 +277,16 @@ def main_inner():
         "-u",
         metavar="WASM_FILE",
         type=str,
-        help="path to .wasm file to upload; shorthand for 'aici upload WASM_FILE'",
+        help=
+        "path to .wasm file to upload; shorthand for 'aici upload WASM_FILE'",
     )
     run_cmd.add_argument(
         "--build",
         "-b",
         metavar="FOLDER",
         type=str,
-        help="path to rust project to build and upload; shorthand for 'aici build FOLDER'",
+        help=
+        "path to rust project to build and upload; shorthand for 'aici build FOLDER'",
     )
 
     infer_cmd = subparsers.add_parser(
@@ -306,9 +315,9 @@ def main_inner():
         help="upload a AICI Controller to the server",
         description="Upload a AICI Controller to the server.",
     )
-    upload_cmd.add_argument(
-        "upload", metavar="WASM_FILE", help="path to .wasm file to upload"
-    )
+    upload_cmd.add_argument("upload",
+                            metavar="WASM_FILE",
+                            help="path to .wasm file to upload")
 
     build_cmd = subparsers.add_parser(
         "build",
@@ -316,17 +325,19 @@ def main_inner():
         description="Build and upload a AICI Controller to the server.",
     )
     build_cmd.add_argument(
-        "build", metavar="FOLDER", help="path to rust project (folder with Cargo.toml)"
-    )
+        "build",
+        metavar="FOLDER",
+        help="path to rust project (folder with Cargo.toml)")
 
     jsinit_cmd = subparsers.add_parser(
         "jsinit",
         help="initialize current folder for jsctrl",
         description="Initialize a JavaScript/TypeScript folder for jsctrl.",
     )
-    jsinit_cmd.add_argument(
-        "--force", "-f", action="store_true", help="overwrite existing files"
-    )
+    jsinit_cmd.add_argument("--force",
+                            "-f",
+                            action="store_true",
+                            help="overwrite existing files")
 
     for cmd in [upload_cmd, build_cmd]:
         cmd.add_argument(
@@ -335,7 +346,8 @@ def main_inner():
             type=str,
             default=[],
             action="append",
-            help="tag the AICI Controller after uploading; can be used multiple times to set multiple tags",
+            help=
+            "tag the AICI Controller after uploading; can be used multiple times to set multiple tags",
         )
 
     args = parser.parse_args()

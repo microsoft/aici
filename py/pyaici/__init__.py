@@ -57,7 +57,8 @@ def add_cli_args(parser: argparse.ArgumentParser, single=False):
         "--aici-tokenizer",
         type=str,
         default="",
-        help="tokenizer to use; llama, phi, ...; can also use HF tokenizer name",
+        help=
+        "tokenizer to use; llama, phi, ...; can also use HF tokenizer name",
     )
     parser.add_argument(
         "--aici-trace",

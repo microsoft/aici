@@ -32,6 +32,7 @@ def token_repr(token: int) -> str:
     """
     ...
 
+
 def tokens_repr(tokens: List[int]) -> str:
     """
     Return debug string representation of a list of token indices
@@ -75,11 +76,13 @@ def eos_token() -> int:
     """
     ...
 
+
 def get_config(name: str) -> int:
     """
     Get the value of a configuration parameter like "fork"
     """
     ...
+
 
 class TokenSet(Sequence[bool]):
     """
@@ -117,7 +120,9 @@ class TokenSet(Sequence[bool]):
         """
         ...
 
+
 class Constraint:
+
     def __init__(self):
         """
         Initialize a constraint that allows any token.
@@ -190,6 +195,7 @@ def is_server_side():
     # on server it's implemented natively, just like everything else is here
     return False
 
+
 #
 # Note, that this file is not embedded in pyctrl - it's only type stubs for a native module
 #
@@ -209,4 +215,5 @@ Try 'aici run --help' for more info.
 The 'aici' command can be replaced by 'python -m pyaici.cli' if needed.
 """)
 import sys
+
 sys.exit(1)

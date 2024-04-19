@@ -46,6 +46,7 @@ def get_tokens() -> List[Token]:
 
 
 class Splice:
+
     def __init__(
         self,
         *,
@@ -64,14 +65,16 @@ class Splice:
             self.ff_tokens = other.ff_tokens[:]
         else:
             if other.backtrack > 0:
-                del self.ff_tokens[-other.backtrack :]
+                del self.ff_tokens[-other.backtrack:]
             self.ff_tokens += other.ff_tokens
 
 
 class Branch:
-    def __init__(
-        self, *, splices: List[Splice] = [], sample_mask: Optional[TokenSet] = None
-    ) -> None:
+
+    def __init__(self,
+                 *,
+                 splices: List[Splice] = [],
+                 sample_mask: Optional[TokenSet] = None) -> None:
         self.sample_mask = sample_mask
         self.splices = splices
 
@@ -92,6 +95,7 @@ def get_prompt_len() -> int:
 
 
 class MidProcessResult:
+
     def __init__(self, branches: List[Branch]):
         self.skip_me = False
         self.branches = branches
@@ -107,7 +111,9 @@ class MidProcessResult:
     def splice(cls, backtrack: int, ff_tokens: List[Token]):
         assert backtrack >= 0
         assert isinstance(ff_tokens, list)
-        return cls([Branch(splices=[Splice(backtrack=backtrack, ff_tokens=ff_tokens)])])
+        return cls([
+            Branch(splices=[Splice(backtrack=backtrack, ff_tokens=ff_tokens)])
+        ])
 
     @classmethod
     def stop(cls):
@@ -191,14 +197,19 @@ class NextToken:
 
 
 class Noop(NextToken):
+
     def __init__(self):
         super().__init__()
 
     def mid_process(self) -> MidProcessResult:
         return MidProcessResult.noop()
 
+
 class FixedTokens(NextToken):
-    def __init__(self, text: Union[str, bytes], following: Optional["Label"] = None):
+
+    def __init__(self,
+                 text: Union[str, bytes],
+                 following: Optional["Label"] = None):
         """
         Forces next tokens to be exactly the given text.
         If following is given, the text replaces everything that follows the label.
@@ -223,6 +234,7 @@ class FixedTokens(NextToken):
 
 
 class StopToken(NextToken):
+
     def __init__(self) -> None:
         """
         Indicates that the generation should stop immedietely.
@@ -237,6 +249,7 @@ class StopToken(NextToken):
 
 
 class ConstrainedToken(NextToken):
+
     def __init__(self, mk_constraint: Callable[[], Constraint]):
         """
         Generates a token that satisfies the given constraint.
@@ -271,6 +284,7 @@ class ConstrainedToken(NextToken):
 
 
 class _Fork(NextToken):
+
     def __init__(self, forks: List[Branch]):
         super().__init__()
         self.forks = forks
@@ -303,6 +317,7 @@ async def fork(forks: Union[int, List[Branch]]):
 
 
 class _WaitVars(NextToken):
+
     def __init__(self, vars: List[str]):
         super().__init__()
         self.vars = vars
@@ -338,9 +353,8 @@ class AiciCallbacks:
     def init_prompt(self, prompt: List[Token]):
         pass
 
-    def mid_process(
-        self, backtrack: int, tokens: List[Token], fork_group: List[SeqId]
-    ) -> MidProcessResult:
+    def mid_process(self, backtrack: int, tokens: List[Token],
+                    fork_group: List[SeqId]) -> MidProcessResult:
         return MidProcessResult.bias(all_tokens())
 
 
@@ -421,9 +435,8 @@ class AiciAsync(AiciCallbacks):
         self._cb._post_process(backtrack, tokens)
         self.step()
 
-    def mid_process(
-        self, backtrack: int, tokens: List[Token], fork_group: List[SeqId]
-    ) -> MidProcessResult:
+    def mid_process(self, backtrack: int, tokens: List[Token],
+                    fork_group: List[SeqId]) -> MidProcessResult:
         assert isinstance(self._cb, NextToken)
 
         self.fork_group = fork_group
@@ -479,6 +492,7 @@ def test(f: Coroutine[CbType, None, None]):
 
 
 class Label:
+
     def __init__(self):
         """
         Create a new label the indicates the current position in the sequence.
@@ -490,7 +504,7 @@ class Label:
         """
         Return tokens generated since the label.
         """
-        return get_tokens()[self.ptr :]
+        return get_tokens()[self.ptr:]
 
     def text_since(self) -> str:
         """
@@ -500,6 +514,7 @@ class Label:
 
 
 class ChooseConstraint(Constraint):
+
     def __init__(self, options: List[str]):
         # super().__init__()
         self.ptr = 0
@@ -512,7 +527,8 @@ class ChooseConstraint(Constraint):
         return len(self.options) == 1 and len(self.options[0]) == self.ptr
 
     def token_allowed(self, t: int) -> bool:
-        return any(self.ptr < len(o) and o[self.ptr] == t for o in self.options)
+        return any(self.ptr < len(o) and o[self.ptr] == t
+                   for o in self.options)
 
     def append_token(self, t: int):
         self.options = [
@@ -545,13 +561,13 @@ async def gen_tokens(
     `regex` and `options` are mutually exclusive.
     """
     res: List[Token] = []
-    assert len([x for x in [regex, options, yacc, substring] if x is not None]) <= 1
+    assert len([x for x in [regex, options, yacc, substring] if x is not None
+                ]) <= 1
     if regex is not None:
         next_token = ConstrainedToken(lambda: RegexConstraint(regex))
     elif substring is not None:
         next_token = ConstrainedToken(
-            lambda: SubStrConstraint(substring, substring_end)
-        )
+            lambda: SubStrConstraint(substring, substring_end))
     elif yacc is not None:
         next_token = ConstrainedToken(lambda: CfgConstraint(yacc))
     elif options is not None:

@@ -23,6 +23,7 @@ DEFAULT_SHM_PREF = "/aici0-"
 
 
 class BenchTimer:
+
     def __init__(self, name: str, mod=30) -> None:
         self.name = name
         self.elapsed = 0
@@ -37,7 +38,9 @@ class BenchTimer:
         self.elapsed += time.time() - self.t0
         self.num += 1
         if self.num % self.mod == 0:
-            print(f"{self.name}: {self.elapsed*1000000/self.num:.0f}us ({self.num})")
+            print(
+                f"{self.name}: {self.elapsed*1000000/self.num:.0f}us ({self.num})"
+            )
             self.elapsed = 0
             self.num = 0
 
@@ -57,6 +60,7 @@ def mkshm(name, size):
 
 
 class MessageChannel:
+
     def __init__(self, name, size):
         write_sem_name = name + "-wr"
         read_sem_name = name + "-rd"
@@ -75,13 +79,13 @@ class MessageChannel:
         self.map_file = mkshm(name, size)
         self.busy_mode = False
 
-        self.write_sem = posix_ipc.Semaphore(
-            write_sem_name, flags=posix_ipc.O_CREAT, initial_value=1
-        )
+        self.write_sem = posix_ipc.Semaphore(write_sem_name,
+                                             flags=posix_ipc.O_CREAT,
+                                             initial_value=1)
 
-        self.read_sem = posix_ipc.Semaphore(
-            read_sem_name, flags=posix_ipc.O_CREAT, initial_value=0
-        )
+        self.read_sem = posix_ipc.Semaphore(read_sem_name,
+                                            flags=posix_ipc.O_CREAT,
+                                            initial_value=0)
 
         self.aq_timer = BenchTimer("aq_" + name)
         self.track = False
@@ -89,7 +93,7 @@ class MessageChannel:
     def send_bytes(self, msg_bytes):
         self.write_sem.acquire()
         self.map_file[0:4] = struct.pack("<I", len(msg_bytes))
-        self.map_file[4 : 4 + len(msg_bytes)] = msg_bytes
+        self.map_file[4:4 + len(msg_bytes)] = msg_bytes
         self.read_sem.release()
 
     def send_json(self, obj):
@@ -116,7 +120,7 @@ class MessageChannel:
         else:
             self._acquire_read()
         msg_len = struct.unpack("<I", self.map_file[0:4])[0]
-        msg = self.map_file[4 : 4 + msg_len]
+        msg = self.map_file[4:4 + msg_len]
         self.write_sem.release()
         return msg
 
@@ -132,8 +136,10 @@ class MessageChannel:
 
 M = 1024 * 1024
 
+
 def bad_response(cmd: str, message: str):
     raise ChildProcessError(f"Bad response to {cmd}: {message}")
+
 
 def bad_response_fast_api(cmd: str, message: str):
     from fastapi import HTTPException
@@ -141,6 +147,7 @@ def bad_response_fast_api(cmd: str, message: str):
 
 
 class PendingRequest:
+
     def __init__(self, *, cmd: Dict[str, Any]) -> None:
         self.cmd = cmd
         self.resp: Optional[dict] = None
@@ -148,7 +155,14 @@ class PendingRequest:
 
 
 class CmdChannel:
-    def __init__(self, *, json_size: int, pref: str, suff: str, trace_file, bad_response=bad_response) -> None:
+
+    def __init__(self,
+                 *,
+                 json_size: int,
+                 pref: str,
+                 suff: str,
+                 trace_file,
+                 bad_response=bad_response) -> None:
         self.pending_reqs: Dict[str, PendingRequest] = {}
         self.executor = None
         self.suff = suff
@@ -171,7 +185,8 @@ class CmdChannel:
 
         if self.executor is None:
             assert not self.cmd_pending
-            self.executor = concurrent.futures.ThreadPoolExecutor(max_workers=1)
+            self.executor = concurrent.futures.ThreadPoolExecutor(
+                max_workers=1)
 
             def bg_reader():
                 while True:
@@ -217,16 +232,12 @@ class CmdChannel:
             return
 
         self.trace_file.write(
-            json.dumps(
-                {
-                    "timestamp": time.time() * 1000,
-                    "suff": self.suff,
-                    "cmd": cmd,
-                    "resp": resp,
-                }
-            )
-            + "\n"
-        )
+            json.dumps({
+                "timestamp": time.time() * 1000,
+                "suff": self.suff,
+                "cmd": cmd,
+                "resp": resp,
+            }) + "\n")
         self.trace_file.flush()
 
     def exec(self, op: str, data={}):
@@ -241,9 +252,9 @@ class CmdChannel:
         self.cmd_pending = False
         self._trace_resp(self.last_cmd, resp)
         if resp["type"] != "ok":
-            raise ChildProcessError(f"Bad response ({ctx}): {json.dumps(resp)[0:1000]}")
+            raise ChildProcessError(
+                f"Bad response ({ctx}): {json.dumps(resp)[0:1000]}")
         return resp
-
 
 
 @dataclass
@@ -285,8 +296,9 @@ class Branch:
     def from_json(obj: dict) -> "Branch":
         return Branch(
             mask=obj.get("sample_mask"),
-            splices=[ Splice.from_json(q) for q in obj["splices"] ],
+            splices=[Splice.from_json(q) for q in obj["splices"]],
         )
+
 
 @dataclass
 class MidResult:
@@ -303,8 +315,12 @@ class MidResult:
             storage=obj["storage"],
             logs=obj["logs"],
             micros=obj["micros"],
-            branches=[Branch.from_json(q) for q in (obj.get("result", None) or {}).get("branches", [])],
+            branches=[
+                Branch.from_json(q)
+                for q in (obj.get("result", None) or {}).get("branches", [])
+            ],
         )
+
 
 class AiciRunner:
     instance = None
@@ -343,7 +359,8 @@ class AiciRunner:
 
         allowed_dtype = ["f32", "f16", "bf16"]
         if self.dtype not in allowed_dtype:
-            raise ValueError(f"Invalid dtype {self.dtype}, must be one of {allowed_dtype}")
+            raise ValueError(
+                f"Invalid dtype {self.dtype}, must be one of {allowed_dtype}")
 
         if trace_file:
             self.trace_file = open(trace_file, "w")
@@ -358,13 +375,15 @@ class AiciRunner:
         self.pending_instantiate_results = {}
         self.pending_generated_tokens: Dict[int, Tuple[List[int], int]] = {}
 
-        self.cmd = CmdChannel(
-            pref=pref, suff="", json_size=json_size, trace_file=self.trace_file
-        )
+        self.cmd = CmdChannel(pref=pref,
+                              suff="",
+                              json_size=json_size,
+                              trace_file=self.trace_file)
         self.cmd.resp_ch.busy_mode = True
-        self.side_cmd = CmdChannel(
-            pref=pref, suff="-side", json_size=json_size, trace_file=self.trace_file
-        )
+        self.side_cmd = CmdChannel(pref=pref,
+                                   suff="-side",
+                                   json_size=json_size,
+                                   trace_file=self.trace_file)
 
         self.bin_shm = mkshm(pref + "bin", bin_size * M)
 
@@ -440,18 +459,25 @@ class AiciRunner:
                 ch.send(obj["cmd"])
                 ch.expect("replay")
 
-    async def upload_module_async(self, wasm: bytes, auth_info = None):
+    async def upload_module_async(self, wasm: bytes, auth_info=None):
         b64 = base64.b64encode(wasm).decode("utf-8")
-        return await self.side_cmd.exec_async("mk_module", {"binary": b64}, auth_info=auth_info)
+        return await self.side_cmd.exec_async("mk_module", {"binary": b64},
+                                              auth_info=auth_info)
 
-    async def get_tags(self, auth_info = None):
-        return await self.side_cmd.exec_async("get_tags", {}, auth_info=auth_info)
+    async def get_tags(self, auth_info=None):
+        return await self.side_cmd.exec_async("get_tags", {},
+                                              auth_info=auth_info)
 
-    async def set_tags(self, module_id: str, tags: Union[str, list[str]], auth_info = None):
+    async def set_tags(self,
+                       module_id: str,
+                       tags: Union[str, list[str]],
+                       auth_info=None):
         if isinstance(tags, str):
             tags = [tags]
         op = {"module_id": module_id, "tags": tags}
-        return await self.side_cmd.exec_async("set_tags", op, auth_info=auth_info)
+        return await self.side_cmd.exec_async("set_tags",
+                                              op,
+                                              auth_info=auth_info)
 
     def usage_json(self, ff_tokens: int, sampled_tokens: int):
         return {
@@ -557,7 +583,10 @@ class AiciRunner:
             self.logs_by_seqid[str(seq_id)] = [res]
         self.pending_req_ids[seq_id] = req_id
 
-    def tokens_generated(self, seq_id: int, tokens: List[int], backtrack: int = 0):
+    def tokens_generated(self,
+                         seq_id: int,
+                         tokens: List[int],
+                         backtrack: int = 0):
         """
         Informs aicirt tokens have been generated.
         """
@@ -591,7 +620,11 @@ class AiciRunner:
         """
         return self.last_resp[seq_id]
 
-    def _fork_result(self, index: int, lst: List[dict], text="", finish_reason=None) -> dict:
+    def _fork_result(self,
+                     index: int,
+                     lst: List[dict],
+                     text="",
+                     finish_reason=None) -> dict:
         return {
             "index": index,
             "finish_reason": finish_reason,
@@ -601,7 +634,11 @@ class AiciRunner:
             "storage": [q for e in lst for q in e["storage"]],
         }
 
-    def seq_logs(self, seq_id: int, index=0, text="", finish_reason=None) -> dict:
+    def seq_logs(self,
+                 seq_id: int,
+                 index=0,
+                 text="",
+                 finish_reason=None) -> dict:
         """
         Get the logs for a given sequence ID.
         """
@@ -611,7 +648,10 @@ class AiciRunner:
             del self.logs_by_seqid[ss]
         else:
             lst = []
-        return self._fork_result(index, lst, text=text, finish_reason=finish_reason)
+        return self._fork_result(index,
+                                 lst,
+                                 text=text,
+                                 finish_reason=finish_reason)
 
     def pending_logs(self):
         """
@@ -619,7 +659,7 @@ class AiciRunner:
         """
         return [int(q) for q in self.logs_by_seqid.keys()]
 
-    def print_logs_for(self, seq_id:int, r = None):
+    def print_logs_for(self, seq_id: int, r=None):
         r = r or self.seq_logs(seq_id)
         lines: str = r["logs"]
         if lines:
@@ -636,7 +676,10 @@ class AiciRunner:
         for seq_id in self.pending_logs():
             self.print_logs_for(seq_id)
 
-    def add_mid(self, id: int, clone_id: Optional[int] = None, clone_idx: Optional[int] = None):
+    def add_mid(self,
+                id: int,
+                clone_id: Optional[int] = None,
+                clone_idx: Optional[int] = None):
         assert not self.logit_pending
         tokens, backtrack = self.pending_generated_tokens.get(id, ([], 0))
         if id in self.pending_generated_tokens:
@@ -687,10 +730,11 @@ class AiciRunner:
         data = self._recv_logit_bias()
         vocab_size = data["mask_num_elts"]
         num_masks = data["num_masks"]
-        arr = numpy.frombuffer(self.bin_shm, 
-                               dtype=dtype_map[self.dtype], 
+        arr = numpy.frombuffer(self.bin_shm,
+                               dtype=dtype_map[self.dtype],
                                offset=data["first_mask_byte_offset"],
-                               count=vocab_size * num_masks).reshape([num_masks, vocab_size])
+                               count=vocab_size * num_masks).reshape(
+                                   [num_masks, vocab_size])
         return self.last_resp, arr
 
     def recv_logit_bias_torch(self):
@@ -703,10 +747,11 @@ class AiciRunner:
         data = self._recv_logit_bias()
         vocab_size = data["mask_num_elts"]
         num_masks = data["num_masks"]
-        arr = torch.frombuffer(self.bin_shm, 
-                               dtype=dtype_map[self.dtype], 
+        arr = torch.frombuffer(self.bin_shm,
+                               dtype=dtype_map[self.dtype],
                                offset=data["first_mask_byte_offset"],
-                               count=vocab_size * num_masks).reshape([num_masks, vocab_size])
+                               count=vocab_size * num_masks).reshape(
+                                   [num_masks, vocab_size])
         return self.last_resp, arr
 
     def _recv_logit_bias(self):

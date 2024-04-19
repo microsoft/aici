@@ -72,8 +72,7 @@ def response_error(kind: str, resp: requests.Response):
     except:
         pass
     return RuntimeError(
-        f"bad response to {kind} {resp.status_code} {resp.reason}: {text}"
-    )
+        f"bad response to {kind} {resp.status_code} {resp.reason}: {text}")
 
 
 def strip_url_path(url):
@@ -144,7 +143,12 @@ def list_tags():
 
 
 def tag_module(module_id: str, tags: List[str]):
-    resp = req("post", "controllers/tags", json={"module_id": module_id, "tags": tags})
+    resp = req("post",
+               "controllers/tags",
+               json={
+                   "module_id": module_id,
+                   "tags": tags
+               })
     if resp.status_code == 200:
         dd = resp.json()
         if log_level > 0:
@@ -172,7 +176,11 @@ def run_controller(
         "temperature": temperature,
     }
     t0 = time.time()
-    resp = req("post", "run", json=_clear_none(data), stream=True, base_url=base_url)
+    resp = req("post",
+               "run",
+               json=_clear_none(data),
+               stream=True,
+               base_url=base_url)
     if resp.status_code != 200:
         raise response_error("run", resp)
     texts = [""]
@@ -212,7 +220,8 @@ def run_controller(
                 continue
             if "first_token" not in res["timing"]:
                 res["timing"]["first_token"] = time.time() - t0
-                prompt_time = res["timing"]["first_token"] - res["timing"]["http_response"]
+                prompt_time = res["timing"]["first_token"] - res["timing"][
+                    "http_response"]
                 res["tps"]["prompt"] = d["usage"]["ff_tokens"] / prompt_time
             for ch in d["forks"]:
                 if "Previous WASM Error" in ch["logs"]:
@@ -255,7 +264,8 @@ def run_controller(
             raise RuntimeError(f"bad response line: {decoded_line}")
 
     res["timing"]["last_token"] = time.time() - t0
-    res["tps"]["sampling"] = res["usage"]["sampled_tokens"] / res["timing"]["last_token"]
+    res["tps"]["sampling"] = res["usage"]["sampled_tokens"] / res["timing"][
+        "last_token"]
     # convert hex bytes in storage to strings
     s = {}
     res["storage"] = s
