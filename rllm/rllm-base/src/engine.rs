@@ -397,12 +397,11 @@ impl<ME: ModelExec> RllmEngine<ME> {
             sg.seqs.extend(to_add);
         }
 
-        let vocab_bytes = vocab_size * 4;
-        let num_seqs = mid_res.mask_num_bytes / vocab_bytes;
         let shm = &self.aicirt.as_mut().unwrap().bin_shm;
-        let slice = shm.slice_at_byte_offset::<f32>(0, num_seqs * vocab_size);
+        let slice = shm.slice_at_byte_offset::<f32>(mid_res.first_mask_byte_offset,
+            mid_res.mask_num_elts * mid_res.num_masks);
         Ok((
-            self.tmodel.new_bias(slice, num_seqs, vocab_size),
+            self.tmodel.new_bias(slice, mid_res.num_masks, mid_res.mask_num_elts),
             seq_id_mapping,
         ))
     }
@@ -487,8 +486,6 @@ impl<ME: ModelExec> RllmEngine<ME> {
         let (aici_bias, seq_id_mapping) =
             with_timer!(self.tim_aici_bias, self.aici_bias(sched_out)?);
 
-        let vocab_bytes = self.tok_trie.vocab_size() * 4;
-
         for sg in sched_out.next_seq_groups.iter_mut() {
             for seq in sg.seqs.iter_mut() {
                 if seq.sched_phase != SchedulingPhase::Running {
@@ -512,7 +509,7 @@ impl<ME: ModelExec> RllmEngine<ME> {
                     _ => {
                         match &seq.aici_sampling {
                             Some(b) => {
-                                let seq_idx = b.sample_mask.unwrap() / vocab_bytes;
+                                let seq_idx = b.sample_mask.unwrap();
                                 aici_bias.apply(&mut logits, seq_idx);
                             }
                             None => {}

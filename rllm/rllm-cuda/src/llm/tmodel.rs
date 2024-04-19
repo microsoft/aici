@@ -277,7 +277,7 @@ pub struct TchAiciBias {
 impl AiciBias<Tensor> for TchAiciBias {
     fn apply(&self, logits: &mut Tensor, seq_id: usize) {
         let bias = self.bias.as_ref().unwrap();
-        let bias = bias.i((seq_id as i64, ..));
+        let bias = bias.i((seq_id as i64, 0..logits.size()[0]));
         *logits = &*logits + bias;
     }
 }

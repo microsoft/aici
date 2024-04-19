@@ -271,7 +271,7 @@ impl AiciBias<Tensor> for CppAiciBias {
         let sp = seq_id * self.vocab_size;
         let logits = logits.as_mut_slice();
         let bias = bias.as_slice();
-        for i in 0..self.vocab_size {
+        for i in 0..logits.len() {
             logits[i] += bias[sp + i];
         }
     }
