@@ -96,7 +96,7 @@ async fn run_controller(
 
     bail_if_error!(sampling_params.verify_args());
 
-    let init_result = if let Some(mod_id) = sampling_params.controller.as_ref() {
+    let (init_result, token_ids) = if let Some(mod_id) = sampling_params.controller.as_ref() {
         let inst = data
             .side_cmd_ch
             .instantiate(
@@ -110,9 +110,16 @@ async fn run_controller(
             )
             .await;
         bail_if_error!(inst);
-        Some(inst.unwrap())
+        let mut tokens = token_ids;
+        (
+            Some(inst.unwrap().map_result(|r| {
+                tokens = r.prompt;
+                ()
+            })),
+            tokens,
+        )
     } else {
-        None
+        (None, token_ids)
     };
 
     let rx = match init_result {

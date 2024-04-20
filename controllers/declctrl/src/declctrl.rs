@@ -1154,14 +1154,14 @@ impl Runner {
 impl AiciCtrl for Runner {
     fn init_prompt(&mut self, arg: InitPromptArg) -> InitPromptResult {
         println!("prompt: {:?}", arg.prompt);
-        for t in arg.prompt {
+        for t in &arg.prompt {
             self.ctx.tokens.push(TokenInfo {
-                id: t,
+                id: *t,
                 tag: TagName("prompt".to_string()),
                 labels: vec![LabelName("prompt".to_string())],
             })
         }
-        InitPromptResult::default()
+        InitPromptResult::from_arg(arg)
     }
 
     fn mid_process(&mut self, arg: MidProcessArg) -> MidProcessResult {

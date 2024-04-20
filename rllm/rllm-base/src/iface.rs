@@ -1,7 +1,7 @@
 use crate::HashMap;
 use aici_abi::{
     bytes::{limit_bytes, limit_str},
-    toktree::TokTrie,
+    toktree::TokTrie, InitPromptResult,
 };
 use aicirt::{
     api::{
@@ -284,7 +284,7 @@ impl AsyncCmdChannel {
         &self,
         req: InstantiateReq,
         authinfo: AuthInfo,
-    ) -> Result<SequenceResult> {
+    ) -> Result<SequenceResult<InitPromptResult>> {
         self.exec("instantiate", req, authinfo).await
     }
 

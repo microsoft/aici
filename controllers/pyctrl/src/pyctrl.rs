@@ -537,7 +537,7 @@ impl AiciCtrl for Runner {
         self.interpreter.enter(|vm| {
             let lst = vm.new_int_list(&arg.prompt);
             vm.catch_exn(vm.call_method(obj.deref(), "init_prompt", vec![lst.into()]));
-            InitPromptResult::default()
+            InitPromptResult::from_arg(arg)
         })
     }
 

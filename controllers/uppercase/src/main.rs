@@ -35,7 +35,6 @@ impl FunctionalRecognizer<usize> for QuadUpper {
 
 pub struct Runner {
     toktrie: TokTrie,
-    ff_tokens: Vec<u32>,
     tokens: Vec<u32>,
     recognizer: StackRecognizer<usize, QuadUpper>,
 }
@@ -45,7 +44,6 @@ impl Runner {
         Runner {
             toktrie: TokTrie::from_host(),
             tokens: Vec::new(),
-            ff_tokens: Vec::new(),
             recognizer: StackRecognizer::from(QuadUpper {}),
         }
     }
@@ -55,18 +53,15 @@ impl AiciCtrl for Runner {
     fn init_prompt(&mut self, arg: InitPromptArg) -> InitPromptResult {
         if arg.prompt.len() <= 1 {
             // in case no prompt was provided, invent some
-            self.ff_tokens = tokenize("Here's a tweet:\n");
+            InitPromptResult {
+                prompt: tokenize("Here's a tweet:\n"),
+            }
+        } else {
+            InitPromptResult::from_arg(arg)
         }
-        InitPromptResult::default()
     }
 
     fn mid_process(&mut self, arg: MidProcessArg) -> MidProcessResult {
-        // if we have some tokens pending - send them out
-        if self.ff_tokens.len() > 0 {
-            let tokens = std::mem::take(&mut self.ff_tokens);
-            return MidProcessResult::splice(0, tokens);
-        }
-
         // store our tokens
         arg.save_tokens(&mut self.tokens);
         // and update the state of our recognizer

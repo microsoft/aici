@@ -57,7 +57,7 @@ def main(args):
     req_id = "r1"  # arbitrary string
     seq_id = 1  # there can be multiple sequences in a single request
     res = runner.instantiate(req_id, empty_tokens, args.controller, arg)
-    if res is not None:
+    if isinstance(res, dict):
         runner.print_logs_for(seq_id, res["forks"][0])
         exit(1)
 
@@ -70,7 +70,7 @@ def main(args):
         exit(1)
 
     prompt = torch.tensor(
-        empty_tokens, dtype=torch.long, device=model.device
+        res, dtype=torch.long, device=model.device
     ).unsqueeze(0)
 
     model_kwargs = {

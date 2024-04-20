@@ -498,8 +498,10 @@ class AiciRunner:
             r = self._fork_result(0, [res], finish_reason="fail")
             return self.run_json([r], self.usage_json(0, 0))
         else:
+            prompt = res["result"]["prompt"]
+            assert isinstance(prompt, list)
             self.pending_instantiate_results[req_id] = res
-            return None
+            return prompt
 
     def initial_json(self, req_id: str, model: str):
         return {

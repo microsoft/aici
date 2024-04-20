@@ -33,8 +33,16 @@ pub struct InitPromptArg {
     pub prompt: Vec<TokenId>,
 }
 
-#[derive(Serialize, Deserialize, Debug, Default)]
-pub struct InitPromptResult {}
+#[derive(Serialize, Deserialize, Debug)]
+pub struct InitPromptResult {
+    pub prompt: Vec<TokenId>,
+}
+
+impl InitPromptResult {
+    pub fn from_arg(arg: InitPromptArg) -> Self {
+        InitPromptResult { prompt: arg.prompt }
+    }
+}
 
 #[repr(transparent)]
 #[derive(Serialize, Deserialize, Debug, PartialEq, Eq)]
@@ -192,9 +200,8 @@ pub struct ProcessResultOffset {
 pub trait AiciCtrl {
     /// Called with the initial prompt. ~1000ms time limit.
     /// By default ignore prompt.
-    /// This is typically just the start token if any (REST API forces empty prompt).
-    fn init_prompt(&mut self, _arg: InitPromptArg) -> InitPromptResult {
-        InitPromptResult::default()
+    fn init_prompt(&mut self, arg: InitPromptArg) -> InitPromptResult {
+        InitPromptResult::from_arg(arg)
     }
 
     /// This is the main entry point for the module. ~20ms time limit.

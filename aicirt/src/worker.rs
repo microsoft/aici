@@ -6,7 +6,9 @@ use crate::{
     shm::Shm,
     InstantiateReq, UserError,
 };
-use aici_abi::{MidProcessArg, ProcessResultOffset, StorageCmd, StorageResp, TokenId};
+use aici_abi::{
+    InitPromptResult, MidProcessArg, ProcessResultOffset, StorageCmd, StorageResp, TokenId,
+};
 use aicirt::{
     api::SequenceResult,
     futexshm::{TypedClient, TypedClientHandle, TypedServer},
@@ -662,7 +664,7 @@ impl WorkerForker {
         &self,
         req: InstantiateReq,
         module_path: PathBuf,
-    ) -> Result<(SeqWorkerHandle, SequenceResult<()>)> {
+    ) -> Result<(SeqWorkerHandle, SequenceResult<InitPromptResult>)> {
         let module_arg = match req.module_arg.as_str() {
             Some(a) => a.to_string(),
             None => serde_json::to_string(&req.module_arg)?,
@@ -708,7 +710,7 @@ impl WorkerForker {
             Timeout::from_millis(self.limits.max_init_ms),
         )? {
             SeqResp::InitPrompt { json } => {
-                let r: SequenceResult<()> = serde_json::from_str(&json)?;
+                let r: SequenceResult<InitPromptResult> = serde_json::from_str(&json)?;
                 Ok((res, r))
             }
             r => Err(anyhow!("unexpected response (init prompt) {r:?}")),

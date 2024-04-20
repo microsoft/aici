@@ -546,7 +546,7 @@ impl AiciCtrl for Runner {
         self.with_cb("init_prompt", |ctx| {
             let cb: Function = ctx.eval2("globalThis._aici_cb.init_prompt");
             let _: Value = cb.call2((&arg.prompt,));
-            InitPromptResult::default()
+            InitPromptResult::from_arg(arg)
         })
     }
 

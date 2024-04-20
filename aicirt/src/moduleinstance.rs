@@ -4,7 +4,7 @@ use crate::{
     worker::{GroupHandle, RtMidProcessArg},
     TimerSet, UserError,
 };
-use aici_abi::{toktree::TokTrie, InitPromptArg, ProcessResultOffset, TokenId};
+use aici_abi::{toktree::TokTrie, InitPromptArg, InitPromptResult, ProcessResultOffset, TokenId};
 use aicirt::{
     api::{InferenceCapabilities, SequenceResult},
     bail_user,
@@ -260,7 +260,7 @@ impl ModuleInstance {
         }
     }
 
-    fn do_mid_process(&mut self, op: RtMidProcessArg) -> Result<Option<ProcessResultOffset>> {
+    fn do_mid_process(&mut self, op: RtMidProcessArg) -> Result<ProcessResultOffset> {
         self.store.data_mut().set_mid_process_data(op);
         self.call_func::<WasmAici, ()>("aici_mid_process", self.handle)?;
         let res: ProcessResultOffset = self.proc_result()?;
@@ -280,15 +280,10 @@ impl ModuleInstance {
                 })
                 .collect(),
         };
-        Ok(Some(res))
+        Ok(res)
     }
 
-    fn seq_result<T>(
-        &mut self,
-        lbl: &str,
-        t0: Instant,
-        res: Result<Option<T>>,
-    ) -> SequenceResult<T> {
+    fn seq_result<T>(&mut self, lbl: &str, t0: Instant, res: Result<T>) -> SequenceResult<T> {
         // 10us accuracy for Spectre mitigation
         let micros = (t0.elapsed().as_micros() as u64 / 10) * 10;
         let logs = self.store.data_mut().string_log();
@@ -299,7 +294,7 @@ impl ModuleInstance {
                 logs,
                 storage,
                 micros,
-                result: r,
+                result: Some(r),
             },
 
             Err(e) => {
@@ -328,7 +323,7 @@ impl ModuleInstance {
         self.store.data_mut().tokenize(s)
     }
 
-    fn setup_inner(&mut self, prompt: Vec<TokenId>) -> Result<()> {
+    fn setup_inner(&mut self, prompt: Vec<TokenId>) -> Result<InitPromptResult> {
         self.run_init()?;
 
         self.handle = self.call_func::<(), WasmAici>("aici_create", ())?;
@@ -337,15 +332,15 @@ impl ModuleInstance {
             .data_mut()
             .set_process_arg(serde_json::to_vec(&InitPromptArg { prompt })?);
         self.call_func::<WasmAici, ()>("aici_init_prompt", self.handle)?;
-
-        Ok(())
+        let res: InitPromptResult = self.proc_result()?;
+        Ok(res)
     }
 
-    pub fn setup(&mut self, prompt: Vec<TokenId>) -> SequenceResult {
+    pub fn setup(&mut self, prompt: Vec<TokenId>) -> SequenceResult<InitPromptResult> {
         let t0 = Instant::now();
         match self.setup_inner(prompt) {
             Err(err) => self.seq_result("setup", t0, Err(err)),
-            Ok(()) => self.seq_result("setup", t0, Ok(Some(()))),
+            Ok(res) => self.seq_result("setup", t0, Ok(res)),
         }
     }
 }
