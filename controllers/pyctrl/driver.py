@@ -9,17 +9,17 @@ import pyaici.cli
 
 
 class Tester:
-    def __init__(self):
-        self.mod = pyaici.cli.build_rust(".")
+    def __init__(self, controller=None):
+        self.mod = controller if controller is not None else pyaici.cli.build_rust(".")
         self.oks = []
         self.failures = []
 
     def fail(self, id: str, logs: str):
-        print(f"FAIL")
+        print("FAIL")
         self.failures.append((id, logs))
 
     def ok(self, id: str, logs: str):
-        print(f"OK")
+        print("OK")
         self.oks.append((id, logs))
 
     def test_one(self, id: str, arg: str):
@@ -84,6 +84,13 @@ def main():
     )
 
     parser.add_argument(
+        "--controller",
+        "-c",
+        type=str,
+        help="controller to use (defaults to build current folder)",
+    )
+
+    parser.add_argument(
         "test_file",
         nargs="+",
         help="files to test",
@@ -100,7 +107,7 @@ def main():
         js_mode = True
         cmt = "//"
 
-    tester = Tester()
+    tester = Tester(controller=args.controller)
 
     for f in files:
         arg = open(f).read()
