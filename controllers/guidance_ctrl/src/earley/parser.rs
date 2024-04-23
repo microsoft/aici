@@ -275,22 +275,33 @@ impl Parser {
         self.stats = Stats::default();
     }
 
-    fn non_trie(&self) {
+    fn assert_non_trie(&self) {
         assert!(!self.speculative);
         assert!(self.num_rows() == self.row_infos.len());
     }
 
     pub fn get_bytes(&self) -> Vec<u8> {
-        self.non_trie();
+        self.assert_non_trie();
         self.row_infos.iter().skip(1).map(|ri| ri.byte).collect()
     }
 
-    pub fn apply_tokens(&mut self, trie: &TokTrie, tokens: &[TokenId]) -> &'static str {
-        self.non_trie();
+    pub fn apply_tokens(
+        &mut self,
+        trie: &TokTrie,
+        tokens: &[TokenId],
+        mut num_skip: usize,
+    ) -> &'static str {
+        // this is unused!
+        self.assert_non_trie();
         let mut byte_idx = 1; // row_infos[0] has just the 0 byte
         let mut tok_idx = 0;
         for t in tokens {
             for b in trie.token(*t).iter() {
+                if num_skip > 0 {
+                    num_skip -= 1;
+                    continue;
+                }
+
                 if byte_idx >= self.row_infos.len() {
                     if self.scan(*b) == ParseResult::Reject {
                         return "parse reject";
@@ -314,7 +325,7 @@ impl Parser {
     }
 
     pub fn force_bytes(&mut self) -> Vec<u8> {
-        self.non_trie();
+        self.assert_non_trie();
         let mut bytes = vec![];
         while let Some(b) = self.forced_byte() {
             let res = self.scan(b);

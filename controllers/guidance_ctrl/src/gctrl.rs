@@ -1,4 +1,7 @@
-use aici_abi::{arg_bytes, bytes::to_hex_string, AiciCtrl, MidProcessArg, MidProcessResult};
+use aici_abi::{
+    arg_bytes, bytes::to_hex_string, AiciCtrl, InitPromptArg, InitPromptResult, MidProcessArg,
+    MidProcessResult,
+};
 use base64::{self, Engine as _};
 use serde::{Deserialize, Serialize};
 
@@ -65,6 +68,11 @@ struct Capture {
 }
 
 impl AiciCtrl for Runner {
+    fn init_prompt(&mut self, arg: InitPromptArg) -> InitPromptResult {
+        InitPromptResult {
+            prompt: self.tok_parser.process_prompt(arg.prompt),
+        }
+    }
     fn mid_process(&mut self, arg: MidProcessArg) -> MidProcessResult {
         let r = self.tok_parser.mid_process(arg);
         self.report_captures();

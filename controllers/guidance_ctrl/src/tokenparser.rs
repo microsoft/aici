@@ -17,6 +17,8 @@ pub struct TokenParser {
     pub parser: Parser,
     // tokens currently in KV cache
     llm_tokens: Vec<TokenId>,
+    llm_bytes: Vec<u8>,
+    grm_prefix: Vec<u8>,
 }
 
 impl TokenParser {
@@ -31,7 +33,43 @@ impl TokenParser {
             token_env,
             parser,
             llm_tokens: Vec::new(),
+            llm_bytes: Vec::new(),
+            grm_prefix: Vec::new(),
         })
+    }
+
+    pub fn process_prompt(&mut self, prompt: Vec<TokenId>) -> Vec<TokenId> {
+        assert!(self.llm_tokens.is_empty());
+
+        let trie = self.token_env.tok_trie();
+        infoln!("prompt: {}", trie.tokens_dbg(&prompt));
+        let mut prompt_bytes = trie.decode(&prompt);
+        self.parser.force_bytes();
+        let grm_bytes = self.parser.get_bytes();
+        prompt_bytes.extend_from_slice(&grm_bytes);
+        let tokens = self.token_env.tokenize_bytes(&prompt_bytes);
+        infoln!("prompt+grm: {}", trie.tokens_dbg(&tokens));
+        let (chop_tokens, chop_bytes) = trie.chop_tokens(&mut self.parser, &tokens);
+        let res_prompt = tokens[..tokens.len() - chop_tokens].to_vec();
+
+        // if we moved a bunch of grammar to the prompt, update llm_tokens to reflect that
+        if chop_bytes <= grm_bytes.len() {
+            self.llm_bytes = grm_bytes[0..grm_bytes.len() - chop_bytes].to_vec();
+            self.llm_tokens = self.token_env.tokenize_bytes(&self.llm_bytes);
+            infoln!("initial llm_tokens: {}", trie.tokens_dbg(&self.llm_tokens));
+        } else {
+            // pretend the final bit of prompt was the prefix of the grammar
+            self.grm_prefix = prompt_bytes
+                [prompt_bytes.len() - chop_bytes..prompt_bytes.len() - grm_bytes.len()]
+                .to_vec();
+            infoln!(
+                "forcing grm_prefix: {:?}",
+                String::from_utf8_lossy(&self.grm_prefix)
+            );
+        }
+
+        infoln!("res_prompt: {}", trie.tokens_dbg(&res_prompt));
+        res_prompt
     }
 
     pub fn mid_process(&mut self, arg: MidProcessArg) -> MidProcessResult {
@@ -43,100 +81,66 @@ impl TokenParser {
         infoln!("post tokens: {}", trie.tokens_dbg(&arg.tokens));
         arg.save_tokens(&mut self.llm_tokens);
 
-        let res = self.parser.apply_tokens(trie, &self.llm_tokens);
-        if res != "" {
-            infoln!("rejected: {}", res);
+        assert!(arg.backtrack == 0); // we never ask for backtrack
+        let new_bytes = trie.decode(&arg.tokens);
+        self.llm_bytes.extend_from_slice(&new_bytes);
+
+        let mut grm_bytes = self.grm_prefix.clone();
+        grm_bytes.extend_from_slice(&self.parser.get_bytes());
+
+        let min_len = std::cmp::min(self.llm_bytes.len(), grm_bytes.len());
+        if self.llm_bytes[0..min_len] != grm_bytes[0..min_len] {
+            panic!(
+                "llm_bytes: {:?} != grm_bytes: {:?}",
+                String::from_utf8_lossy(&self.llm_bytes),
+                String::from_utf8_lossy(&grm_bytes)
+            );
+        }
+
+        if self.llm_bytes.len() > grm_bytes.len() {
+            // we have some bytes from the LLM that we haven't yet processed
+            let llm_suffix = &self.llm_bytes[grm_bytes.len()..];
+            for b in llm_suffix {
+                let r = self.parser.scan(*b);
+                if r == ParseResult::Reject {
+                    panic!("rejected byte: {}", b);
+                }
+                grm_bytes.push(*b);
+            }
         }
 
         // force after scanning tokens from LLM (this may walk the parser some more)
-        let _ = self.parser.force_bytes();
+        let new_bytes = self.parser.force_bytes();
+        grm_bytes.extend_from_slice(&new_bytes);
 
         if arg.tokens.contains(&trie.eos_token()) {
             return MidProcessResult::stop();
         }
 
-        // tokens/bytes forced by the grammar
-        let full_grm_bytes = self.parser.get_bytes();
-        let mut grm_tokens = self.token_env.tokenize_bytes(&full_grm_bytes);
-        infoln!("forced: {}", trie.tokens_dbg(&grm_tokens));
-        let mut suff = Vec::new();
-        let mut chop_tokens = 0;
-        let mut chop_bytes = 0;
-        for (idx, t) in grm_tokens.iter().rev().enumerate() {
-            suff.splice(0..0, trie.token(*t).iter().cloned());
-            if suff.len() > trie.max_token_len() {
-                break;
-            }
-            if self
-                .token_env
-                .tok_trie()
-                .has_valid_extensions(&mut self.parser, &suff)
-            {
-                chop_tokens = idx + 1;
-                chop_bytes = suff.len();
-            }
-        }
+        let new_forced = grm_bytes[self.llm_bytes.len()..].to_vec();
+        let mut token_prefix = Vec::new();
 
-        // here we remove a suffix from grm_tokens that could be possibly tokenized differently
-        grm_tokens.truncate(grm_tokens.len() - chop_tokens);
+        if new_forced.len() > 0 {
+            let mut grm_tokens = self.token_env.tokenize_bytes(&new_forced);
+            infoln!("forced: {}", trie.tokens_dbg(&grm_tokens));
+            let (chop_tokens, chop_bytes) = trie.chop_tokens(&mut self.parser, &grm_tokens);
+            token_prefix = new_forced[new_forced.len() - chop_bytes..].to_vec();
+            // here we remove a suffix from grm_tokens that could be possibly tokenized differently
+            grm_tokens.truncate(grm_tokens.len() - chop_tokens);
 
-        for idx in 0..grm_tokens.len() {
-            // if the LLM state disagrees with forced tokens, we need to splice
-            if self.llm_tokens.get(idx) != grm_tokens.get(idx) {
-                let backtrack: u32 = (self.llm_tokens.len() - idx).try_into().unwrap();
-                let ff_tokens = grm_tokens[idx..].to_vec();
-                infoln!(
-                    "backtrack: {}, ff_tokens: {}",
-                    backtrack,
-                    trie.tokens_dbg(&ff_tokens),
-                );
+            if grm_tokens.len() > 0 {
                 infoln!("fixed_tokens: {}", trie.tokens_dbg(&grm_tokens));
-                return MidProcessResult::splice(backtrack, ff_tokens);
+                return MidProcessResult::splice(0, grm_tokens);
+            } else {
+                infoln!("no fixed tokens");
             }
         }
-
-        // here, grm_tokens are at most as long as llm_tokens (otherwise we would have spliced)
-        // llm_suffix are additional bytes generated by the model
-        let llm_suffix = trie.decode(&self.llm_tokens[grm_tokens.len()..]);
-        // grm_suffix are additional bytes generated by the grammar
-        let grm_suffix = full_grm_bytes[full_grm_bytes.len() - chop_bytes..].to_vec();
-
-        let byte_suffix = if grm_suffix.len() < llm_suffix.len() {
-            // this branch should be unreachable, since we already walked the parser in apply_tokens() above
-            // however, this may not hold for hidden items
-            if !llm_suffix.starts_with(&grm_suffix) {
-                panic!(
-                    "llm_suffix: {:?}, grm_suffix: {:?} (grm<=llm)",
-                    String::from_utf8_lossy(&llm_suffix),
-                    String::from_utf8_lossy(&grm_suffix)
-                );
-            }
-
-            for b in &llm_suffix[grm_suffix.len()..] {
-                let r = self.parser.scan(*b);
-                if r == ParseResult::Reject {
-                    panic!("rejected byte: {}", b);
-                }
-            }
-            vec![]
-        } else {
-            if !grm_suffix.starts_with(&llm_suffix) {
-                panic!(
-                    "llm_suffix: {:?}, grm_suffix: {:?} (grm>llm)",
-                    String::from_utf8_lossy(&llm_suffix),
-                    String::from_utf8_lossy(&grm_suffix)
-                );
-            }
-            grm_suffix[llm_suffix.len()..].to_vec()
-        };
-
-        // self.parser.print_row(self.parser.num_rows() - 1);
 
         let mut set = trie.alloc_token_set();
-        trie.compute_bias_ext(&mut self.parser, &mut set, &byte_suffix);
+        trie.compute_bias_ext(&mut self.parser, &mut set, &token_prefix);
         infoln!(
             "bias: (pref: {:?}) {:?} {}",
-            String::from_utf8_lossy(&byte_suffix),
+            String::from_utf8_lossy(&token_prefix),
             start_time.elapsed(),
             trie.token_set_dbg(&set)
         );
