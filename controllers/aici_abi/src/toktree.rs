@@ -122,6 +122,9 @@ impl TrieNode {
     }
 }
 
+// max length of token is 1023 bytes
+const LEN_BITS: u32 = 10;
+
 impl TokTrie {
     pub fn from_host() -> Self {
         let buffer = trie_bytes();
@@ -137,8 +140,9 @@ impl TokTrie {
             if word.len() > 0 {
                 trie.insert(word, idx as u32);
             }
-            assert!(word.len() < 0xff);
-            let desc = (word.len() as u32) | ((token_data.len() as u32) << 8);
+            assert!(word.len() < (1 << LEN_BITS));
+            assert!(token_data.len() < (1 << (32 - LEN_BITS)));
+            let desc = (word.len() as u32) | ((token_data.len() as u32) << LEN_BITS);
             token_offsets.push(desc);
             token_data.extend_from_slice(word);
         }
@@ -292,8 +296,8 @@ impl TokTrie {
 
     pub fn token(&self, idx: u32) -> &[u8] {
         let off = self.token_offsets[idx as usize];
-        let len = off & 0xff;
-        let off = (off >> 8) as usize;
+        let len = off & ((1 << LEN_BITS) - 1);
+        let off = (off >> LEN_BITS) as usize;
         &self.token_data[off..(off + len as usize)]
     }
 

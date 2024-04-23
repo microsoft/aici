@@ -50,7 +50,7 @@ pub struct StackRecognizer<S: Copy, R: FunctionalRecognizer<S>> {
 
 impl<S: Copy, R: FunctionalRecognizer<S>> StackRecognizer<S, R> {
     pub fn from(rec: R) -> Self {
-        let stack = vec![rec.initial(); 130];
+        let stack = vec![rec.initial(); 300];
         StackRecognizer {
             rec,
             stack,
