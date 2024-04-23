@@ -44,6 +44,7 @@ while [ "$1" != "" ] ; do
         --sycl )
             if [ "$CPP" = 1 ] ; then
               VER="$VER --features sycl"
+              ADD_ARGS="--gpu-layers 1000"
             else
               echo "--sycl only valid for llama.cpp"
               exit 1
@@ -52,6 +53,7 @@ while [ "$1" != "" ] ; do
         --sycl-fp16 )
             if [ "$CPP" = 1 ] ; then
               VER="$VER --features sycl,sycl_fp16"
+              ADD_ARGS="--gpu-layers 1000"
             else
               echo "--sycl-fp16 only valid for llama.cpp"
               exit 1
@@ -60,6 +62,7 @@ while [ "$1" != "" ] ; do
         --sycl-nvidia )
             if [ "$CPP" = 1 ] ; then
               VER="$VER --features sycl,sycl_nvidia"
+              ADD_ARGS="--gpu-layers 1000"
             else
               echo "--sycl-nvidia only valid for llama.cpp"
               exit 1
@@ -68,6 +71,7 @@ while [ "$1" != "" ] ; do
         --sycl-nvidia-fp16 )
             if [ "$CPP" = 1 ] ; then
               VER="$VER --features sycl,sycl_nvidia,sycl_fp16"
+              ADD_ARGS="--gpu-layers 1000"
             else
               echo "--sycl-nvidia-fp16 only valid for llama.cpp"
               exit 1

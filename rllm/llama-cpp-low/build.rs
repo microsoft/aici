@@ -5,10 +5,14 @@ const SUBMODULE_DIR: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/llama.cpp");
 
 fn main() {
     let ccache = true;
-    let cuda = std::env::var("CARGO_FEATURE_CUDA").unwrap_or(String::new());
-    let sycl = std::env::var("CARGO_FEATURE_SYCL").unwrap_or(String::new());
-    let sycl_fp16 = std::env::var("CARGO_FEATURE_SYCL_FP16").unwrap_or(String::new());
-    let sycl_nvidia = std::env::var("CARGO_FEATURE_SYCL_NVIDIA").unwrap_or(String::new());
+    let flag_cuda = env::var("CARGO_FEATURE_CUDA").unwrap_or(String::new()) == "1";
+    let flag_sycl = env::var("CARGO_FEATURE_SYCL").unwrap_or(String::new()) == "1";
+    let flag_sycl_fp16 = env::var("CARGO_FEATURE_SYCL_FP16").unwrap_or(String::new()) == "1";
+    let flag_sycl_nvidia = env::var("CARGO_FEATURE_SYCL_NVIDIA").unwrap_or(String::new()) == "1";
+
+    // oneAPI environment variables
+    let mkl_root = env::var("MKLROOT");
+    let cmplr_root = env::var("CMPLR_ROOT");
 
     let submodule_dir = &PathBuf::from(SUBMODULE_DIR);
     let header_path = submodule_dir.join("llama.h");
@@ -32,65 +36,62 @@ fn main() {
             .configure_arg("-DCMAKE_CUDA_COMPILER_LAUNCHER=ccache");
     }
 
-    if cuda == "1" && sycl == "1" {
+    if flag_cuda && flag_sycl {
         panic!("Only cuda or sycl can be activated at the same time!");
     }
-    if cuda == "1" {
+    if flag_cuda {
         cmake.configure_arg("-DLLAMA_CUBLAS=ON");
         println!("cargo:rustc-link-search=/usr/local/cuda/lib64");
         println!("cargo:rustc-link-lib=cuda");
         println!("cargo:rustc-link-lib=cudart");
         println!("cargo:rustc-link-lib=cublas");
         println!("cargo:rustc-link-lib=cupti");
-    } else if sycl == "1" {
-        cmake.configure_arg("-DLLAMA_SYCL=ON");
-        cmake.configure_arg("-DCMAKE_C_COMPILER=icx");
-        cmake.configure_arg("-DCMAKE_CXX_COMPILER=icpx");
+    } else if flag_sycl {
+        assert!(mkl_root.is_ok(), "MKLROOT is not set (plz `source /opt/intel/oneapi/setvars.sh` if OneAPI is installed)");
+        assert!(cmplr_root.is_ok(), "ICPP_COMPILER_ROOT is not set");
+        let mkl_root_str = mkl_root.unwrap();
+        //let cmplr_root_str = cmplr_root.unwrap();
 
-        let dirs = [
-            "/opt/intel/oneapi/compiler/latest/lib",
-            "/opt/intel/oneapi/mkl/latest/lib",
-            //"/opt/intel/oneapi/dnnl/latest/lib",
-        ];
+        cmake
+            .define("LLAMA_SYCL", "ON")
+            .define("CMAKE_C_COMPILER", "icx")
+            .define("CMAKE_CXX_COMPILER", "icpx");
 
-        // *.a => static
-        // *.so => dynamic
-        for dir in dirs.iter() {
-            println!("cargo:rustc-link-search={}", dir);
-            for file in std::fs::read_dir(dir).unwrap() {
-                let file = file.unwrap();
-                let file_name = file.file_name();
-                let file_name = file_name.to_str().unwrap();
-                if !file_name.starts_with("lib") { continue; }
-                if file_name.contains("lp64") && !file_name.contains("ilp64") { continue; }
-                if file_name.contains("seq") { continue; }
-                if file_name == "libmkl_gnu_thread.so" { continue; }
-                let file_name = file_name.trim_start_matches("lib");
-
-                if file_name.ends_with(".so") {
-                    let file_name = &file_name[..file_name.len()-3];
-                    println!("cargo:rustc-link-lib=dylib={}", file_name);
-                } else if file_name.ends_with(".a") {
-                    let file_name = &file_name[..file_name.len()-2];
-                    println!("cargo:rustc-link-lib=static={}", file_name);
-                }
-            }
-        }
-        //panic!("stop here");
-
-        //println!("cargo:rustc-link-search=native=/opt/intel/oneapi/compiler/latest/lib");
-        //println!("cargo:rustc-link-lib=intlc");
-        //println!("cargo:rustc-link-lib=svml");
-        //println!("cargo:rustc-link-lib=sycl");
-        //println!("cargo:rustc-link-search=native=/opt/intel/oneapi/mkl/latest/lib");
-        //println!("cargo:rustc-link-lib=mkl_core");
-        //println!("cargo:rustc-link-lib=mkl_sycl_blas");
-        //println!("cargo:rustc-link-lib=mkl_sycl");
+        println!("cargo:rustc-link-arg=-fiopenmp");
+        println!("cargo:rustc-link-arg=-fopenmp-targets=spir64_gen");
+        println!("cargo:rustc-link-arg=-fsycl");
+        println!("cargo:rustc-link-arg=-Wl,--no-as-needed");
+        println!("cargo:rustc-link-arg=-Wno-narrowing");
+        println!("cargo:rustc-link-arg=-O3");
+        //println!("cargo:rustc-link-search=native={}/lib", cmplr_root_str);
+        println!("cargo:rustc-link-search=native={}/lib", mkl_root_str);
+        println!("cargo:rustc-link-lib=svml");
+        println!("cargo:rustc-link-lib=mkl_sycl_blas");
+        println!("cargo:rustc-link-lib=mkl_sycl_lapack");
+        println!("cargo:rustc-link-lib=mkl_sycl_dft");
+        println!("cargo:rustc-link-lib=mkl_sycl_sparse");
+        println!("cargo:rustc-link-lib=mkl_sycl_vm");
+        println!("cargo:rustc-link-lib=mkl_sycl_rng");
+        println!("cargo:rustc-link-lib=mkl_sycl_stats");
+        println!("cargo:rustc-link-lib=mkl_sycl_data_fitting");
+        println!("cargo:rustc-link-lib=mkl_intel_ilp64");
+        println!("cargo:rustc-link-lib=mkl_intel_thread");
+        println!("cargo:rustc-link-lib=mkl_tbb_thread");
+        println!("cargo:rustc-link-lib=mkl_core");
+        println!("cargo:rustc-link-lib=iomp5");
+        println!("cargo:rustc-link-lib=sycl");
+        println!("cargo:rustc-link-lib=pthread");
+        println!("cargo:rustc-link-lib=m");
+        println!("cargo:rustc-link-lib=dl");
+        println!("cargo:rustc-link-lib=intlc");
+        println!("cargo:rustc-link-lib=imf");
+        //println!("cargo:rustc-link-lib=static=ggml_sycl");
+        //println!("cargo:rustc-link-arg=")
     }
-    if sycl_fp16 == "1" {
+    if flag_sycl_fp16 {
         cmake.configure_arg("-DLLAMA_SYCL_F16=ON");
     }
-    if sycl_nvidia == "1" {
+    if flag_sycl_nvidia {
         cmake.configure_arg("-DLLAMA_SYCL_TARGET=NVIDIA");
     }
     cmake.very_verbose(true);
