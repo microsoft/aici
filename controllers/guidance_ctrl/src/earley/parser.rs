@@ -258,8 +258,7 @@ impl Parser {
     }
 
     fn pop_row_infos(&mut self, n: usize) {
-        assert!(!self.speculative);
-        assert!(self.row_infos.len() == self.rows.len());
+        self.assert_non_trie();
         unsafe { self.row_infos.set_len(self.row_infos.len() - n) }
         self.pop_rows(n);
     }
@@ -395,7 +394,9 @@ impl Parser {
         let row_range = self.rows[row_idx].item_indices();
         let last_byte = self.row_infos[row_idx].byte;
         let agenda_ptr = row_range.start;
-        self.pop_row_infos(self.num_rows() - row_idx);
+        let to_pop = self.num_rows() - row_idx;
+        assert!(to_pop > 0);
+        self.pop_row_infos(to_pop);
         assert!(self.num_rows() == row_idx);
 
         let mut items_to_add = vec![];

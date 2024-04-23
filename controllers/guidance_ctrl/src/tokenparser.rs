@@ -72,6 +72,12 @@ impl TokenParser {
         res_prompt
     }
 
+    fn grm_bytes(&self) -> Vec<u8> {
+        let mut grm_bytes = self.grm_prefix.clone();
+        grm_bytes.extend_from_slice(&self.parser.get_bytes());
+        grm_bytes
+    }
+
     pub fn mid_process(&mut self, arg: MidProcessArg) -> MidProcessResult {
         let start_time = std::time::Instant::now();
 
@@ -81,37 +87,66 @@ impl TokenParser {
         infoln!("post tokens: {}", trie.tokens_dbg(&arg.tokens));
         arg.save_tokens(&mut self.llm_tokens);
 
-        assert!(arg.backtrack == 0); // we never ask for backtrack
-        let new_bytes = trie.decode(&arg.tokens);
-        self.llm_bytes.extend_from_slice(&new_bytes);
+        if arg.backtrack == 0 {
+            let new_bytes = trie.decode(&arg.tokens);
+            self.llm_bytes.extend_from_slice(&new_bytes);
+        } else {
+            // recompute on backtrack
+            self.llm_bytes = trie.decode(&self.llm_tokens);
+        }
 
-        let mut grm_bytes = self.grm_prefix.clone();
-        grm_bytes.extend_from_slice(&self.parser.get_bytes());
-
+        let grm_bytes = self.grm_bytes();
         let min_len = std::cmp::min(self.llm_bytes.len(), grm_bytes.len());
         if self.llm_bytes[0..min_len] != grm_bytes[0..min_len] {
-            panic!(
-                "llm_bytes: {:?} != grm_bytes: {:?}",
+            infoln!(
+                "hidden bytes? llm_bytes: {:?} != grm_bytes: {:?}",
                 String::from_utf8_lossy(&self.llm_bytes),
                 String::from_utf8_lossy(&grm_bytes)
             );
-        }
-
-        if self.llm_bytes.len() > grm_bytes.len() {
-            // we have some bytes from the LLM that we haven't yet processed
-            let llm_suffix = &self.llm_bytes[grm_bytes.len()..];
-            for b in llm_suffix {
-                let r = self.parser.scan(*b);
-                if r == ParseResult::Reject {
-                    panic!("rejected byte: {}", b);
+        } else {
+            // only feed the LLM bytes to the parser, if the prefixes match
+            if self.llm_bytes.len() > grm_bytes.len() {
+                // we have some bytes from the LLM that we haven't yet processed
+                let llm_suffix = &self.llm_bytes[grm_bytes.len()..];
+                for b in llm_suffix {
+                    let r = self.parser.scan(*b);
+                    if r == ParseResult::Reject {
+                        panic!("rejected byte: {}", b);
+                    }
                 }
-                grm_bytes.push(*b);
             }
         }
 
         // force after scanning tokens from LLM (this may walk the parser some more)
-        let new_bytes = self.parser.force_bytes();
-        grm_bytes.extend_from_slice(&new_bytes);
+        self.parser.force_bytes();
+        let grm_bytes = self.grm_bytes(); // recompute
+
+        // now, see if we need to backtrack
+        if self.llm_bytes.len() > grm_bytes.len()
+            || self.llm_bytes != grm_bytes[0..self.llm_bytes.len()]
+        {
+            let mut ptr = 0;
+            for (idx, t) in self.llm_tokens.iter().enumerate() {
+                let b = trie.token(*t);
+                let pend = ptr + b.len();
+                if pend > grm_bytes.len() || b != &grm_bytes[ptr..pend] {
+                    let tokens = self.token_env.tokenize_bytes(&grm_bytes[ptr..]);
+                    let backtrack = self.llm_tokens.len() - idx;
+                    infoln!(
+                        "backtrack: {} tokens: {}",
+                        backtrack,
+                        trie.tokens_dbg(&tokens)
+                    );
+                    return MidProcessResult::splice(backtrack as u32, tokens);
+                }
+                ptr = pend;
+            }
+            panic!(
+                "backtrack failed {:?} {:?}",
+                String::from_utf8_lossy(&self.llm_bytes),
+                String::from_utf8_lossy(&grm_bytes)
+            );
+        }
 
         if arg.tokens.contains(&trie.eos_token()) {
             return MidProcessResult::stop();
