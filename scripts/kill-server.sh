@@ -6,5 +6,6 @@ if [ "X$P" != "X" ] ; then
   echo "KILL $P"
   kill $P
   sleep 1
-  kill -9 $P
+  kill -9 $P 2>/dev/null
+  true
 fi
