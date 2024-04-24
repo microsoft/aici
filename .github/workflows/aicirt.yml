@@ -19,6 +19,7 @@ jobs:
       with:
         submodules: true
     - run: rustup target add wasm32-wasi
+    - uses: hendrikmuhs/ccache-action@v1.2
     - uses: Swatinem/rust-cache@v2
       with:
         cache-on-failure: true
@@ -40,6 +41,9 @@ jobs:
     - name: Build aicirt
       run: cargo build --verbose --release
       working-directory: aicirt
+    - name: Build rllm-llamacpp
+      run: cargo build --verbose --release --no-default-features
+      working-directory: rllm/rllm-llamacpp
     - name: Release script
       run: ./scripts/release.sh --xz
     - name: Artifact upload
