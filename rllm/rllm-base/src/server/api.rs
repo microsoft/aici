@@ -5,6 +5,7 @@ use serde::{Deserialize, Serialize};
 pub struct RunRequest {
     pub controller: String,
     pub controller_arg: serde_json::Value,
+    #[serde(default)]
     pub prompt: String,
     pub temperature: Option<f32>,  // defl 0.0
     pub top_p: Option<f32>,        // defl 1.0
