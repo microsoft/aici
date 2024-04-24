@@ -45,13 +45,13 @@ impl FunctionalRecognizer<RecRxState> for RecRx {
     }
 
     #[inline(always)]
-    fn append(&self, state: RecRxState, byte: u8) -> RecRxState {
-        self.dfa.next_state(state, byte)
-    }
-
-    #[inline(always)]
-    fn byte_allowed(&self, state: RecRxState, byte: u8) -> bool {
-        !self.dfa.is_dead_state(self.dfa.next_state(state, byte))
+    fn try_append(&self, state: RecRxState, byte: u8) -> Option<RecRxState> {
+        let next = self.dfa.next_state(state, byte);
+        if self.dfa.is_dead_state(next) {
+            None
+        } else {
+            Some(next)
+        }
     }
 
     #[inline(always)]

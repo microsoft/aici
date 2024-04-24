@@ -230,15 +230,9 @@ impl SubStrMatcher {
             SubStrState::SourceOffset(off) => self.append_to_src_off(off, byte),
         }
     }
-}
-
-impl FunctionalRecognizer<SubStrState> for SubStrMatcher {
-    fn initial(&self) -> SubStrState {
-        SubStrState::Node(0)
-    }
 
     #[inline(always)]
-    fn append(&self, state: SubStrState, byte: u8) -> SubStrState {
+    fn do_append(&self, state: SubStrState, byte: u8) -> SubStrState {
         let state = match state {
             SubStrState::Node(_) | SubStrState::SourceOffset(_)
                 if self.end_str.as_bytes().first() == Some(&byte)
@@ -251,10 +245,19 @@ impl FunctionalRecognizer<SubStrState> for SubStrMatcher {
 
         self.append_inner(state, byte)
     }
+}
+
+impl FunctionalRecognizer<SubStrState> for SubStrMatcher {
+    fn initial(&self) -> SubStrState {
+        SubStrState::Node(0)
+    }
 
     #[inline(always)]
-    fn byte_allowed(&self, state: SubStrState, byte: u8) -> bool {
-        self.append(state, byte) != SubStrState::Dead
+    fn try_append(&self, state: SubStrState, byte: u8) -> Option<SubStrState> {
+        match self.do_append(state, byte) {
+            SubStrState::Dead => None,
+            state => Some(state),
+        }
     }
 
     #[inline(always)]

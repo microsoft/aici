@@ -13,15 +13,11 @@ impl FunctionalRecognizer<usize> for QuadUpper {
         0
     }
 
-    fn append(&self, state: usize, _byte: u8) -> usize {
-        state + 1
-    }
-
-    fn byte_allowed(&self, state: usize, byte: u8) -> bool {
-        if state % 4 == 0 {
-            byte.is_ascii_uppercase()
+    fn try_append(&self, state: usize, byte: u8) -> Option<usize> {
+        if state % 4 == 0 && !byte.is_ascii_uppercase() {
+            None
         } else {
-            true
+            Some(state + 1)
         }
     }
 
