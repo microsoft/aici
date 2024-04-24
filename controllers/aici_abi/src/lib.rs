@@ -189,6 +189,10 @@ impl MidProcessResult {
     pub fn noop() -> Self {
         Self::splice(0, vec![])
     }
+
+    pub fn is_stop(&self) -> bool {
+        self.branches.is_empty()
+    }
 }
 
 #[derive(Serialize, Deserialize)]

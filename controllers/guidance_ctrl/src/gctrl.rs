@@ -54,9 +54,13 @@ impl Runner {
                 str: String::from_utf8_lossy(val).to_string(),
                 hex: to_hex_string(val),
             };
-            println!("JSON-OUT: {}", serde_json::to_string(&cap).unwrap());
+            json_out(&cap);
         }
     }
+}
+
+fn json_out<T: Serialize>(obj: &T) {
+    println!("JSON-OUT: {}", serde_json::to_string(obj).unwrap());
 }
 
 #[derive(Serialize, Deserialize)]
@@ -65,6 +69,23 @@ struct Capture {
     name: String,
     str: String,
     hex: String,
+}
+
+#[derive(Serialize, Deserialize)]
+struct FinalText {
+    object: &'static str, // "final_text"
+    str: String,
+    hex: String,
+}
+
+impl FinalText {
+    pub fn from_bytes(bytes: &[u8]) -> Self {
+        FinalText {
+            object: "final_text",
+            str: String::from_utf8_lossy(bytes).to_string(),
+            hex: to_hex_string(bytes),
+        }
+    }
 }
 
 impl AiciCtrl for Runner {
@@ -76,6 +97,10 @@ impl AiciCtrl for Runner {
     fn mid_process(&mut self, arg: MidProcessArg) -> MidProcessResult {
         let r = self.tok_parser.mid_process(arg);
         self.report_captures();
+        if r.is_stop() {
+            let final_text = FinalText::from_bytes(self.tok_parser.final_bytes());
+            json_out(&final_text);
+        }
         r
     }
 }

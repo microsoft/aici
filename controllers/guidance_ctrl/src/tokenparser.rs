@@ -38,6 +38,10 @@ impl TokenParser {
         })
     }
 
+    pub fn final_bytes(&self) -> &[u8] {
+        &self.llm_bytes[self.grm_prefix.len()..]
+    }
+
     pub fn process_prompt(&mut self, prompt: Vec<TokenId>) -> Vec<TokenId> {
         assert!(self.llm_tokens.is_empty());
 
