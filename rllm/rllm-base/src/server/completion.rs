@@ -16,9 +16,9 @@ fn check_length(
     data: &AiciServerData,
 ) -> Result<(usize, Vec<Token>), APIError> {
     let prompt = if request.controller == NONE_CONTROLLER {
-        request.controller_arg.as_str().unwrap_or("")
+        request.controller_arg.as_str().unwrap_or(&request.prompt)
     } else {
-        ""
+        request.prompt.as_str()
     };
     let token_ids = data
         .tokenizer
