@@ -16,6 +16,8 @@ mod lex;
 #[cfg(feature = "rx")]
 pub mod rx;
 
+pub mod dlex;
+
 pub mod substring;
 
 pub type TokenId = bytes::TokenId;

@@ -12,7 +12,11 @@ use rustpython_vm::{
     builtins::*, compiler::parser::ast::bigint::BigInt, AsObject, PyObjectRef, PyRef, PyResult,
     VirtualMachine,
 };
-use std::{ops::Deref, sync::Mutex, vec};
+use std::{
+    ops::Deref,
+    sync::{Arc, Mutex},
+    vec,
+};
 
 struct ModuleState {
     cb_obj: Option<PyObjectRef>,
@@ -42,9 +46,10 @@ fn get_cb_obj() -> PyObjectRef {
 
 #[rustpython_derive::pymodule]
 mod _aici {
-    use crate::{PyConstraint, VmExt, GLOBAL_STATE};
+    use crate::{ConstraintWrapper, PyConstraint, VmExt, GLOBAL_STATE};
     use aici_abi::{
         cfg::CfgParser,
+        dlex::{self, DynamicLexerRec},
         recognizer::{AnythingGoes, StackRecognizer},
         rx::RecRx,
         substring::SubStrMatcher,
@@ -62,7 +67,10 @@ mod _aici {
         types::{AsSequence, Constructor, Representable},
         Py, PyObjectRef, PyPayload, PyRef, PyResult, VirtualMachine,
     };
-    use std::{fmt::Debug, sync::Mutex};
+    use std::{
+        fmt::Debug,
+        sync::{Arc, Mutex},
+    };
 
     #[pyfunction]
     fn register(obj: PyObjectRef, _vm: &VirtualMachine) -> PyResult<()> {
@@ -157,6 +165,10 @@ mod _aici {
 
     #[pyclass(flags(BASETYPE), with(Constructor))]
     impl Constraint {
+        fn new(obj: impl PyConstraint + 'static) -> Self {
+            Constraint(Mutex::new(Box::new(obj)))
+        }
+
         #[pymethod]
         fn eos_allowed(&self) -> bool {
             let mut s = self.0.lock().unwrap();
@@ -189,16 +201,55 @@ mod _aici {
         }
     }
 
+    #[pyattr]
+    #[pyclass(name)]
+    #[derive(PyPayload)]
+    pub struct DynamicLexer(pub Arc<Mutex<DynamicLexerRec>>);
+
+    impl Debug for DynamicLexer {
+        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            f.debug_struct("DynamicLexer").finish()
+        }
+    }
+
+    #[pyclass(with(Constructor))]
+    impl DynamicLexer {
+        #[pymethod]
+        fn add(&self, word: PyStrRef) {
+            let mut lexer = self.0.lock().unwrap();
+            lexer.recognizer_mut().add(word.as_str().as_bytes());
+        }
+
+        #[pymethod]
+        fn constraint(&self) -> PyResult<Constraint> {
+            Ok(Constraint::new(ConstraintWrapper(self.0.clone())))
+        }
+    }
+
+    impl Constructor for DynamicLexer {
+        type Args = (Option<PyStrRef>,);
+        fn py_new(cls: PyTypeRef, arg: Self::Args, vm: &VirtualMachine) -> PyResult {
+            let id_chars = match arg.0 {
+                Some(id_chars) => id_chars.as_str().chars().collect(),
+                None => vec![],
+            };
+            let lexer = dlex::DynamicLexer::new(&id_chars).to_stack_recognizer();
+            DynamicLexer(Arc::new(Mutex::new(lexer)))
+                .into_ref_with_type(vm, cls)
+                .map(Into::into)
+        }
+    }
+
     #[pyfunction(name = "RegexConstraint")]
     fn regex_constraint(regex: PyStrRef) -> PyResult<Constraint> {
         let rx = RecRx::from_rx(regex.as_str()).to_stack_recognizer();
-        Ok(Constraint(Mutex::new(Box::new(rx))))
+        Ok(Constraint::new(rx))
     }
 
     #[pyfunction(name = "CfgConstraint")]
     fn cfg_constraint(cfg: PyStrRef, vm: &VirtualMachine) -> PyResult<Constraint> {
         match CfgParser::from_yacc(cfg.as_str()) {
-            Ok(cfg) => Ok(Constraint(Mutex::new(Box::new(cfg)))),
+            Ok(cfg) => Ok(Constraint::new(cfg)),
             Err(e) => Err(vm.new_runtime_error(format!("{}", e))),
         }
     }
@@ -206,14 +257,14 @@ mod _aici {
     #[pyfunction(name = "SubStrConstraint")]
     fn substr_constraint(templ: PyStrRef, end_str: PyStrRef) -> PyResult<Constraint> {
         let rx = SubStrMatcher::new(templ.as_str(), end_str.as_str()).to_stack_recognizer();
-        Ok(Constraint(Mutex::new(Box::new(rx))))
+        Ok(Constraint::new(rx))
     }
 
     impl Constructor for Constraint {
         type Args = FuncArgs;
         fn py_new(cls: PyTypeRef, _arg: Self::Args, vm: &VirtualMachine) -> PyResult {
             let anything = StackRecognizer::from(AnythingGoes {});
-            Constraint(Mutex::new(Box::new(anything)))
+            Constraint::new(anything)
                 .into_ref_with_type(vm, cls)
                 .map(Into::into)
         }
@@ -430,6 +481,29 @@ impl<T: Recognizer> PyConstraint for T {
     fn allow_tokens(&mut self, logits: &mut SimpleVob) {
         let trie = &mut GLOBAL_STATE.lock().unwrap().trie;
         trie.compute_bias(self, logits)
+    }
+}
+
+struct ConstraintWrapper<T: Recognizer>(Arc<Mutex<T>>);
+impl<T: Recognizer> PyConstraint for ConstraintWrapper<T> {
+    fn eos_allowed(&mut self) -> bool {
+        self.0.lock().unwrap().eos_allowed()
+    }
+
+    fn eos_forced(&mut self) -> bool {
+        self.0.lock().unwrap().eos_forced()
+    }
+
+    fn token_allowed(&mut self, t: TokenId) -> bool {
+        self.0.lock().unwrap().token_allowed(t)
+    }
+
+    fn append_token(&mut self, t: TokenId) {
+        self.0.lock().unwrap().append_token(t)
+    }
+
+    fn allow_tokens(&mut self, logits: &mut SimpleVob) {
+        self.0.lock().unwrap().allow_tokens(logits)
     }
 }
 

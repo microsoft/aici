@@ -14,6 +14,7 @@ from pyaici.server_native import (
     RegexConstraint,
     CfgConstraint,
     SubStrConstraint,
+    DynamicLexer,
     Constraint,
     get_config,
     get_var,

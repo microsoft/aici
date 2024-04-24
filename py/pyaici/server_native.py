@@ -187,6 +187,32 @@ class SubStrConstraint(Constraint):
     def __init__(self, template: str, stop_at: str):
         ...
 
+class DynamicLexer:
+    """
+    A lexer with a set of valid identifiers, that can be used as a Constraint.
+    """
+
+    def __init__(self, additional_id_chars: str):
+        """
+        Normally, identifiers match /[a-zA-Z_][a-zA-Z0-9_]*/.
+        If additional_id_chars is not empty, the chars are additionally allowed anywhere in the identifier.
+        For example, use "$" for JavaScript, or "'" for ML-like languages.
+        You can add "." but it will interfere with floats.
+        """
+        ...
+
+    def add(self, identifier: str):
+        """
+        Allow given identifier.
+        """
+        ...
+    
+    def constraint(self) -> Constraint:
+        """
+        This always returns the same constraint.
+        """
+        ...
+
 
 def is_server_side():
     """
