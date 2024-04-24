@@ -1,4 +1,5 @@
 # doker container with aicirt
+# TAG: aici/vllm-openai
 
 FROM vllm/vllm-openai
 

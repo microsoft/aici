@@ -10,6 +10,7 @@ controllers/jsctrl
 controllers/pyctrl
 controllers/uppercase
 aicirt
+rllm/rllm-llamacpp
 "
 NATIVE="$(uname -s | tr 'A-Z' 'a-z')-$(uname -m)"
 D=`date +%Y%m%d-%H%M`
@@ -156,3 +157,4 @@ echo -n > target/dist/README.md
 
 release aici-controllers "AICI Controllers" "wasm32-wasi" target/wasm32-wasi/release/*.wasm
 release aicirt "AICI Runtime" "$NATIVE" target/release/aicirt
+release rllm-llamacpp "rLLM with llama.cpp" "$NATIVE" target/release/rllm-llamacpp
