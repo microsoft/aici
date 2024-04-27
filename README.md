@@ -430,6 +430,23 @@ All of these can be easily extended.
 - the [example ANSI C grammar](controllers/aici_abi/grammars/c.y) is based on
   https://www.lysator.liu.se/c/ANSI-C-grammar-y.html by Jeff Lee (from 1985)
 
+# Citing this package
+
+If you find the AI Controller Interface and its ideas for defining a new layer in the LLM inference stack useful, please cite the package using the following reference: 
+
+* Michal Moskal, Madan Musuvathi, Emre Kıcıman. AI Controller Interface, (2024), GitHub repository. https://github.com/microsoft/aici
+
+Bibtex:
+
+> @misc{Moskal2024,
+>   author = {Moskal, Michal and Musuvathi, Madan and K\i c\i man, Emre},
+>   title = {{AI Controller Interface}},
+>   year = {2024},
+>   publisher = {{GitHub}},
+>   journal = {{GitHub} repository},
+>   howpublished = {\url{https://github.com/microsoft/aici/}}
+> }
+
 # Contributing
 
 This project welcomes contributions and suggestions. Most contributions require you to agree to a
