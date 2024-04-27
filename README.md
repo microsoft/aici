@@ -438,14 +438,16 @@ If you find the AI Controller Interface and its ideas for defining a new layer i
 
 Bibtex:
 
-> @misc{Moskal2024,
->   author = {Moskal, Michal and Musuvathi, Madan and K\i c\i man, Emre},
->   title = {{AI Controller Interface}},
->   year = {2024},
->   publisher = {{GitHub}},
->   journal = {{GitHub} repository},
->   howpublished = {\url{https://github.com/microsoft/aici/}}
-> }
+```bibtex
+@misc{Moskal2024,
+  author = {Moskal, Michal and Musuvathi, Madan and {K\i c\i man}, Emre},
+  title = {{AI Controller Interface}},
+  year = {2024},
+  publisher = {{GitHub}},
+  journal = {{GitHub} repository},
+  howpublished = {\url{https://github.com/microsoft/aici/}}
+}
+```
 
 # Contributing
 
