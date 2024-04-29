@@ -1,7 +1,7 @@
 use std::fmt::Display;
 
 use crate::{
-    bytes::limit_str,
+    bytes::limit_bytes,
     recognizer::{FunctionalRecognizer, StackRecognizer},
     toktree::SpecialToken,
 };
@@ -14,7 +14,7 @@ enum Node {
 
 pub struct SubStrMatcher {
     end_str: String,
-    source: String,
+    source: Vec<u8>,
     nodes: Vec<Node>,
 }
 
@@ -52,7 +52,7 @@ impl SubStrMatcher {
                 serde_json::Value::Object(children_json)
             }
             Node::Leaf { source_offset } => {
-                json!(limit_str(&self.source[*source_offset..], 20))
+                json!(limit_bytes(&self.source[*source_offset..], 20))
             }
         }
     }
@@ -77,7 +77,7 @@ impl SubStrMatcher {
                     "{:indent$}{}: {:?}",
                     "",
                     *source_offset,
-                    limit_str(&self.source[*source_offset..], 20),
+                    limit_bytes(&self.source[*source_offset..], 20),
                 )?;
             }
         }
@@ -86,13 +86,13 @@ impl SubStrMatcher {
 
     pub fn new(source: &str, end_str: &str) -> Self {
         let mut tmp = Self {
-            source: source.to_string() + " ",
+            source: (source.to_string() + " ").as_bytes().to_vec(),
             end_str: end_str.to_string(),
             nodes: vec![Node::Inner { children: vec![] }],
         };
         tmp.add(0);
         for i in 0..tmp.source.len() {
-            if tmp.source.as_bytes()[i] == b' ' {
+            if tmp.source[i] == b' ' {
                 tmp.add(i + 1);
             }
         }
@@ -101,15 +101,15 @@ impl SubStrMatcher {
         tmp
     }
 
-    fn find(&self, s: &str) -> (usize, usize) {
+    fn find(&self, s: &[u8]) -> (usize, usize) {
         let mut node_idx = 0;
-        for (i, b) in s.bytes().enumerate() {
+        for (i, b) in s.iter().enumerate() {
             let node = &self.nodes[node_idx];
             match node {
                 Node::Inner { children } => {
                     let mut found = false;
                     for (c, idx) in children.iter() {
-                        if *c == b {
+                        if *c == *b {
                             node_idx = *idx;
                             found = true;
                             break;
@@ -137,7 +137,7 @@ impl SubStrMatcher {
         let num_nodes = self.nodes.len();
         match &mut self.nodes[node_idx] {
             Node::Inner { children } => {
-                children.push((s1.as_bytes()[0], num_nodes));
+                children.push((s1[0], num_nodes));
                 let n = add_node(
                     &mut self.nodes,
                     Node::Leaf {
@@ -160,8 +160,8 @@ impl SubStrMatcher {
                 }
 
                 for i in 0..s1.len() {
-                    let b1 = s1.as_bytes()[i];
-                    let b2 = s2.as_bytes()[i];
+                    let b1 = s1[i];
+                    let b2 = s2[i];
                     if b1 != b2 {
                         let n1 = add_node(
                             &mut self.nodes,
@@ -196,7 +196,7 @@ impl SubStrMatcher {
     }
 
     fn append_to_src_off(&self, off: usize, byte: u8) -> SubStrState {
-        if off < self.source.len() && self.source.as_bytes()[off] == byte {
+        if off < self.source.len() && self.source[off] == byte {
             SubStrState::SourceOffset(off + 1)
         } else {
             SubStrState::Dead
