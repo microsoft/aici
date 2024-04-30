@@ -38,8 +38,16 @@ impl TokenParser {
         })
     }
 
+    pub fn num_tokens(&self) -> usize {
+        self.llm_tokens.len()
+    }
+
     pub fn final_bytes(&self) -> &[u8] {
         &self.llm_bytes[self.grm_prefix.len()..]
+    }
+
+    pub fn bytes_since(&self, idx: usize) -> &[u8] {
+        &self.llm_bytes[self.grm_prefix.len() + idx..]
     }
 
     pub fn process_prompt(&mut self, prompt: Vec<TokenId>) -> Vec<TokenId> {
