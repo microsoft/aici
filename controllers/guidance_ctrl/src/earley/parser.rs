@@ -210,7 +210,7 @@ impl Scratch {
     fn add_unique(&mut self, item: Item, grm: &CGrammar, info: &str) {
         if !self.items[self.row_start..self.row_end].contains(&item) {
             if !self.speculative {
-                debug!("    add_unique: {} ({})", item_to_string(grm, &item), info);
+                debug!("      addu: {} ({})", item_to_string(grm, &item), info);
             }
             self.just_add(item);
         }
@@ -437,7 +437,7 @@ impl Parser {
         self.scratch.new_row(last);
 
         if !self.speculative {
-            debug!("scan: {:?}", b as char);
+            debug!("  scan: {:?}", b as char);
         }
 
         while i < last {
@@ -470,7 +470,7 @@ impl Parser {
             let mut item = self.scratch.items[agenda_ptr];
             agenda_ptr += 1;
             if !self.speculative {
-                debug!("  from agenda: {}", self.item_to_string(&item));
+                debug!("    agenda: {}", self.item_to_string(&item));
             }
 
             let rule = item.rule_idx();
@@ -519,7 +519,7 @@ impl Parser {
                     self.scratch.items[agenda_ptr - 1] = item;
                     commit_item = item;
                     if !self.speculative {
-                        debug!("commit point: {}", self.item_to_string(&item));
+                        debug!("  commit point: {}", self.item_to_string(&item));
                     }
                     if !self.speculative && flags.hidden() {
                         return self.hide_item(lhs, item.start_pos());
@@ -531,6 +531,16 @@ impl Parser {
                     for i in self.rows[item.start_pos()].item_indices() {
                         let item = self.scratch.items[i];
                         if self.grammar.sym_idx_at(item.rule_idx()) == lhs {
+                            if !self.speculative {
+                                let lhs = self.grammar.sym_idx_of(item.rule_idx());
+                                let sym_data = self.grammar.sym_data(lhs);
+                                if sym_data.props.max_tokens != usize::MAX
+                                    && self.token_idx - self.row_infos[item.start_pos()].token_idx
+                                        >= sym_data.props.max_tokens
+                                {
+                                    continue;
+                                }
+                            }
                             self.scratch
                                 .add_unique(item.advance_dot(), &self.grammar, "complete");
                         }

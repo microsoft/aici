@@ -1,4 +1,4 @@
-use crate::earley::{earley_grm_from_guidance, ParseResult, Parser};
+use crate::earley::{earley_grm_from_guidance, Parser};
 use aici_abi::{MidProcessArg, MidProcessResult, TokenId, TokenizerEnv};
 use anyhow::Result;
 
@@ -46,8 +46,12 @@ impl TokenParser {
         &self.llm_bytes[self.grm_prefix.len()..]
     }
 
-    pub fn bytes_since(&self, idx: usize) -> &[u8] {
-        &self.llm_bytes[self.grm_prefix.len() + idx..]
+    pub fn bytes_since(&self, mut idx: usize) -> &[u8] {
+        idx += self.grm_prefix.len();
+        if idx >= self.llm_tokens.len() {
+            return &[];
+        }
+        &self.llm_bytes[idx..]
     }
 
     pub fn process_prompt(&mut self, prompt: Vec<TokenId>) -> Vec<TokenId> {
@@ -107,31 +111,16 @@ impl TokenParser {
             self.llm_bytes = trie.decode(&self.llm_tokens);
         }
 
-        let grm_bytes = self.grm_bytes();
-        let min_len = std::cmp::min(self.llm_bytes.len(), grm_bytes.len());
-        if self.llm_bytes[0..min_len] != grm_bytes[0..min_len] {
-            infoln!(
-                "hidden bytes? llm_bytes: {:?} != grm_bytes: {:?}",
-                String::from_utf8_lossy(&self.llm_bytes),
-                String::from_utf8_lossy(&grm_bytes)
-            );
-        } else {
-            // only feed the LLM bytes to the parser, if the prefixes match
-            if self.llm_bytes.len() > grm_bytes.len() {
-                // we have some bytes from the LLM that we haven't yet processed
-                let llm_suffix = &self.llm_bytes[grm_bytes.len()..];
-                for b in llm_suffix {
-                    let r = self.parser.scan(*b);
-                    if r == ParseResult::Reject {
-                        panic!("rejected byte: {}", b);
-                    }
-                }
-            }
+        let res = self
+            .parser
+            .apply_tokens(trie, &self.llm_tokens, self.grm_prefix.len());
+        if res.len() > 0 {
+            infoln!("parser: {}", res);
         }
 
         // force after scanning tokens from LLM (this may walk the parser some more)
         self.parser.force_bytes();
-        let grm_bytes = self.grm_bytes(); // recompute
+        let grm_bytes = self.grm_bytes();
 
         // now, see if we need to backtrack
         if self.llm_bytes.len() > grm_bytes.len()
