@@ -270,6 +270,23 @@ impl Grammar {
         outp
     }
 
+    fn rename(&mut self) {
+        let name_repl = vec![("zero_or_more", "z"), ("one_or_more", "o")];
+        for sym in &mut self.symbols {
+            for (from, to) in &name_repl {
+                if sym.name.starts_with(from) {
+                    sym.name = format!("{}_{}", to, &sym.name[from.len()..]);
+                }
+            }
+        }
+        self.symbol_by_name = self
+            .symbols
+            .iter()
+            .map(|s| (s.name.clone(), s.idx))
+            .collect();
+        assert!(self.symbols.len() == self.symbol_by_name.len());
+    }
+
     fn expand_shortcuts(&self) -> Self {
         let mut use_count = vec![0; self.symbols.len()];
         for sym in &self.symbols {
@@ -340,9 +357,12 @@ impl Grammar {
     }
 
     pub fn optimize(&self) -> Self {
-        self.expand_shortcuts()
-            .collapse_terminals()
+        let mut r = self
             .expand_shortcuts()
+            .collapse_terminals()
+            .expand_shortcuts();
+        r.rename();
+        r
     }
 
     pub fn compile(&self) -> CGrammar {
@@ -799,7 +819,7 @@ fn rule_to_string(
         }
     }
     format!(
-        "{:15} ⇦ {}{}{}{}",
+        "{:15} ⇦ {}  {}{}{}",
         lhs,
         outp.join(" "),
         if props.commit_point {
