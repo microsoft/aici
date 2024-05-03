@@ -7,7 +7,7 @@ use aici_abi::{
 
 use super::grammar::{CGrammar, CSymIdx, ModelVariable, RuleIdx, SimpleHash};
 
-const DEBUG: bool = false;
+const DEBUG: bool = true;
 const INFO: bool = true;
 
 // this may speed up more complex grammar but slows down simple ones (by 10%)
@@ -153,6 +153,7 @@ struct Scratch {
     row_end: usize,
     items: Vec<Item>,
     predicated_syms: SimpleSet<CSymIdx>,
+    speculative: bool,
 }
 
 struct RowInfo {
@@ -207,8 +208,10 @@ impl Scratch {
 
     #[inline(always)]
     fn add_unique(&mut self, item: Item, grm: &CGrammar, info: &str) {
-        debug!("add_unique: {} {}", info, item_to_string(grm, &item));
         if !self.items[self.row_start..self.row_end].contains(&item) {
+            if !self.speculative {
+                debug!("    add_unique: {} ({})", item_to_string(grm, &item), info);
+            }
             self.just_add(item);
         }
     }
@@ -433,6 +436,10 @@ impl Parser {
 
         self.scratch.new_row(last);
 
+        if !self.speculative {
+            debug!("scan: {:?}", b as char);
+        }
+
         while i < last {
             let item = self.scratch.items[i];
             let idx = self.grammar.sym_idx_at(item.rule_idx()).as_index();
@@ -462,7 +469,9 @@ impl Parser {
         while agenda_ptr < self.scratch.row_end {
             let mut item = self.scratch.items[agenda_ptr];
             agenda_ptr += 1;
-            debug!("from agenda: {}", self.item_to_string(&item));
+            if !self.speculative {
+                debug!("  from agenda: {}", self.item_to_string(&item));
+            }
 
             let rule = item.rule_idx();
             let after_dot = self.grammar.sym_idx_at(rule);
@@ -509,7 +518,9 @@ impl Parser {
                     self.scratch.row_end = agenda_ptr;
                     self.scratch.items[agenda_ptr - 1] = item;
                     commit_item = item;
-                    debug!("commit point: {}", self.item_to_string(&item));
+                    if !self.speculative {
+                        debug!("commit point: {}", self.item_to_string(&item));
+                    }
                     if !self.speculative && flags.hidden() {
                         return self.hide_item(lhs, item.start_pos());
                     }
@@ -616,6 +627,7 @@ impl Recognizer for Parser {
         assert!(self.speculative == false);
         assert!(self.row_infos.len() == self.num_rows());
         self.speculative = true;
+        self.scratch.speculative = true;
     }
 
     fn trie_finished(&mut self) {
@@ -625,6 +637,7 @@ impl Recognizer for Parser {
         // clean up stack
         self.pop_rows(self.num_rows() - self.row_infos.len());
         self.speculative = false;
+        self.scratch.speculative = false;
     }
 
     fn try_push_byte(&mut self, byte: u8) -> bool {
