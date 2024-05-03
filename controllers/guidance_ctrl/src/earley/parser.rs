@@ -481,10 +481,13 @@ impl Parser {
                         .capture_name
                         .as_ref()
                         .unwrap();
-                    let mut bytes = self.row_infos[item.start_pos() + 1..curr_idx]
-                        .iter()
-                        .map(|ri| ri.byte)
-                        .collect::<Vec<_>>();
+                    let mut bytes = Vec::new();
+                    if item.start_pos() + 1 < curr_idx {
+                        bytes = self.row_infos[item.start_pos() + 1..curr_idx]
+                            .iter()
+                            .map(|ri| ri.byte)
+                            .collect::<Vec<_>>();
+                    }
                     bytes.push(byte);
                     self.captures.push((var_name.clone(), bytes));
                 }
