@@ -158,6 +158,17 @@ def tag_module(module_id: str, tags: List[str]):
     else:
         raise response_error("module tag", resp)
 
+def print_logs(logs: str, prefix=""):
+    if logs and logs[-1] == "\n":
+        logs = logs[:-1]
+    for ln in logs.split("\n"):
+        if ln.startswith("JSON-OUT: "):
+            j = json.loads(ln[10:])
+            if "hex" in j:
+                j["hex"] = "..."
+            print(f"{prefix}JSON-OUT: ", json.dumps(j))
+        else:
+            print(f"{prefix}{ln}")
 
 def run_controller(
     *,
@@ -236,16 +247,10 @@ def run_controller(
                         storage[w["name"]] = w["value"]
                 err = ch.get("error", "")
                 if log_level > 2:
-                    l = ch["logs"].rstrip("\n")
-                    if l:
-                        for ll in l.split("\n"):
-                            print(f"[{idx}]: {ll}")
+                    print_logs(ch["logs"], f"[{idx}]: ")
                 elif idx == 0:
                     if log_level > 1:
-                        l = ch["logs"].rstrip("\n")
-                        if l:
-                            print(l)
-                        # print(f"*** TOK: '{ch['text']}'")
+                        print_logs(ch["logs"])
                     elif log_level > 0:
                         print(ch["text"], end="")
                         sys.stdout.flush()
