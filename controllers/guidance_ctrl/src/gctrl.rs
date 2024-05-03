@@ -51,19 +51,7 @@ impl Runner {
     }
 
     fn report_captures(&mut self) {
-        let captures = &self.tok_parser.parser.captures()[self.reported_captures..];
-        for (name, val) in captures {
-            self.reported_captures += 1;
-            let cap = Capture {
-                object: "capture",
-                name: name.clone(),
-                str: String::from_utf8_lossy(val).to_string(),
-                hex: to_hex_string(val),
-                log_prob: 0.0, // TODO
-            };
-            json_out(&cap);
-        }
-
+        // first report newly generated text
         let new_text = self.tok_parser.bytes_since(self.text_ptr);
         if new_text.len() > 0 {
             // TODO log_prob
@@ -72,6 +60,28 @@ impl Runner {
             json_out(&text);
             self.text_ptr += new_text.len();
             self.token_ptr = self.tok_parser.num_tokens();
+        }
+
+        // then the captures
+        let captures = &self.tok_parser.parser.captures()[self.reported_captures..];
+        self.reported_captures += captures.len();
+
+        // remove duplicate names
+        let mut seen = std::collections::HashSet::new();
+        let captures = captures
+            .iter()
+            .rev()
+            .filter(|(name, _)| seen.insert(name))
+            .rev();
+        for (name, val) in captures {
+            let cap = Capture {
+                object: "capture",
+                name: name.clone(),
+                str: String::from_utf8_lossy(val).to_string(),
+                hex: to_hex_string(val),
+                log_prob: 0.0, // TODO
+            };
+            json_out(&cap);
         }
     }
 }
