@@ -5,7 +5,7 @@ use aici_abi::{
     TokenId,
 };
 
-use super::grammar::{CGrammar, CSymIdx, ModelVariable, RuleIdx, SimpleHash};
+use super::grammar::{CGrammar, CSymIdx, CSymbol, ModelVariable, RuleIdx, SimpleHash};
 
 const DEBUG: bool = true;
 const INFO: bool = true;
@@ -287,6 +287,14 @@ impl Parser {
         self.row_infos.iter().skip(1).map(|ri| ri.byte).collect()
     }
 
+    fn item_lhs(&self, item: &Item) -> CSymIdx {
+        self.grammar.sym_idx_of(item.rule_idx())
+    }
+
+    fn item_sym_data(&self, item: &Item) -> &CSymbol {
+        self.grammar.sym_data(self.item_lhs(item))
+    }
+
     pub fn apply_tokens(
         &mut self,
         trie: &TokTrie,
@@ -322,8 +330,39 @@ impl Parser {
             }
             tok_idx += 1;
         }
+        while byte_idx < self.row_infos.len() {
+            self.row_infos[byte_idx].token_idx = tok_idx;
+            byte_idx += 1;
+        }
         self.token_idx = tok_idx;
         return "";
+    }
+
+    pub fn filter_max_tokens(&mut self) {
+        let mut dst = 0;
+        for idx in 0..self.rows.len() {
+            let range = self.rows[idx].item_indices();
+            self.rows[idx].first_item = dst;
+            for i in range {
+                let item = self.scratch.items[i];
+                let sym_data = self.item_sym_data(&item);
+                if sym_data.props.max_tokens != usize::MAX
+                    && self.token_idx - self.row_infos[item.start_pos()].token_idx
+                        >= sym_data.props.max_tokens
+                {
+                    debug!(
+                        "  remove: {}-{} {}",
+                        self.token_idx,
+                        self.row_infos[item.start_pos()].token_idx,
+                        self.item_to_string(&item)
+                    );
+                    continue;
+                }
+                self.scratch.items[dst] = item;
+                dst += 1;
+            }
+            self.rows[idx].last_item = dst;
+        }
     }
 
     pub fn force_bytes(&mut self) -> Vec<u8> {
@@ -531,16 +570,6 @@ impl Parser {
                     for i in self.rows[item.start_pos()].item_indices() {
                         let item = self.scratch.items[i];
                         if self.grammar.sym_idx_at(item.rule_idx()) == lhs {
-                            if !self.speculative {
-                                let lhs = self.grammar.sym_idx_of(item.rule_idx());
-                                let sym_data = self.grammar.sym_data(lhs);
-                                if sym_data.props.max_tokens != usize::MAX
-                                    && self.token_idx - self.row_infos[item.start_pos()].token_idx
-                                        >= sym_data.props.max_tokens
-                                {
-                                    continue;
-                                }
-                            }
                             self.scratch
                                 .add_unique(item.advance_dot(), &self.grammar, "complete");
                         }
@@ -551,13 +580,13 @@ impl Parser {
                 // if no max_tokens, no point looking in row_infos
                 // if start_pos() is recent enough, not to make it into row_infos, also no point checking
                 // otherwise, if we exceeded max_tokens, don't add anything
-                if sym_data.props.max_tokens != usize::MAX
-                    && item.start_pos() < self.row_infos.len()
-                    && self.token_idx - self.row_infos[item.start_pos()].token_idx
-                        >= sym_data.props.max_tokens
-                {
-                    continue;
-                }
+                // if sym_data.props.max_tokens != usize::MAX
+                //     && item.start_pos() < self.row_infos.len()
+                //     && self.token_idx - self.row_infos[item.start_pos()].token_idx
+                //         >= sym_data.props.max_tokens
+                // {
+                //     continue;
+                // }
                 if sym_data.is_nullable {
                     self.scratch
                         .add_unique(item.advance_dot(), &self.grammar, "null");

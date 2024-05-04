@@ -117,6 +117,7 @@ impl TokenParser {
         if res.len() > 0 {
             infoln!("parser: {}", res);
         }
+        self.parser.filter_max_tokens();
 
         // force after scanning tokens from LLM (this may walk the parser some more)
         self.parser.force_bytes();
