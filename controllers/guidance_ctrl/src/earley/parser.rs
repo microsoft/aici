@@ -7,7 +7,7 @@ use aici_abi::{
 
 use super::grammar::{CGrammar, CSymIdx, CSymbol, ModelVariable, RuleIdx, SimpleHash};
 
-const DEBUG: bool = true;
+const DEBUG: bool = false;
 const INFO: bool = true;
 
 // this may speed up more complex grammar but slows down simple ones (by 10%)
@@ -647,8 +647,15 @@ impl Recognizer for Parser {
     }
 
     fn special_allowed(&mut self, tok: SpecialToken) -> bool {
-        // self.print_row(self.num_rows() - 1);
-        // println!("model vars: {:?}", self.model_variables());
+        if false {
+            self.print_row(self.num_rows() - 1);
+            println!(
+                "model vars: accpt={} {:?}",
+                self.is_accepting(),
+                self.model_variables()
+            );
+        }
+
         if self
             .model_variables()
             .contains(&ModelVariable::SpecialToken(tok))

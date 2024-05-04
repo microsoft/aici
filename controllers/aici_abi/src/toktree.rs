@@ -508,9 +508,12 @@ impl TokTrie {
 
     pub fn compute_bias_ext(&self, r: &mut impl Recognizer, logits: &mut SimpleVob, start: &[u8]) {
         logits.set_all(false);
-        for tok in vec![SpecialToken::EndOfSentence] {
-            if r.special_allowed(tok) {
-                logits.allow_token(self.special_token(tok))
+        if start.is_empty() {
+            // EOS is only allowed if there is no forced byte prefix
+            for tok in vec![SpecialToken::EndOfSentence] {
+                if r.special_allowed(tok) {
+                    logits.allow_token(self.special_token(tok))
+                }
             }
         }
         // all prefixes of 'start' are also allowed

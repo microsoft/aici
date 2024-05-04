@@ -79,7 +79,7 @@ def main():
         + capture(gen(regex=r"\d{1,3}"), "score")
         + "/10\n"
     )
-    grm = "this is a test " + gen("test", max_tokens=3)
+    grm = "this is a test" + gen("test", max_tokens=10)
 
     # read current script file
     # with open(__file__) as f:
@@ -95,7 +95,7 @@ def main():
         controller=mod_id,
         controller_arg=json.dumps({"guidance_b64": b64}),
         temperature=0.0,
-        max_tokens=6,
+        max_tokens=100,
     )
     print("Usage:", res["usage"])
     print("Timing:", res["timing"])
