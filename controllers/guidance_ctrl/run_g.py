@@ -83,7 +83,8 @@ def main():
     grm = "Tweak this proverb to apply to model instructions instead.\n" + gen(
         "verse", max_tokens=2
     )
-    # grm = "How much is 2 + 2? " + gen(name="test", max_tokens=10, regex=r"\(")
+    grm = "How much is 2 + 2? " + gen(name="test", max_tokens=10, regex=r"\(")
+    grm = "<color>red</color>\n<color>" + gen(stop="</color>") + " and test2"
 
     # read current script file
     # with open(__file__) as f:

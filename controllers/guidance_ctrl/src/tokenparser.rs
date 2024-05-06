@@ -51,7 +51,8 @@ impl TokenParser {
         if idx >= self.llm_bytes.len() {
             return &[];
         }
-        &self.llm_bytes[idx..]
+        let endp = std::cmp::min(self.llm_bytes.len(), self.parser.hidden_start());
+        &self.llm_bytes[idx..endp]
     }
 
     pub fn process_prompt(&mut self, prompt: Vec<TokenId>) -> Vec<TokenId> {
@@ -103,13 +104,11 @@ impl TokenParser {
         infoln!("post tokens: {}", trie.tokens_dbg(&arg.tokens));
         arg.save_tokens(&mut self.llm_tokens);
 
-        if arg.backtrack == 0 {
-            let new_bytes = trie.decode(&arg.tokens);
-            self.llm_bytes.extend_from_slice(&new_bytes);
-        } else {
-            // recompute on backtrack
-            self.llm_bytes = trie.decode(&self.llm_tokens);
-        }
+        let new_bytes = trie.decode(&arg.tokens);
+        self.llm_bytes.extend_from_slice(&new_bytes);
+
+        // TODO maybe remove in future
+        assert!(self.llm_bytes == trie.decode(&self.llm_tokens));
 
         let res = self
             .parser
@@ -123,6 +122,8 @@ impl TokenParser {
         self.parser.force_bytes();
         let grm_bytes = self.grm_bytes();
 
+        let mut backtrack = 0;
+
         // now, see if we need to backtrack
         if self.llm_bytes.len() > grm_bytes.len()
             || self.llm_bytes != grm_bytes[0..self.llm_bytes.len()]
@@ -132,22 +133,25 @@ impl TokenParser {
                 let b = trie.token(*t);
                 let pend = ptr + b.len();
                 if pend > grm_bytes.len() || b != &grm_bytes[ptr..pend] {
-                    let tokens = self.token_env.tokenize_bytes(&grm_bytes[ptr..]);
-                    let backtrack = self.llm_tokens.len() - idx;
+                    backtrack = self.llm_tokens.len() - idx;
                     infoln!(
-                        "backtrack: {} tokens: {}",
+                        "backtrack: {} (deletes: {:?})",
                         backtrack,
-                        trie.tokens_dbg(&tokens)
+                        String::from_utf8_lossy(&self.llm_bytes[ptr..])
                     );
-                    return MidProcessResult::splice(backtrack as u32, tokens);
+                    assert!(backtrack > 0);
+                    self.llm_bytes.drain(ptr..);
+                    break;
                 }
                 ptr = pend;
             }
-            panic!(
-                "backtrack failed {:?} {:?}",
-                String::from_utf8_lossy(&self.llm_bytes),
-                String::from_utf8_lossy(&grm_bytes)
-            );
+            if backtrack == 0 {
+                panic!(
+                    "backtrack failed {:?} {:?}",
+                    String::from_utf8_lossy(&self.llm_bytes),
+                    String::from_utf8_lossy(&grm_bytes)
+                );
+            }
         }
 
         if arg.tokens.contains(&trie.eos_token()) {
@@ -157,7 +161,7 @@ impl TokenParser {
         let new_forced = grm_bytes[self.llm_bytes.len()..].to_vec();
         let mut token_prefix = Vec::new();
 
-        if new_forced.len() > 0 {
+        if new_forced.len() > 0 || backtrack > 0 {
             let mut grm_tokens = self.token_env.tokenize_bytes(&new_forced);
             infoln!("forced: {}", trie.tokens_dbg(&grm_tokens));
             let (chop_tokens, chop_bytes) = trie.chop_tokens(&mut self.parser, &grm_tokens);
@@ -167,7 +171,7 @@ impl TokenParser {
 
             if grm_tokens.len() > 0 {
                 infoln!("fixed_tokens: {}", trie.tokens_dbg(&grm_tokens));
-                return MidProcessResult::splice(0, grm_tokens);
+                return MidProcessResult::splice(backtrack as u32, grm_tokens);
             } else {
                 infoln!("no fixed tokens");
             }

@@ -1,4 +1,10 @@
-use std::{fmt::Debug, hash::Hash, ops::Range, rc::Rc, vec};
+use std::{
+    fmt::{Debug, Display},
+    hash::Hash,
+    ops::Range,
+    rc::Rc,
+    vec,
+};
 
 use aici_abi::{
     toktree::{Recognizer, SpecialToken, TokTrie},
@@ -7,7 +13,7 @@ use aici_abi::{
 
 use super::grammar::{CGrammar, CSymIdx, CSymbol, ModelVariable, RuleIdx};
 
-const DEBUG: bool = false;
+const DEBUG: bool = true;
 const INFO: bool = true;
 
 macro_rules! debug {
@@ -35,6 +41,16 @@ struct Item {
 #[derive(Debug, Clone)]
 struct ItemProps {
     hidden_start: usize,
+}
+
+impl Display for ItemProps {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        if self.hidden_start == usize::MAX {
+            write!(f, "")
+        } else {
+            write!(f, "(hidden_start {})", self.hidden_start)
+        }
+    }
 }
 
 impl Default for ItemProps {
@@ -167,7 +183,7 @@ impl Scratch {
     }
 
     #[inline(always)]
-    fn just_add(&mut self, item: Item, origin_item_idx: usize) {
+    fn just_add(&mut self, item: Item, origin_item_idx: usize, info: &str) {
         self.ensure_items(self.row_end + 1);
         // SAFETY: we just ensured that there is enough space
         unsafe {
@@ -181,28 +197,53 @@ impl Scratch {
                 self.item_props[self.row_end] = ItemProps::default();
             }
             self.merge_item_origin(self.row_end, origin_item_idx);
+
+            debug!(
+                "      addu: {} ({})",
+                self.item_to_string(self.row_end),
+                info
+            );
         }
         self.row_end += 1;
     }
 
     #[inline(always)]
-    fn add_unique(&mut self, item: Item, origin_item_idx: usize, info: &str) {
-        if let Some(idx) = self.items[self.row_start..self.row_end]
+    fn find_item(&self, item: Item) -> Option<usize> {
+        self.items[self.row_start..self.row_end]
             .iter()
             .position(|&x| x == item)
-        {
+            .map(|x| x + self.row_start)
+    }
+
+    fn set_hidden_start(&mut self, item: Item, hidden_start: usize) {
+        let idx = self.find_item(item).unwrap();
+        self.item_props[idx].hidden_start =
+            std::cmp::min(self.item_props[idx].hidden_start, hidden_start);
+        debug!(
+            "      hidden: {} {}",
+            hidden_start,
+            self.item_to_string(idx),
+        );
+    }
+
+    #[inline(always)]
+    fn add_unique(&mut self, item: Item, origin_item_idx: usize, info: &str) {
+        if let Some(idx) = self.find_item(item) {
             if self.definitive {
                 self.merge_item_origin(idx, origin_item_idx);
             }
         } else {
-            if self.definitive {
-                debug!(
-                    "      addu: {} ({})",
-                    item_to_string(&self.grammar, &item),
-                    info
-                );
-            }
-            self.just_add(item, origin_item_idx);
+            self.just_add(item, origin_item_idx, info);
+        }
+    }
+
+    fn item_to_string(&self, idx: usize) -> String {
+        let r = item_to_string(&self.grammar, &self.items[idx]);
+        if self.definitive {
+            let props = &self.item_props[idx];
+            format!("{} {}", r, props)
+        } else {
+            r
         }
     }
 }
@@ -235,15 +276,15 @@ impl Parser {
         self.is_accepting
     }
 
-    fn item_to_string(&self, item: &Item) -> String {
-        item_to_string(&self.grammar, item)
+    fn item_to_string(&self, idx: usize) -> String {
+        self.scratch.item_to_string(idx)
     }
 
     pub fn print_row(&self, row_idx: usize) {
         let row = &self.rows[row_idx];
         println!("row {}", row_idx);
         for i in row.item_indices() {
-            println!("{}", self.item_to_string(&self.scratch.items[i]));
+            println!("{}", self.item_to_string(i));
         }
     }
 
@@ -284,6 +325,14 @@ impl Parser {
 
     fn item_sym_data(&self, item: &Item) -> &CSymbol {
         self.grammar.sym_data(self.item_lhs(item))
+    }
+
+    pub fn hidden_start(&self) -> usize {
+        self.curr_row()
+            .item_indices()
+            .map(|i| self.scratch.item_props[i].hidden_start)
+            .min()
+            .unwrap_or(usize::MAX)
     }
 
     pub fn apply_tokens(
@@ -355,7 +404,7 @@ impl Parser {
                             "  remove: {}-{} {}",
                             self.token_idx,
                             start_token_idx,
-                            self.item_to_string(&item)
+                            self.item_to_string(i)
                         );
                         continue;
                     }
@@ -489,7 +538,7 @@ impl Parser {
             let idx = self.grammar.sym_idx_at(item.rule_idx()).as_index();
             // idx == 0 => completed
             if idx < allowed.len() && allowed[idx] {
-                self.scratch.just_add(item.advance_dot(), i);
+                self.scratch.just_add(item.advance_dot(), i, "scan");
             }
             i += 1;
         }
@@ -513,7 +562,7 @@ impl Parser {
             let mut item = self.scratch.items[agenda_ptr];
             agenda_ptr += 1;
             if self.scratch.definitive {
-                debug!("    agenda: {}", self.item_to_string(&item));
+                debug!("    agenda: {}", self.item_to_string(item_idx));
             }
 
             let rule = item.rule_idx();
@@ -570,12 +619,10 @@ impl Parser {
                         self.scratch.item_props[agenda_ptr - 1] =
                             self.scratch.item_props[item_idx].clone();
                     }
-                    // better keep item_idx updated in case we use it in future
                     item_idx = agenda_ptr - 1;
-                    let _ = item_idx; // silence warning
                     commit_item = item;
                     if self.scratch.definitive {
-                        debug!("  commit point: {}", self.item_to_string(&item));
+                        debug!("  commit point: {}", self.item_to_string(item_idx));
                         if flags.hidden() {
                             return self.hide_item(lhs, item.start_pos());
                         }
@@ -600,6 +647,12 @@ impl Parser {
                 for rule in &sym_data.rules {
                     let new_item = Item::new(*rule, curr_idx);
                     self.scratch.add_unique(new_item, item_idx, "predict");
+                }
+                if self.scratch.definitive && sym_data.props.hidden {
+                    for rule in &sym_data.rules {
+                        let new_item = Item::new(*rule, curr_idx);
+                        self.scratch.set_hidden_start(new_item, curr_idx);
+                    }
                 }
             }
         }
