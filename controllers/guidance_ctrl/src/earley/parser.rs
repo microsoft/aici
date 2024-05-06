@@ -10,9 +10,6 @@ use super::grammar::{CGrammar, CSymIdx, CSymbol, ModelVariable, RuleIdx, SimpleH
 const DEBUG: bool = false;
 const INFO: bool = true;
 
-// this may speed up more complex grammar but slows down simple ones (by 10%)
-const PREDICTED_SYM_FILTER: bool = false;
-
 macro_rules! debug {
     ($($arg:tt)*) => {
         if DEBUG {
@@ -85,74 +82,11 @@ impl Item {
     }
 }
 
-impl SimpleHash for Item {
-    fn simple_hash(&self) -> u32 {
-        (self.rule_idx().as_index() as u32)
-            .wrapping_mul(16315967)
-            .wrapping_add((self.start_pos() as u32).wrapping_mul(33398653))
-    }
-}
-
-struct SimpleSet<T: SimpleHash + Eq> {
-    hash: u64,
-    items: Vec<T>,
-}
-
-impl<T: SimpleHash + Eq + Copy> Default for SimpleSet<T> {
-    fn default() -> Self {
-        SimpleSet {
-            hash: 0,
-            items: vec![],
-        }
-    }
-}
-
-impl<T: SimpleHash + Eq + Copy> SimpleSet<T> {
-    fn clear(&mut self) {
-        self.hash = 0;
-        self.items.clear();
-    }
-
-    #[inline(always)]
-    fn insert(&mut self, item: T) {
-        let mask = item.mask64();
-        if (self.hash & mask) != 0 && self.items.contains(&item) {
-            return;
-        }
-        self.hash |= mask;
-        self.items.push(item);
-    }
-
-    #[inline(always)]
-    fn contains(&self, item: T) -> bool {
-        if (item.mask64() & self.hash) == 0 {
-            false
-        } else {
-            self.items.contains(&item)
-        }
-    }
-
-    #[inline(always)]
-    fn should_insert(&mut self, item: T) -> bool {
-        if !PREDICTED_SYM_FILTER {
-            true
-        } else {
-            if self.contains(item) {
-                false
-            } else {
-                self.insert(item);
-                true
-            }
-        }
-    }
-}
-
 struct Scratch {
     grammar: Rc<CGrammar>,
     row_start: usize,
     row_end: usize,
     items: Vec<Item>,
-    predicated_syms: SimpleSet<CSymIdx>,
     definitive: bool,
 }
 
@@ -182,7 +116,6 @@ impl Scratch {
             row_start: 0,
             row_end: 0,
             items: vec![],
-            predicated_syms: SimpleSet::default(),
             definitive: true,
         }
     }
@@ -525,8 +458,6 @@ impl Parser {
         let curr_idx = self.rows.len();
         let mut commit_item = Item::NULL;
 
-        self.scratch.predicated_syms.clear();
-
         self.stats.rows += 1;
         self.is_accepting = false;
 
@@ -590,9 +521,9 @@ impl Parser {
                     commit_item = item;
                     if self.scratch.definitive {
                         debug!("  commit point: {}", self.item_to_string(&item));
-                    }
-                    if self.scratch.definitive && flags.hidden() {
-                        return self.hide_item(lhs, item.start_pos());
+                        if flags.hidden() {
+                            return self.hide_item(lhs, item.start_pos());
+                        }
                     }
                 }
 
@@ -611,11 +542,9 @@ impl Parser {
                     self.scratch
                         .add_unique(item.advance_dot(), item_idx, "null");
                 }
-                if self.scratch.predicated_syms.should_insert(after_dot) {
-                    for rule in &sym_data.rules {
-                        let new_item = Item::new(*rule, curr_idx);
-                        self.scratch.add_unique(new_item, item_idx, "predict");
-                    }
+                for rule in &sym_data.rules {
+                    let new_item = Item::new(*rule, curr_idx);
+                    self.scratch.add_unique(new_item, item_idx, "predict");
                 }
             }
         }
