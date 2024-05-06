@@ -48,10 +48,10 @@ impl TokenParser {
 
     pub fn bytes_since(&self, mut idx: usize) -> &[u8] {
         idx += self.grm_prefix.len();
-        if idx >= self.llm_bytes.len() {
+        let endp = std::cmp::min(self.llm_bytes.len(), self.parser.hidden_start());
+        if idx >= self.llm_bytes.len() || idx >= endp {
             return &[];
         }
-        let endp = std::cmp::min(self.llm_bytes.len(), self.parser.hidden_start());
         &self.llm_bytes[idx..endp]
     }
 

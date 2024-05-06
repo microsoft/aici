@@ -13,7 +13,7 @@ use aici_abi::{
 
 use super::grammar::{CGrammar, CSymIdx, CSymbol, ModelVariable, RuleIdx};
 
-const DEBUG: bool = true;
+const DEBUG: bool = false;
 const INFO: bool = true;
 
 macro_rules! debug {
