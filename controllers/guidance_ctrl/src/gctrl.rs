@@ -72,8 +72,8 @@ impl Runner {
             .iter()
             .rev()
             .filter(|(name, _)| seen.insert(name))
-            .rev();
-        for (name, val) in captures {
+            .collect::<Vec<_>>();
+        for (name, val) in captures.iter().rev() {
             let cap = Capture {
                 object: "capture",
                 name: name.clone(),

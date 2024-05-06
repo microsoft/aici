@@ -1,6 +1,6 @@
 {
     "[python]": {
-        "editor.defaultFormatter": "eeyore.yapf"
+        "editor.defaultFormatter": "ms-python.black-formatter"
     },
     "python.formatting.provider": "none",
     "rust-analyzer.linkedProjects": [

@@ -340,29 +340,39 @@ impl Parser {
 
     pub fn filter_max_tokens(&mut self) {
         let mut dst = 0;
+
+        self.row_infos.push(RowInfo {
+            byte: 0,
+            commit_item: Item::NULL,
+            token_idx: self.token_idx,
+        });
+
         for idx in 0..self.rows.len() {
             let range = self.rows[idx].item_indices();
             self.rows[idx].first_item = dst;
             for i in range {
                 let item = self.scratch.items[i];
                 let sym_data = self.item_sym_data(&item);
-                if sym_data.props.max_tokens != usize::MAX
-                    && self.token_idx - self.row_infos[item.start_pos()].token_idx
-                        >= sym_data.props.max_tokens
-                {
-                    debug!(
-                        "  remove: {}-{} {}",
-                        self.token_idx,
-                        self.row_infos[item.start_pos()].token_idx,
-                        self.item_to_string(&item)
-                    );
-                    continue;
+                let max_tokens = sym_data.props.max_tokens;
+                if max_tokens != usize::MAX {
+                    let start_token_idx = self.row_infos[item.start_pos() + 1].token_idx;
+                    if self.token_idx - start_token_idx >= max_tokens {
+                        debug!(
+                            "  remove: {}-{} {}",
+                            self.token_idx,
+                            start_token_idx,
+                            self.item_to_string(&item)
+                        );
+                        continue;
+                    }
                 }
                 self.scratch.items[dst] = item;
                 dst += 1;
             }
             self.rows[idx].last_item = dst;
         }
+
+        self.row_infos.pop();
     }
 
     pub fn force_bytes(&mut self) -> Vec<u8> {
@@ -537,6 +547,11 @@ impl Parser {
                             .collect::<Vec<_>>();
                     }
                     bytes.push(byte);
+                    debug!(
+                        "      capture: {} {:?}",
+                        var_name,
+                        String::from_utf8_lossy(&bytes)
+                    );
                     self.captures.push((var_name.clone(), bytes));
                 }
 

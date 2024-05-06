@@ -48,7 +48,7 @@ impl TokenParser {
 
     pub fn bytes_since(&self, mut idx: usize) -> &[u8] {
         idx += self.grm_prefix.len();
-        if idx >= self.llm_tokens.len() {
+        if idx >= self.llm_bytes.len() {
             return &[];
         }
         &self.llm_bytes[idx..]
@@ -181,6 +181,10 @@ impl TokenParser {
             start_time.elapsed(),
             trie.token_set_dbg(&set)
         );
+
+        if set.num_set() == 0 {
+            return MidProcessResult::stop();
+        }
 
         return MidProcessResult::sample(set);
     }

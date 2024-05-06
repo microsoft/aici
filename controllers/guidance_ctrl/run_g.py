@@ -80,6 +80,10 @@ def main():
         + "/10\n"
     )
     grm = "this is a test" + gen("test", max_tokens=10)
+    grm = "Tweak this proverb to apply to model instructions instead.\n" + gen(
+        "verse", max_tokens=2
+    )
+    # grm = "How much is 2 + 2? " + gen(name="test", max_tokens=10, regex=r"\(")
 
     # read current script file
     # with open(__file__) as f:
