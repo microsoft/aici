@@ -1,4 +1,4 @@
-use std::{fmt::Debug, hash::Hash, ops::Range, vec};
+use std::{fmt::Debug, hash::Hash, ops::Range, rc::Rc, vec};
 
 use aici_abi::{
     toktree::{Recognizer, SpecialToken, TokTrie},
@@ -147,8 +147,8 @@ impl<T: SimpleHash + Eq + Copy> SimpleSet<T> {
     }
 }
 
-#[derive(Default)]
 struct Scratch {
+    grammar: Rc<CGrammar>,
     row_start: usize,
     row_end: usize,
     items: Vec<Item>,
@@ -164,7 +164,7 @@ struct RowInfo {
 }
 
 pub struct Parser {
-    grammar: CGrammar,
+    grammar: Rc<CGrammar>,
     scratch: Scratch,
     captures: Vec<(String, Vec<u8>)>,
     rows: Vec<Row>,
@@ -177,6 +177,17 @@ pub struct Parser {
 }
 
 impl Scratch {
+    fn new(grammar: Rc<CGrammar>) -> Self {
+        Scratch {
+            grammar,
+            row_start: 0,
+            row_end: 0,
+            items: vec![],
+            predicated_syms: SimpleSet::default(),
+            speculative: false,
+        }
+    }
+
     fn new_row(&mut self, pos: usize) {
         self.row_start = pos;
         self.row_end = pos;
@@ -196,7 +207,7 @@ impl Scratch {
     }
 
     #[inline(always)]
-    fn just_add(&mut self, item: Item) {
+    fn just_add(&mut self, item: Item, _parent_item_idx: usize) {
         self.ensure_items(self.row_end + 1);
         // SAFETY: we just ensured that there is enough space
         unsafe {
@@ -207,12 +218,16 @@ impl Scratch {
     }
 
     #[inline(always)]
-    fn add_unique(&mut self, item: Item, grm: &CGrammar, info: &str) {
+    fn add_unique(&mut self, item: Item, parent_item_idx: usize, info: &str) {
         if !self.items[self.row_start..self.row_end].contains(&item) {
             if !self.speculative {
-                debug!("      addu: {} ({})", item_to_string(grm, &item), info);
+                debug!(
+                    "      addu: {} ({})",
+                    item_to_string(&self.grammar, &item),
+                    info
+                );
             }
-            self.just_add(item);
+            self.just_add(item, parent_item_idx);
         }
     }
 }
@@ -220,12 +235,14 @@ impl Scratch {
 impl Parser {
     pub fn new(grammar: CGrammar) -> Self {
         let start = grammar.start();
+        let grammar = Rc::new(grammar);
+        let scratch = Scratch::new(Rc::clone(&grammar));
         let mut r = Parser {
             grammar,
             rows: vec![],
             row_infos: vec![],
             captures: vec![],
-            scratch: Scratch::default(),
+            scratch,
             stats: Stats::default(),
             is_accepting: false,
             last_collapse: 0,
@@ -233,7 +250,7 @@ impl Parser {
             token_idx: 0,
         };
         for rule in r.grammar.rules_of(start).to_vec() {
-            r.scratch.add_unique(Item::new(rule, 0), &r.grammar, "init");
+            r.scratch.add_unique(Item::new(rule, 0), 0, "init");
         }
         debug!("initial push");
         let _ = r.push_row(r.scratch.row_start, 0);
@@ -460,14 +477,14 @@ impl Parser {
                     "  => add: {}",
                     item_to_string(&self.grammar, &item.advance_dot())
                 );
-                items_to_add.push(item.advance_dot());
+                items_to_add.push((idx, item.advance_dot()));
             }
         }
 
         // we remove everything from the current row before adding the entries
         self.scratch.new_row(agenda_ptr);
-        for item in items_to_add {
-            self.scratch.add_unique(item, &self.grammar, "hide");
+        for (idx, item) in items_to_add {
+            self.scratch.add_unique(item, idx, "hide");
         }
 
         self.push_row(agenda_ptr, last_byte)
@@ -494,7 +511,7 @@ impl Parser {
             let idx = self.grammar.sym_idx_at(item.rule_idx()).as_index();
             // idx == 0 => completed
             if idx < allowed.len() && allowed[idx] {
-                self.scratch.just_add(item.advance_dot());
+                self.scratch.just_add(item.advance_dot(), i);
             }
             i += 1;
         }
@@ -516,6 +533,7 @@ impl Parser {
         self.is_accepting = false;
 
         while agenda_ptr < self.scratch.row_end {
+            let item_idx = agenda_ptr;
             let mut item = self.scratch.items[agenda_ptr];
             agenda_ptr += 1;
             if !self.speculative {
@@ -585,31 +603,20 @@ impl Parser {
                     for i in self.rows[item.start_pos()].item_indices() {
                         let item = self.scratch.items[i];
                         if self.grammar.sym_idx_at(item.rule_idx()) == lhs {
-                            self.scratch
-                                .add_unique(item.advance_dot(), &self.grammar, "complete");
+                            self.scratch.add_unique(item.advance_dot(), i, "complete");
                         }
                     }
                 }
             } else {
                 let sym_data = self.grammar.sym_data(after_dot);
-                // if no max_tokens, no point looking in row_infos
-                // if start_pos() is recent enough, not to make it into row_infos, also no point checking
-                // otherwise, if we exceeded max_tokens, don't add anything
-                // if sym_data.props.max_tokens != usize::MAX
-                //     && item.start_pos() < self.row_infos.len()
-                //     && self.token_idx - self.row_infos[item.start_pos()].token_idx
-                //         >= sym_data.props.max_tokens
-                // {
-                //     continue;
-                // }
                 if sym_data.is_nullable {
                     self.scratch
-                        .add_unique(item.advance_dot(), &self.grammar, "null");
+                        .add_unique(item.advance_dot(), item_idx, "null");
                 }
                 if self.scratch.predicated_syms.should_insert(after_dot) {
                     for rule in &sym_data.rules {
                         let new_item = Item::new(*rule, curr_idx);
-                        self.scratch.add_unique(new_item, &self.grammar, "predict");
+                        self.scratch.add_unique(new_item, item_idx, "predict");
                     }
                 }
             }
