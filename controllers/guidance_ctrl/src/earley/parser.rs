@@ -153,7 +153,7 @@ struct Scratch {
     row_end: usize,
     items: Vec<Item>,
     predicated_syms: SimpleSet<CSymIdx>,
-    speculative: bool,
+    definitive: bool,
 }
 
 struct RowInfo {
@@ -172,7 +172,6 @@ pub struct Parser {
     stats: Stats,
     is_accepting: bool,
     last_collapse: usize,
-    speculative: bool,
     token_idx: usize,
 }
 
@@ -184,7 +183,7 @@ impl Scratch {
             row_end: 0,
             items: vec![],
             predicated_syms: SimpleSet::default(),
-            speculative: false,
+            definitive: true,
         }
     }
 
@@ -220,7 +219,7 @@ impl Scratch {
     #[inline(always)]
     fn add_unique(&mut self, item: Item, parent_item_idx: usize, info: &str) {
         if !self.items[self.row_start..self.row_end].contains(&item) {
-            if !self.speculative {
+            if self.definitive {
                 debug!(
                     "      addu: {} ({})",
                     item_to_string(&self.grammar, &item),
@@ -246,7 +245,6 @@ impl Parser {
             stats: Stats::default(),
             is_accepting: false,
             last_collapse: 0,
-            speculative: false,
             token_idx: 0,
         };
         for rule in r.grammar.rules_of(start).to_vec() {
@@ -295,7 +293,7 @@ impl Parser {
     }
 
     fn assert_non_trie(&self) {
-        assert!(!self.speculative);
+        assert!(self.scratch.definitive);
         assert!(self.num_rows() == self.row_infos.len());
     }
 
@@ -502,7 +500,7 @@ impl Parser {
 
         self.scratch.new_row(last);
 
-        if !self.speculative {
+        if self.scratch.definitive {
             debug!("  scan: {:?}", b as char);
         }
 
@@ -536,7 +534,7 @@ impl Parser {
             let item_idx = agenda_ptr;
             let mut item = self.scratch.items[agenda_ptr];
             agenda_ptr += 1;
-            if !self.speculative {
+            if self.scratch.definitive {
                 debug!("    agenda: {}", self.item_to_string(&item));
             }
 
@@ -549,7 +547,7 @@ impl Parser {
                 // complete
                 self.is_accepting = self.is_accepting || lhs == self.grammar.start();
 
-                if !self.speculative && flags.capture() {
+                if self.scratch.definitive && flags.capture() {
                     let var_name = self
                         .grammar
                         .sym_data(lhs)
@@ -590,10 +588,10 @@ impl Parser {
                     self.scratch.row_end = agenda_ptr;
                     self.scratch.items[agenda_ptr - 1] = item;
                     commit_item = item;
-                    if !self.speculative {
+                    if self.scratch.definitive {
                         debug!("  commit point: {}", self.item_to_string(&item));
                     }
-                    if !self.speculative && flags.hidden() {
+                    if self.scratch.definitive && flags.hidden() {
                         return self.hide_item(lhs, item.start_pos());
                     }
                 }
@@ -635,7 +633,7 @@ impl Parser {
             last_item: self.scratch.row_end,
         });
 
-        if !self.speculative {
+        if self.scratch.definitive {
             self.row_infos.drain((self.rows.len() - 1)..);
             self.row_infos.push(RowInfo {
                 byte,
@@ -692,20 +690,18 @@ impl Recognizer for Parser {
 
     fn trie_started(&mut self) {
         // println!("trie_started: rows={} infos={}", self.num_rows(), self.row_infos.len());
-        assert!(self.speculative == false);
+        assert!(self.scratch.definitive);
         assert!(self.row_infos.len() == self.num_rows());
-        self.speculative = true;
-        self.scratch.speculative = true;
+        self.scratch.definitive = false;
     }
 
     fn trie_finished(&mut self) {
         // println!("trie_finished: rows={} infos={}", self.num_rows(), self.row_infos.len());
-        assert!(self.speculative == true);
+        assert!(self.scratch.definitive == false);
         assert!(self.row_infos.len() <= self.num_rows());
         // clean up stack
         self.pop_rows(self.num_rows() - self.row_infos.len());
-        self.speculative = false;
-        self.scratch.speculative = false;
+        self.scratch.definitive = true;
     }
 
     fn try_push_byte(&mut self, byte: u8) -> bool {
