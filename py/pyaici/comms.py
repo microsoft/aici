@@ -279,6 +279,7 @@ class Splice:
 @dataclass
 class Branch:
     mask: Optional[int] = None
+    temperature: Optional[float] = None
     splices: List[Splice] = field(default_factory=list)
 
     def find_splice(self, token: Optional[int]) -> Optional[Splice]:
@@ -296,6 +297,7 @@ class Branch:
     def from_json(obj: dict) -> "Branch":
         return Branch(
             mask=obj.get("sample_mask"),
+            temperature=obj.get("temperature"),
             splices=[Splice.from_json(q) for q in obj["splices"]],
         )
 

@@ -51,13 +51,14 @@ impl ModelVariable {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct SymbolProps {
     pub max_tokens: usize,
     pub commit_point: bool,
     pub capture_name: Option<String>,
     pub hidden: bool,
     pub model_variable: Option<ModelVariable>,
+    pub temperature: f32,
 }
 
 impl Default for SymbolProps {
@@ -68,6 +69,7 @@ impl Default for SymbolProps {
             max_tokens: usize::MAX,
             model_variable: None,
             capture_name: None,
+            temperature: 0.0,
         }
     }
 }

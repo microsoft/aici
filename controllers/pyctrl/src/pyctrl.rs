@@ -651,6 +651,7 @@ impl AiciCtrl for Runner {
 
                 Branch {
                     sample_mask,
+                    temperature: None,
                     splices,
                 }
             });

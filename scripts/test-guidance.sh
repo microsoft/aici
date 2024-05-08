@@ -9,4 +9,4 @@ fi
 export AZURE_GUIDANCE_URL
 
 cd $(dirname $0)/../py/guidance
-pytest --selected_model azure_guidance tests/models/test_azure_guidance.py
+pytest --selected_model azure_guidance tests/models/test_azure_guidance.py"$@"

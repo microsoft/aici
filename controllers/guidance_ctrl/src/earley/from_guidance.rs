@@ -16,6 +16,7 @@ pub struct NodeProps {
     pub commit_point: bool,
     pub capture_name: String,
     pub max_tokens: i32,
+    pub temperature: f32,
 }
 
 impl NodeProps {
@@ -28,6 +29,7 @@ impl NodeProps {
                 commit_point: n.commit_point,
                 capture_name: n.capture_name.to_string(),
                 max_tokens: n.max_tokens,
+                temperature: 0.0,
             },
             OneOffunction_type::select(n) => NodeProps {
                 nullable: n.nullable,
@@ -36,6 +38,7 @@ impl NodeProps {
                 commit_point: n.commit_point,
                 capture_name: n.capture_name.to_string(),
                 max_tokens: n.max_tokens,
+                temperature: 0.0,
             },
             OneOffunction_type::byte(n) => NodeProps {
                 nullable: n.nullable,
@@ -44,6 +47,7 @@ impl NodeProps {
                 commit_point: n.commit_point,
                 capture_name: n.capture_name.to_string(),
                 max_tokens: i32::MAX,
+                temperature: n.temperature,
             },
             OneOffunction_type::byte_range(n) => NodeProps {
                 nullable: false, // n.nullable,
@@ -52,6 +56,7 @@ impl NodeProps {
                 commit_point: n.commit_point,
                 capture_name: n.capture_name.to_string(),
                 max_tokens: i32::MAX,
+                temperature: n.temperature,
             },
             OneOffunction_type::model_variable(n) => NodeProps {
                 nullable: n.nullable,
@@ -60,6 +65,7 @@ impl NodeProps {
                 commit_point: n.commit_point,
                 capture_name: n.capture_name.to_string(),
                 max_tokens: i32::MAX,
+                temperature: 0.0,
             },
             OneOffunction_type::None => {
                 panic!("None function type in guidance::Grammar")
@@ -87,6 +93,7 @@ impl NodeProps {
             } else {
                 Some(self.capture_name.clone())
             },
+            temperature: self.temperature,
         }
     }
 }

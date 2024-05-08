@@ -190,6 +190,6 @@ impl TokenParser {
             return MidProcessResult::stop();
         }
 
-        return MidProcessResult::sample(set);
+        return MidProcessResult::sample_with_temp(set, Some(self.parser.temperature()));
     }
 }

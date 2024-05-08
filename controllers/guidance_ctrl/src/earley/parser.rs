@@ -335,6 +335,19 @@ impl Parser {
             .unwrap_or(usize::MAX)
     }
 
+    pub fn temperature(&self) -> f32 {
+        let mut temp = 0.0f32;
+        for i in self.curr_row().item_indices() {
+            let item = self.scratch.items[i];
+            let sym = self.grammar.sym_idx_at(item.rule_idx());
+            let data = self.grammar.sym_data(sym);
+            if data.is_terminal {
+                temp = temp.max(data.props.temperature);
+            }
+        }
+        temp
+    }
+
     pub fn apply_tokens(
         &mut self,
         trie: &TokTrie,

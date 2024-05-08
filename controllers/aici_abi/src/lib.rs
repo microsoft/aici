@@ -118,6 +118,8 @@ pub struct Branch<S> {
     /// If None, no sampling is performed.
     /// If Some(set), only tokens from the set are allowed.
     pub sample_mask: Option<S>,
+    /// Override temperature for sampling. It may or may not be sticky.
+    pub temperature: Option<f32>,
     /// Describes what to do after sampling.
     /// If no sampling, there should be exactly one splice, with empty `when_sampled`.
     pub splices: Vec<Splice>,
@@ -127,6 +129,7 @@ impl<S: Clone> Clone for Branch<S> {
     fn clone(&self) -> Self {
         Branch {
             sample_mask: self.sample_mask.clone(),
+            temperature: self.temperature,
             splices: self.splices.clone(),
         }
     }
@@ -139,6 +142,7 @@ impl<S> Branch<S> {
     {
         Branch {
             sample_mask: self.sample_mask.as_ref().map(f),
+            temperature: self.temperature,
             splices: self.splices.clone(),
         }
     }
@@ -146,6 +150,7 @@ impl<S> Branch<S> {
     pub fn splice(backtrack: u32, ff_tokens: Vec<TokenId>) -> Self {
         Branch {
             sample_mask: None,
+            temperature: None,
             splices: vec![Splice {
                 when_sampled: vec![],
                 backtrack,
@@ -174,9 +179,14 @@ impl MidProcessResult {
     }
 
     pub fn sample(set: SimpleVob) -> Self {
+        Self::sample_with_temp(set, None)
+    }
+
+    pub fn sample_with_temp(set: SimpleVob, temperature: Option<f32>) -> Self {
         MidProcessResult {
             branches: vec![Branch {
                 sample_mask: Some(set),
+                temperature: temperature,
                 splices: vec![],
             }],
         }

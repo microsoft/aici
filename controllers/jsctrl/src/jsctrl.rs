@@ -334,6 +334,7 @@ mod aici_mod {
                     let splices: Vec<Object> = b.get2("splices");
                     Branch {
                         sample_mask: sample_mask.map(|ts| ts.inner),
+                        temperature: None,
                         splices: splices
                             .into_iter()
                             .map(|s| Splice {
