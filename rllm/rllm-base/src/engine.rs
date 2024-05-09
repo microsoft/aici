@@ -515,7 +515,7 @@ impl<ME: ModelExec> RllmEngine<ME> {
                                 let seq_idx = b.sample_mask.unwrap();
                                 aici_bias.apply(&mut logits, seq_idx);
                                 if let Some(t) = b.temperature {
-                                    sg.logits_processor.temperature = Some(t);
+                                    sg.logits_processor.set_temperature(t);
                                 }
                             }
                             None => {}

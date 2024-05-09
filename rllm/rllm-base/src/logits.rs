@@ -24,4 +24,12 @@ impl LogitsProcessor {
             top_p: sampling_params.top_p,
         }
     }
+
+    pub fn set_temperature(&mut self, temperature: f32) {
+        if temperature < SAMPLING_EPS {
+            self.temperature = None;
+        } else {
+            self.temperature = Some(temperature);
+        }
+    }
 }
