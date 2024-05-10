@@ -579,7 +579,7 @@ pub async fn server_main<ME: ModelExec>(
         args.revision = Some(rev);
     }
 
-    if args.model.starts_with(".") {
+    if args.model.starts_with(".") || args.model.starts_with("/") {
         args.local_weights = Some(args.model.clone());
     }
 

@@ -166,7 +166,7 @@ pub fn find_tokenizer(mut name: &str) -> Result<ByteTokenizer> {
 
     log::info!("loading tokenizer: {}", name);
 
-    let loaded = if name.starts_with(".") {
+    let loaded = if name.starts_with(".") || name.starts_with("/") {
         Tokenizer::from_file(name)
     } else {
         let mut name2 = name.to_string();
