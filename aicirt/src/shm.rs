@@ -238,7 +238,7 @@ impl ShmAllocator {
         for i in 0..max_ent {
             let e = table[i].load(Ordering::Relaxed);
             if e != 0 && condition(e) {
-                table[i].store(0, Ordering::Relaxed);
+                table[i].store(Self::FREE, Ordering::Relaxed);
             }
         }
     }
@@ -253,7 +253,7 @@ impl ShmAllocator {
         let table = self.alloc_table();
         for i in 0..table.len() {
             let mut current = table[i].load(Ordering::Relaxed);
-            while current == 0 {
+            while current == Self::FREE {
                 if table[i]
                     .compare_exchange_weak(current, client_id, Ordering::SeqCst, Ordering::Relaxed)
                     .is_ok()
