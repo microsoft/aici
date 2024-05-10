@@ -24,7 +24,7 @@ use std::{
     fmt::Debug,
     path::PathBuf,
     rc::Rc,
-    sync::Mutex,
+    sync::{Arc, Mutex},
     time::{Duration, Instant},
 };
 
@@ -73,6 +73,14 @@ pub enum ForkResult<Cmd, Resp> {
     Child {
         server: TypedServer<Cmd, Resp>,
     },
+}
+
+// This is visible with 'ps -o comm'
+pub fn set_process_name(name: &str) {
+    let name = std::ffi::CString::new(name).unwrap();
+    unsafe {
+        libc::prctl(libc::PR_SET_NAME, name.as_ptr() as usize, 0, 0, 0);
+    }
 }
 
 pub fn fork_child<Cmd, Resp>(limits: &AiciLimits) -> Result<ForkResult<Cmd, Resp>>
@@ -130,6 +138,7 @@ struct ForkerResp(WireSeqHandle);
 
 #[derive(Serialize, Deserialize, Debug)]
 enum SeqCmd {
+    GetCommsPid {},
     Instantiate {
         module_path: PathBuf,
         module_id: String,
@@ -155,6 +164,7 @@ enum SeqCmd {
 impl SeqCmd {
     pub fn tag(&self) -> &'static str {
         match self {
+            SeqCmd::GetCommsPid {} => "get_comms_pid",
             SeqCmd::Instantiate { .. } => "instantiate",
             SeqCmd::Fork { .. } => "fork",
             SeqCmd::SetId { .. } => "set_id",
@@ -168,6 +178,7 @@ impl SeqCmd {
 #[derive(Serialize, Deserialize, Debug)]
 enum SeqResp {
     Fork { handle: WireSeqHandle },
+    CommsPid { pid: pid_t },
     Ok {},
     InitPrompt { json: String },
     PostPreProcess { post_json: String, pre_json: String },
@@ -310,6 +321,9 @@ fn ok() -> Result<SeqResp> {
 impl SeqCtx {
     fn dispatch_one(&mut self, cmd: SeqCmd) -> Result<SeqResp> {
         match cmd {
+            SeqCmd::GetCommsPid {} => Ok(SeqResp::CommsPid {
+                pid: self.query.as_ref().unwrap().pid,
+            }),
             SeqCmd::Compile { wasm } => {
                 let inp_len = wasm.len();
                 let start_time = Instant::now();
@@ -445,9 +459,20 @@ struct SeqCtx {
     shm: Rc<ShmAllocator>,
 }
 
+struct CommsPid {
+    pid: pid_t,
+}
+
+impl Drop for CommsPid {
+    fn drop(&mut self) {
+        unsafe { libc::kill(self.pid, libc::SIGKILL) };
+    }
+}
+
 pub struct SeqWorkerHandle {
     pub req_id: String,
     handle: SeqHandle,
+    comms_pid: Option<Arc<CommsPid>>,
 }
 
 impl Drop for SeqWorkerHandle {
@@ -476,6 +501,7 @@ impl SeqWorkerHandle {
                 let res = SeqWorkerHandle {
                     req_id: self.req_id.clone(),
                     handle: handle.to_client(),
+                    comms_pid: self.comms_pid.clone(),
                 };
                 match res.handle.recv_with_timeout("r-fork", Timeout::Quick)? {
                     SeqResp::Ok {} => Ok(res),
@@ -535,6 +561,7 @@ fn forker_dispatcher(
     wasm_ctx: WasmContext,
     shm: Rc<ShmAllocator>,
 ) -> ! {
+    set_process_name("aicirt-forker");
     loop {
         // wait for any children that might have exited to prevent zombies
         loop {
@@ -584,11 +611,13 @@ fn forker_dispatcher(
                 // (inheriting it from fork doesn't work on macOS)
                 match fork_child(&w_ctx.wasm_ctx.limits).unwrap() {
                     ForkResult::Parent { handle } => {
+                        set_process_name("aicirt-seq");
                         set_max_priority();
                         w_ctx.query = Some(handle.to_client());
                         w_ctx.dispatch_loop()
                     }
                     ForkResult::Child { server } => {
+                        set_process_name("aicirt-comms");
                         set_max_priority();
                         let mut grp_ctx = GroupCtx {
                             variables: Variables::default(),
@@ -695,10 +724,19 @@ impl WorkerForker {
             id: req.req_id.clone(),
             for_compile: false,
         })?;
-        let res = SeqWorkerHandle {
+        let mut res = SeqWorkerHandle {
             req_id: req.req_id.clone(),
             handle: resp.0.to_client(),
+            comms_pid: None,
         };
+        let comms_pid = match res
+            .handle
+            .send_cmd_with_timeout(SeqCmd::GetCommsPid {}, Timeout::Quick)?
+        {
+            SeqResp::CommsPid { pid } => pid,
+            r => return Err(anyhow!("unexpected response (get comms pid) {r:?}")),
+        };
+        res.comms_pid = Some(Arc::new(CommsPid { pid: comms_pid }));
         match res.handle.send_cmd_with_timeout(
             SeqCmd::Instantiate {
                 module_path,
@@ -728,6 +766,7 @@ impl WorkerForker {
         let res = SeqWorkerHandle {
             req_id: id.clone(),
             handle: resp.0.to_client(),
+            comms_pid: None,
         };
         match res.handle.send_cmd_with_timeout(
             SeqCmd::Compile { wasm },
