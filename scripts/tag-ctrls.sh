@@ -10,5 +10,6 @@ if [ X"$CTRLS" = X ]; then
 fi
 
 for ctrl in $CTRLS ; do
-    ./aici.sh build controllers/$ctrl -T $ctrl-latest -T $ctrl-$TIMESTAMP
+    bctrl=$(echo $ctrl | sed -e 's/_ctrl//')
+    ./aici.sh build controllers/$ctrl -T $ctrl-latest -T $ctrl-$TIMESTAMP -T $bctrl
 done
