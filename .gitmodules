@@ -10,4 +10,5 @@
 	url = https://github.com/ggerganov/llama.cpp
 [submodule "py/guidance"]
 	path = py/guidance
-	url = https://github.com/guidance-ai/guidance
+	url = https://github.com/paulbkoch/guidance
+	branch = pk-azure-guidance

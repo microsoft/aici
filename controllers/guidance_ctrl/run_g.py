@@ -86,6 +86,13 @@ def main():
     grm = "How much is 2 + 2? " + gen(name="test", max_tokens=10, regex=r"\(")
     grm = "<color>red</color>\n<color>" + gen(stop="</color>") + " and test2"
 
+    lm = "Here's a "
+    lm += select(['joke', 'poem'], name='type')
+    lm += ": "
+    lm += gen("words", regex=r"[A-Z ]+", stop="\n")
+    grm = lm
+
+
     # read current script file
     # with open(__file__) as f:
     #     script = f.read()

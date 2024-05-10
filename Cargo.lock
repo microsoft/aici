@@ -1492,13 +1492,7 @@ dependencies = [
 name = "guidancerust"
 version = "0.1.0"
 dependencies = [
- "aici_abi",
- "aici_guidance_ctrl",
- "aici_native",
- "anyhow",
  "pyo3",
- "serde",
- "serde_json",
 ]
 
 [[package]]
