@@ -101,14 +101,20 @@ impl TokenParser {
         infoln!("\n");
         let trie = self.token_env.tok_trie();
 
-        infoln!("post tokens: {}", trie.tokens_dbg(&arg.tokens));
+        infoln!("post tokens: bt={} {}", arg.backtrack, trie.tokens_dbg(&arg.tokens));
         arg.save_tokens(&mut self.llm_tokens);
 
         let new_bytes = trie.decode(&arg.tokens);
         self.llm_bytes.extend_from_slice(&new_bytes);
 
         // TODO maybe remove in future
-        assert!(self.llm_bytes == trie.decode(&self.llm_tokens));
+        if self.llm_bytes != trie.decode(&self.llm_tokens) {
+            panic!(
+                "llm_bytes mismatch: {:?} {:?}",
+                String::from_utf8_lossy(&self.llm_bytes),
+                String::from_utf8_lossy(&trie.decode(&self.llm_tokens))
+            );
+        }
 
         let res = self
             .parser
@@ -169,8 +175,8 @@ impl TokenParser {
             // here we remove a suffix from grm_tokens that could be possibly tokenized differently
             grm_tokens.truncate(grm_tokens.len() - chop_tokens);
 
-            if grm_tokens.len() > 0 {
-                infoln!("fixed_tokens: {}", trie.tokens_dbg(&grm_tokens));
+            if grm_tokens.len() > 0 || backtrack > 0  {
+                infoln!("fixed_tokens: {} bt={}", trie.tokens_dbg(&grm_tokens), backtrack);
                 return MidProcessResult::splice(backtrack as u32, grm_tokens);
             } else {
                 infoln!("no fixed tokens");
