@@ -9,12 +9,19 @@ controllers/declctrl
 controllers/jsctrl
 controllers/pyctrl
 controllers/uppercase
+controllers/guidance_ctrl
 aicirt
-rllm/rllm-llamacpp
 "
+
 NATIVE="$(uname -s | tr 'A-Z' 'a-z')-$(uname -m)"
-D=`date +%Y%m%d-%H%M`
-TAG=`git describe --dirty --tags --match 'v[0-9]*' --always | sed -e 's/^v//; s/-dirty/-'"$D/"`
+
+if test -z "$BUILD_TAG" ; then
+    D=`date +%Y%m%d-%H%M`
+    TAG=`git describe --dirty --tags --match 'v[0-9]*' --always | sed -e 's/^v//; s/-dirty/-'"$D/"`
+else
+    TAG="$BUILD_TAG"
+fi
+
 XZ=
 
 if [ "$1" == "--xz" ] ; then
@@ -22,9 +29,13 @@ if [ "$1" == "--xz" ] ; then
     shift
 fi
 
-echo "Building for $NATIVE"
+echo "Building for $NATIVE with tag $TAG..."
 
 set -e
+
+if test -z "$SKIP_LLAMA_CPP" ; then
+    FOLDERS="$FOLDERS rllm/rllm-llamacpp"
+fi
 
 for f in $FOLDERS ; do
     echo "Build $f..."
@@ -157,4 +168,7 @@ echo -n > target/dist/README.md
 
 release aici-controllers "AICI Controllers" "wasm32-wasi" target/wasm32-wasi/release/*.wasm
 release aicirt "AICI Runtime" "$NATIVE" target/release/aicirt
-release rllm-llamacpp "rLLM with llama.cpp" "$NATIVE" target/release/rllm-llamacpp
+
+if test -z "$SKIP_LLAMA_CPP" ; then
+    release rllm-llamacpp "rLLM with llama.cpp" "$NATIVE" target/release/rllm-llamacpp
+fi
