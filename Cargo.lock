@@ -1476,19 +1476,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d2fabcfbdc87f4758337ca535fb41a6d701b65693ce38287d856d1674551ec9b"
 
 [[package]]
-name = "guidance_parser"
-version = "0.1.0"
-dependencies = [
- "aici_abi",
- "aici_guidance_ctrl",
- "aici_native",
- "anyhow",
- "log",
- "serde",
- "serde_json",
-]
-
-[[package]]
 name = "h2"
 version = "0.3.26"
 source = "registry+https://github.com/rust-lang/crates.io-index"

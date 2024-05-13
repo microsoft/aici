@@ -8,7 +8,6 @@ members = [
     "controllers/pyctrl",
     "controllers/jsctrl",
     "controllers/guidance_ctrl",
-    "controllers/guidance_parser",
     "controllers/uppercase",
     "rllm/rllm-base",
     "rllm/rllm-cuda",
