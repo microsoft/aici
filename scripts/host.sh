@@ -30,6 +30,7 @@ while [ $# -gt 0 ] ; do
         --in-screen ) INNER=screen ;;
         --start-tunnel ) INNER=tunnel ;;
         --start-model ) INNER=model ;;
+        --start-container ) INNER=container ;;
         --full ) FULL=1 ;;
         --stop ) STOP=1 ;;
         * )
@@ -45,11 +46,17 @@ function docker_cmd() {
 }
 
 if [ "$INNER" = "screen" ] ; then
-    docker_cmd "cd tmp/ws-http-tunnel && source /usr/local/nvm/nvm.sh && yarn compile-client"
+    docker_cmd "cd tmp/ws-http-tunnel && source /usr/local/nvm/nvm.sh && yarn && yarn compile-client"
     for f in tmp/models/*/.env ; do
-        . $f
+        . $f || continue
         screen "$0" --start-tunnel --env $f
         screen "$0" --start-model  --env $f
+    done
+    for f in tmp/containers/*/.env ; do
+        . $f || continue
+        screen "$0" --start-container  --env $f
+        sleep 20
+        screen "$0" --start-tunnel     --env $f
     done
     sleep 3
     exit 0
@@ -57,9 +64,39 @@ fi
 
 if [ "$INNER" = "tunnel" ] ; then
     echo "in tunnel for $MODEL in $FOLDER"
-    WORKER="/workspaces/aici/tmp/ws-http-tunnel/built/worker.js"
-    docker_cmd "cd $FOLDER && source /usr/local/nvm/nvm.sh && while : ; do node $WORKER ; sleep 2 ; done"
+    if test -z "$NATIVE_NODE" ; then
+        WORKER="/workspaces/aici/tmp/ws-http-tunnel/built/worker.js"
+        docker_cmd "cd $FOLDER && source /usr/local/nvm/nvm.sh && while : ; do node $WORKER ; sleep 2 ; done"
+    else
+        WORKER=`pwd`/tmp/ws-http-tunnel/built/worker.js
+        cd $FOLDER
+        while : ; do
+            node $WORKER
+            sleep 2
+        done
+    fi
     exit 0
+fi
+
+if [ "$INNER" = "container" ] ; then
+    echo "in container $CONT for $MODEL in $FOLDER"
+    MODEL="./model"
+    set -x
+    docker stop $CONT || :
+    docker rm $CONT || :
+    docker run \
+        --mount type=bind,source=$WS,target=/workspaces/aici \
+        --mount type=bind,source=$MODEL_FOLDER,target=/vllm-workspace/model \
+        --privileged --gpus all --shm-size=8g \
+        -e CUDA_VISIBLE_DEVICES=$CUDA_VISIBLE_DEVICES \
+        -p $FWD_PORT:$FWD_PORT \
+        --name $CONT \
+        $IMAGE \
+        --port $FWD_PORT \
+        --trust-remote-code \
+        --model $MODEL --aici-tokenizer $MODEL/tokenizer.json --tokenizer $MODEL \
+        2>&1 | rotatelogs -e -D $FOLDER/logs/%Y-%m-%d-%H_%M_%S.txt 3600 
+    exit
 fi
 
 if [ "$INNER" = "model" ] ; then
@@ -98,7 +135,6 @@ if [ $START_CONTAINER = 1 ] ; then
     echo "Cleaning up containers..."
     docker stop -t 2 $CONT || :
     docker rm $CONT || :
-
     echo "Running new container..."
     docker run --sig-proxy=false \
         --mount type=bind,source=$WS,target=/workspaces/aici \
@@ -108,7 +144,6 @@ if [ $START_CONTAINER = 1 ] ; then
         --privileged --gpus all --shm-size=8g \
         --name $CONT -d \
         rllm-server:latest /bin/sh -c "while : ; do sleep 100 ; done"
-
     # do some magical nvidia setup; without it the first run of server is super-slow
     docker exec -it $CONT /opt/nvidia/nvidia_entrypoint.sh nvidia-smi
 fi
@@ -124,6 +159,7 @@ docker_cmd "./scripts/kill-server.sh"
 
 echo "Building ..."
 docker_cmd "cd rllm/rllm-cuda && ./server.sh build"
+docker_cmd "cd rllm/rllm-llamacpp && ./server.sh --cuda build"
 
 screen -wipe >/dev/null || :
 
