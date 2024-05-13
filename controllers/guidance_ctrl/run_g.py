@@ -92,6 +92,9 @@ def main():
     lm += gen("words", regex=r"[A-Z ]+", stop="\n")
     grm = lm
 
+    grm = select(["1", "12", "123"], name="the number")
+    prompt = "<|user|>\nPick a number:\n<|computer|>\n"
+
 
     # read current script file
     # with open(__file__) as f:
@@ -101,9 +104,10 @@ def main():
     print(len(b64))
     mod_id = pyaici.cli.build_rust(".")
     if "127.0.0.1" in pyaici.rest.base_url:
-        pyaici.rest.tag_module(mod_id, ["guidance_ctrl-latest"])
+        pyaici.rest.tag_module(mod_id, ["guidance_ctrl-latest", "guidance"])
     pyaici.rest.log_level = 2
     res = pyaici.rest.run_controller(
+        prompt=prompt,
         controller=mod_id,
         controller_arg=json.dumps({"guidance_b64": b64}),
         temperature=0.0,

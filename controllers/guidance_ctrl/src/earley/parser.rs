@@ -76,13 +76,6 @@ pub struct Stats {
     pub all_items: usize,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ParseResult {
-    Accept,
-    Reject,
-    Continue,
-}
-
 struct Row {
     first_item: usize,
     last_item: usize,
@@ -141,7 +134,6 @@ pub struct Parser {
     rows: Vec<Row>,
     row_infos: Vec<RowInfo>,
     stats: Stats,
-    is_accepting: bool,
     last_collapse: usize,
     token_idx: usize,
 }
@@ -260,7 +252,6 @@ impl Parser {
             captures: vec![],
             scratch,
             stats: Stats::default(),
-            is_accepting: false,
             last_collapse: 0,
             token_idx: 0,
         };
@@ -273,7 +264,18 @@ impl Parser {
     }
 
     pub fn is_accepting(&self) -> bool {
-        self.is_accepting
+        for idx in self.curr_row().item_indices() {
+            let item = self.scratch.items[idx];
+            let rule = item.rule_idx();
+            let after_dot = self.grammar.sym_idx_at(rule);
+            if after_dot == CSymIdx::NULL {
+                let lhs = self.grammar.sym_idx_of(item.rule_idx());
+                if lhs == self.grammar.start() {
+                    return true;
+                }
+            }
+        }
+        false
     }
 
     fn item_to_string(&self, idx: usize) -> String {
@@ -358,6 +360,7 @@ impl Parser {
         self.assert_definitive();
         let mut byte_idx = 1; // row_infos[0] has just the 0 byte
         let mut tok_idx = 0;
+        debug!("apply_tokens: {:?}", tokens);
         for t in tokens {
             for b in trie.token(*t).iter() {
                 if num_skip > 0 {
@@ -366,7 +369,7 @@ impl Parser {
                 }
 
                 if byte_idx >= self.row_infos.len() {
-                    if self.scan(*b) == ParseResult::Reject {
+                    if !self.scan(*b) {
                         return "parse reject";
                     }
                     if byte_idx >= self.row_infos.len() {
@@ -434,10 +437,10 @@ impl Parser {
 
     pub fn force_bytes(&mut self) -> Vec<u8> {
         self.assert_definitive();
+        debug!("force_bytes");
         let mut bytes = vec![];
         while let Some(b) = self.forced_byte() {
-            let res = self.scan(b);
-            if res == ParseResult::Reject {
+            if !self.scan(b) {
                 // shouldn't happen?
                 break;
             }
@@ -466,7 +469,7 @@ impl Parser {
     }
 
     fn forced_byte(&self) -> Option<u8> {
-        if self.is_accepting {
+        if self.is_accepting() {
             // we're not forced when in accepting state
             return None;
         }
@@ -497,7 +500,7 @@ impl Parser {
         }
     }
 
-    pub fn hide_item(&mut self, sym: CSymIdx, row_idx: usize) -> ParseResult {
+    pub fn hide_item(&mut self, sym: CSymIdx, row_idx: usize) -> bool {
         info!("hide_item: {} {}", self.grammar.sym_data(sym).name, row_idx);
 
         let row_range = self.rows[row_idx].item_indices();
@@ -531,7 +534,7 @@ impl Parser {
     }
 
     #[inline(always)]
-    pub fn scan(&mut self, b: u8) -> ParseResult {
+    pub fn scan(&mut self, b: u8) -> bool {
         let row_idx = self.rows.len() - 1;
         let last = self.rows[row_idx].last_item;
         let mut i = self.rows[row_idx].first_item;
@@ -563,12 +566,11 @@ impl Parser {
     }
 
     #[inline(always)]
-    fn push_row(&mut self, mut agenda_ptr: usize, byte: u8) -> ParseResult {
+    fn push_row(&mut self, mut agenda_ptr: usize, byte: u8) -> bool {
         let curr_idx = self.rows.len();
         let mut commit_item = Item::NULL;
 
         self.stats.rows += 1;
-        self.is_accepting = false;
 
         while agenda_ptr < self.scratch.row_end {
             let mut item_idx = agenda_ptr;
@@ -583,9 +585,7 @@ impl Parser {
 
             if after_dot == CSymIdx::NULL {
                 let flags = self.grammar.sym_flags_of(rule);
-                let lhs = self.grammar.sym_idx_of(item.rule_idx());
-                // complete
-                self.is_accepting = self.is_accepting || lhs == self.grammar.start();
+                let lhs = self.grammar.sym_idx_of(rule);
 
                 if self.scratch.definitive && flags.capture() {
                     let var_name = self
@@ -671,31 +671,27 @@ impl Parser {
         }
 
         let row_len = self.scratch.row_len();
-        self.stats.all_items += row_len;
 
         if row_len == 0 {
-            assert!(!self.is_accepting);
-            return ParseResult::Reject;
-        }
-
-        self.rows.push(Row {
-            first_item: self.scratch.row_start,
-            last_item: self.scratch.row_end,
-        });
-
-        if self.scratch.definitive {
-            self.row_infos.drain((self.rows.len() - 1)..);
-            self.row_infos.push(RowInfo {
-                byte,
-                commit_item,
-                token_idx: self.token_idx,
-            });
-        }
-
-        if self.is_accepting {
-            ParseResult::Accept
+            false
         } else {
-            ParseResult::Continue
+            self.stats.all_items += row_len;
+
+            self.rows.push(Row {
+                first_item: self.scratch.row_start,
+                last_item: self.scratch.row_end,
+            });
+
+            if self.scratch.definitive {
+                self.row_infos.drain((self.rows.len() - 1)..);
+                self.row_infos.push(RowInfo {
+                    byte,
+                    commit_item,
+                    token_idx: self.token_idx,
+                });
+            }
+
+            true
         }
     }
 }
@@ -755,12 +751,7 @@ impl Recognizer for Parser {
     }
 
     fn try_push_byte(&mut self, byte: u8) -> bool {
-        let res = self.scan(byte);
-        if res == ParseResult::Reject {
-            false
-        } else {
-            true
-        }
+        self.scan(byte)
     }
 }
 

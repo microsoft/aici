@@ -1,7 +1,7 @@
 use aici_abi::toktree;
 
 use super::Parser;
-use crate::earley::{from_guidance::earley_grm_from_guidance, parser::ParseResult};
+use crate::earley::from_guidance::earley_grm_from_guidance;
 
 pub fn earley_test(trie: toktree::TokTrie) {
     let g_bytes = include_bytes!("../../../aici_abi/grammars/json0.guidance");
@@ -18,15 +18,13 @@ pub fn earley_test(trie: toktree::TokTrie) {
     let grm = cfg.compile();
 
     let mut parser = Parser::new(grm.clone());
-    let mut last_res = ParseResult::Reject;
     for b in input {
-        last_res = parser.scan(*b);
-        if last_res == ParseResult::Reject {
+        if !parser.scan(*b) {
             println!("reject");
             break;
         }
     }
-    if last_res != ParseResult::Accept {
+    if !parser.is_accepting() {
         println!("final non-accept");
     }
 
