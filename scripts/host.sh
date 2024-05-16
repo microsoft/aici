@@ -156,6 +156,8 @@ echo "Stopping inner servers..."
 # fi
 
 docker_cmd "./scripts/kill-server.sh"
+# also kill the forwarder outside docker
+./scripts/kill-server.sh
 
 echo "Building ..."
 docker_cmd "cd rllm/rllm-cuda && ./server.sh build"
