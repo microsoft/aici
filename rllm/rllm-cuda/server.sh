@@ -75,6 +75,9 @@ if [ "$CPP" = 1 ] ; then
     code70 )
       ARGS="-m https://huggingface.co/TheBloke/CodeLlama-70B-Instruct-GGUF/blob/main/codellama-70b-instruct.Q5_K_M.gguf"
       ;;
+    sql )
+      ARGS="-m https://huggingface.co/TheBloke/sqlcoder2-GGUF/blob/main/sqlcoder2.Q5_K_M.gguf -t defog/sqlcoder2"
+      ;;
     https* )
       ARGS="-m $1"
       ;;
