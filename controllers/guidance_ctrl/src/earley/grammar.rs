@@ -683,6 +683,10 @@ impl CGrammar {
             }
             let idx = sym_map[&sym.idx];
             for rule in &sym.rules {
+                // we handle the empty rule separately via is_nullable field
+                if rule.rhs.is_empty() {
+                    continue;
+                }
                 let curr = RuleIdx(outp.rules.len().try_into().unwrap());
                 outp.sym_data_mut(idx).rules.push(curr);
                 // outp.rules.push(idx);
