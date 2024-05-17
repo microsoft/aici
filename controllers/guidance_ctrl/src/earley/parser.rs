@@ -10,11 +10,13 @@ use aici_abi::{
     toktree::{Recognizer, SpecialToken, TokTrie},
     TokenId,
 };
+use anyhow::{bail, Result};
 
 use super::grammar::{CGrammar, CSymIdx, CSymbol, ModelVariable, RuleIdx};
 
 const DEBUG: bool = false;
 const INFO: bool = true;
+const MAX_ROW: usize = 100;
 
 macro_rules! debug {
     ($($arg:tt)*) => {
@@ -355,7 +357,7 @@ impl Parser {
         trie: &TokTrie,
         tokens: &[TokenId],
         mut num_skip: usize,
-    ) -> &'static str {
+    ) -> Result<&'static str> {
         // this is unused!
         self.assert_definitive();
         let mut byte_idx = 1; // row_infos[0] has just the 0 byte
@@ -370,16 +372,24 @@ impl Parser {
 
                 if byte_idx >= self.row_infos.len() {
                     if !self.scan(*b) {
-                        return "parse reject";
+                        return Ok("parse reject");
                     }
                     if byte_idx >= self.row_infos.len() {
-                        return "hidden item";
+                        return Ok("hidden item");
+                    }
+                    let item_count = self.curr_row().item_indices().count();
+                    if item_count > MAX_ROW {
+                        bail!(
+                            "Current row has {} items; max is {}; consider making your grammar left-recursive if it's right-recursive",
+                            item_count,
+                            MAX_ROW,
+                        );
                     }
                 }
                 let info = &mut self.row_infos[byte_idx];
                 if info.byte != *b {
                     println!("byte mismatch: {} != {} at {}", info.byte, b, byte_idx);
-                    return "static reject";
+                    return Ok("static reject");
                 }
                 info.token_idx = tok_idx;
                 byte_idx += 1;
@@ -391,7 +401,7 @@ impl Parser {
             byte_idx += 1;
         }
         self.token_idx = tok_idx;
-        return "";
+        return Ok("");
     }
 
     pub fn filter_max_tokens(&mut self) {

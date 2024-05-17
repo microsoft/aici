@@ -13,6 +13,7 @@ from guidance import (
     capture,
     gen,
     substring,
+    optional,
 )
 
 
@@ -92,8 +93,16 @@ def main():
     lm += gen("words", regex=r"[A-Z ]+", stop="\n")
     grm = lm
 
+    @guidance(stateless=True, dedent=False)
+    def rgrammar(lm):
+        return lm + "x" + optional(rgrammar())
+
+
     grm = select(["1", "12", "123"], name="the number")
     prompt = "<|user|>\nPick a number:\n<|computer|>\n"
+
+    grm = rgrammar()
+    prompt = "x"
 
 
     # read current script file
