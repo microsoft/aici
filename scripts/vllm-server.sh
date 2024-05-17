@@ -13,7 +13,7 @@ fi
 
 (cd aicirt && cargo build --release)
 
-RUST_LOG=info,tokenizers=error,aicirt=trace \
+RUST_LOG=info,tokenizers=error,aicirt=info \
 RUST_BACKTRACE=1 \
 PYTHONPATH=py:py/vllm \
 python3 -m vllm.entrypoints.openai.api_server \
@@ -21,6 +21,7 @@ python3 -m vllm.entrypoints.openai.api_server \
     --use-v2-block-manager \
     --enable-chunked-prefill \
     --aici-rt ./target/release/aicirt \
+    -A--wasm-timer-resolution-us=10 \
     $MODEL_ARGS \
     --port 4242 --host 127.0.0.1 \
     "$@"
