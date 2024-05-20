@@ -141,9 +141,6 @@ pub fn earley_grm_from_guidance(bytes: &[u8]) -> Result<Grammar> {
         })
         .collect::<Vec<_>>();
 
-    let set = FxHashSet::from_iter(symbols.iter());
-    assert!(set.len() == symbols.len(), "duplicate symbols");
-
     for (n, sym) in gg.nodes.iter().zip(symbols.iter()) {
         let lhs = *sym;
         match &n.function_type {

@@ -109,6 +109,27 @@ def main():
     prompt = ""
 
 
+    @guidance(stateless=True, dedent=False)
+    def character_maker(lm, id, description, valid_weapons):
+        lm += f"""\
+        The following is a character profile for an RPG game in JSON format.
+        ```json
+        {{
+            "id": "{id}",
+            "description": "{description}",
+            "name": "{gen('name', stop='"')}",
+            "age": {gen('age', regex='[0-9]+', stop=',')},
+            "armor": "{select(options=['leather', 'chainmail', 'plate'], name='armor')}",
+            "weapon": "{select(options=valid_weapons, name='weapon')}",
+            "class": "{gen('class', stop='"')}",
+            "mantra": "{gen('mantra', stop='"')}",
+            "strength": {gen('strength', regex='[0-9]+', stop=',')},
+            "items": ["{gen('item', list_append=True, stop='"')}", "{gen('item', list_append=True, stop='"')}", "{gen('item', list_append=True, stop='"')}"]
+        }}```"""
+        return lm
+    grm = character_maker(1, 'A nimble fighter', ['axe', 'sword', 'bow'])
+    prompt = ""
+
 
     # read current script file
     # with open(__file__) as f:

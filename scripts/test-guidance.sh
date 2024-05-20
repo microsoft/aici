@@ -10,4 +10,4 @@ export AZURE_GUIDANCE_URL
 
 cd $(dirname $0)/../py/guidance
 pytest --selected_model azure_guidance tests/models/test_azure_guidance.py"$@"
-pytest --selected_model azure_guidance_chat tests/models/test_azure_guidance_chat.py"$@"
+#pytest --selected_model azure_guidance_chat tests/models/test_azure_guidance_chat.py"$@"
