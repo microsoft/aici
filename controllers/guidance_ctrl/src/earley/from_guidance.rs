@@ -1,6 +1,5 @@
 use anyhow::Result;
 use quick_protobuf::MessageRead;
-use rustc_hash::FxHashSet;
 
 use super::{ByteSet, Grammar};
 use crate::{
