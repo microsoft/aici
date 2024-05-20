@@ -161,6 +161,20 @@ impl Scratch {
         self.row_end - self.row_start
     }
 
+    fn work_row(&self) -> Row {
+        Row {
+            first_item: self.row_start,
+            last_item: self.row_end,
+        }
+    }
+
+    fn hidden_start(&self, r: &Row) -> usize {
+        r.item_indices()
+            .map(|i| self.item_props[i].hidden_start)
+            .min()
+            .unwrap_or(usize::MAX)
+    }
+
     #[inline(always)]
     fn ensure_items(&mut self, n: usize) {
         if self.items.len() < n {
@@ -332,11 +346,7 @@ impl Parser {
     }
 
     pub fn hidden_start(&self) -> usize {
-        self.curr_row()
-            .item_indices()
-            .map(|i| self.scratch.item_props[i].hidden_start)
-            .min()
-            .unwrap_or(usize::MAX)
+        self.scratch.hidden_start(&self.curr_row())
     }
 
     pub fn temperature(&self) -> f32 {
@@ -613,12 +623,26 @@ impl Parser {
                             .collect::<Vec<_>>();
                     }
                     bytes.push(byte);
+                    let hidden_start = self.scratch.hidden_start(&self.scratch.work_row());
+                    if hidden_start < curr_idx + 1 {
+                        bytes.drain(hidden_start - item.start_pos()..);
+                    }
                     debug!(
                         "      capture: {} {:?}",
                         var_name,
                         String::from_utf8_lossy(&bytes)
                     );
                     self.captures.push((var_name.clone(), bytes));
+                }
+
+                if item.start_pos() < curr_idx {
+                    // if item.start_pos() == curr_idx, then we handled it below in the nullable check
+                    for i in self.rows[item.start_pos()].item_indices() {
+                        let item = self.scratch.items[i];
+                        if self.grammar.sym_idx_at(item.rule_idx()) == lhs {
+                            self.scratch.add_unique(item.advance_dot(), i, "complete");
+                        }
+                    }
                 }
 
                 if flags.commit_point() {
@@ -651,16 +675,6 @@ impl Parser {
                         }
                     }
                 }
-
-                if item.start_pos() < curr_idx {
-                    // if item.start_pos() == curr_idx, then we handled it below in the nullable check
-                    for i in self.rows[item.start_pos()].item_indices() {
-                        let item = self.scratch.items[i];
-                        if self.grammar.sym_idx_at(item.rule_idx()) == lhs {
-                            self.scratch.add_unique(item.advance_dot(), i, "complete");
-                        }
-                    }
-                }
             } else {
                 let sym_data = self.grammar.sym_data(after_dot);
                 if sym_data.is_nullable {
@@ -687,10 +701,7 @@ impl Parser {
         } else {
             self.stats.all_items += row_len;
 
-            self.rows.push(Row {
-                first_item: self.scratch.row_start,
-                last_item: self.scratch.row_end,
-            });
+            self.rows.push(self.scratch.work_row());
 
             if self.scratch.definitive {
                 self.row_infos.drain((self.rows.len() - 1)..);

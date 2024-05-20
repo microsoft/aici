@@ -105,6 +105,11 @@ def main():
     prompt = "x"
 
 
+    grm = "Count to 10: 1, 2, 3, 4, 5, 6, 7, " + gen("text", stop=", 9")
+    prompt = ""
+
+
+
     # read current script file
     # with open(__file__) as f:
     #     script = f.read()
