@@ -2,6 +2,7 @@ import pyaici.rest
 import pyaici.cli
 import base64
 import ujson as json
+import binascii
 
 
 import guidance
@@ -109,7 +110,41 @@ def main():
     prompt = ""
 
 
-    @guidance(stateless=True, dedent=False)
+    # @guidance(stateless=True, dedent=False)
+    # def character_maker(lm, id, description, valid_weapons):
+    #     lm += f"""\
+    #     The following is a character profile for an RPG game in JSON format.
+    #     ```json
+    #     {{
+    #         "id": "{id}",
+    #         "description": "{description}",
+    #         "name": "{gen('name', stop='"')}",
+    #         "age": {gen('age', regex='[0-9]+', stop=',')},
+    #         "armor": "{select(options=['leather', 'chainmail', 'plate'], name='armor')}",
+    #         "weapon": "{select(options=valid_weapons, name='weapon')}",
+    #         "class": "{gen('class', stop='"')}",
+    #         "mantra": "{gen('mantra', stop='"')}",
+    #         "strength": {gen('strength', regex='[0-9]+', stop=',')},
+    #         "items": ["{gen('item', list_append=True, stop='"')}", "{gen('item', list_append=True, stop='"')}", "{gen('item', list_append=True, stop='"')}"]
+    #     }}```"""
+    #     return lm
+
+    # @guidance(stateless=True, dedent=False)
+    # def character_maker(lm, id, description, valid_weapons):
+    #     lm += f"""\
+    #     The following is a character profile for an RPG game in JSON format.
+    #     ```json
+    #     {{
+    #         "id": "{id}",
+    #         "description": "{description}",
+    #         "name": "{gen('name', stop='"')}",
+    #         "skill level": "{gen('age', regex='[0-9]+', stop='1')}",
+    #         "age": "{gen('age', regex='[0-9]+', stop='4')}",
+    #     }}```"""
+    #     return lm
+
+
+    @guidance(stateless=True, dedent=True)
     def character_maker(lm, id, description, valid_weapons):
         lm += f"""\
         The following is a character profile for an RPG game in JSON format.
@@ -117,16 +152,11 @@ def main():
         {{
             "id": "{id}",
             "description": "{description}",
-            "name": "{gen('name', stop='"')}",
-            "age": {gen('age', regex='[0-9]+', stop=',')},
-            "armor": "{select(options=['leather', 'chainmail', 'plate'], name='armor')}",
-            "weapon": "{select(options=valid_weapons, name='weapon')}",
-            "class": "{gen('class', stop='"')}",
-            "mantra": "{gen('mantra', stop='"')}",
-            "strength": {gen('strength', regex='[0-9]+', stop=',')},
-            "items": ["{gen('item', list_append=True, stop='"')}", "{gen('item', list_append=True, stop='"')}", "{gen('item', list_append=True, stop='"')}"]
+            "name": "{gen('name', max_tokens=20)}",
+            "mantra": "{gen('mantra', max_tokens=10)}",
         }}```"""
         return lm
+    
     grm = character_maker(1, 'A nimble fighter', ['axe', 'sword', 'bow'])
     prompt = ""
 
@@ -152,7 +182,18 @@ def main():
     print("Timing:", res["timing"])
     print("Tokens/sec:", res["tps"])
     print("Storage:", res["storage"])
-    print("TEXT:", res["text"])
+    print()
+
+    text = b""
+    captures = {}
+    for j in res["json_out"][0]:
+        if j["object"] == "text":
+            text += binascii.unhexlify(j["hex"])
+        elif j["object"] == "capture":
+            captures[j["name"]] = binascii.unhexlify(j["hex"]).decode("utf-8", errors="replace")
+    print("Captures:", json.dumps(captures, indent=2))
+    print("Final text:\n", text.decode("utf-8", errors="replace"))
+    print()
 
 
 main()

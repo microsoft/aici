@@ -197,12 +197,14 @@ def run_controller(
     texts = [""]
     logs = [""]
     full_resp = []
+    json_out = [[]]
     storage = {}
     res = {
         "request": data,
         "response": full_resp,
         "text": texts,
         "logs": logs,
+        "json_out": json_out,
         "raw_storage": storage,
         "error": None,
         "usage": {},
@@ -241,11 +243,19 @@ def run_controller(
                 while len(texts) <= idx:
                     texts.append("")
                     logs.append("")
+                    json_out.append([])
                 for s in ch.get("storage", []):
                     w = s.get("WriteVar", None)
                     if w:
                         storage[w["name"]] = w["value"]
                 err = ch.get("error", "")
+
+                for ln in ch["logs"].split("\n"):
+                    ln: str
+                    if ln.startswith("JSON-OUT: "):
+                        j = json.loads(ln[10:])
+                        json_out[idx].append(j)
+
                 if log_level > 2:
                     print_logs(ch["logs"], f"[{idx}]: ")
                 elif idx == 0:
