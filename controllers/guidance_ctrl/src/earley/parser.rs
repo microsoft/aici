@@ -353,8 +353,7 @@ impl Parser {
         let mut temp = 0.0f32;
         for i in self.curr_row().item_indices() {
             let item = self.scratch.items[i];
-            let sym = self.grammar.sym_idx_at(item.rule_idx());
-            let data = self.grammar.sym_data(sym);
+            let data = self.grammar.sym_data_at(item.rule_idx());
             if data.is_terminal {
                 temp = temp.max(data.props.temperature);
             }
@@ -477,8 +476,7 @@ impl Parser {
         let mut vars = vec![];
         for i in self.curr_row().item_indices() {
             let item = self.scratch.items[i];
-            let sym = self.grammar.sym_idx_at(item.rule_idx());
-            let sym_data = self.grammar.sym_data(sym);
+            let sym_data = self.grammar.sym_data_at(item.rule_idx());
             if let Some(ref mv) = sym_data.props.model_variable {
                 if !vars.contains(mv) {
                     vars.push(mv.clone());

@@ -606,6 +606,12 @@ impl CGrammar {
         self.rules[idx.0 as usize]
     }
 
+    #[inline(always)]
+    pub fn sym_data_at(&self, idx: RuleIdx) -> &CSymbol {
+        self.sym_data(self.sym_idx_at(idx))
+    }
+
+
     pub fn start(&self) -> CSymIdx {
         self.start_symbol
     }
@@ -761,7 +767,7 @@ impl CGrammar {
         let lhs = self.sym_name(sym);
         let (rhs, dot) = self.rule_rhs(rule);
         let dot_prop = if rhs.len() > 0 {
-            Some(&self.sym_data(self.sym_idx_at(rule)).props)
+            Some(&self.sym_data_at(rule).props)
         } else {
             None
         };
