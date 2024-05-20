@@ -28,6 +28,10 @@ pub enum ModelVariable {
 }
 
 impl ModelVariable {
+    pub fn eos_token() -> Self {
+        ModelVariable::SpecialToken(SpecialToken::EndOfSentence)
+    }
+
     #[allow(dead_code)]
     pub fn to_string(&self) -> String {
         match self {

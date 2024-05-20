@@ -1,4 +1,4 @@
-use crate::earley::{earley_grm_from_guidance, Parser};
+use crate::earley::{earley_grm_from_guidance, ModelVariable, Parser};
 use aici_abi::{MidProcessArg, MidProcessResult, TokenId, TokenizerEnv};
 use anyhow::Result;
 
@@ -95,7 +95,7 @@ impl TokenParser {
         grm_bytes
     }
 
-    pub fn mid_process(&mut self, arg: MidProcessArg) -> MidProcessResult {
+    pub fn mid_process(&mut self, mut arg: MidProcessArg) -> MidProcessResult {
         let start_time = std::time::Instant::now();
 
         infoln!("\n");
@@ -106,7 +106,16 @@ impl TokenParser {
             arg.backtrack,
             trie.tokens_dbg(&arg.tokens)
         );
-        arg.save_tokens(&mut self.llm_tokens);
+
+        if arg.tokens.contains(&trie.eos_token()) {
+            assert!(arg.tokens.len() == 1);
+            if self.parser.scan_model_variable(ModelVariable::eos_token()) {
+                // it got scanned correctly, so we remove it
+                arg.tokens.clear();
+            }
+        } else {
+            arg.save_tokens(&mut self.llm_tokens);
+        }
 
         let new_bytes = trie.decode(&arg.tokens);
         self.llm_bytes.extend_from_slice(&new_bytes);

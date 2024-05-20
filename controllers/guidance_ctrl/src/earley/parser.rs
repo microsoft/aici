@@ -551,6 +551,31 @@ impl Parser {
         self.push_row(agenda_ptr, last_byte)
     }
 
+    pub fn scan_model_variable(&mut self, mv: ModelVariable) -> bool {
+        if self.scratch.definitive {
+            debug!("  scan mv: {:?}", mv);
+        }
+
+        self.scratch.new_row(self.curr_row().last_item);
+
+        for idx in self.curr_row().item_indices() {
+            let item = self.scratch.items[idx];
+            let sym_data = self.grammar.sym_data_at(item.rule_idx());
+            if let Some(ref mv2) = sym_data.props.model_variable {
+                if mv == *mv2 {
+                    self.scratch
+                        .add_unique(item.advance_dot(), idx, "scan_model_variable");
+                }
+            }
+        }
+
+        if self.scratch.row_len() == 0 {
+            false
+        } else {
+            self.push_row(self.scratch.row_start, 0)
+        }
+    }
+
     #[inline(always)]
     pub fn scan(&mut self, b: u8) -> bool {
         let row_idx = self.rows.len() - 1;
