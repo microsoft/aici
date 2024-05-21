@@ -21,7 +21,7 @@ pub struct RecRx {
 pub type RxStackRecognizer = StackRecognizer<StateID, RecRx>;
 
 impl RecRx {
-    pub fn from_rx(rx: &str) -> Result<Self> {
+    pub fn from_rx(rx: &str, size_limit: Option<usize>) -> Result<Self> {
         let rx = if rx.ends_with("$") {
             rx.to_string()
         } else {
@@ -32,12 +32,13 @@ impl RecRx {
         } else {
             rx
         };
+        // default to 16MB - it takes about 1s to build
+        let size_limit = size_limit.unwrap_or(16 << 20);
         let t0 = std::time::Instant::now();
-        let size_mb = 3; // 3MB should be on the order of 50ms
         let cfg = dense::Config::new()
             .start_kind(regex_automata::dfa::StartKind::Anchored)
-            .dfa_size_limit(Some(size_mb << 20))
-            .determinize_size_limit(Some(size_mb << 20));
+            .dfa_size_limit(Some(size_limit))
+            .determinize_size_limit(Some(size_limit));
         let dfa = dense::Builder::new()
             .configure(cfg)
             .syntax(syntax::Config::new().unicode(false).utf8(false))
