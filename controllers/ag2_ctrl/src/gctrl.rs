@@ -2,10 +2,9 @@ use aici_abi::{
     arg_bytes, bytes::to_hex_string, AiciCtrl, InitPromptArg, InitPromptResult, MidProcessArg,
     MidProcessResult,
 };
-use base64::{self, Engine as _};
 use serde::{Deserialize, Serialize};
 
-use ag2_ctrl::TokenParser;
+use ag2_ctrl::{grammar::TopLevelGrammar, TokenParser};
 
 const INFO: bool = true;
 
@@ -26,19 +25,16 @@ pub struct Runner {
 
 #[derive(Serialize, Deserialize)]
 struct RunnerArg {
-    guidance_b64: String,
+    grammar: TopLevelGrammar,
 }
 
 impl Runner {
     pub fn new() -> Self {
         infoln!("building runner...");
         let arg: RunnerArg = serde_json::from_slice(&arg_bytes()).expect("invalid JSON arg");
-        let guidance = base64::engine::general_purpose::STANDARD
-            .decode(arg.guidance_b64)
-            .expect("invalid base64");
         let tok_parser = TokenParser::from_guidance_protobuf(
             Box::new(aici_abi::WasmTokenizerEnv::default()),
-            &guidance,
+            arg.grammar,
         )
         .expect("invalid guidance protobuf");
         let token_ptr = tok_parser.num_tokens();

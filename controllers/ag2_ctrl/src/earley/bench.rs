@@ -5,7 +5,8 @@ use crate::earley::from_guidance::earley_grm_from_guidance;
 
 pub fn earley_test(trie: toktree::TokTrie) {
     let g_bytes = include_bytes!("../../../aici_abi/grammars/json0.guidance");
-    let cfg = earley_grm_from_guidance(g_bytes).unwrap();
+    let data = serde_json::from_slice(g_bytes).unwrap();
+    let cfg = earley_grm_from_guidance(data).unwrap();
     // println!("cfg0: {:?}", cfg);
     let cfg = cfg.optimize();
     println!("cfg: {:?}", cfg);

@@ -219,8 +219,6 @@ version = "0.1.0"
 dependencies = [
  "aici_abi",
  "anyhow",
- "base64 0.22.0",
- "quick-protobuf",
  "rustc-hash",
  "serde",
  "serde_json",

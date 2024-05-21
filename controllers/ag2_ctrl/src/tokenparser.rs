@@ -1,4 +1,7 @@
-use crate::earley::{earley_grm_from_guidance, ModelVariable, Parser};
+use crate::{
+    earley::{earley_grm_from_guidance, ModelVariable, Parser},
+    grammar::TopLevelGrammar,
+};
 use aici_abi::{MidProcessArg, MidProcessResult, TokenId, TokenizerEnv};
 use anyhow::Result;
 
@@ -22,7 +25,10 @@ pub struct TokenParser {
 }
 
 impl TokenParser {
-    pub fn from_guidance_protobuf(token_env: Box<dyn TokenizerEnv>, buf: &[u8]) -> Result<Self> {
+    pub fn from_guidance_protobuf(
+        token_env: Box<dyn TokenizerEnv>,
+        buf: TopLevelGrammar,
+    ) -> Result<Self> {
         let grm = earley_grm_from_guidance(buf)?;
         infoln!("original: {:?}", grm);
         let grm = grm.optimize();
