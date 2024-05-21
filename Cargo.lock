@@ -214,6 +214,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "ag2_ctrl"
+version = "0.1.0"
+dependencies = [
+ "aici_abi",
+ "anyhow",
+ "base64 0.22.0",
+ "quick-protobuf",
+ "rustc-hash",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "ahash"
 version = "0.8.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"

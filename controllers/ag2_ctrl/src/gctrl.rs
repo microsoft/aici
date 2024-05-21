@@ -5,7 +5,7 @@ use aici_abi::{
 use base64::{self, Engine as _};
 use serde::{Deserialize, Serialize};
 
-use aici_guidance_ctrl::TokenParser;
+use ag2_ctrl::TokenParser;
 
 const INFO: bool = true;
 
