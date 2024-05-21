@@ -1,5 +1,5 @@
 use super::Grammar;
-use crate::{earley::grammar::SymbolProps, grammar::TopLevelGrammar};
+use crate::{earley::grammar::SymbolProps, api::TopLevelGrammar};
 use anyhow::Result;
 
 #[derive(Debug)]

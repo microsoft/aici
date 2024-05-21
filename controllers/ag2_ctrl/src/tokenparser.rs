@@ -1,6 +1,6 @@
 use crate::{
     earley::{earley_grm_from_guidance, ModelVariable, Parser},
-    grammar::TopLevelGrammar,
+    api::TopLevelGrammar,
 };
 use aici_abi::{MidProcessArg, MidProcessResult, TokenId, TokenizerEnv};
 use anyhow::Result;

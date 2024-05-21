@@ -6,7 +6,7 @@ use regex_automata::{
 use rustc_hash::FxHashMap;
 use std::{hash::Hash, rc::Rc, vec};
 
-pub struct PatIdx(pub usize);
+pub struct LexemeIdx(pub usize);
 pub type StateID = regex_automata::util::primitives::StateID;
 
 const LOG_LEXER: bool = false;
@@ -268,7 +268,7 @@ impl Lexer {
         self.state_info(state).reachable
     }
 
-    fn get_token(&self, prev: StateID) -> Option<PatIdx> {
+    fn get_token(&self, prev: StateID) -> Option<LexemeIdx> {
         let state = self.dfa.next_eoi_state(prev);
         if !self.dfa.is_match_state(state) {
             return None;
@@ -288,7 +288,7 @@ impl Lexer {
             println!("token: {}", pat_idx);
         }
 
-        Some(PatIdx(pat_idx))
+        Some(LexemeIdx(pat_idx))
     }
 
     #[inline(always)]
@@ -296,7 +296,7 @@ impl Lexer {
         &self,
         prev: StateID,
         byte: Option<u8>,
-    ) -> Option<(LexerState, Option<PatIdx>)> {
+    ) -> Option<(LexerState, Option<LexemeIdx>)> {
         let dfa = &self.dfa;
         if let Some(byte) = byte {
             let state = dfa.next_state(prev, byte);

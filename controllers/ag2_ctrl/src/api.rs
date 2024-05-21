@@ -2,16 +2,16 @@ use serde::{Deserialize, Serialize};
 
 /// This represents a collection of grammars, with a designated
 /// "start" grammar at first position.
-/// Grammars can refer to each other via GrammarRef symbols.
+/// Grammars can refer to each other via GrammarRef nodes.
 #[derive(Serialize, Deserialize)]
 pub struct TopLevelGrammar {
-    pub grammars: Vec<Grammar>,
+    pub grammars: Vec<GrammarWithLexer>,
 }
 
 #[derive(Serialize, Deserialize)]
-pub struct Grammar {
-    /// The start symbol is at symbols[0]
-    pub symbols: Vec<Symbol>,
+pub struct GrammarWithLexer {
+    /// The start symbol is at nodes[0]
+    pub nodes: Vec<Node>,
 
     /// When enabled, the grammar can use `Lexeme` but not `Gen`.
     /// When disabled, the grammar can use `Gen` but not `Lexeme`.
@@ -21,14 +21,14 @@ pub struct Grammar {
 }
 
 #[derive(Serialize, Deserialize)]
-pub enum Symbol {
+pub enum Node {
     // Terminals:
     /// Force generation of the specific string.
     String {
         literal: String,
 
         #[serde(flatten)]
-        props: SymbolProps,
+        props: NodeProps,
     },
     /// Generate according to regex.
     Gen {
@@ -36,7 +36,7 @@ pub enum Symbol {
         data: GenOptions,
 
         #[serde(flatten)]
-        props: SymbolProps,
+        props: NodeProps,
     },
     /// Lexeme in a greedy grammar.
     Lexeme {
@@ -50,36 +50,36 @@ pub enum Symbol {
         allow_others: bool,
 
         #[serde(flatten)]
-        props: SymbolProps,
+        props: NodeProps,
     },
     /// Generate according to specified grammar.
     GrammarRef {
         grammar_id: GrammarId,
 
         #[serde(flatten)]
-        props: SymbolProps,
+        props: NodeProps,
     },
 
     // Non-terminals:
     /// Generate one of the options.
     Select {
-        among: Vec<SymbolId>,
+        among: Vec<NodeId>,
 
         #[serde(flatten)]
-        props: SymbolProps,
+        props: NodeProps,
     },
-    /// Generate all of the symbols in sequence.
+    /// Generate all of the nodes in sequence.
     Join {
-        sequence: Vec<SymbolId>,
+        sequence: Vec<NodeId>,
 
         #[serde(flatten)]
-        props: SymbolProps,
+        props: NodeProps,
     },
 }
 
-/// Optional fields allowed on any Symbol
+/// Optional fields allowed on any Node
 #[derive(Serialize, Deserialize)]
-pub struct SymbolProps {
+pub struct NodeProps {
     pub max_tokens: Option<usize>,
     pub name: Option<String>,
     pub capture_name: Option<String>,
@@ -107,4 +107,4 @@ macro_rules! id_type {
 }
 
 id_type!(GrammarId);
-id_type!(SymbolId);
+id_type!(NodeId);

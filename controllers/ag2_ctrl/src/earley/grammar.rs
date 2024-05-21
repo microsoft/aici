@@ -2,7 +2,7 @@ use std::fmt::Debug;
 
 use aici_abi::{svob::SimpleVob, toktree::SpecialToken};
 
-use super::ByteSet;
+use super::{lex::LexemeIdx, ByteSet};
 use rustc_hash::FxHashMap;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -10,10 +10,10 @@ pub struct SymIdx(u32);
 
 impl Symbol {
     fn is_terminal(&self) -> bool {
-        self.is_byte_terminal() || self.is_model_variable()
+        self.is_lexeme_terminal() || self.is_model_variable()
     }
-    fn is_byte_terminal(&self) -> bool {
-        self.bytes.is_some()
+    fn is_lexeme_terminal(&self) -> bool {
+        self.lexeme.is_some()
     }
     fn is_model_variable(&self) -> bool {
         self.props.model_variable.is_some()
@@ -91,7 +91,7 @@ impl SymbolProps {
 struct Symbol {
     idx: SymIdx,
     name: String,
-    bytes: Option<ByteSet>,
+    lexeme: Option<LexemeIdx>,
     rules: Vec<Rule>,
     props: SymbolProps,
 }
@@ -216,7 +216,7 @@ impl Grammar {
 
     fn copy_from(&mut self, other: &Grammar, sym: SymIdx) -> SymIdx {
         let sym_data = other.sym_data(sym);
-        let r = if sym_data.is_byte_terminal() {
+        let r = if sym_data.is_lexeme_terminal() {
             self.terminal(sym_data.bytes.as_ref().unwrap())
         } else {
             self.symbol(&sym_data.name)
@@ -230,7 +230,7 @@ impl Grammar {
         let mut had_term = false;
         for s in &r.rhs {
             let sym = self.sym_data(*s);
-            if !had_term && sym.is_byte_terminal() {
+            if !had_term && sym.is_lexeme_terminal() {
                 had_term = true;
                 shape.push(None);
             } else {
@@ -649,7 +649,7 @@ impl CGrammar {
             .iter()
             .filter_map(|s| if s.is_terminal() { Some(s) } else { None })
             .partition::<Vec<_>, _>(|s| {
-                s.is_byte_terminal() && s.bytes.as_ref().unwrap().single_byte().is_some()
+                s.is_lexeme_terminal() && s.bytes.as_ref().unwrap().single_byte().is_some()
             });
         assert!(outp.symbols.len() == 1);
         assert!(outp.terminals.len() == 1);
