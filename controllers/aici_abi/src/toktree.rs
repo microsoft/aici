@@ -1,6 +1,7 @@
 // use 8:24 encoding - num_ch:tok_id (ch_byte:ch_off)* - 8 bytes per tree node
 // special case num_ch=0xff -> num_ch=0x100
 
+use anyhow::Result;
 use rustc_hash::FxHashMap;
 
 use crate::{
@@ -8,7 +9,6 @@ use crate::{
         box_from_bytes, clone_as_bytes, clone_vec_as_bytes, to_hex_string, vec_from_bytes,
         TokRxInfo, TokenId,
     },
-    host::trie_bytes,
     svob::SimpleVob,
 };
 
@@ -51,6 +51,10 @@ pub trait Recognizer {
     fn trie_started(&mut self) {}
     /// This combines `push_byte` and `byte_allowed` into one function for performance.
     fn try_push_byte(&mut self, byte: u8) -> bool;
+    /// Check if there are any errors to be reported to the user.
+    fn get_error(&self) -> Option<String> {
+        None
+    }
 }
 
 #[derive(Clone)]
@@ -126,11 +130,6 @@ impl TrieNode {
 const LEN_BITS: u32 = 10;
 
 impl TokTrie {
-    pub fn from_host() -> Self {
-        let buffer = trie_bytes();
-        Self::from_bytes(&buffer)
-    }
-
     pub fn from(info: &TokRxInfo, words: &Vec<Vec<u8>>) -> Self {
         let mut trie = TrieHash::new(0xff);
         let mut token_offsets = Vec::new();
@@ -215,7 +214,7 @@ impl TokTrie {
     pub fn token_set_dbg(&self, ts: &SimpleVob) -> String {
         let max_examples = 50;
 
-        let ts_neg = ts.negated(self.vocab_size());
+        let ts_neg = ts.negated();
         let use_neg = ts_neg.num_set() * 20 < ts.num_set();
         let ts1 = if use_neg { &ts_neg } else { &ts };
         let num_set = ts1.num_set();
@@ -539,19 +538,24 @@ impl TokTrie {
         }
     }
 
-    pub fn append_tokens(&self, r: &mut impl Recognizer, ts: &[TokenId]) {
+    pub fn append_tokens(&self, r: &mut impl Recognizer, ts: &[TokenId]) -> Result<()> {
         for t in ts {
-            self.append_token(r, *t)
+            self.append_token(r, *t)?;
         }
+        Ok(())
     }
 
-    pub fn append_token(&self, r: &mut impl Recognizer, t: TokenId) {
+    pub fn append_token(&self, r: &mut impl Recognizer, t: TokenId) -> Result<()> {
         // println!("append_token: {}", self.token_dbg(t));
         let bytes = self.token(t);
         for &byte in bytes {
-            r.push_byte(byte)
+            if !r.try_push_byte(byte) {
+                r.collapse();
+                return Err(anyhow::anyhow!("byte {:?} not allowed", byte as char));
+            }
         }
-        r.collapse()
+        r.collapse();
+        Ok(())
     }
 
     pub fn token_allowed(&self, r: &mut impl Recognizer, t: TokenId) -> bool {
