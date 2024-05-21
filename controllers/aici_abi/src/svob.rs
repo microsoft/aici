@@ -1,11 +1,26 @@
 use crate::TokenId;
-use std::{fmt::Debug, ops::Index};
+use std::{fmt::Debug, hash::Hash, ops::Index};
 
 #[derive(Clone)]
 pub struct SimpleVob {
     data: Vec<u32>,
     size: usize,
 }
+
+impl Hash for SimpleVob {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.size.hash(state);
+        self.data.hash(state);
+    }
+}
+
+impl PartialEq for SimpleVob {
+    fn eq(&self, other: &Self) -> bool {
+        self.size == other.size && self.data == other.data
+    }
+}
+
+impl Eq for SimpleVob {}
 
 impl Debug for SimpleVob {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -169,25 +184,22 @@ impl SimpleVob {
 
     #[inline(always)]
     pub fn allow_token(&mut self, tok: TokenId) {
-        let idx = tok as usize;
-        let byte_idx = idx / BITS;
-        let bit_idx = idx % BITS;
-        self.data[byte_idx] |= 1 << bit_idx;
+        self.set(tok as usize, true)
     }
 
     #[inline(always)]
     pub fn disallow_token(&mut self, tok: TokenId) {
-        let idx = tok as usize;
-        let byte_idx = idx / BITS;
-        let bit_idx = idx % BITS;
-        self.data[byte_idx] &= !(1 << bit_idx);
+        self.set(tok as usize, false)
     }
 
-    pub fn set(&mut self, tok: TokenId, val: bool) {
+    #[inline(always)]
+    pub fn set(&mut self, idx: usize, val: bool) {
+        let byte_idx = idx / BITS;
+        let bit_idx = idx % BITS;
         if val {
-            self.allow_token(tok);
+            self.data[byte_idx] |= 1 << bit_idx;
         } else {
-            self.disallow_token(tok);
+            self.data[byte_idx] &= !(1 << bit_idx);
         }
     }
 
@@ -199,11 +211,15 @@ impl SimpleVob {
     }
 
     #[inline(always)]
-    pub fn is_allowed(&self, tok: TokenId) -> bool {
-        let idx = tok as usize;
+    pub fn get(&self, idx: usize) -> bool {
         let byte_idx = idx / 32;
         let bit_idx = idx % 32;
         (self.data[byte_idx] & (1 << bit_idx)) != 0
+    }
+
+    #[inline(always)]
+    pub fn is_allowed(&self, tok: TokenId) -> bool {
+        self.get(tok as usize)
     }
 
     pub fn set_all(&mut self, val: bool) {
@@ -228,6 +244,32 @@ impl SimpleVob {
 
     pub fn iter(&self) -> SimpleVobIter {
         SimpleVobIter { vob: self, idx: 0 }
+    }
+
+    pub fn or(&mut self, other: &SimpleVob) {
+        assert_eq!(self.size, other.size);
+        for (idx, v) in self.data.iter_mut().zip(other.data.iter()) {
+            *idx |= *v;
+        }
+    }
+
+    pub fn and(&mut self, other: &SimpleVob) {
+        assert_eq!(self.size, other.size);
+        for (idx, v) in self.data.iter_mut().zip(other.data.iter()) {
+            *idx &= *v;
+        }
+    }
+
+    pub fn is_zero(&self) -> bool {
+        self.data.iter().all(|x| *x == 0)
+    }
+
+    pub fn and_is_zero(&self, other: &SimpleVob) -> bool {
+        assert_eq!(self.size, other.size);
+        self.data
+            .iter()
+            .zip(other.data.iter())
+            .all(|(a, b)| *a & *b == 0)
     }
 }
 
