@@ -3,7 +3,7 @@ use std::fmt::Debug;
 use aici_abi::toktree::SpecialToken;
 use anyhow::{bail, Result};
 
-use super::lex::{Lexeme, LexemeIdx};
+use super::lexer::{Lexeme, LexemeIdx};
 use rustc_hash::FxHashMap;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]

@@ -1,4 +1,4 @@
-use super::{lex::quote_regex, Grammar};
+use super::{lexer::quote_regex, Grammar};
 use crate::{
     api::{GrammarWithLexer, Node, TopLevelGrammar},
     earley::grammar::{LexemeInfo, SymbolProps},

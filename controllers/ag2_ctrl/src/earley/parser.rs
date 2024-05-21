@@ -14,7 +14,7 @@ use anyhow::{bail, Result};
 
 use super::{
     grammar::{CGrammar, CSymIdx, CSymbol, ModelVariable, RuleIdx},
-    lex::Lexeme,
+    lexer::Lexeme,
 };
 
 const DEBUG: bool = false;
