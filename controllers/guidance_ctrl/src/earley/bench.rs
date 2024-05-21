@@ -68,7 +68,7 @@ pub fn earley_test(trie: toktree::TokTrie) {
             //     trie.token_dbg(tok),
             //     trie.token_set_dbg(&vob)
             // );
-            trie.append_token(&mut parser, tok);
+            trie.append_token(&mut parser, tok).unwrap();
             if COLLECT_TIMES {
                 times.push(tt.elapsed().as_micros() as u32);
             }

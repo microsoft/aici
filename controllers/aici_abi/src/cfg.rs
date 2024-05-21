@@ -1,7 +1,8 @@
+use crate::host::host_trie;
 use crate::lex::{Lexer, LexerState, StateID, VobIdx, VobSet};
 use crate::{
     svob::SimpleVob,
-    toktree::{Recognizer, SpecialToken, TokTrie},
+    toktree::{Recognizer, SpecialToken},
 };
 use anyhow::Result;
 use cfgrammar::{
@@ -170,8 +171,8 @@ impl CfgParser {
             .collect::<Vec<_>>();
 
         for ridx in grm.iter_rules() {
-            let rname = grm.rule_name_str(ridx);
-            if rname.to_uppercase() != rname {
+            let rule_name = grm.rule_name_str(ridx);
+            if rule_name.to_uppercase() != rule_name {
                 continue;
             }
             for pidx in grm.rule_to_prods(ridx) {
@@ -179,8 +180,8 @@ impl CfgParser {
                 if let [Symbol::Token(tidx)] = toks {
                     let idx = *tidx_to_pat_idx.get(&tidx).unwrap();
                     // this doesn't seem very useful
-                    // friendly_pattern_names[idx] = rname.to_string();
-                    if rname == "SKIP" {
+                    // friendly_pattern_names[idx] = rule_name.to_string();
+                    if rule_name == "SKIP" {
                         skip_patterns.set(idx, true);
                     }
                 }
@@ -506,7 +507,7 @@ pub fn cfg_test() -> Result<()> {
     let sample = include_bytes!("../grammars/sample.c");
 
     if true {
-        let trie = TokTrie::from_host();
+        let trie = host_trie();
         let toks = trie.greedy_tokenize(sample);
 
         #[cfg(not(target_arch = "wasm32"))]
@@ -537,7 +538,7 @@ pub fn cfg_test() -> Result<()> {
                 );
                 cfg.viable_now();
             }
-            trie.append_token(&mut cfg, tok);
+            trie.append_token(&mut cfg, tok).unwrap();
         }
 
         #[cfg(not(target_arch = "wasm32"))]

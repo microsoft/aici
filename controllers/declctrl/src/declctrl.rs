@@ -10,15 +10,7 @@
 */
 
 use aici_abi::{
-    aici_expose_all,
-    bytes::limit_str,
-    cfg::CfgParser,
-    rx::{RecRx, RxStackRecognizer},
-    svob::SimpleVob,
-    tokenize_bytes,
-    toktree::{Recognizer, SpecialToken, TokTrie},
-    AiciCtrl, Branch, InitPromptArg, InitPromptResult, MidProcessArg, MidProcessResult, TokenId,
-    VariableStorage,
+    aici_expose_all, bytes::limit_str, cfg::CfgParser, host_trie, rx::{RecRx, RxStackRecognizer}, svob::SimpleVob, tokenize_bytes, toktree::{Recognizer, SpecialToken, TokTrie}, AiciCtrl, Branch, InitPromptArg, InitPromptResult, MidProcessArg, MidProcessResult, TokenId, VariableStorage
 };
 use core::panic;
 use serde::{Deserialize, Serialize};
@@ -661,7 +653,7 @@ impl StepState {
                         let defl = "(.|\n)+".to_string();
                         let rx = rx.as_deref().unwrap_or(&defl);
                         StepSpecific::Rx {
-                            rx: RecRx::from_rx(&rx).to_stack_recognizer(),
+                            rx: RecRx::from_rx(&rx, None).unwrap().to_stack_recognizer(),
                         }
                     }
                 };
@@ -794,8 +786,8 @@ impl StepState {
             StepSpecific::Options { tokens } => {
                 tokens.retain(has_token_at(token, self.num_tokens - 1))
             }
-            StepSpecific::Cfg { cfg } => runner.trie.append_token(cfg, token),
-            StepSpecific::Rx { rx } => runner.trie.append_token(rx, token),
+            StepSpecific::Cfg { cfg } => runner.trie.append_token(cfg, token).unwrap(),
+            StepSpecific::Rx { rx } => runner.trie.append_token(rx, token).unwrap(),
             StepSpecific::Inner { constraints } => {
                 for c in constraints {
                     let pos = runner.string_position(sidx, &c.after);
@@ -934,7 +926,7 @@ impl Runner {
 
         Self {
             ctx: RunnerCtx {
-                trie: TokTrie::from_host(),
+                trie: host_trie(),
                 tokens: Vec::new(),
                 bytes: Vec::new(),
                 vars: VariableStorage::new(),

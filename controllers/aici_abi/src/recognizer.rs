@@ -1,6 +1,5 @@
 use crate::{
-    toktree::{Recognizer, SpecialToken, TokTrie},
-    AiciCtrl, MidProcessArg, MidProcessResult,
+    host::host_trie, toktree::{Recognizer, SpecialToken, TokTrie}, AiciCtrl, MidProcessArg, MidProcessResult
 };
 use std::fmt::Debug;
 
@@ -12,7 +11,7 @@ pub struct AiciRecognizer<R: Recognizer> {
 impl<R: Recognizer> AiciRecognizer<R> {
     pub fn from_recognizer(rec: R) -> Self {
         AiciRecognizer {
-            trie: TokTrie::from_host(),
+            trie: host_trie(),
             rec,
         }
     }
@@ -23,7 +22,7 @@ impl<R: Recognizer + Clone> AiciCtrl for AiciRecognizer<R> {
         if arg.has_eos() {
             return MidProcessResult::stop();
         }
-        self.trie.append_tokens(&mut self.rec, &arg.tokens);
+        self.trie.append_tokens(&mut self.rec, &arg.tokens).unwrap();
         let mut set = self.trie.alloc_token_set();
         self.trie.compute_bias(&mut self.rec, &mut set);
         MidProcessResult::sample(set)

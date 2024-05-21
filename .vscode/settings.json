@@ -68,7 +68,9 @@
         "rust"
     ],
     "cSpell.words": [
+        "accpt",
         "actix",
+        "addu",
         "aici",
         "aicirt",
         "avgtol",
@@ -80,10 +82,12 @@
         "cuda",
         "curr",
         "dtype",
+        "elts",
         "embd",
         "endp",
         "EPYC",
         "fdstat",
+        "fffd",
         "freqs",
         "futex",
         "gguf",
@@ -131,6 +135,7 @@
         "usize",
         "varlen",
         "vllm",
+        "vobset",
         "waitpid",
         "wasi",
         "Wqkv"

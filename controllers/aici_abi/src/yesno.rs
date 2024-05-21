@@ -1,4 +1,4 @@
-use aici_abi::{tokenize, toktree::TokTrie, AiciCtrl, MidProcessArg, MidProcessResult, TokenId};
+use aici_abi::{host_trie, tokenize, toktree::TokTrie, AiciCtrl, MidProcessArg, MidProcessResult, TokenId};
 
 pub struct Runner {
     toktrie: TokTrie,
@@ -13,7 +13,7 @@ impl Runner {
         let no = tokenize("No")[0];
         // ignore user-passed arg
         Runner {
-            toktrie: TokTrie::from_host(),
+            toktrie: host_trie(),
             tokens: Vec::new(),
             yes,
             no,

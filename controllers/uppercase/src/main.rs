@@ -1,4 +1,5 @@
 use aici_abi::{
+    host_trie,
     recognizer::{FunctionalRecognizer, StackRecognizer},
     tokenize,
     toktree::{SpecialToken, TokTrie},
@@ -38,7 +39,7 @@ pub struct Runner {
 impl Runner {
     pub fn new() -> Self {
         Runner {
-            toktrie: TokTrie::from_host(),
+            toktrie: host_trie(),
             tokens: Vec::new(),
             recognizer: StackRecognizer::from(QuadUpper {}),
         }
@@ -62,7 +63,8 @@ impl AiciCtrl for Runner {
         arg.save_tokens(&mut self.tokens);
         // and update the state of our recognizer
         self.toktrie
-            .append_tokens(&mut self.recognizer, &arg.tokens);
+            .append_tokens(&mut self.recognizer, &arg.tokens)
+            .unwrap();
 
         // stop after 50 tokens
         if self.tokens.len() > 50 || arg.has_eos() {

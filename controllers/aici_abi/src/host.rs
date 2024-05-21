@@ -97,7 +97,7 @@ pub struct WasmTokenizerEnv {
 impl Default for WasmTokenizerEnv {
     fn default() -> Self {
         WasmTokenizerEnv {
-            toktrie: TokTrie::from_bytes(&trie_bytes()),
+            toktrie: host_trie(),
         }
     }
 }
@@ -148,9 +148,7 @@ impl HostInterface for WasmHost {
 
     fn return_logit_bias(&self, vob: &SimpleVob) -> u32 {
         assert!(vob.len() > 0);
-        unsafe {
-            aici_host_return_logit_bias(vob.as_ptr())
-        }
+        unsafe { aici_host_return_logit_bias(vob.as_ptr()) }
     }
 
     fn process_arg_bytes(&self) -> Vec<u8> {
@@ -224,8 +222,8 @@ pub fn arg_string() -> String {
     String::from_utf8_lossy(&arg_bytes()).to_string()
 }
 
-pub fn trie_bytes() -> Vec<u8> {
-    get_host().trie_bytes()
+pub fn host_trie() -> TokTrie {
+    TokTrie::from_bytes(&get_host().trie_bytes())
     // #[cfg(not(target_arch = "wasm32"))]
     // return std::fs::read("tokenizer.bin").unwrap();
 }

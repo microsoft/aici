@@ -1,7 +1,7 @@
 use std::sync::Mutex;
 
 use aici_abi::{
-    aici_stop,
+    aici_stop, host_trie,
     recognizer::{AnythingGoes, StackRecognizer},
     svob::SimpleVob,
     toktree::{Recognizer, SpecialToken, TokTrie},
@@ -23,7 +23,7 @@ unsafe impl Send for ModuleState {}
 
 lazy_static::lazy_static! {
     static ref GLOBAL_STATE: Mutex<ModuleState> = Mutex::new(ModuleState {
-        trie: TokTrie::from_host(),
+        trie: host_trie(),
         vars: VariableStorage::new(),
         mid_process_result: None,
     });
@@ -415,10 +415,12 @@ mod aici_mod {
     }
 
     #[rquickjs::function]
-    pub fn regexConstraint(regex: String) -> Constraint {
+    pub fn regexConstraint<'js>(ctx: Ctx<'js>, regex: String) -> Result<Constraint> {
         println!("regex constraint: {:?}", regex);
-        let rx = RecRx::from_rx(regex.as_str()).to_stack_recognizer();
-        Constraint::new(Box::new(rx))
+        let rx = RecRx::from_rx(regex.as_str(), None)
+            .map_err(|e| Exception::throw_type(&ctx, &format!("{}", e)))?
+            .to_stack_recognizer();
+        Ok(Constraint::new(Box::new(rx)))
     }
 
     #[rquickjs::function]
@@ -463,7 +465,7 @@ impl<T: Recognizer> PyConstraint for T {
 
     fn append_token(&mut self, t: TokenId) {
         let trie = &mut GLOBAL_STATE.lock().unwrap().trie;
-        trie.append_token(self, t)
+        trie.append_token(self, t).unwrap()
     }
 
     fn allow_tokens(&mut self, logits: &mut SimpleVob) {

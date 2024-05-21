@@ -1,9 +1,5 @@
 use aici_abi::{
-    aici_stop,
-    svob::SimpleVob,
-    toktree::{Recognizer, SpecialToken, TokTrie},
-    AiciCtrl, Branch, InitPromptArg, InitPromptResult, MidProcessArg, MidProcessResult, Splice,
-    TokenId, VariableStorage,
+    aici_stop, host_trie, svob::SimpleVob, toktree::{Recognizer, SpecialToken, TokTrie}, AiciCtrl, Branch, InitPromptArg, InitPromptResult, MidProcessArg, MidProcessResult, Splice, TokenId, VariableStorage
 };
 use anyhow::Result;
 use lazy_static::lazy_static;
@@ -29,7 +25,7 @@ unsafe impl Send for ModuleState {}
 lazy_static! {
     static ref GLOBAL_STATE: Mutex<ModuleState> = Mutex::new(ModuleState {
         cb_obj: None,
-        trie: TokTrie::from_host(),
+        trie: host_trie(),
         vars: VariableStorage::new(),
         // tokens: vec![],
         // bytes: vec![],
@@ -241,8 +237,10 @@ mod _aici {
     }
 
     #[pyfunction(name = "RegexConstraint")]
-    fn regex_constraint(regex: PyStrRef) -> PyResult<Constraint> {
-        let rx = RecRx::from_rx(regex.as_str()).to_stack_recognizer();
+    fn regex_constraint(regex: PyStrRef, vm: &VirtualMachine) -> PyResult<Constraint> {
+        let rx = RecRx::from_rx(regex.as_str(), None)
+            .map_err(|e| vm.new_runtime_error(format!("{}", e)))?
+            .to_stack_recognizer();
         Ok(Constraint::new(rx))
     }
 
@@ -475,7 +473,7 @@ impl<T: Recognizer> PyConstraint for T {
 
     fn append_token(&mut self, t: TokenId) {
         let trie = &mut GLOBAL_STATE.lock().unwrap().trie;
-        trie.append_token(self, t)
+        trie.append_token(self, t).unwrap()
     }
 
     fn allow_tokens(&mut self, logits: &mut SimpleVob) {

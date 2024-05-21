@@ -23,7 +23,7 @@ pub mod substring;
 pub type TokenId = bytes::TokenId;
 
 pub use host::{
-    aici_stop, arg_bytes, arg_string, get_config, self_seq_id, tokenize, tokenize_bytes,
+    aici_stop, arg_bytes, arg_string, get_config, host_trie, self_seq_id, tokenize, tokenize_bytes,
     StorageCmd, StorageOp, StorageResp, TokenizerEnv, VariableStorage, WasmTokenizerEnv,
 };
 
@@ -54,7 +54,7 @@ pub struct SeqId(pub u32);
 pub struct MidProcessArg {
     /// Sampling result for the previous iteration.
     /// For simple sampled token 't', backtrack==0 and tokens==[t].
-    /// For first request, backtrack==0 and tokens==[] (prompt is passed separetely, before).
+    /// For first request, backtrack==0 and tokens==[] (prompt is passed separately, before).
     /// Can be more complex when splices are used.
     pub backtrack: u32,
     pub tokens: Vec<TokenId>,
@@ -98,7 +98,7 @@ Which means: when any token starting with '"' is sampled, we remove it (backtrac
 and then append the next full fragment of JSON '", "age": '
 
 If the tokenizers has tokens like 'a"', 'b"' etc, then we would need many splices
-(there may be limits how many we want to pass over the IPC boundry).
+(there may be limits how many we want to pass over the IPC boundary).
 */
 
 /// Describes what to do after sampling.
