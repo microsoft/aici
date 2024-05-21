@@ -192,8 +192,8 @@ impl CfgParser {
 
         let mut vobset = VobSet::new();
         // all-zero has to be inserted first
-        let _all0 = vobset.get(&vob![false; patterns.len()]);
-        let all1 = vobset.get(&vob![true; patterns.len()]);
+        let _all0 = vobset.insert_or_get(&vob![false; patterns.len()]);
+        let all1 = vobset.insert_or_get(&vob![true; patterns.len()]);
 
         // TIME: 27ms
         let dfa = Lexer::from(patterns, &mut vobset);
@@ -226,7 +226,7 @@ impl CfgParser {
                     }
                 }
 
-                vobset.get(&r)
+                vobset.insert_or_get(&r)
             })
             .collect::<Vec<_>>();
 

@@ -67,7 +67,7 @@ impl VobSet {
         }
     }
 
-    pub fn get(&mut self, vob: &Vob) -> VobIdx {
+    pub fn insert_or_get(&mut self, vob: &Vob) -> VobIdx {
         if let Some(idx) = self.by_vob.get(vob) {
             return *idx;
         }
@@ -214,7 +214,7 @@ impl Lexer {
         let mut vobidx_by_state_off =
             vec![VobIdx::all_zero(); 1 + (states_idx.iter().max().unwrap() >> shift)];
         for (k, v) in reachable_patterns.iter() {
-            vobidx_by_state_off[k.as_usize() >> shift] = vobset.get(v);
+            vobidx_by_state_off[k.as_usize() >> shift] = vobset.insert_or_get(v);
         }
 
         println!("initial: {:?}; {} states", initial, states.len());
