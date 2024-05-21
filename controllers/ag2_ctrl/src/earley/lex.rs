@@ -4,9 +4,9 @@ use regex_automata::{
     util::syntax,
 };
 use rustc_hash::FxHashMap;
-use std::{hash::Hash, vec};
+use std::{hash::Hash, rc::Rc, vec};
 
-pub type PatIdx = usize;
+pub struct PatIdx(pub usize);
 pub type StateID = regex_automata::util::primitives::StateID;
 
 const LOG_LEXER: bool = false;
@@ -85,14 +85,29 @@ impl VobSet {
     }
 }
 
+struct StateInfo {
+    reachable: VobIdx,
+    accepting: VobIdx,
+}
+
+impl Default for StateInfo {
+    fn default() -> Self {
+        StateInfo {
+            reachable: VobIdx::all_zero(),
+            accepting: VobIdx::all_zero(),
+        }
+    }
+}
+
 pub struct Lexer {
     dfa: dense::DFA<Vec<u32>>,
     initial: LexerState,
-    vobidx_by_state_off: Vec<VobIdx>,
+    info_by_state_off: Vec<StateInfo>,
+    vobset: Rc<VobSet>,
 }
 
 impl Lexer {
-    pub fn from(patterns: Vec<String>, vobset: &mut VobSet) -> Self {
+    pub fn from(patterns: Vec<String>, mut vobset: VobSet) -> Self {
         // TIME: 4ms
         let dfa = dense::Builder::new()
             .configure(
@@ -182,18 +197,30 @@ impl Lexer {
         states_idx.sort();
 
         let shift = dfa.stride2();
-        let mut vobidx_by_state_off =
-            vec![VobIdx::all_zero(); 1 + (states_idx.iter().max().unwrap() >> shift)];
+        let mut info_by_state_off = (0..1 + (states_idx.iter().max().unwrap() >> shift))
+            .map(|_| StateInfo::default())
+            .collect::<Vec<_>>();
         for (k, v) in reachable_patterns.iter() {
-            vobidx_by_state_off[k.as_usize() >> shift] = vobset.insert_or_get(v);
+            let state_idx = k.as_usize() >> shift;
+            info_by_state_off[state_idx].reachable = vobset.insert_or_get(v);
+
+            let state = *k;
+            if dfa.is_match_state(state) {
+                let mut accepting = SimpleVob::alloc(patterns.len());
+                for pat_idx in 0..dfa.match_len(state) {
+                    accepting.set(dfa.match_pattern(state, pat_idx).as_usize(), true)
+                }
+                info_by_state_off[state_idx].accepting = vobset.insert_or_get(&accepting);
+            }
         }
 
         println!("initial: {:?}; {} states", initial, states.len());
 
         let mut lex = Lexer {
             dfa,
-            vobidx_by_state_off,
+            info_by_state_off,
             initial: LexerState::fake(),
+            vobset: Rc::new(vobset),
         };
 
         lex.initial = lex.mk_state(initial);
@@ -211,6 +238,10 @@ impl Lexer {
         lex
     }
 
+    pub fn vobset(&self) -> &VobSet {
+        &self.vobset
+    }
+
     pub fn file_start_state(&self) -> StateID {
         self.initial.state
         // pretend we've just seen a newline at the beginning of the file
@@ -225,12 +256,16 @@ impl Lexer {
         }
     }
 
+    fn state_info(&self, state: StateID) -> &StateInfo {
+        &self.info_by_state_off[state.as_usize() >> self.dfa.stride2()]
+    }
+
     fn is_dead(&self, state: StateID) -> bool {
         self.reachable_tokens(state).is_zero()
     }
 
     fn reachable_tokens(&self, state: StateID) -> VobIdx {
-        self.vobidx_by_state_off[state.as_usize() >> self.dfa.stride2()]
+        self.state_info(state).reachable
     }
 
     fn get_token(&self, prev: StateID) -> Option<PatIdx> {
@@ -241,20 +276,27 @@ impl Lexer {
 
         // we take the first token that matched
         // (eg., "while" will match both keyword and identifier, but keyword is first)
-        let pat_idx = (0..self.dfa.match_len(state))
-            .map(|idx| self.dfa.match_pattern(state, idx).as_usize())
-            .min()
-            .unwrap();
+        let accepting = self.state_info(state).accepting;
+
+        if accepting.is_zero() {
+            return None;
+        }
+
+        let pat_idx = self.vobset.resolve(accepting).first_bit_set().unwrap();
 
         if LOG_LEXER {
             println!("token: {}", pat_idx);
         }
 
-        Some(pat_idx)
+        Some(PatIdx(pat_idx))
     }
 
     #[inline(always)]
-    pub fn advance(&self, prev: StateID, byte: Option<u8>) -> Option<(LexerState, Option<PatIdx>)> {
+    pub fn advance(
+        &self,
+        prev: StateID,
+        byte: Option<u8>,
+    ) -> Option<(LexerState, Option<PatIdx>)> {
         let dfa = &self.dfa;
         if let Some(byte) = byte {
             let state = dfa.next_state(prev, byte);

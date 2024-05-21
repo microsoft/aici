@@ -271,6 +271,15 @@ impl SimpleVob {
             .zip(other.data.iter())
             .all(|(a, b)| *a & *b == 0)
     }
+
+    pub fn first_bit_set(&self) -> Option<usize> {
+        for (idx, v) in self.data.iter().enumerate() {
+            if *v != 0 {
+                return Some(idx * BITS + v.trailing_zeros() as usize);
+            }
+        }
+        None
+    }
 }
 
 pub struct SimpleVobIter<'a> {
