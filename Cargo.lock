@@ -241,6 +241,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "bytemuck",
+ "bytemuck_derive",
  "cfgrammar",
  "lrtable",
  "regex-automata 0.4.5",
@@ -605,6 +606,17 @@ name = "bytemuck"
 version = "1.16.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "78834c15cb5d5efe3452d58b1e8ba890dd62d21907f867f383358198e56ebca5"
+
+[[package]]
+name = "bytemuck_derive"
+version = "1.6.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4da9a32f3fed317401fa3c862968128267c3106685286e15d5aaa3d7389c2f60"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.46",
+]
 
 [[package]]
 name = "byteorder"

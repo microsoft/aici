@@ -85,6 +85,7 @@
         "elts",
         "embd",
         "endp",
+        "EPERM",
         "EPYC",
         "fdstat",
         "fffd",

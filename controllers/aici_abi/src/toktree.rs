@@ -2,13 +2,11 @@
 // special case num_ch=0xff -> num_ch=0x100
 
 use anyhow::Result;
+use bytemuck_derive::{Pod, Zeroable};
 use rustc_hash::FxHashMap;
 
 use crate::{
-    bytes::{
-        box_from_bytes, clone_as_bytes, clone_vec_as_bytes, to_hex_string, vec_from_bytes,
-        TokRxInfo, TokenId,
-    },
+    bytes::{to_hex_string, vec_from_bytes, TokRxInfo, TokenId},
     svob::SimpleVob,
 };
 
@@ -67,6 +65,7 @@ pub struct TokTrie {
     token_duplicates: FxHashMap<TokenId, Vec<TokenId>>,
 }
 
+#[derive(Clone, Copy, Zeroable, Pod)]
 #[repr(C)]
 pub struct TokTrieHeader {
     magic: u32,
@@ -82,7 +81,7 @@ impl TokTrieHeader {
     const MAGIC: u32 = 0x558b6fd3;
 }
 
-#[derive(Clone)]
+#[derive(Clone, Copy, Zeroable, Pod)]
 #[repr(C)]
 pub struct TrieNode {
     // byte:token
@@ -377,7 +376,8 @@ impl TokTrie {
 
     pub fn from_bytes(bytes: &[u8]) -> Self {
         let pref = std::mem::size_of::<TokTrieHeader>();
-        let hd = *box_from_bytes::<TokTrieHeader>(&bytes[0..pref]);
+        let hd: &TokTrieHeader = bytemuck::from_bytes(&bytes[0..pref]);
+
         assert!(hd.magic == TokTrieHeader::MAGIC);
         assert!(hd.hd_size as usize == pref);
 
@@ -428,9 +428,9 @@ impl TokTrie {
     }
 
     pub fn serialize(&self) -> Vec<u8> {
-        let mut trie_data = clone_vec_as_bytes(&self.nodes);
-        let mut token_offsets = clone_vec_as_bytes(&self.token_offsets);
-        let mut token_data = clone_vec_as_bytes(&self.token_data);
+        let trie_data: &[u8] = bytemuck::cast_slice(&self.nodes);
+        let token_offsets: &[u8] = bytemuck::cast_slice(&self.token_offsets);
+        let token_data: &[u8] = bytemuck::cast_slice(&self.token_data);
 
         let hd = TokTrieHeader {
             magic: TokTrieHeader::MAGIC,
@@ -442,10 +442,10 @@ impl TokTrie {
             align: [],
         };
 
-        let mut bytes = clone_as_bytes(&hd);
-        bytes.append(&mut trie_data);
-        bytes.append(&mut token_offsets);
-        bytes.append(&mut token_data);
+        let mut bytes = bytemuck::bytes_of(&hd).to_vec();
+        bytes.extend_from_slice(trie_data);
+        bytes.extend_from_slice(token_offsets);
+        bytes.extend_from_slice(token_data);
         bytes
     }
 

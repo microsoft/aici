@@ -17,6 +17,7 @@ lrtable = { version = "0.13.3", optional = true }
 vob = { version = "3.0.3", optional = true }
 rustc-hash = { version = "1.1.0", optional = true }
 bytemuck = "1.16.0"
+bytemuck_derive = "1.6.0"
 
 [features]
 default = ["cfg", "rx"]

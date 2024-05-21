@@ -1,9 +1,13 @@
 use crate::worker::{GroupCmd, GroupHandle, GroupResp, RtMidProcessArg};
 use aici_abi::{
-    bytes::{clone_vec_as_bytes, limit_str, vec_from_bytes, TokRxInfo},
+    bytes::{clone_vec_as_bytes, limit_str, vec_from_bytes, TokRxInfo, U32Pair},
     StorageCmd,
 };
-use aicirt::{api::{BiasType, InferenceCapabilities}, shm::ShmAllocator, user_error};
+use aicirt::{
+    api::{BiasType, InferenceCapabilities},
+    shm::ShmAllocator,
+    user_error,
+};
 use anyhow::{anyhow, Result};
 use std::{
     rc::Rc,
@@ -360,9 +364,9 @@ pub fn setup_linker(engine: &wasmtime::Engine) -> Result<Arc<wasmtime::Linker<Mo
                 return 8; // BADF
             }
             let iovs = read_caller_mem(&caller, iovs_ptr, niovs * 8);
-            let ptr_lens = vec_from_bytes::<(u32, u32)>(&iovs);
+            let ptr_lens = vec_from_bytes::<U32Pair>(&iovs);
             let mut nwr = 0;
-            for (ptr, len) in ptr_lens {
+            for U32Pair(ptr, len) in ptr_lens {
                 let m = read_caller_mem(&caller, ptr, len);
                 nwr += m.len();
                 caller.data_mut().write_log(&m);
