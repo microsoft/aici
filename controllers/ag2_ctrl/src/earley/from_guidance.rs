@@ -1,6 +1,9 @@
-use super::Grammar;
-use crate::{earley::grammar::SymbolProps, api::TopLevelGrammar};
-use anyhow::Result;
+use super::{lex::quote_regex, Grammar};
+use crate::{
+    api::{GrammarWithLexer, Node, TopLevelGrammar},
+    earley::grammar::{LexemeInfo, SymbolProps},
+};
+use anyhow::{bail, ensure, Result};
 
 #[derive(Debug)]
 pub struct NodeProps {
@@ -35,73 +38,84 @@ impl NodeProps {
     }
 }
 
-pub fn earley_grm_from_guidance(_bytes: TopLevelGrammar) -> Result<Grammar> {
-    panic!();
-    // let mut reader = quick_protobuf::BytesReader::from_bytes(bytes);
-    // let gg = guidance::Grammar::from_reader(&mut reader, bytes).unwrap();
-    // let mut grm = Grammar::new();
+pub fn grammar_from_json(input: GrammarWithLexer) -> Result<Grammar> {
+    let is_greedy = input.greedy_lexer;
+    let is_lazy = !is_greedy;
 
-    // let symbols = gg
-    //     .nodes
-    //     .iter()
-    //     .map(|n| {
-    //         let term = match &n.function_type {
-    //             OneOffunction_type::byte(n) => {
-    //                 assert!(n.byte.len() == 1);
-    //                 Some(grm.terminal(&ByteSet::from_range(n.byte[0], n.byte[0])))
-    //             }
-    //             OneOffunction_type::byte_range(n) => {
-    //                 assert!(n.byte_range.len() == 2);
-    //                 Some(grm.terminal(&ByteSet::from_range(n.byte_range[0], n.byte_range[1])))
-    //             }
-    //             OneOffunction_type::model_variable(n) => Some(grm.model_variable(&n.name)),
-    //             _ => None,
-    //         };
-    //         let props = NodeProps::from_grammar_function(&n.function_type);
-    //         let sym_props = props.to_symbol_props();
-    //         let name = sym_props.capture_name.as_ref().unwrap_or(&props.name);
-    //         // println!("props: {:?}", props);
-    //         let sym = if let Some(term) = term {
-    //             assert!(props.max_tokens == i32::MAX, "max_tokens on terminal");
-    //             if sym_props.is_special() {
-    //                 let wrap = grm.fresh_symbol(if name.is_empty() { "t_wrap" } else { name });
-    //                 grm.add_rule(term, vec![term]);
-    //                 wrap
-    //             } else {
-    //                 term
-    //             }
-    //         } else {
-    //             assert!(name.len() > 0, "empty name");
-    //             grm.fresh_symbol(name)
-    //         };
-    //         grm.apply_props(sym, sym_props);
-    //         sym
-    //     })
-    //     .collect::<Vec<_>>();
+    let mut grm = Grammar::new();
+    let node_map = input
+        .nodes
+        .iter()
+        .enumerate()
+        .map(|(idx, n)| {
+            let props = n.node_props();
+            let name = match props.name.as_ref() {
+                Some(n) => n.clone(),
+                None => format!("n{}", idx),
+            };
+            let symprops = SymbolProps {
+                commit_point: false,
+                hidden: false,
+                max_tokens: props.max_tokens.unwrap_or(usize::MAX),
+                model_variable: None,
+                capture_name: props.capture_name.clone(),
+                temperature: 0.0,
+            };
+            grm.fresh_symbol_ext(&name, symprops)
+        })
+        .collect::<Vec<_>>();
 
-    // for (n, sym) in gg.nodes.iter().zip(symbols.iter()) {
-    //     let lhs = *sym;
-    //     match &n.function_type {
-    //         OneOffunction_type::join(n) => {
-    //             let rhs = n.values.iter().map(|idx| symbols[*idx as usize]).collect();
-    //             grm.add_rule(lhs, rhs);
-    //         }
-    //         OneOffunction_type::select(n) => {
-    //             if n.nullable {
-    //                 grm.add_rule(lhs, vec![]);
-    //             }
-    //             for v in &n.values {
-    //                 grm.add_rule(lhs, vec![symbols[*v as usize]]);
-    //             }
-    //         }
-    //         OneOffunction_type::byte(_)
-    //         | OneOffunction_type::byte_range(_)
-    //         | OneOffunction_type::model_variable(_) => {}
-    //         OneOffunction_type::None => panic!("???"),
-    //     }
-    // }
+    for (n, sym) in input.nodes.iter().zip(node_map.iter()) {
+        let lhs = *sym;
+        match &n {
+            Node::Select { among, .. } => {
+                ensure!(among.len() > 0, "empty select");
+                for v in among {
+                    grm.add_rule(lhs, vec![node_map[v.0]]);
+                }
+            }
+            Node::Join { sequence, .. } => {
+                let rhs = sequence.iter().map(|idx| node_map[idx.0]).collect();
+                grm.add_rule(lhs, rhs);
+            }
+            Node::Gen { data, .. } => {
+                ensure!(is_lazy, "gen() only allowed in lazy grammars");
+                let info = LexemeInfo {
+                    rx: format!("({})({})", data.body_rx, data.stop_rx),
+                    allow_others: false,
+                };
+                grm.make_terminal(lhs, info)?;
+                let symprops = grm.sym_props_mut(lhs);
+                if let Some(t) = data.temperature {
+                    symprops.temperature = t;
+                }
+            }
+            Node::Lexeme {
+                rx, allow_others, ..
+            } => {
+                ensure!(is_greedy, "lexeme() only allowed in greedy grammars");
+                let info = LexemeInfo {
+                    rx: rx.clone(),
+                    allow_others: *allow_others,
+                };
+                grm.make_terminal(lhs, info)?;
+            }
+            Node::String { literal, .. } => {
+                let info = LexemeInfo {
+                    rx: quote_regex(&literal),
+                    allow_others: false,
+                };
+                grm.make_terminal(lhs, info)?;
+            }
+            Node::GrammarRef { grammar_id, .. } => {
+                let _ = grammar_id;
+                bail!("TODO: grammar ref")
+            }
+        }
+    }
+    Ok(grm)
+}
 
-    // grm.add_rule(grm.start(), vec![symbols[0]]);
-
-    // Ok(grm)
+pub fn grammars_from_json(input: TopLevelGrammar) -> Result<Vec<Grammar>> {
+    input.grammars.into_iter().map(grammar_from_json).collect()
 }

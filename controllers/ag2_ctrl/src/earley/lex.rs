@@ -6,8 +6,38 @@ use regex_automata::{
 use rustc_hash::FxHashMap;
 use std::{hash::Hash, rc::Rc, vec};
 
+#[derive(Debug, Clone, Copy, Hash, PartialEq, Eq)]
 pub struct LexemeIdx(pub usize);
 pub type StateID = regex_automata::util::primitives::StateID;
+
+#[derive(Clone)]
+pub struct Lexeme {
+    pub idx: LexemeIdx,
+    pub bytes: Vec<u8>,
+    pub hidden_len: usize,
+}
+
+impl Lexeme {
+    pub fn just_idx(idx: LexemeIdx) -> Self {
+        Lexeme {
+            idx,
+            hidden_len: 0,
+            bytes: Vec::new(),
+        }
+    }
+
+    pub fn bogus() -> Self {
+        Lexeme::just_idx(LexemeIdx(0))
+    }
+
+    pub fn num_visible_bytes(&self) -> usize {
+        self.bytes.len() - self.hidden_len
+    }
+
+    pub fn visible_bytes(&self) -> &[u8] {
+        &self.bytes[0..self.num_visible_bytes()]
+    }
+}
 
 const LOG_LEXER: bool = false;
 
@@ -340,4 +370,18 @@ impl Lexer {
             }
         }
     }
+}
+
+pub fn quote_regex(s: &str) -> String {
+    let mut out = String::new();
+    for c in s.chars() {
+        match c {
+            '\\' | '+' | '*' | '?' | '^' | '$' | '(' | ')' | '[' | ']' | '{' | '}' | '.' | '|' => {
+                out.push_str("\\")
+            }
+            _ => {}
+        }
+        out.push(c);
+    }
+    out
 }

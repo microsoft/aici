@@ -1,14 +1,14 @@
-use aici_abi::toktree;
+use aici_abi::toktree::{self, Recognizer};
 
 use super::Parser;
-use crate::earley::from_guidance::earley_grm_from_guidance;
+use crate::earley::from_guidance::grammars_from_json;
 
 pub fn earley_test(trie: toktree::TokTrie) {
     let g_bytes = include_bytes!("../../../aici_abi/grammars/json0.guidance");
     let data = serde_json::from_slice(g_bytes).unwrap();
-    let cfg = earley_grm_from_guidance(data).unwrap();
+    let cfg = grammars_from_json(data).unwrap();
     // println!("cfg0: {:?}", cfg);
-    let cfg = cfg.optimize();
+    let cfg = cfg[0].optimize();
     println!("cfg: {:?}", cfg);
 
     let input = r#"{"name":"Joe","info":{"foo":10,"bar":"20"}}"#.as_bytes();
@@ -20,7 +20,7 @@ pub fn earley_test(trie: toktree::TokTrie) {
 
     let mut parser = Parser::new(grm.clone());
     for b in input {
-        if !parser.scan(*b) {
+        if !parser.try_push_byte(*b) {
             println!("reject");
             break;
         }

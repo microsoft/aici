@@ -1,5 +1,5 @@
 use crate::{
-    earley::{earley_grm_from_guidance, ModelVariable, Parser},
+    earley::{grammars_from_json, ModelVariable, Parser},
     api::TopLevelGrammar,
 };
 use aici_abi::{MidProcessArg, MidProcessResult, TokenId, TokenizerEnv};
@@ -29,9 +29,9 @@ impl TokenParser {
         token_env: Box<dyn TokenizerEnv>,
         buf: TopLevelGrammar,
     ) -> Result<Self> {
-        let grm = earley_grm_from_guidance(buf)?;
+        let grm = grammars_from_json(buf)?;
         infoln!("original: {:?}", grm);
-        let grm = grm.optimize();
+        let grm = grm[0].optimize();
         infoln!("optimized: {:?}", grm);
         let cgrm = grm.compile();
         let parser = Parser::new(cgrm);

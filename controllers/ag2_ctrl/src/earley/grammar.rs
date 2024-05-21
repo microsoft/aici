@@ -1,8 +1,9 @@
 use std::fmt::Debug;
 
-use aici_abi::{svob::SimpleVob, toktree::SpecialToken};
+use aici_abi::toktree::SpecialToken;
+use anyhow::{bail, Result};
 
-use super::{lex::LexemeIdx, ByteSet};
+use super::lex::{Lexeme, LexemeIdx};
 use rustc_hash::FxHashMap;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -107,39 +108,27 @@ impl Rule {
     }
 }
 
-enum SymName {
-    Name(String),
-    Byte(u8),
-}
-
-impl SymName {
-    fn from(name: &str, bytes: Option<&ByteSet>) -> Self {
-        if let Some(bytes) = bytes {
-            if let Some(b) = bytes.single_byte() {
-                return SymName::Byte(b);
-            }
-        }
-        SymName::Name(name.to_string())
-    }
+#[derive(Debug, Clone)]
+pub struct LexemeInfo {
+    pub rx: String,
+    pub allow_others: bool,
 }
 
 pub struct Grammar {
     symbols: Vec<Symbol>,
+    lexer_patterns: Vec<LexemeInfo>,
     symbol_by_name: FxHashMap<String, SymIdx>,
-    byte_terminals: FxHashMap<ByteSet, SymIdx>,
     model_variables: FxHashMap<String, SymIdx>,
 }
 
 impl Grammar {
     pub fn new() -> Self {
-        let mut r = Grammar {
+        Grammar {
             symbols: vec![],
+            lexer_patterns: vec![],
             symbol_by_name: FxHashMap::default(),
-            byte_terminals: FxHashMap::default(),
             model_variables: FxHashMap::default(),
-        };
-        let _ = r.symbol("_start");
-        r
+        }
     }
 
     pub fn start(&self) -> SymIdx {
@@ -160,6 +149,27 @@ impl Grammar {
         sym.rules.push(Rule { lhs, rhs });
     }
 
+    pub fn make_terminal(&mut self, lhs: SymIdx, info: LexemeInfo) -> Result<()> {
+        if self
+            .lexer_patterns
+            .iter()
+            .find(|l| l.rx == info.rx)
+            .is_some()
+        {
+            bail!("duplicate lexeme: {:?}", info.rx);
+        }
+        let idx = LexemeIdx(self.lexer_patterns.len());
+        let sym = self.sym_data_mut(lhs);
+        assert!(sym.rules.is_empty());
+        sym.lexeme = Some(idx);
+        self.lexer_patterns.push(info);
+        Ok(())
+    }
+
+    pub fn sym_props_mut(&mut self, sym: SymIdx) -> &mut SymbolProps {
+        &mut self.sym_data_mut(sym).props
+    }
+
     pub fn model_variable(&mut self, name: &str) -> SymIdx {
         match self.model_variables.get(name) {
             Some(sym) => *sym,
@@ -168,22 +178,6 @@ impl Grammar {
                 self.sym_data_mut(sym).props.model_variable =
                     Some(ModelVariable::from_string(name));
                 self.model_variables.insert(name.to_string(), sym);
-                sym
-            }
-        }
-    }
-
-    pub fn terminal(&mut self, bytes: &ByteSet) -> SymIdx {
-        match self.byte_terminals.get(bytes) {
-            Some(sym) => *sym,
-            None => {
-                let mut name = format!("T:{}", bytes);
-                if name.len() > 40 {
-                    name = format!("T@{}", self.byte_terminals.len());
-                }
-                let sym = self.fresh_symbol(&name);
-                self.sym_data_mut(sym).bytes = Some(bytes.clone());
-                self.byte_terminals.insert(bytes.clone(), sym);
                 sym
             }
         }
@@ -203,10 +197,7 @@ impl Grammar {
             self.sym_name(rule.lhs()),
             rule.rhs
                 .iter()
-                .map(|s| {
-                    let d = self.sym_data(*s);
-                    SymName::from(&d.name, d.bytes.as_ref())
-                })
+                .map(|s| self.sym_data(*s).name.as_str())
                 .collect(),
             dot,
             &ldata.props,
@@ -216,64 +207,9 @@ impl Grammar {
 
     fn copy_from(&mut self, other: &Grammar, sym: SymIdx) -> SymIdx {
         let sym_data = other.sym_data(sym);
-        let r = if sym_data.is_lexeme_terminal() {
-            self.terminal(sym_data.bytes.as_ref().unwrap())
-        } else {
-            self.symbol(&sym_data.name)
-        };
-        self.sym_data_mut(r).props = sym_data.props.clone();
+        let r = self.fresh_symbol_ext(&sym_data.name, sym_data.props.clone());
+        self.sym_data_mut(r).lexeme = sym_data.lexeme;
         r
-    }
-
-    fn rule_shape(&self, r: &Rule) -> Vec<Option<SymIdx>> {
-        let mut shape = Vec::new();
-        let mut had_term = false;
-        for s in &r.rhs {
-            let sym = self.sym_data(*s);
-            if !had_term && sym.is_lexeme_terminal() {
-                had_term = true;
-                shape.push(None);
-            } else {
-                shape.push(Some(*s));
-            }
-        }
-        shape
-    }
-
-    fn collapse_terminals(&self) -> Self {
-        let mut outp = Grammar::new();
-        for sym in &self.symbols {
-            if sym.rules.is_empty() {
-                continue;
-            }
-            let mut rules_by_shape = FxHashMap::default();
-            for rule in &sym.rules {
-                rules_by_shape
-                    .entry(self.rule_shape(rule))
-                    .or_insert_with(Vec::new)
-                    .push(rule);
-            }
-            let lhs = outp.copy_from(self, sym.idx);
-            for (shape, rules) in &rules_by_shape {
-                let rhs = rules[0]
-                    .rhs
-                    .iter()
-                    .enumerate()
-                    .map(|(i, s)| {
-                        if shape[i].is_none() {
-                            let terminals = rules
-                                .iter()
-                                .map(|r| self.sym_data(r.rhs[i]).bytes.clone().unwrap());
-                            outp.terminal(&ByteSet::from_sum(terminals))
-                        } else {
-                            outp.copy_from(self, *s)
-                        }
-                    })
-                    .collect();
-                outp.add_rule(lhs, rhs);
-            }
-        }
-        outp
     }
 
     fn rename(&mut self) {
@@ -344,6 +280,7 @@ impl Grammar {
         }
 
         let mut outp = Grammar::new();
+        outp.lexer_patterns = self.lexer_patterns.clone();
         for sym in &self.symbols {
             if repl.contains_key(&sym.idx) {
                 continue;
@@ -363,10 +300,7 @@ impl Grammar {
     }
 
     pub fn optimize(&self) -> Self {
-        let mut r = self
-            .expand_shortcuts()
-            .collapse_terminals()
-            .expand_shortcuts();
+        let mut r = self.expand_shortcuts();
         r.rename();
         r
     }
@@ -390,6 +324,10 @@ impl Grammar {
     }
 
     pub fn fresh_symbol(&mut self, name0: &str) -> SymIdx {
+        self.fresh_symbol_ext(name0, SymbolProps::default())
+    }
+
+    pub fn fresh_symbol_ext(&mut self, name0: &str, symprops: SymbolProps) -> SymIdx {
         let mut name = name0.to_string();
         let mut idx = 2;
         while self.symbol_by_name.contains_key(&name) {
@@ -400,20 +338,13 @@ impl Grammar {
         let idx = SymIdx(self.symbols.len() as u32);
         self.symbols.push(Symbol {
             name: name.clone(),
-            bytes: None,
+            lexeme: None,
             idx,
             rules: vec![],
-            props: SymbolProps::default(),
+            props: symprops,
         });
         self.symbol_by_name.insert(name, idx);
         idx
-    }
-
-    pub fn symbol(&mut self, name: &str) -> SymIdx {
-        match self.symbol_by_name.get(name) {
-            Some(idx) => *idx,
-            None => self.fresh_symbol(name),
-        }
     }
 }
 
@@ -421,10 +352,8 @@ impl Debug for Grammar {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         writeln!(f, "Grammar:")?;
         for sym in &self.symbols {
-            match sym.bytes {
-                Some(ref bytes) if sym.name.starts_with("T@") => {
-                    writeln!(f, "{} := {}", sym.name, bytes)?
-                }
+            match sym.lexeme {
+                Some(lx) => writeln!(f, "{} := {}", sym.name, self.lexer_patterns[lx.0].rx)?,
                 _ => {}
             }
         }
@@ -459,6 +388,13 @@ impl CSymIdx {
 
     pub fn as_index(&self) -> usize {
         self.0 as usize
+    }
+
+    pub fn new_checked(idx: usize) -> Self {
+        if idx >= u16::MAX as usize {
+            panic!("CSymIdx out of range");
+        }
+        CSymIdx(idx as u16)
     }
 }
 
@@ -548,24 +484,41 @@ impl SymFlags {
 #[derive(Clone)]
 pub struct CGrammar {
     start_symbol: CSymIdx,
-    terminals: Vec<ByteSet>,
-    last_single_byte_terminal: usize,
+    terminals: Vec<LexemeInfo>,
     symbols: Vec<CSymbol>,
     rules: Vec<CSymIdx>,
     rule_idx_to_sym_idx: Vec<CSymIdx>,
     rule_idx_to_sym_flags: Vec<SymFlags>,
-    terminals_by_byte: Vec<SimpleVob>,
 }
 
 const RULE_SHIFT: usize = 2;
 
 impl CGrammar {
-    pub fn is_single_byte_terminal(&self, sym: CSymIdx) -> bool {
-        sym.0 != 0 && sym.0 <= self.last_single_byte_terminal as u16
+    pub fn is_terminal(&self, sym: CSymIdx) -> bool {
+        self.lexeme_idx_of(sym).is_some()
     }
 
-    pub fn is_terminal(&self, sym: CSymIdx) -> bool {
-        sym.0 != 0 && sym.0 <= self.terminals.len() as u16
+    pub fn lexeme_idx_of(&self, sym: CSymIdx) -> Option<LexemeIdx> {
+        let idx = sym.as_index().wrapping_sub(1);
+        if idx < self.terminals.len() {
+            Some(LexemeIdx(idx))
+        } else {
+            None
+        }
+    }
+
+    pub fn lexeme_to_sym_idx(&self, lex: LexemeIdx) -> CSymIdx {
+        CSymIdx(lex.0 as u16 + 1)
+    }
+
+    pub fn dbg_lexeme(&self, lex: &Lexeme) -> String {
+        let str = String::from_utf8_lossy(&lex.bytes).to_string();
+        let info = &self.terminals[lex.idx.0];
+        if str == info.rx {
+            format!("{:?}", str)
+        } else {
+            format!("{:?} ({:?})", info.rx, str)
+        }
     }
 
     pub fn sym_idx_of(&self, rule: RuleIdx) -> CSymIdx {
@@ -594,16 +547,8 @@ impl CGrammar {
         &self.symbols[sym.0 as usize]
     }
 
-    pub fn terminal_byteset(&self, sym: CSymIdx) -> &ByteSet {
-        &self.terminals[sym.0 as usize]
-    }
-
     fn sym_data_mut(&mut self, sym: CSymIdx) -> &mut CSymbol {
         &mut self.symbols[sym.0 as usize]
-    }
-
-    pub fn terminals_by_byte(&self, b: u8) -> &SimpleVob {
-        &self.terminals_by_byte[b as usize]
     }
 
     pub fn sym_idx_at(&self, idx: RuleIdx) -> CSymIdx {
@@ -614,7 +559,6 @@ impl CGrammar {
     pub fn sym_data_at(&self, idx: RuleIdx) -> &CSymbol {
         self.sym_data(self.sym_idx_at(idx))
     }
-
 
     pub fn start(&self) -> CSymIdx {
         self.start_symbol
@@ -627,8 +571,7 @@ impl CGrammar {
     fn from_grammar(grammar: &Grammar) -> Self {
         let mut outp = CGrammar {
             start_symbol: CSymIdx::NULL, // replaced
-            terminals: vec![ByteSet::new()],
-            last_single_byte_terminal: 0,
+            terminals: grammar.lexer_patterns.clone(),
             symbols: vec![CSymbol {
                 idx: CSymIdx::NULL,
                 name: "NULL".to_string(),
@@ -640,43 +583,40 @@ impl CGrammar {
             }],
             rules: vec![CSymIdx::NULL], // make sure RuleIdx::NULL is invalid
             rule_idx_to_sym_idx: vec![],
-            terminals_by_byte: vec![],
             rule_idx_to_sym_flags: vec![],
         };
+
         let mut sym_map = FxHashMap::default();
-        let (single, multi) = grammar
-            .symbols
-            .iter()
-            .filter_map(|s| if s.is_terminal() { Some(s) } else { None })
-            .partition::<Vec<_>, _>(|s| {
-                s.is_lexeme_terminal() && s.bytes.as_ref().unwrap().single_byte().is_some()
-            });
-        assert!(outp.symbols.len() == 1);
-        assert!(outp.terminals.len() == 1);
-        // we account for the already existing empty terminal
-        outp.last_single_byte_terminal = single.len();
-        for sym in single.iter().chain(&multi) {
-            outp.terminals
-                .push(sym.bytes.clone().unwrap_or_else(ByteSet::new));
-            let idx = outp.symbols.len() as u16;
-            outp.symbols.push(CSymbol {
-                idx: CSymIdx(idx),
-                name: sym.name.clone(),
-                is_terminal: true,
-                is_nullable: false,
-                rules: vec![],
-                props: sym.props.clone(),
-                sym_flags: SymFlags(0),
-            });
-            sym_map.insert(sym.idx, CSymIdx(idx));
+
+        let mut term_sym = vec![None; grammar.lexer_patterns.len()];
+        assert!(grammar.symbols.len() < u16::MAX as usize - 10);
+        for sym in grammar.symbols.iter() {
+            if let Some(lx) = sym.lexeme {
+                assert!(term_sym[lx.0].is_none());
+                let csym = CSymbol {
+                    idx: CSymIdx::new_checked(lx.0 + 1),
+                    name: sym.name.clone(),
+                    is_terminal: true,
+                    is_nullable: false,
+                    rules: vec![],
+                    props: sym.props.clone(),
+                    sym_flags: SymFlags(0),
+                };
+                sym_map.insert(sym.idx, csym.idx);
+                term_sym[lx.0] = Some(csym);
+            }
         }
+
+        outp.symbols.extend(term_sym.into_iter().flatten());
+        assert!(outp.symbols.len() == outp.terminals.len() + 1);
+
         for sym in &grammar.symbols {
-            if sym.is_terminal() {
+            if sym.is_lexeme_terminal() {
                 continue;
             }
-            let idx = outp.symbols.len() as u16;
+            let cidx = CSymIdx::new_checked(outp.symbols.len());
             outp.symbols.push(CSymbol {
-                idx: CSymIdx(idx),
+                idx: cidx,
                 name: sym.name.clone(),
                 is_terminal: false,
                 is_nullable: sym.rules.iter().any(|r| r.rhs.is_empty()),
@@ -684,7 +624,7 @@ impl CGrammar {
                 props: sym.props.clone(),
                 sym_flags: SymFlags(0),
             });
-            sym_map.insert(sym.idx, CSymIdx(idx));
+            sym_map.insert(sym.idx, cidx);
         }
         outp.start_symbol = sym_map[&grammar.start()];
         for sym in &grammar.symbols {
@@ -749,15 +689,6 @@ impl CGrammar {
             }
         }
 
-        for b in 0..=255 {
-            let mut v = SimpleVob::alloc(outp.terminals.len());
-            for (i, bytes) in outp.terminals.iter().enumerate() {
-                if bytes.contains(b as u8) {
-                    v.allow_token(i as u32);
-                }
-            }
-            outp.terminals_by_byte.push(v);
-        }
         outp
     }
 
@@ -778,17 +709,7 @@ impl CGrammar {
         rule_to_string(
             lhs,
             rhs.iter()
-                .map(|s| {
-                    let d = self.sym_data(*s);
-                    SymName::from(
-                        &d.name,
-                        if d.is_terminal {
-                            Some(&self.terminals[d.idx.0 as usize])
-                        } else {
-                            None
-                        },
-                    )
-                })
+                .map(|s| self.sym_data(*s).name.as_str())
                 .collect(),
             Some(dot),
             &symdata.props,
@@ -799,45 +720,23 @@ impl CGrammar {
 
 fn rule_to_string(
     lhs: &str,
-    mut rhs: Vec<SymName>,
+    mut rhs: Vec<&str>,
     dot: Option<usize>,
     props: &SymbolProps,
     _dot_props: Option<&SymbolProps>,
 ) -> String {
     if rhs.is_empty() {
-        rhs.push(SymName::Name("ϵ".to_string()));
+        rhs.push("ϵ");
         if dot == Some(0) {
-            rhs.push(SymName::Name("•".to_string()));
+            rhs.push("•");
         }
     } else if let Some(dot) = dot {
-        rhs.insert(dot, SymName::Name("•".to_string()));
-    }
-    let mut outp = Vec::new();
-    let mut i = 0;
-    while i < rhs.len() {
-        match &rhs[i] {
-            SymName::Name(s) => {
-                outp.push(s.clone());
-                i += 1;
-            }
-            SymName::Byte(_) => {
-                let mut text = Vec::new();
-                while i < rhs.len() {
-                    if let SymName::Byte(b) = rhs[i] {
-                        text.push(b);
-                        i += 1;
-                    } else {
-                        break;
-                    }
-                }
-                outp.push(format!("{:?}", String::from_utf8_lossy(&text)));
-            }
-        }
+        rhs.insert(dot, "•");
     }
     format!(
         "{:15} ⇦ {}  {}{}{}",
         lhs,
-        outp.join(" "),
+        rhs.join(" "),
         if props.commit_point {
             if props.hidden {
                 " HIDDEN-COMMIT"

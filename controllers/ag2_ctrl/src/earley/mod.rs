@@ -1,11 +1,9 @@
-mod byteset;
 mod from_guidance;
 mod grammar;
 mod parser;
 pub mod lex;
 
-pub use byteset::ByteSet;
-pub use from_guidance::earley_grm_from_guidance;
+pub use from_guidance::grammars_from_json;
 #[allow(unused_imports)]
 pub use grammar::{Grammar, ModelVariable};
 pub use parser::Parser;

@@ -108,3 +108,16 @@ macro_rules! id_type {
 
 id_type!(GrammarId);
 id_type!(NodeId);
+
+impl Node {
+    pub fn node_props(&self) -> &NodeProps {
+        match self {
+            Node::String { props, .. } => props,
+            Node::Gen { props, .. } => props,
+            Node::Lexeme { props, .. } => props,
+            Node::GrammarRef { props, .. } => props,
+            Node::Select { props, .. } => props,
+            Node::Join { props, .. } => props,
+        }
+    }
+}

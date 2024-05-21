@@ -12,7 +12,10 @@ use aici_abi::{
 };
 use anyhow::{bail, Result};
 
-use super::grammar::{CGrammar, CSymIdx, CSymbol, ModelVariable, RuleIdx};
+use super::{
+    grammar::{CGrammar, CSymIdx, CSymbol, ModelVariable, RuleIdx},
+    lex::Lexeme,
+};
 
 const DEBUG: bool = false;
 const INFO: bool = true;
@@ -123,7 +126,7 @@ struct Scratch {
 }
 
 struct RowInfo {
-    byte: u8,
+    lexeme: Lexeme,
     token_idx: usize,
     #[allow(dead_code)]
     commit_item: Item,
@@ -271,11 +274,12 @@ impl Parser {
             last_collapse: 0,
             token_idx: 0,
         };
+        info!("new parser");
         for rule in r.grammar.rules_of(start).to_vec() {
             r.scratch.add_unique(Item::new(rule, 0), 0, "init");
         }
         debug!("initial push");
-        let _ = r.push_row(r.scratch.row_start, 0);
+        let _ = r.push_row(r.scratch.row_start, Lexeme::bogus());
         r
     }
 
@@ -310,12 +314,6 @@ impl Parser {
         self.rows.len()
     }
 
-    fn pop_row_infos(&mut self, n: usize) {
-        self.assert_definitive();
-        unsafe { self.row_infos.set_len(self.row_infos.len() - n) }
-        self.pop_rows(n);
-    }
-
     fn pop_rows(&mut self, n: usize) {
         unsafe { self.rows.set_len(self.rows.len() - n) }
         // self.rows.drain(self.rows.len() - n..);
@@ -334,7 +332,11 @@ impl Parser {
 
     pub fn get_bytes(&self) -> Vec<u8> {
         self.assert_definitive();
-        self.row_infos.iter().skip(1).map(|ri| ri.byte).collect()
+        self.row_infos
+            .iter()
+            .map(|ri| ri.lexeme.visible_bytes())
+            .collect::<Vec<_>>()
+            .concat()
     }
 
     fn item_lhs(&self, item: &Item) -> CSymIdx {
@@ -369,7 +371,8 @@ impl Parser {
     ) -> Result<&'static str> {
         // this is unused!
         self.assert_definitive();
-        let mut byte_idx = 1; // row_infos[0] has just the 0 byte
+        let mut lexeme_idx = 0;
+        let mut lexeme_byte_idx = 0;
         let mut tok_idx = 0;
         debug!("apply_tokens: {:?}", tokens);
         for t in tokens {
@@ -379,13 +382,23 @@ impl Parser {
                     continue;
                 }
 
-                if byte_idx >= self.row_infos.len() {
-                    if !self.scan(*b) {
+                // scan to the next byte
+                while lexeme_idx < self.row_infos.len()
+                    && lexeme_byte_idx >= self.row_infos[lexeme_idx].lexeme.num_visible_bytes()
+                {
+                    self.row_infos[lexeme_idx].token_idx = tok_idx;
+                    lexeme_byte_idx = 0;
+                    lexeme_idx += 1;
+                }
+
+                if lexeme_idx >= self.row_infos.len() {
+                    if !self.try_push_byte(*b) {
                         return Ok("parse reject");
                     }
-                    if byte_idx >= self.row_infos.len() {
+                    if lexeme_idx >= self.row_infos.len() {
                         return Ok("hidden item");
                     }
+                    lexeme_byte_idx = 0;
                     let item_count = self.curr_row().item_indices().count();
                     if item_count > MAX_ROW {
                         bail!(
@@ -395,19 +408,20 @@ impl Parser {
                         );
                     }
                 }
-                let info = &mut self.row_infos[byte_idx];
-                if info.byte != *b {
-                    println!("byte mismatch: {} != {} at {}", info.byte, b, byte_idx);
+
+                let info = &mut self.row_infos[lexeme_idx];
+                let lb = info.lexeme.visible_bytes()[lexeme_byte_idx];
+                if lb != *b {
+                    println!("byte mismatch: {} != {} at {}", lb, b, lexeme_idx);
                     return Ok("static reject");
                 }
-                info.token_idx = tok_idx;
-                byte_idx += 1;
+                lexeme_byte_idx += 1;
             }
             tok_idx += 1;
         }
-        while byte_idx < self.row_infos.len() {
-            self.row_infos[byte_idx].token_idx = tok_idx;
-            byte_idx += 1;
+        while lexeme_idx < self.row_infos.len() {
+            self.row_infos[lexeme_idx].token_idx = tok_idx;
+            lexeme_idx += 1;
         }
         self.token_idx = tok_idx;
         return Ok("");
@@ -419,7 +433,7 @@ impl Parser {
         let mut dst = 0;
 
         self.row_infos.push(RowInfo {
-            byte: 0,
+            lexeme: Lexeme::bogus(),
             commit_item: Item::NULL,
             token_idx: self.token_idx,
         });
@@ -459,7 +473,7 @@ impl Parser {
         debug!("force_bytes");
         let mut bytes = vec![];
         while let Some(b) = self.forced_byte() {
-            if !self.scan(b) {
+            if !self.try_push_byte(b) {
                 // shouldn't happen?
                 break;
             }
@@ -486,69 +500,24 @@ impl Parser {
         vars
     }
 
-    fn forced_byte(&self) -> Option<u8> {
+    fn forced_byte(&mut self) -> Option<u8> {
         if self.is_accepting() {
             // we're not forced when in accepting state
             return None;
         }
 
         let mut byte_sym = None;
-        for i in self.curr_row().item_indices() {
-            let item = self.scratch.items[i];
-            let sym = self.grammar.sym_idx_at(item.rule_idx());
-            if self.grammar.is_terminal(sym) {
-                if self.grammar.is_single_byte_terminal(sym) {
-                    if byte_sym == None || byte_sym == Some(sym) {
-                        byte_sym = Some(sym);
-                    } else {
-                        return None;
-                    }
+        for b in 0..=255 {
+            if self.try_push_byte(b) {
+                self.pop_bytes(1);
+                if byte_sym.is_some() {
+                    return None; // more than one option
                 } else {
-                    return None;
+                    byte_sym = Some(b);
                 }
             }
         }
-
-        if let Some(s) = byte_sym {
-            let r = self.grammar.terminal_byteset(s).single_byte();
-            assert!(r.is_some());
-            r
-        } else {
-            None
-        }
-    }
-
-    pub fn hide_item(&mut self, sym: CSymIdx, row_idx: usize) -> bool {
-        info!("hide_item: {} {}", self.grammar.sym_data(sym).name, row_idx);
-
-        let row_range = self.rows[row_idx].item_indices();
-        let last_byte = self.row_infos[row_idx].byte;
-        let agenda_ptr = row_range.start;
-        let to_pop = self.num_rows() - row_idx;
-        assert!(to_pop > 0);
-        self.pop_row_infos(to_pop);
-        assert!(self.num_rows() == row_idx);
-
-        let mut items_to_add = vec![];
-        for idx in row_range {
-            let item = self.scratch.items[idx];
-            //info!("  => now: {}", item_to_string(&self.grammar, &item));
-            if self.grammar.sym_idx_at(item.rule_idx()) == sym {
-                info!(
-                    "  => add: {}",
-                    item_to_string(&self.grammar, &item.advance_dot())
-                );
-                items_to_add.push((idx, item.advance_dot()));
-            }
-        }
-
-        // we remove everything from the current row before adding the entries
-        self.scratch.new_row(agenda_ptr);
-        for (idx, item) in items_to_add {
-            self.scratch.add_unique(item, idx, "hide");
-        }
-
-        self.push_row(agenda_ptr, last_byte)
+        byte_sym
     }
 
     pub fn scan_model_variable(&mut self, mv: ModelVariable) -> bool {
@@ -572,36 +541,33 @@ impl Parser {
         if self.scratch.row_len() == 0 {
             false
         } else {
-            self.push_row(self.scratch.row_start, 0)
+            self.push_row(self.scratch.row_start, Lexeme::bogus())
         }
     }
 
-    #[inline(always)]
-    pub fn scan(&mut self, b: u8) -> bool {
+    pub fn scan(&mut self, lexeme: Lexeme) -> bool {
         let row_idx = self.rows.len() - 1;
         let last = self.rows[row_idx].last_item;
         let mut i = self.rows[row_idx].first_item;
         let n = last - i;
         self.scratch.ensure_items(last + n + 100);
-
-        let allowed = self.grammar.terminals_by_byte(b);
-
         self.scratch.new_row(last);
 
         if self.scratch.definitive {
-            debug!("  scan: {:?}", b as char);
+            debug!("  scan: {:?}", self.grammar.dbg_lexeme(&lexeme));
         }
+
+        let trg = self.grammar.lexeme_to_sym_idx(lexeme.idx);
 
         while i < last {
             let item = self.scratch.items[i];
-            let idx = self.grammar.sym_idx_at(item.rule_idx()).as_index();
-            // idx == 0 => completed
-            if idx < allowed.len() && allowed[idx] {
+            let idx = self.grammar.sym_idx_at(item.rule_idx());
+            if idx == trg {
                 self.scratch.just_add(item.advance_dot(), i, "scan");
             }
             i += 1;
         }
-        self.push_row(self.scratch.row_start, b)
+        self.push_row(self.scratch.row_start, lexeme)
     }
 
     pub fn captures(&self) -> &[(String, Vec<u8>)] {
@@ -609,7 +575,7 @@ impl Parser {
     }
 
     #[inline(always)]
-    fn push_row(&mut self, mut agenda_ptr: usize, byte: u8) -> bool {
+    fn push_row(&mut self, mut agenda_ptr: usize, lexeme: Lexeme) -> bool {
         let curr_idx = self.rows.len();
         let mut commit_item = Item::NULL;
 
@@ -642,14 +608,11 @@ impl Parser {
                     if item.start_pos() + 1 < curr_idx {
                         bytes = self.row_infos[item.start_pos() + 1..curr_idx]
                             .iter()
-                            .map(|ri| ri.byte)
-                            .collect::<Vec<_>>();
+                            .map(|ri| ri.lexeme.visible_bytes())
+                            .collect::<Vec<_>>()
+                            .concat();
                     }
-                    bytes.push(byte);
-                    let hidden_start = self.scratch.hidden_start(&self.scratch.work_row());
-                    if hidden_start < curr_idx + 1 {
-                        bytes.drain(hidden_start - item.start_pos()..);
-                    }
+                    bytes.extend_from_slice(lexeme.visible_bytes());
                     debug!(
                         "      capture: {} {:?}",
                         var_name,
@@ -694,7 +657,8 @@ impl Parser {
                     if self.scratch.definitive {
                         debug!("  commit point: {}", self.item_to_string(item_idx));
                         if flags.hidden() {
-                            return self.hide_item(lhs, item.start_pos());
+                            panic!("hidden item");
+                            // return self.hide_item(lhs, item.start_pos());
                         }
                     }
                 }
@@ -729,7 +693,7 @@ impl Parser {
             if self.scratch.definitive {
                 self.row_infos.drain((self.rows.len() - 1)..);
                 self.row_infos.push(RowInfo {
-                    byte,
+                    lexeme,
                     commit_item,
                     token_idx: self.token_idx,
                 });
@@ -795,7 +759,8 @@ impl Recognizer for Parser {
     }
 
     fn try_push_byte(&mut self, byte: u8) -> bool {
-        self.scan(byte)
+        todo!()
+        // self.scan(byte)
     }
 }
 
