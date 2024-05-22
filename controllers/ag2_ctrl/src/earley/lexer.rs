@@ -78,11 +78,15 @@ pub struct VobSet {
 }
 
 impl VobSet {
-    pub fn new() -> Self {
-        VobSet {
+    pub fn new(single_vob_size: usize) -> Self {
+        let mut r = VobSet {
             vobs: Vec::new(),
             by_vob: FxHashMap::default(),
-        }
+        };
+        let v = SimpleVob::alloc(single_vob_size);
+        r.insert_or_get(&v);
+        r.insert_or_get(&v.negated());
+        r
     }
 
     pub fn insert_or_get(&mut self, vob: &SimpleVob) -> VobIdx {
@@ -111,6 +115,7 @@ impl VobSet {
 #[derive(Debug, Clone)]
 pub struct LexemeSpec {
     pub rx: String,
+    pub ends_at_eos_only: bool,
     pub allow_others: bool,
 }
 
@@ -155,9 +160,10 @@ impl LexerSpec {
 }
 
 impl Lexer {
-    pub fn from(spec: LexerSpec, mut vobset: VobSet) -> Self {
+    pub fn from(spec: LexerSpec) -> Self {
         // TIME: 4ms
         let patterns = &spec.lexemes;
+        let mut vobset = VobSet::new(patterns.len());
         let dfa = dense::Builder::new()
             .configure(
                 dense::Config::new()

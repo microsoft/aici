@@ -1,7 +1,7 @@
 use std::fmt::Debug;
 
 use aici_abi::toktree::SpecialToken;
-use anyhow::{bail, Result};
+use anyhow::Result;
 
 use super::lexer::{LexemeIdx, LexemeSpec, LexerSpec};
 use rustc_hash::FxHashMap;
@@ -112,6 +112,7 @@ pub struct Grammar {
     symbols: Vec<Symbol>,
     symbol_by_name: FxHashMap<String, SymIdx>,
     model_variables: FxHashMap<String, SymIdx>,
+    symbol_by_rx: FxHashMap<String, SymIdx>,
     lexer_spec: LexerSpec,
 }
 
@@ -121,6 +122,7 @@ impl Grammar {
             symbols: vec![],
             symbol_by_name: FxHashMap::default(),
             model_variables: FxHashMap::default(),
+            symbol_by_rx: FxHashMap::default(),
             lexer_spec,
         }
     }
@@ -144,19 +146,16 @@ impl Grammar {
     }
 
     pub fn make_terminal(&mut self, lhs: SymIdx, info: LexemeSpec) -> Result<()> {
-        if self
-            .lexer_spec
-            .lexemes
-            .iter()
-            .find(|l| l.rx == info.rx)
-            .is_some()
-        {
-            bail!("duplicate lexeme: {:?}", info.rx);
+        if let Some(sym) = self.symbol_by_rx.get(&info.rx) {
+            // TODO: check that the lexeme is the same
+            self.add_rule(lhs, vec![*sym]);
+            return Ok(());
         }
         let idx = LexemeIdx(self.lexer_spec.lexemes.len());
         let sym = self.sym_data_mut(lhs);
         assert!(sym.rules.is_empty());
         sym.lexeme = Some(idx);
+        self.symbol_by_rx.insert(info.rx.clone(), lhs);
         self.lexer_spec.lexemes.push(info);
         Ok(())
     }
@@ -202,6 +201,9 @@ impl Grammar {
 
     fn copy_from(&mut self, other: &Grammar, sym: SymIdx) -> SymIdx {
         let sym_data = other.sym_data(sym);
+        if let Some(sym) = self.symbol_by_name.get(&sym_data.name) {
+            return *sym;
+        }
         let r = self.fresh_symbol_ext(&sym_data.name, sym_data.props.clone());
         self.sym_data_mut(r).lexeme = sym_data.lexeme;
         r
@@ -295,6 +297,7 @@ impl Grammar {
 
     pub fn optimize(&self) -> Self {
         let mut r = self.expand_shortcuts();
+        r = r.expand_shortcuts();
         r.rename();
         r
     }
@@ -347,7 +350,7 @@ impl Debug for Grammar {
         writeln!(f, "Grammar:")?;
         for sym in &self.symbols {
             match sym.lexeme {
-                Some(lx) => writeln!(f, "{} := {}", sym.name, self.lexer_spec.lexemes[lx.0].rx)?,
+                Some(lx) => writeln!(f, "{} := {:?}", sym.name, self.lexer_spec.lexemes[lx.0].rx)?,
                 _ => {}
             }
         }
@@ -743,7 +746,7 @@ fn rule_to_string(
         } else {
             ""
         },
-        if props.max_tokens < 1000 {
+        if props.max_tokens < 10000 {
             format!(" max_tokens={}", props.max_tokens)
         } else {
             "".to_string()

@@ -57,6 +57,9 @@ pub fn grammar_from_json(input: GrammarWithLexer) -> Result<Grammar> {
             let props = n.node_props();
             let name = match props.name.as_ref() {
                 Some(n) => n.clone(),
+                None if props.capture_name.is_some() => {
+                    props.capture_name.as_ref().unwrap().clone()
+                }
                 None => format!("n{}", idx),
             };
             let symprops = SymbolProps {
@@ -86,8 +89,14 @@ pub fn grammar_from_json(input: GrammarWithLexer) -> Result<Grammar> {
             }
             Node::Gen { data, .. } => {
                 ensure!(is_lazy, "gen() only allowed in lazy grammars");
+                let body_rx = if data.body_rx.is_empty() {
+                    ".*"
+                } else {
+                    &data.body_rx
+                };
                 let info = LexemeSpec {
-                    rx: format!("({})({})", data.body_rx, data.stop_rx),
+                    rx: format!("({})({})", body_rx, data.stop_rx),
+                    ends_at_eos_only: data.stop_rx.is_empty(),
                     allow_others: false,
                 };
                 grm.make_terminal(lhs, info)?;
@@ -102,6 +111,7 @@ pub fn grammar_from_json(input: GrammarWithLexer) -> Result<Grammar> {
                 ensure!(is_greedy, "lexeme() only allowed in greedy grammars");
                 let info = LexemeSpec {
                     rx: rx.clone(),
+                    ends_at_eos_only: false,
                     allow_others: *allow_others,
                 };
                 grm.make_terminal(lhs, info)?;
@@ -109,6 +119,7 @@ pub fn grammar_from_json(input: GrammarWithLexer) -> Result<Grammar> {
             Node::String { literal, .. } => {
                 let info = LexemeSpec {
                     rx: quote_regex(&literal),
+                    ends_at_eos_only: false,
                     allow_others: false,
                 };
                 grm.make_terminal(lhs, info)?;

@@ -291,8 +291,7 @@ macro_rules! ensure_internal {
 impl Parser {
     pub fn new(grammar: CGrammar) -> Self {
         let start = grammar.start();
-        let vobset = VobSet::new();
-        let lexer = Lexer::from(grammar.lexer_spec().clone(), vobset);
+        let lexer = Lexer::from(grammar.lexer_spec().clone());
         let grammar = Rc::new(grammar);
         let scratch = Scratch::new(Rc::clone(&grammar));
         let lexer_state = lexer.file_start_state();

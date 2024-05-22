@@ -11,12 +11,12 @@ pub struct HashConstructor {
     hash: HashMap<Vec<u32>, u32>,
 }
 
-pub struct HashNodeRef<'a> {
+pub struct BoundNode<'a> {
     constructor: &'a HashConstructor,
     node: HashNode,
 }
 
-impl<'a> HashNodeRef<'a> {
+impl<'a> BoundNode<'a> {
     pub fn head(&self) -> u8 {
         self.constructor.head(self.node)
     }
@@ -25,8 +25,8 @@ impl<'a> HashNodeRef<'a> {
         self.constructor.children(self.node)
     }
 
-    pub fn iter(&'a self) -> impl Iterator<Item = HashNodeRef<'a>> {
-        self.children().iter().map(move |&n| self.constructor.node_ref(n))
+    pub fn iter(&'a self) -> impl Iterator<Item = BoundNode<'a>> {
+        self.children().iter().map(move |&n| self.constructor.bind(n))
     }
 }
 
@@ -38,8 +38,8 @@ impl HashConstructor {
         (head as u32) | ((arity as u32) << 8)
     }
 
-    pub fn node_ref(&self, node: HashNode) -> HashNodeRef {
-        HashNodeRef {
+    pub fn bind(&self, node: HashNode) -> BoundNode {
+        BoundNode {
             constructor: self,
             node,
         }

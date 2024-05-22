@@ -89,62 +89,12 @@ def main():
     grm = "<color>red</color>\n<color>" + gen(stop="</color>") + " and test2"
 
     lm = "Here's a "
-    lm += select(['joke', 'poem'], name='type')
+    lm += select(["joke", "poem"], name="type")
     lm += ": "
     lm += gen("words", regex=r"[A-Z ]+", stop="\n")
     grm = lm
 
     @guidance(stateless=True, dedent=False)
-    def rgrammar(lm):
-        return lm + "x" + optional(rgrammar())
-
-
-    grm = select(["1", "12", "123"], name="the number")
-    prompt = "<|user|>\nPick a number:\n<|computer|>\n"
-
-    grm = rgrammar()
-    prompt = "x"
-
-
-    grm = "Count to 10: 1, 2, 3, 4, 5, 6, 7, " + gen("text", stop=", 9")
-    prompt = ""
-
-
-    # @guidance(stateless=True, dedent=False)
-    # def character_maker(lm, id, description, valid_weapons):
-    #     lm += f"""\
-    #     The following is a character profile for an RPG game in JSON format.
-    #     ```json
-    #     {{
-    #         "id": "{id}",
-    #         "description": "{description}",
-    #         "name": "{gen('name', stop='"')}",
-    #         "age": {gen('age', regex='[0-9]+', stop=',')},
-    #         "armor": "{select(options=['leather', 'chainmail', 'plate'], name='armor')}",
-    #         "weapon": "{select(options=valid_weapons, name='weapon')}",
-    #         "class": "{gen('class', stop='"')}",
-    #         "mantra": "{gen('mantra', stop='"')}",
-    #         "strength": {gen('strength', regex='[0-9]+', stop=',')},
-    #         "items": ["{gen('item', list_append=True, stop='"')}", "{gen('item', list_append=True, stop='"')}", "{gen('item', list_append=True, stop='"')}"]
-    #     }}```"""
-    #     return lm
-
-    # @guidance(stateless=True, dedent=False)
-    # def character_maker(lm, id, description, valid_weapons):
-    #     lm += f"""\
-    #     The following is a character profile for an RPG game in JSON format.
-    #     ```json
-    #     {{
-    #         "id": "{id}",
-    #         "description": "{description}",
-    #         "name": "{gen('name', stop='"')}",
-    #         "skill level": "{gen('age', regex='[0-9]+', stop='1')}",
-    #         "age": "{gen('age', regex='[0-9]+', stop='4')}",
-    #     }}```"""
-    #     return lm
-
-
-    @guidance(stateless=True, dedent=True)
     def character_maker(lm, id, description, valid_weapons):
         lm += f"""\
         The following is a character profile for an RPG game in JSON format.
@@ -152,29 +102,42 @@ def main():
         {{
             "id": "{id}",
             "description": "{description}",
-            "name": "{gen('name', max_tokens=20)}",
-            "mantra": "{gen('mantra', max_tokens=10)}",
+            "name": "{gen('name', stop='"')}",
+            "age": {gen('age', regex='[0-9]+', stop=',')},
+            "armor": "{select(options=['leather', 'chainmail', 'plate'], name='armor')}",
+            "weapon": "{select(options=valid_weapons, name='weapon')}",
+            "class": "{gen('class', stop='"')}",
+            "mantra": "{gen('mantra', stop='"')}",
+            "strength": {gen('strength', regex='[0-9]+', stop=',')},
+            "items": ["{gen('item', list_append=True, stop='"')}", "{gen('item', list_append=True, stop='"')}", "{gen('item', list_append=True, stop='"')}"]
         }}```"""
         return lm
-    
-    grm = character_maker(1, 'A nimble fighter', ['axe', 'sword', 'bow'])
+
+
+    grm = character_maker(1, "A nimble fighter", ["axe", "sword", "bow"])
     prompt = ""
 
+    ag2_json = {"grammar": grm.ag2_serialize()}
+    ag2_arg = json.dumps(ag2_json, indent=1)
+    # save ag2_arg to file
+    with open("tmp/ag2_arg.json", "w") as f:
+        f.write(ag2_arg)
+    print("JSON size:", len(ag2_arg), "saved to tmp/ag2_arg.json")
+    # print(json.dumps(ag2_json, indent=2))
 
     # read current script file
     # with open(__file__) as f:
     #     script = f.read()
     # grm = "```python\n" + substring(script[0:1400])
-    b64 = base64.b64encode(grm.serialize()).decode("utf-8")
-    print(len(b64))
+    
     mod_id = pyaici.cli.build_rust(".")
     if "127.0.0.1" in pyaici.rest.base_url:
-        pyaici.rest.tag_module(mod_id, ["guidance_ctrl-latest", "guidance"])
+        pyaici.rest.tag_module(mod_id, ["ag2_ctrl-latest", "ag2"])
     pyaici.rest.log_level = 2
     res = pyaici.rest.run_controller(
         prompt=prompt,
         controller=mod_id,
-        controller_arg=json.dumps({"guidance_b64": b64}),
+        controller_arg=ag2_arg,
         temperature=0.0,
         max_tokens=100,
     )
@@ -190,7 +153,9 @@ def main():
         if j["object"] == "text":
             text += binascii.unhexlify(j["hex"])
         elif j["object"] == "capture":
-            captures[j["name"]] = binascii.unhexlify(j["hex"]).decode("utf-8", errors="replace")
+            captures[j["name"]] = binascii.unhexlify(j["hex"]).decode(
+                "utf-8", errors="replace"
+            )
     print("Captures:", json.dumps(captures, indent=2))
     print("Final text:\n", text.decode("utf-8", errors="replace"))
     print()
