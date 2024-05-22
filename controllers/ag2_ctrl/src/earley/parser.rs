@@ -420,6 +420,7 @@ impl Parser {
                 }
 
                 if lexeme_idx >= self.row_infos.len() {
+                    max_tokens
                     if !self.try_push_byte(*b) {
                         return Ok("parse reject");
                     }
@@ -464,6 +465,7 @@ impl Parser {
             lexeme: Lexeme::bogus(),
             commit_item: Item::NULL,
             token_idx: self.token_idx,
+            max_tokens: usize::MAX,
         });
 
         for idx in 0..self.num_rows() {
