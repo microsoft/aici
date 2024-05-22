@@ -303,6 +303,9 @@ impl Parser {
         }
         debug!("initial push");
         let _ = r.push_row(r.scratch.row_start, Lexeme::bogus());
+        assert!(r.num_rows() == 1);
+        assert!(r.rows.len() == 1);
+        r.assert_definitive();
         r
     }
 
@@ -339,6 +342,7 @@ impl Parser {
     }
 
     fn pop_lexer_states(&mut self, n: usize) {
+        assert!(self.lexer_stack.len() > n);
         unsafe { self.lexer_stack.set_len(self.lexer_stack.len() - n) }
     }
 
@@ -566,20 +570,6 @@ impl Parser {
         } else {
             self.push_row(self.scratch.row_start, Lexeme::bogus())
         }
-    }
-
-    pub fn possible_lexemes(&self) -> SimpleVob {
-        let mut r = SimpleVob::alloc(self.grammar.num_terminals());
-
-        for idx in self.curr_row().item_indices() {
-            let item = self.scratch.items[idx];
-            let cidx = self.grammar.sym_idx_at(item.rule_idx());
-            if let Some(lx) = self.grammar.lexeme_idx_of(cidx) {
-                r.set(lx.0, true);
-            }
-        }
-
-        r
     }
 
     pub fn scan(&mut self, lexeme: Lexeme) -> bool {
