@@ -11,7 +11,7 @@ use aici_abi::{
     toktree::{Recognizer, SpecialToken, TokTrie},
     TokenId,
 };
-use anyhow::{bail, Result};
+use anyhow::{bail, ensure, Result};
 
 use crate::earley::lexer::{Lexer, VobSet};
 
@@ -131,10 +131,18 @@ struct Scratch {
 
 struct RowInfo {
     lexeme: Lexeme,
-    token_idx: usize,
+    token_idx_start: usize,
+    token_idx_stop: usize,
     #[allow(dead_code)]
     commit_item: Item,
     max_tokens: usize, // TODO use this
+}
+
+impl RowInfo {
+    fn apply_token_idx(&mut self, idx: usize) {
+        self.token_idx_start = self.token_idx_start.min(idx);
+        self.token_idx_stop = self.token_idx_stop.max(idx);
+    }
 }
 
 #[derive(Clone, Copy)]
@@ -274,6 +282,12 @@ impl Scratch {
     }
 }
 
+macro_rules! ensure_internal {
+    ($cond:expr, $msg:expr) => {
+        ensure!($cond, "Internal error: {}", $msg)
+    };
+}
+
 impl Parser {
     pub fn new(grammar: CGrammar) -> Self {
         let start = grammar.start();
@@ -397,12 +411,18 @@ impl Parser {
         tokens: &[TokenId],
         mut num_skip: usize,
     ) -> Result<&'static str> {
-        // this is unused!
         self.assert_definitive();
         let mut lexeme_idx = 0;
         let mut lexeme_byte_idx = 0;
         let mut tok_idx = 0;
         debug!("apply_tokens: {:?}", tokens);
+        // reset token_idx
+        for ri in self.row_infos.iter_mut() {
+            ri.token_idx_start = usize::MAX;
+            ri.token_idx_stop = 0;
+        }
+        self.row_infos[lexeme_idx].apply_token_idx(tok_idx);
+
         for t in tokens {
             for b in trie.token(*t).iter() {
                 if num_skip > 0 {
@@ -410,35 +430,39 @@ impl Parser {
                     continue;
                 }
 
+                let mut scanned = false;
                 // scan to the next byte
-                while lexeme_idx < self.row_infos.len()
-                    && lexeme_byte_idx >= self.row_infos[lexeme_idx].lexeme.num_visible_bytes()
-                {
-                    self.row_infos[lexeme_idx].token_idx = tok_idx;
+                while lexeme_byte_idx >= self.row_infos[lexeme_idx].lexeme.num_visible_bytes() {
+                    // are we at the last scanned item?
+                    if lexeme_idx + 1 >= self.row_infos.len() {
+                        // we're only supposed to enter here once
+                        ensure_internal!(!scanned, "multiple scans");
+                        scanned = true;
+                        self.token_idx = tok_idx; // save local pointer, in case push_row() uses it
+                        if !self.try_push_byte(*b) {
+                            return Ok("parse reject");
+                        }
+
+                        let item_count = self.curr_row().item_indices().count();
+                        if item_count > MAX_ROW {
+                            bail!(
+                                "Current row has {} items; max is {}; consider making your grammar left-recursive if it's right-recursive",
+                                item_count,
+                                MAX_ROW,
+                            );
+                        }
+
+                        // move to the next byte or the next row
+                        continue;
+                    }
                     lexeme_byte_idx = 0;
                     lexeme_idx += 1;
-                }
-
-                if lexeme_idx >= self.row_infos.len() {
-                    max_tokens
-                    if !self.try_push_byte(*b) {
-                        return Ok("parse reject");
-                    }
-                    if lexeme_idx >= self.row_infos.len() {
-                        return Ok("hidden item");
-                    }
-                    lexeme_byte_idx = 0;
-                    let item_count = self.curr_row().item_indices().count();
-                    if item_count > MAX_ROW {
-                        bail!(
-                            "Current row has {} items; max is {}; consider making your grammar left-recursive if it's right-recursive",
-                            item_count,
-                            MAX_ROW,
-                        );
-                    }
+                    ensure_internal!(lexeme_idx < self.row_infos.len(), "missing rows");
+                    self.row_infos[lexeme_idx].apply_token_idx(tok_idx);
                 }
 
                 let info = &mut self.row_infos[lexeme_idx];
+                info.apply_token_idx(tok_idx);
                 let lb = info.lexeme.visible_bytes()[lexeme_byte_idx];
                 if lb != *b {
                     println!("byte mismatch: {} != {} at {}", lb, b, lexeme_idx);
@@ -449,7 +473,7 @@ impl Parser {
             tok_idx += 1;
         }
         while lexeme_idx < self.row_infos.len() {
-            self.row_infos[lexeme_idx].token_idx = tok_idx;
+            self.row_infos[lexeme_idx].apply_token_idx(tok_idx);
             lexeme_idx += 1;
         }
         self.token_idx = tok_idx;
@@ -464,7 +488,8 @@ impl Parser {
         self.row_infos.push(RowInfo {
             lexeme: Lexeme::bogus(),
             commit_item: Item::NULL,
-            token_idx: self.token_idx,
+            token_idx_start: self.token_idx,
+            token_idx_stop: self.token_idx,
             max_tokens: usize::MAX,
         });
 
@@ -477,7 +502,7 @@ impl Parser {
                 let sym_data = self.item_sym_data(&item);
                 let max_tokens = sym_data.props.max_tokens;
                 if max_tokens != usize::MAX {
-                    let start_token_idx = self.row_infos[item.start_pos() + 1].token_idx;
+                    let start_token_idx = self.row_infos[item.start_pos() + 1].token_idx_start;
                     if self.token_idx - start_token_idx >= max_tokens {
                         debug!(
                             "  remove: {}-{} {}",
@@ -723,7 +748,7 @@ impl Parser {
 
         let row_len = self.scratch.row_len();
 
-        if row_len == 0 {
+        if row_len == 0 || allowed_lexemes.is_zero() {
             false
         } else {
             self.stats.all_items += row_len;
@@ -741,7 +766,8 @@ impl Parser {
                 self.row_infos.push(RowInfo {
                     lexeme,
                     commit_item,
-                    token_idx: self.token_idx,
+                    token_idx_start: self.token_idx,
+                    token_idx_stop: self.token_idx,
                     max_tokens,
                 });
             }
@@ -808,10 +834,20 @@ impl Recognizer for Parser {
     fn try_push_byte(&mut self, byte: u8) -> bool {
         let curr = self.lexer_stack[self.lexer_stack.len() - 1];
         let row = &self.rows[curr.row_idx as usize];
-        match self
-            .lexer
-            .advance(&row.allowed_lexemes, curr.lexer_state, byte)
-        {
+
+        let max_tokens_reached = if self.scratch.definitive {
+            let info = &self.row_infos[curr.row_idx as usize];
+            info.token_idx_stop - info.token_idx_start > info.max_tokens
+        } else {
+            false
+        };
+
+        match self.lexer.advance(
+            &row.allowed_lexemes,
+            curr.lexer_state,
+            byte,
+            max_tokens_reached,
+        ) {
             None => false, // lexer failure
             Some((next_state, None)) => {
                 // lexer advanced, but no lexeme

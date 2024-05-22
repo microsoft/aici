@@ -142,7 +142,6 @@ pub struct LexerSpec {
     pub lexemes: Vec<LexemeSpec>,
 }
 
-
 impl LexerSpec {
     pub fn dbg_lexeme(&self, lex: &Lexeme) -> String {
         let str = String::from_utf8_lossy(&lex.bytes).to_string();
@@ -349,8 +348,26 @@ impl Lexer {
         allowed_lexems: &SimpleVob,
         prev: StateID,
         byte: u8,
+        max_tokens_reached: bool,
     ) -> Option<(StateID, Option<LexemeIdx>)> {
         let dfa = &self.dfa;
+
+        if max_tokens_reached {
+            let info = self.state_info(prev);
+            let idx = if let Some(idx) = self
+                .vobset
+                .resolve(info.reachable)
+                .first_bit_set_here_and_in(allowed_lexems)
+            {
+                idx
+            } else {
+                allowed_lexems
+                    .first_bit_set()
+                    .expect("empty allowed lexemes")
+            };
+            return Some((self.initial, Some(LexemeIdx(idx))));
+        }
+
         let state = dfa.next_state(prev, byte);
         debug!(
             "lex: {:?} -{:?}-> {:?} d={}",
