@@ -134,6 +134,7 @@ struct RowInfo {
     token_idx: usize,
     #[allow(dead_code)]
     commit_item: Item,
+    max_tokens: usize, // TODO use this
 }
 
 #[derive(Clone, Copy)]
@@ -609,6 +610,7 @@ impl Parser {
         let curr_idx = self.num_rows() - 1;
         let mut commit_item = Item::NULL;
         let mut allowed_lexemes = SimpleVob::alloc(self.grammar.num_terminals());
+        let mut max_tokens = 0;
 
         self.stats.rows += 1;
 
@@ -698,6 +700,7 @@ impl Parser {
                 let sym_data = self.grammar.sym_data(after_dot);
                 if let Some(lx) = self.grammar.lexeme_idx_of(after_dot) {
                     allowed_lexemes.set(lx.0, true);
+                    max_tokens = max_tokens.max(sym_data.props.max_tokens);
                 }
                 if sym_data.is_nullable {
                     self.scratch
@@ -737,6 +740,7 @@ impl Parser {
                     lexeme,
                     commit_item,
                     token_idx: self.token_idx,
+                    max_tokens,
                 });
             }
 
