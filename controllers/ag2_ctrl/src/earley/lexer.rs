@@ -130,21 +130,35 @@ impl Default for StateInfo {
 
 pub struct Lexer {
     dfa: dense::DFA<Vec<u32>>,
-    #[allow(dead_code)]
-    patterns: Vec<LexemeSpec>,
     initial: StateID,
     info_by_state_off: Vec<StateInfo>,
     spec: LexerSpec,
     vobset: Rc<VobSet>,
 }
 
+#[derive(Clone)]
 pub struct LexerSpec {
     pub greedy: bool,
+    pub lexemes: Vec<LexemeSpec>,
+}
+
+
+impl LexerSpec {
+    pub fn dbg_lexeme(&self, lex: &Lexeme) -> String {
+        let str = String::from_utf8_lossy(&lex.bytes).to_string();
+        let info = &self.lexemes[lex.idx.0];
+        if str == info.rx {
+            format!("{:?}", str)
+        } else {
+            format!("{:?} ({:?})", info.rx, str)
+        }
+    }
 }
 
 impl Lexer {
-    pub fn from(spec: LexerSpec, patterns: Vec<LexemeSpec>, mut vobset: VobSet) -> Self {
+    pub fn from(spec: LexerSpec, mut vobset: VobSet) -> Self {
         // TIME: 4ms
+        let patterns = &spec.lexemes;
         let dfa = dense::Builder::new()
             .configure(
                 dense::Config::new()
@@ -160,7 +174,7 @@ impl Lexer {
             dfa.memory_usage(),
             patterns.len(),
         );
-        for p in &patterns {
+        for p in patterns {
             debug!("  {}", p.rx)
         }
 
@@ -252,7 +266,6 @@ impl Lexer {
             initial,
             vobset: Rc::new(vobset),
             spec,
-            patterns,
         };
 
         if DEBUG {

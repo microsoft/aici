@@ -13,9 +13,11 @@ use aici_abi::{
 };
 use anyhow::{bail, Result};
 
+use crate::earley::lexer::{Lexer, VobSet};
+
 use super::{
     grammar::{CGrammar, CSymIdx, CSymbol, ModelVariable, RuleIdx},
-    lexer::Lexeme,
+    lexer::{Lexeme, StateID},
 };
 
 const DEBUG: bool = false;
@@ -85,6 +87,7 @@ pub struct Stats {
 struct Row {
     first_item: usize,
     last_item: usize,
+    allowed_lexemes: SimpleVob,
 }
 
 impl Row {
@@ -133,10 +136,17 @@ struct RowInfo {
     commit_item: Item,
 }
 
+struct LexerState {
+    row_idx: u32,
+    lexer_state: StateID,
+}
+
 pub struct Parser {
+    lexer: Lexer,
     grammar: Rc<CGrammar>,
     scratch: Scratch,
     captures: Vec<(String, Vec<u8>)>,
+    lexer_stack: Vec<LexerState>,
     rows: Vec<Row>,
     row_infos: Vec<RowInfo>,
     stats: Stats,
@@ -165,10 +175,11 @@ impl Scratch {
         self.row_end - self.row_start
     }
 
-    fn work_row(&self) -> Row {
+    fn work_row(&self, allowed_lexemes: SimpleVob) -> Row {
         Row {
             first_item: self.row_start,
             last_item: self.row_end,
+            allowed_lexemes,
         }
     }
 
@@ -263,10 +274,14 @@ impl Scratch {
 impl Parser {
     pub fn new(grammar: CGrammar) -> Self {
         let start = grammar.start();
+        let vobset = VobSet::new();
+        let lexer = Lexer::from(grammar.lexer_spec().clone(), vobset);
         let grammar = Rc::new(grammar);
         let scratch = Scratch::new(Rc::clone(&grammar));
+        let lexer_state = lexer.file_start_state();
         let mut r = Parser {
             grammar,
+            lexer,
             rows: vec![],
             row_infos: vec![],
             captures: vec![],
@@ -274,6 +289,10 @@ impl Parser {
             stats: Stats::default(),
             last_collapse: 0,
             token_idx: 0,
+            lexer_stack: vec![LexerState {
+                row_idx: 0,
+                lexer_state,
+            }],
         };
         info!("new parser");
         for rule in r.grammar.rules_of(start).to_vec() {
@@ -311,13 +330,13 @@ impl Parser {
         }
     }
 
+    #[inline(always)]
     pub fn num_rows(&self) -> usize {
-        self.rows.len()
+        self.lexer_stack[self.lexer_stack.len() - 1].row_idx as usize + 1
     }
 
-    fn pop_rows(&mut self, n: usize) {
-        unsafe { self.rows.set_len(self.rows.len() - n) }
-        // self.rows.drain(self.rows.len() - n..);
+    fn pop_lexer_states(&mut self, n: usize) {
+        unsafe { self.lexer_stack.set_len(self.lexer_stack.len() - n) }
     }
 
     #[allow(dead_code)]
@@ -439,7 +458,7 @@ impl Parser {
             token_idx: self.token_idx,
         });
 
-        for idx in 0..self.rows.len() {
+        for idx in 0..self.num_rows() {
             let range = self.rows[idx].item_indices();
             self.rows[idx].first_item = dst;
             for i in range {
@@ -484,7 +503,7 @@ impl Parser {
     }
 
     fn curr_row(&self) -> &Row {
-        &self.rows[self.rows.len() - 1]
+        &self.rows[self.num_rows() - 1]
     }
 
     pub fn model_variables(&self) -> Vec<ModelVariable> {
@@ -561,7 +580,7 @@ impl Parser {
     }
 
     pub fn scan(&mut self, lexeme: Lexeme) -> bool {
-        let row_idx = self.rows.len() - 1;
+        let row_idx = self.num_rows() - 1;
         let last = self.rows[row_idx].last_item;
         let mut i = self.rows[row_idx].first_item;
         let n = last - i;
@@ -569,7 +588,10 @@ impl Parser {
         self.scratch.new_row(last);
 
         if self.scratch.definitive {
-            debug!("  scan: {:?}", self.grammar.dbg_lexeme(&lexeme));
+            debug!(
+                "  scan: {:?}",
+                self.grammar.lexer_spec().dbg_lexeme(&lexeme)
+            );
         }
 
         let trg = self.grammar.lexeme_to_sym_idx(lexeme.idx);
@@ -591,8 +613,9 @@ impl Parser {
 
     #[inline(always)]
     fn push_row(&mut self, mut agenda_ptr: usize, lexeme: Lexeme) -> bool {
-        let curr_idx = self.rows.len();
+        let curr_idx = self.num_rows() - 1;
         let mut commit_item = Item::NULL;
+        let mut allowed_lexemes = SimpleVob::alloc(self.grammar.num_terminals());
 
         self.stats.rows += 1;
 
@@ -679,6 +702,9 @@ impl Parser {
                 }
             } else {
                 let sym_data = self.grammar.sym_data(after_dot);
+                if let Some(lx) = self.grammar.lexeme_idx_of(after_dot) {
+                    allowed_lexemes.set(lx.0, true);
+                }
                 if sym_data.is_nullable {
                     self.scratch
                         .add_unique(item.advance_dot(), item_idx, "null");
@@ -703,10 +729,21 @@ impl Parser {
         } else {
             self.stats.all_items += row_len;
 
-            self.rows.push(self.scratch.work_row());
+            let idx = self.num_rows();
+            let row = self.scratch.work_row(allowed_lexemes);
+            if self.rows.len() == idx {
+                self.rows.push(row);
+            } else {
+                self.rows[idx] = row;
+            }
+
+            self.lexer_stack.push(LexerState {
+                row_idx: idx as u32,
+                lexer_state: self.lexer_stack[self.lexer_stack.len() - 1].lexer_state,
+            });
 
             if self.scratch.definitive {
-                self.row_infos.drain((self.rows.len() - 1)..);
+                self.row_infos.drain((self.num_rows() - 1)..);
                 self.row_infos.push(RowInfo {
                     lexeme,
                     commit_item,
@@ -721,7 +758,7 @@ impl Parser {
 
 impl Recognizer for Parser {
     fn pop_bytes(&mut self, num: usize) {
-        self.pop_rows(num);
+        self.pop_lexer_states(num);
     }
 
     fn collapse(&mut self) {
@@ -769,7 +806,7 @@ impl Recognizer for Parser {
         assert!(self.scratch.definitive == false);
         assert!(self.row_infos.len() <= self.num_rows());
         // clean up stack
-        self.pop_rows(self.num_rows() - self.row_infos.len());
+        self.pop_lexer_states(self.num_rows() - self.row_infos.len());
         self.scratch.definitive = true;
     }
 

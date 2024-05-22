@@ -1,4 +1,7 @@
-use super::{lexer::quote_regex, Grammar};
+use super::{
+    lexer::{quote_regex, LexerSpec},
+    Grammar,
+};
 use crate::{
     api::{GrammarWithLexer, Node, TopLevelGrammar},
     earley::{grammar::SymbolProps, lexer::LexemeSpec},
@@ -42,7 +45,10 @@ pub fn grammar_from_json(input: GrammarWithLexer) -> Result<Grammar> {
     let is_greedy = input.greedy_lexer;
     let is_lazy = !is_greedy;
 
-    let mut grm = Grammar::new();
+    let mut grm = Grammar::new(LexerSpec {
+        greedy: is_greedy,
+        lexemes: vec![],
+    });
     let node_map = input
         .nodes
         .iter()
