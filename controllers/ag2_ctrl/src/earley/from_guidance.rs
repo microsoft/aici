@@ -1,7 +1,7 @@
 use super::{lexer::quote_regex, Grammar};
 use crate::{
     api::{GrammarWithLexer, Node, TopLevelGrammar},
-    earley::grammar::{LexemeInfo, SymbolProps},
+    earley::{grammar::SymbolProps, lexer::LexemeSpec},
 };
 use anyhow::{bail, ensure, Result};
 
@@ -80,7 +80,7 @@ pub fn grammar_from_json(input: GrammarWithLexer) -> Result<Grammar> {
             }
             Node::Gen { data, .. } => {
                 ensure!(is_lazy, "gen() only allowed in lazy grammars");
-                let info = LexemeInfo {
+                let info = LexemeSpec {
                     rx: format!("({})({})", data.body_rx, data.stop_rx),
                     allow_others: false,
                 };
@@ -94,14 +94,14 @@ pub fn grammar_from_json(input: GrammarWithLexer) -> Result<Grammar> {
                 rx, allow_others, ..
             } => {
                 ensure!(is_greedy, "lexeme() only allowed in greedy grammars");
-                let info = LexemeInfo {
+                let info = LexemeSpec {
                     rx: rx.clone(),
                     allow_others: *allow_others,
                 };
                 grm.make_terminal(lhs, info)?;
             }
             Node::String { literal, .. } => {
-                let info = LexemeInfo {
+                let info = LexemeSpec {
                     rx: quote_regex(&literal),
                     allow_others: false,
                 };

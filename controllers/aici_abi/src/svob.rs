@@ -272,6 +272,17 @@ impl SimpleVob {
             .all(|(a, b)| *a & *b == 0)
     }
 
+    pub fn first_bit_set_here_and_in(&self, other: &SimpleVob) -> Option<usize> {
+        assert_eq!(self.size, other.size);
+        for (idx, (a, b)) in self.data.iter().zip(other.data.iter()).enumerate() {
+            let v = *a & *b;
+            if v != 0 {
+                return Some(idx * BITS + v.trailing_zeros() as usize);
+            }
+        }
+        None
+    }
+
     pub fn first_bit_set(&self) -> Option<usize> {
         for (idx, v) in self.data.iter().enumerate() {
             if *v != 0 {

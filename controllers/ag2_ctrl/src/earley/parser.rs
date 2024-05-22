@@ -7,6 +7,7 @@ use std::{
 };
 
 use aici_abi::{
+    svob::SimpleVob,
     toktree::{Recognizer, SpecialToken, TokTrie},
     TokenId,
 };
@@ -543,6 +544,20 @@ impl Parser {
         } else {
             self.push_row(self.scratch.row_start, Lexeme::bogus())
         }
+    }
+
+    pub fn possible_lexemes(&self) -> SimpleVob {
+        let mut r = SimpleVob::alloc(self.grammar.num_terminals());
+
+        for idx in self.curr_row().item_indices() {
+            let item = self.scratch.items[idx];
+            let cidx = self.grammar.sym_idx_at(item.rule_idx());
+            if let Some(lx) = self.grammar.lexeme_idx_of(cidx) {
+                r.set(lx.0, true);
+            }
+        }
+
+        r
     }
 
     pub fn scan(&mut self, lexeme: Lexeme) -> bool {

@@ -3,7 +3,7 @@ use std::fmt::Debug;
 use aici_abi::toktree::SpecialToken;
 use anyhow::{bail, Result};
 
-use super::lexer::{Lexeme, LexemeIdx};
+use super::lexer::{Lexeme, LexemeIdx, LexemeSpec};
 use rustc_hash::FxHashMap;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -108,15 +108,9 @@ impl Rule {
     }
 }
 
-#[derive(Debug, Clone)]
-pub struct LexemeInfo {
-    pub rx: String,
-    pub allow_others: bool,
-}
-
 pub struct Grammar {
     symbols: Vec<Symbol>,
-    lexer_patterns: Vec<LexemeInfo>,
+    lexer_patterns: Vec<LexemeSpec>,
     symbol_by_name: FxHashMap<String, SymIdx>,
     model_variables: FxHashMap<String, SymIdx>,
 }
@@ -149,7 +143,7 @@ impl Grammar {
         sym.rules.push(Rule { lhs, rhs });
     }
 
-    pub fn make_terminal(&mut self, lhs: SymIdx, info: LexemeInfo) -> Result<()> {
+    pub fn make_terminal(&mut self, lhs: SymIdx, info: LexemeSpec) -> Result<()> {
         if self
             .lexer_patterns
             .iter()
@@ -484,7 +478,7 @@ impl SymFlags {
 #[derive(Clone)]
 pub struct CGrammar {
     start_symbol: CSymIdx,
-    terminals: Vec<LexemeInfo>,
+    terminals: Vec<LexemeSpec>,
     symbols: Vec<CSymbol>,
     rules: Vec<CSymIdx>,
     rule_idx_to_sym_idx: Vec<CSymIdx>,
@@ -498,9 +492,13 @@ impl CGrammar {
         self.lexeme_idx_of(sym).is_some()
     }
 
+    pub fn num_terminals(&self) -> usize {
+        self.terminals.len()
+    }
+
     pub fn lexeme_idx_of(&self, sym: CSymIdx) -> Option<LexemeIdx> {
         let idx = sym.as_index().wrapping_sub(1);
-        if idx < self.terminals.len() {
+        if idx < self.num_terminals() {
             Some(LexemeIdx(idx))
         } else {
             None
