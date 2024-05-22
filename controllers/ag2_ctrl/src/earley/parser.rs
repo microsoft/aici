@@ -136,9 +136,11 @@ struct RowInfo {
     commit_item: Item,
 }
 
+#[derive(Clone, Copy)]
 struct LexerState {
     row_idx: u32,
     lexer_state: StateID,
+    byte: u8,
 }
 
 pub struct Parser {
@@ -292,6 +294,7 @@ impl Parser {
             lexer_stack: vec![LexerState {
                 row_idx: 0,
                 lexer_state,
+                byte: 0,
             }],
         };
         info!("new parser");
@@ -670,6 +673,7 @@ impl Parser {
                 }
 
                 if flags.commit_point() {
+                    assert!(false, "commit point");
                     // TODO do we need to remove possible scans?
                     for ptr in agenda_ptr..self.scratch.row_end {
                         let next_item = self.scratch.items[ptr];
@@ -736,11 +740,6 @@ impl Parser {
             } else {
                 self.rows[idx] = row;
             }
-
-            self.lexer_stack.push(LexerState {
-                row_idx: idx as u32,
-                lexer_state: self.lexer_stack[self.lexer_stack.len() - 1].lexer_state,
-            });
 
             if self.scratch.definitive {
                 self.row_infos.drain((self.num_rows() - 1)..);
@@ -811,8 +810,55 @@ impl Recognizer for Parser {
     }
 
     fn try_push_byte(&mut self, byte: u8) -> bool {
-        todo!()
-        // self.scan(byte)
+        let curr = self.lexer_stack[self.lexer_stack.len() - 1];
+        let row = &self.rows[curr.row_idx as usize];
+        match self
+            .lexer
+            .advance(&row.allowed_lexemes, curr.lexer_state, byte)
+        {
+            None => false, // lexer failure
+            Some((next_state, None)) => {
+                // lexer advanced, but no lexeme
+                self.lexer_stack.push(LexerState {
+                    row_idx: curr.row_idx,
+                    lexer_state: next_state,
+                    byte,
+                });
+                true
+            }
+            Some((next_state, Some(lexeme_idx))) => {
+                let lexeme = if self.scratch.definitive {
+                    let mut bytes = vec![];
+                    for back in self.lexer_stack.iter().rev() {
+                        if back.row_idx != curr.row_idx {
+                            break;
+                        }
+                        bytes.push(back.byte);
+                    }
+                    bytes.reverse();
+                    if !self.grammar.lexer_spec().greedy {
+                        bytes.push(byte);
+                    }
+                    Lexeme {
+                        idx: lexeme_idx,
+                        bytes,
+                        hidden_len: 0, // TODO
+                    }
+                } else {
+                    Lexeme::just_idx(lexeme_idx)
+                };
+                if self.scan(lexeme) {
+                    self.lexer_stack.push(LexerState {
+                        row_idx: self.num_rows() as u32,
+                        lexer_state: next_state,
+                        byte,
+                    });
+                    true
+                } else {
+                    false
+                }
+            }
+        }
     }
 }
 

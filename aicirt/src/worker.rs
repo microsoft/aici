@@ -78,6 +78,8 @@ pub enum ForkResult<Cmd, Resp> {
 // This is visible with 'ps -o comm'
 pub fn set_process_name(name: &str) {
     let name = std::ffi::CString::new(name).unwrap();
+    let _ = name;
+    #[cfg(target_os = "linux")]
     unsafe {
         libc::prctl(libc::PR_SET_NAME, name.as_ptr() as usize, 0, 0, 0);
     }
