@@ -350,7 +350,10 @@ impl Debug for Grammar {
         writeln!(f, "Grammar:")?;
         for sym in &self.symbols {
             match sym.lexeme {
-                Some(lx) => writeln!(f, "{} := {:?}", sym.name, self.lexer_spec.lexemes[lx.0].rx)?,
+                Some(lx) => {
+                    let sp = &self.lexer_spec.lexemes[lx.0];
+                    writeln!(f, "{} := {:?}", sp.name, sp.rx)?
+                },
                 _ => {}
             }
         }

@@ -20,9 +20,18 @@ use super::{
     lexer::{Lexeme, LexerSpec, StateID},
 };
 
+const TRACE: bool = false;
 const DEBUG: bool = true;
 const INFO: bool = true;
 const MAX_ROW: usize = 100;
+
+macro_rules! trace {
+    ($($arg:tt)*) => {
+        if TRACE {
+            println!($($arg)*);
+        }
+    }
+}
 
 macro_rules! debug {
     ($($arg:tt)*) => {
@@ -97,6 +106,7 @@ impl Row {
 }
 
 impl Item {
+    #[allow(dead_code)]
     const NULL: Self = Item { data: 0 };
 
     fn new(rule: RuleIdx, start: usize) -> Self {
@@ -133,9 +143,7 @@ struct RowInfo {
     lexeme: Lexeme,
     token_idx_start: usize,
     token_idx_stop: usize,
-    #[allow(dead_code)]
-    commit_item: Item,
-    max_tokens: usize, // TODO use this
+    max_tokens: usize,
 }
 
 impl RowInfo {
@@ -156,6 +164,7 @@ pub struct Parser {
     lexer: Lexer,
     grammar: Rc<CGrammar>,
     scratch: Scratch,
+    trie_lexer_stack: usize,
     captures: Vec<(String, Vec<u8>)>,
     lexer_stack: Vec<LexerState>,
     rows: Vec<Row>,
@@ -298,6 +307,7 @@ impl Parser {
         let mut r = Parser {
             grammar,
             lexer,
+            trie_lexer_stack: usize::MAX,
             rows: vec![],
             row_infos: vec![],
             captures: vec![],
@@ -346,7 +356,7 @@ impl Parser {
 
     pub fn print_row(&self, row_idx: usize) {
         let row = &self.rows[row_idx];
-        println!("row {}", row_idx);
+        println!("row {}; lexer_stack={}", row_idx, self.lexer_stack.len());
 
         println!(
             "  allowed: {}",
@@ -397,10 +407,13 @@ impl Parser {
         self.assert_definitive();
         let mut indices = vec![];
         let mut allbytes = vec![];
+        trace!("get_bytes:");
         for (idx, ri) in self.row_infos.iter().enumerate() {
+            trace!("  lexeme: {}", self.lexer_spec().dbg_lexeme(&ri.lexeme));
             let mut bytes = ri.lexeme.visible_bytes().to_vec();
             if bytes.is_empty() && idx == self.num_rows() - 1 {
                 bytes = self.curr_row_bytes();
+                trace!("    bytes: {:?}", String::from_utf8_lossy(&bytes));
             };
             indices.extend((0..bytes.len()).map(|_| idx));
             allbytes.extend_from_slice(&bytes);
@@ -444,7 +457,7 @@ impl Parser {
     ) -> Result<&'static str> {
         self.assert_definitive();
         let mut tok_idx = 0;
-        debug!("apply_tokens: {:?}", tokens);
+        debug!("apply_tokens: {:?} {}", tokens, self.lexer_stack.len());
         // reset token_idx
         for ri in self.row_infos.iter_mut() {
             ri.token_idx_start = usize::MAX;
@@ -504,7 +517,7 @@ impl Parser {
         }
         self.token_idx = tok_idx;
 
-        self.print_row(self.num_rows() - 1);
+        // self.print_row(self.num_rows() - 1);
 
         return Ok("");
     }
@@ -516,7 +529,6 @@ impl Parser {
 
         self.row_infos.push(RowInfo {
             lexeme: Lexeme::bogus(),
-            commit_item: Item::NULL,
             token_idx_start: self.token_idx,
             token_idx_stop: self.token_idx,
             max_tokens: usize::MAX,
@@ -554,7 +566,7 @@ impl Parser {
 
     pub fn force_bytes(&mut self) -> Vec<u8> {
         self.assert_definitive();
-        debug!("force_bytes");
+        trace!("force_bytes lexer_stack {}", self.lexer_stack.len());
         let mut bytes = vec![];
         while let Some(b) = self.forced_byte() {
             debug!("  forced: {:?}", b as char);
@@ -565,7 +577,11 @@ impl Parser {
             }
             bytes.push(b);
         }
-        debug!("force_bytes {}", bytes.len());
+        trace!(
+            "force_bytes exit {} lexer_stack={}",
+            bytes.len(),
+            self.lexer_stack.len()
+        );
         bytes
     }
 
@@ -611,6 +627,10 @@ impl Parser {
     }
 
     pub fn scan_model_variable(&mut self, mv: ModelVariable) -> bool {
+        if true {
+            todo!();
+        }
+
         if self.scratch.definitive {
             debug!("  scan mv: {:?}", mv);
         }
@@ -635,7 +655,7 @@ impl Parser {
         }
     }
 
-    pub fn scan(&mut self, lexeme: Lexeme) -> bool {
+    fn scan(&mut self, lexeme: Lexeme) -> bool {
         let row_idx = self.num_rows() - 1;
         let last = self.rows[row_idx].last_item;
         let mut i = self.rows[row_idx].first_item;
@@ -643,11 +663,11 @@ impl Parser {
         self.scratch.ensure_items(last + n + 100);
         self.scratch.new_row(last);
 
-        if self.scratch.definitive {
-            debug!("  scan: {}", self.lexer_spec().dbg_lexeme(&lexeme));
-        }
-
         let trg = self.grammar.lexeme_to_sym_idx(lexeme.idx);
+
+        if self.scratch.definitive {
+            debug!("scan: {} at {}", self.lexer_spec().dbg_lexeme(&lexeme), row_idx);
+        }
 
         while i < last {
             let item = self.scratch.items[i];
@@ -666,16 +686,15 @@ impl Parser {
 
     #[inline(always)]
     fn push_row(&mut self, mut agenda_ptr: usize, lexeme: Lexeme) -> bool {
-        let curr_idx = self.num_rows() - 1;
-        let mut commit_item = Item::NULL;
+        let curr_idx = self.num_rows();
         let mut allowed_lexemes = SimpleVob::alloc(self.grammar.num_terminals());
         let mut max_tokens = 0;
 
         self.stats.rows += 1;
 
         while agenda_ptr < self.scratch.row_end {
-            let mut item_idx = agenda_ptr;
-            let mut item = self.scratch.items[agenda_ptr];
+            let item_idx = agenda_ptr;
+            let item = self.scratch.items[agenda_ptr];
             agenda_ptr += 1;
             if self.scratch.definitive {
                 debug!("    agenda: {}", self.item_to_string(item_idx));
@@ -719,39 +738,6 @@ impl Parser {
                         let item = self.scratch.items[i];
                         if self.grammar.sym_idx_at(item.rule_idx()) == lhs {
                             self.scratch.add_unique(item.advance_dot(), i, "complete");
-                        }
-                    }
-                }
-
-                if flags.commit_point() {
-                    assert!(false, "commit point");
-                    // TODO do we need to remove possible scans?
-                    for ptr in agenda_ptr..self.scratch.row_end {
-                        let next_item = self.scratch.items[ptr];
-                        let next_rule = next_item.rule_idx();
-                        // is it earlier, complete, and commit point?
-                        if next_item.start_pos() < item.start_pos()
-                            && self.grammar.sym_idx_at(next_rule) == CSymIdx::NULL
-                            && self.grammar.sym_flags_of(next_rule).commit_point()
-                        {
-                            // if so, use it
-                            item = next_item;
-                            item_idx = ptr;
-                        }
-                    }
-                    self.scratch.row_end = agenda_ptr;
-                    self.scratch.items[agenda_ptr - 1] = item;
-                    if self.scratch.definitive {
-                        self.scratch.item_props[agenda_ptr - 1] =
-                            self.scratch.item_props[item_idx].clone();
-                    }
-                    item_idx = agenda_ptr - 1;
-                    commit_item = item;
-                    if self.scratch.definitive {
-                        debug!("  commit point: {}", self.item_to_string(item_idx));
-                        if flags.hidden() {
-                            panic!("hidden item");
-                            // return self.hide_item(lhs, item.start_pos());
                         }
                     }
                 }
@@ -801,15 +787,16 @@ impl Parser {
             }
 
             if self.scratch.definitive {
-                self.row_infos.drain((self.num_rows() - 1)..);
+                if self.row_infos.len() > idx {
+                    self.row_infos.drain(idx..);
+                }
                 self.row_infos.push(RowInfo {
-                    lexeme,
-                    commit_item,
+                    lexeme: Lexeme::bogus(),
                     token_idx_start: self.token_idx,
                     token_idx_stop: self.token_idx,
                     max_tokens,
                 });
-                self.assert_definitive();
+                debug!("  push: {idx} {} {}", self.rows.len(), self.row_infos.len());
             }
 
             true
@@ -824,6 +811,9 @@ impl Parser {
                 break;
             }
             bytes.push(back.byte);
+        }
+        if !self.lexer_spec().greedy && row_idx > 0 && bytes.len() > 0 {
+            bytes.pop();
         }
         bytes.reverse();
         bytes
@@ -873,17 +863,18 @@ impl Recognizer for Parser {
     }
 
     fn trie_started(&mut self) {
-        // println!("trie_started: rows={} infos={}", self.num_rows(), self.row_infos.len());
+        // debug!("trie_started: rows={} lexer={}", self.num_rows(), self.lexer_stack.len());
         self.assert_definitive();
+        self.trie_lexer_stack = self.lexer_stack.len();
         self.scratch.definitive = false;
     }
 
     fn trie_finished(&mut self) {
-        // println!("trie_finished: rows={} infos={}", self.num_rows(), self.row_infos.len());
+        // debug!("trie_finished: rows={} lexer={}", self.num_rows(), self.lexer_stack.len());
         assert!(self.scratch.definitive == false);
         assert!(self.row_infos.len() <= self.num_rows());
         // clean up stack
-        self.pop_lexer_states(self.num_rows() - self.row_infos.len());
+        self.pop_lexer_states(self.lexer_stack.len() - self.trie_lexer_stack);
         self.scratch.definitive = true;
     }
 
@@ -940,12 +931,17 @@ impl Recognizer for Parser {
                 } else {
                     Lexeme::just_idx(lexeme_idx)
                 };
-                if self.scan(lexeme) {
+                if self.scan(lexeme.clone()) {
+                    let next_row_idx = self.num_rows();
                     self.lexer_stack.push(LexerState {
-                        row_idx: self.num_rows() as u32 - 1,
+                        row_idx: next_row_idx as u32,
                         lexer_state: next_state,
                         byte,
                     });
+                    if self.scratch.definitive {
+                        self.row_infos[next_row_idx - 1].lexeme = lexeme;
+                        self.assert_definitive();
+                    }
                     true
                 } else {
                     false

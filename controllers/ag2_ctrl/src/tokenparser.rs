@@ -79,14 +79,14 @@ impl TokenParser {
         if chop_bytes <= grm_bytes.len() {
             self.llm_bytes = grm_bytes[0..grm_bytes.len() - chop_bytes].to_vec();
             self.llm_tokens = self.token_env.tokenize_bytes(&self.llm_bytes);
-            infoln!("initial llm_tokens: {}", trie.tokens_dbg(&self.llm_tokens));
+            infoln!("ini_tokens: {}", trie.tokens_dbg(&self.llm_tokens));
         } else {
             // pretend the final bit of prompt was the prefix of the grammar
             self.grm_prefix = prompt_bytes
                 [prompt_bytes.len() - chop_bytes..prompt_bytes.len() - grm_bytes.len()]
                 .to_vec();
             infoln!(
-                "forcing grm_prefix: {:?}",
+                "force_prefix: {:?}",
                 String::from_utf8_lossy(&self.grm_prefix)
             );
         }
@@ -155,6 +155,12 @@ impl TokenParser {
 
         let mut backtrack = 0;
 
+        println!(
+            "\nllm_bytes: {:?}\ngrm_bytes: {:?}\n",
+            String::from_utf8_lossy(&self.llm_bytes),
+            String::from_utf8_lossy(&grm_bytes),
+        );
+
         // now, see if we need to backtrack
         if self.llm_bytes.len() > grm_bytes.len()
             || self.llm_bytes != grm_bytes[0..self.llm_bytes.len()]
@@ -213,6 +219,7 @@ impl TokenParser {
         }
 
         let mut set = trie.alloc_token_set();
+        self.parser.print_row(self.parser.num_rows() - 1);
         trie.compute_bias_ext(&mut self.parser, &mut set, &token_prefix);
         infoln!(
             "bias: (pref: {:?}) {:?} {}",

@@ -17,7 +17,7 @@ pub fn earley_test(trie: toktree::TokTrie) {
     let cfg = cfg[0].optimize();
     println!("cfg: {:?}", cfg);
 
-    let input = r#"{"name":"Joe","info":{"foo":10,"bar":"20"}}"#.as_bytes();
+    let input = "{\n    \"name\": \"Michal\"\",\n    \"age\": 77".as_bytes();
 
     let toks = trie.greedy_tokenize(input);
     println!("tokens: {:?}", toks.len());
@@ -27,12 +27,15 @@ pub fn earley_test(trie: toktree::TokTrie) {
     let mut parser = Parser::new(grm.clone()).unwrap();
     for b in input {
         if !parser.try_push_byte(*b) {
-            println!("reject");
-            break;
+            panic!("reject");
         }
     }
+
+
+    println!("final: {:?}", String::from_utf8_lossy(&parser.get_bytes()));
+
     if !parser.is_accepting() {
-        println!("final non-accept");
+        panic!("final non-accept");
     }
 
     const COLLECT_TIMES: bool = false;
