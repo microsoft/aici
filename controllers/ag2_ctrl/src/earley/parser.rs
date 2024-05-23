@@ -13,14 +13,14 @@ use aici_abi::{
 };
 use anyhow::{bail, ensure, Result};
 
-use crate::earley::lexer::{Lexer, VobSet};
+use crate::earley::lexer::Lexer;
 
 use super::{
     grammar::{CGrammar, CSymIdx, CSymbol, ModelVariable, RuleIdx},
-    lexer::{Lexeme, StateID},
+    lexer::{Lexeme, LexerSpec, StateID},
 };
 
-const DEBUG: bool = false;
+const DEBUG: bool = true;
 const INFO: bool = true;
 const MAX_ROW: usize = 100;
 
@@ -289,7 +289,7 @@ macro_rules! ensure_internal {
 }
 
 impl Parser {
-    pub fn new(grammar: CGrammar) -> Self {
+    pub fn new(grammar: CGrammar) -> Result<Self> {
         let start = grammar.start();
         let lexer = Lexer::from(grammar.lexer_spec().clone());
         let grammar = Rc::new(grammar);
@@ -317,10 +317,12 @@ impl Parser {
         }
         debug!("initial push");
         let _ = r.push_row(r.scratch.row_start, Lexeme::bogus());
-        assert!(r.num_rows() == 1);
-        assert!(r.rows.len() == 1);
+        ensure_internal!(
+            r.num_rows() == 1 && r.rows.len() == 1,
+            "initial push failed"
+        );
         r.assert_definitive();
-        r
+        Ok(r)
     }
 
     pub fn is_accepting(&self) -> bool {
@@ -345,8 +347,22 @@ impl Parser {
     pub fn print_row(&self, row_idx: usize) {
         let row = &self.rows[row_idx];
         println!("row {}", row_idx);
+
+        println!(
+            "  allowed: {}",
+            self.lexer_spec().dbg_lexeme_set(&row.allowed_lexemes)
+        );
+
+        if row_idx == 0 {
+            println!("  no lexeme on first row")
+        } else if row_idx < self.row_infos.len() {
+            let info = &self.row_infos[row_idx];
+            println!("  lexeme: {}", self.lexer_spec().dbg_lexeme(&info.lexeme));
+        } else {
+            println!("  speculative");
+        }
         for i in row.item_indices() {
-            println!("{}", self.item_to_string(i));
+            println!("  {}", self.item_to_string(i));
         }
     }
 
@@ -368,16 +384,32 @@ impl Parser {
 
     fn assert_definitive(&self) {
         assert!(self.scratch.definitive);
-        assert!(self.num_rows() == self.row_infos.len());
+        if self.num_rows() != self.row_infos.len() {
+            panic!(
+                "num_rows={} row_infos={}",
+                self.num_rows(),
+                self.row_infos.len()
+            );
+        }
+    }
+
+    fn get_bytes_and_lexeme_indices(&self) -> (Vec<usize>, Vec<u8>) {
+        self.assert_definitive();
+        let mut indices = vec![];
+        let mut allbytes = vec![];
+        for (idx, ri) in self.row_infos.iter().enumerate() {
+            let mut bytes = ri.lexeme.visible_bytes().to_vec();
+            if bytes.is_empty() && idx == self.num_rows() - 1 {
+                bytes = self.curr_row_bytes();
+            };
+            indices.extend((0..bytes.len()).map(|_| idx));
+            allbytes.extend_from_slice(&bytes);
+        }
+        (indices, allbytes)
     }
 
     pub fn get_bytes(&self) -> Vec<u8> {
-        self.assert_definitive();
-        self.row_infos
-            .iter()
-            .map(|ri| ri.lexeme.visible_bytes())
-            .collect::<Vec<_>>()
-            .concat()
+        self.get_bytes_and_lexeme_indices().1
     }
 
     fn item_lhs(&self, item: &Item) -> CSymIdx {
@@ -411,8 +443,6 @@ impl Parser {
         mut num_skip: usize,
     ) -> Result<&'static str> {
         self.assert_definitive();
-        let mut lexeme_idx = 0;
-        let mut lexeme_byte_idx = 0;
         let mut tok_idx = 0;
         debug!("apply_tokens: {:?}", tokens);
         // reset token_idx
@@ -420,7 +450,9 @@ impl Parser {
             ri.token_idx_start = usize::MAX;
             ri.token_idx_stop = 0;
         }
-        self.row_infos[lexeme_idx].apply_token_idx(tok_idx);
+        let mut last_lexeme = 0;
+        let (indices, bytes) = self.get_bytes_and_lexeme_indices();
+        let mut byte_idx = 0;
 
         for t in tokens {
             for b in trie.token(*t).iter() {
@@ -429,53 +461,51 @@ impl Parser {
                     continue;
                 }
 
-                let mut scanned = false;
-                // scan to the next byte
-                while lexeme_byte_idx >= self.row_infos[lexeme_idx].lexeme.num_visible_bytes() {
-                    // are we at the last scanned item?
-                    if lexeme_idx + 1 >= self.row_infos.len() {
-                        // we're only supposed to enter here once
-                        ensure_internal!(!scanned, "multiple scans");
-                        scanned = true;
-                        self.token_idx = tok_idx; // save local pointer, in case push_row() uses it
-                        if !self.try_push_byte(*b) {
-                            return Ok("parse reject");
-                        }
-
-                        let item_count = self.curr_row().item_indices().count();
-                        if item_count > MAX_ROW {
-                            bail!(
-                                "Current row has {} items; max is {}; consider making your grammar left-recursive if it's right-recursive",
-                                item_count,
-                                MAX_ROW,
-                            );
-                        }
-
-                        // move to the next byte or the next row
-                        continue;
+                if byte_idx >= bytes.len() {
+                    self.token_idx = tok_idx; // save local pointer, in case push_row() uses it
+                    if !self.try_push_byte(*b) {
+                        return Ok("parse reject");
                     }
-                    lexeme_byte_idx = 0;
-                    lexeme_idx += 1;
-                    ensure_internal!(lexeme_idx < self.row_infos.len(), "missing rows");
-                    self.row_infos[lexeme_idx].apply_token_idx(tok_idx);
+
+                    let item_count = self.curr_row().item_indices().count();
+                    if item_count > MAX_ROW {
+                        bail!(
+                            "Current row has {} items; max is {}; consider making your grammar left-recursive if it's right-recursive",
+                            item_count,
+                            MAX_ROW,
+                        );
+                    }
+                    last_lexeme = self.num_rows() - 1;
+                } else {
+                    loop {
+                        self.row_infos[last_lexeme].apply_token_idx(tok_idx);
+                        if last_lexeme >= indices[byte_idx] {
+                            break;
+                        }
+                        last_lexeme += 1;
+                    }
+
+                    if bytes[byte_idx] != *b {
+                        println!(
+                            "byte mismatch: {} != {} at {}",
+                            bytes[byte_idx], b, last_lexeme
+                        );
+                        return Ok("static reject");
+                    }
                 }
 
-                let info = &mut self.row_infos[lexeme_idx];
-                info.apply_token_idx(tok_idx);
-                let lb = info.lexeme.visible_bytes()[lexeme_byte_idx];
-                if lb != *b {
-                    println!("byte mismatch: {} != {} at {}", lb, b, lexeme_idx);
-                    return Ok("static reject");
-                }
-                lexeme_byte_idx += 1;
+                byte_idx += 1;
             }
             tok_idx += 1;
         }
-        while lexeme_idx < self.row_infos.len() {
-            self.row_infos[lexeme_idx].apply_token_idx(tok_idx);
-            lexeme_idx += 1;
+        while last_lexeme < self.row_infos.len() {
+            self.row_infos[last_lexeme].apply_token_idx(tok_idx);
+            last_lexeme += 1;
         }
         self.token_idx = tok_idx;
+
+        self.print_row(self.num_rows() - 1);
+
         return Ok("");
     }
 
@@ -527,12 +557,15 @@ impl Parser {
         debug!("force_bytes");
         let mut bytes = vec![];
         while let Some(b) = self.forced_byte() {
+            debug!("  forced: {:?}", b as char);
             if !self.try_push_byte(b) {
                 // shouldn't happen?
+                info!("  force_bytes reject {}", b as char);
                 break;
             }
             bytes.push(b);
         }
+        debug!("force_bytes {}", bytes.len());
         bytes
     }
 
@@ -561,16 +594,19 @@ impl Parser {
         }
 
         let mut byte_sym = None;
+        self.trie_started();
         for b in 0..=255 {
             if self.try_push_byte(b) {
                 self.pop_bytes(1);
                 if byte_sym.is_some() {
+                    self.trie_finished();
                     return None; // more than one option
                 } else {
                     byte_sym = Some(b);
                 }
             }
         }
+        self.trie_finished();
         byte_sym
     }
 
@@ -608,10 +644,7 @@ impl Parser {
         self.scratch.new_row(last);
 
         if self.scratch.definitive {
-            debug!(
-                "  scan: {:?}",
-                self.grammar.lexer_spec().dbg_lexeme(&lexeme)
-            );
+            debug!("  scan: {}", self.lexer_spec().dbg_lexeme(&lexeme));
         }
 
         let trg = self.grammar.lexeme_to_sym_idx(lexeme.idx);
@@ -752,9 +785,16 @@ impl Parser {
         } else {
             self.stats.all_items += row_len;
 
+            if self.scratch.definitive {
+                debug!(
+                    "  push row: {}",
+                    self.lexer_spec().dbg_lexeme_set(&allowed_lexemes)
+                );
+            }
+
             let idx = self.num_rows();
             let row = self.scratch.work_row(allowed_lexemes);
-            if self.rows.len() == idx {
+            if self.lexer_stack.len() == 1 || self.rows.len() == idx {
                 self.rows.push(row);
             } else {
                 self.rows[idx] = row;
@@ -769,10 +809,28 @@ impl Parser {
                     token_idx_stop: self.token_idx,
                     max_tokens,
                 });
+                self.assert_definitive();
             }
 
             true
         }
+    }
+
+    fn curr_row_bytes(&self) -> Vec<u8> {
+        let mut bytes = vec![];
+        let row_idx = self.num_rows() - 1;
+        for back in self.lexer_stack.iter().skip(1).rev() {
+            if back.row_idx as usize != row_idx {
+                break;
+            }
+            bytes.push(back.byte);
+        }
+        bytes.reverse();
+        bytes
+    }
+
+    fn lexer_spec(&self) -> &LexerSpec {
+        self.grammar.lexer_spec()
     }
 }
 
@@ -816,8 +874,7 @@ impl Recognizer for Parser {
 
     fn trie_started(&mut self) {
         // println!("trie_started: rows={} infos={}", self.num_rows(), self.row_infos.len());
-        assert!(self.scratch.definitive);
-        assert!(self.row_infos.len() == self.num_rows());
+        self.assert_definitive();
         self.scratch.definitive = false;
     }
 
@@ -834,20 +891,30 @@ impl Recognizer for Parser {
         let curr = self.lexer_stack[self.lexer_stack.len() - 1];
         let row = &self.rows[curr.row_idx as usize];
 
-        let max_tokens_reached = if self.scratch.definitive {
+        let mut max_tokens_reached = false;
+
+        if self.scratch.definitive {
+            debug!("B: {:?}", byte as char);
             let info = &self.row_infos[curr.row_idx as usize];
-            info.token_idx_stop - info.token_idx_start > info.max_tokens
-        } else {
-            false
-        };
+            max_tokens_reached = info.token_idx_stop - info.token_idx_start > info.max_tokens;
+        }
 
         match self.lexer.advance(
             &row.allowed_lexemes,
             curr.lexer_state,
             byte,
             max_tokens_reached,
+            self.scratch.definitive,
         ) {
-            None => false, // lexer failure
+            None => {
+                if self.scratch.definitive {
+                    debug!(
+                        "  lexer fail; allowed: {}",
+                        self.lexer_spec().dbg_lexeme_set(&row.allowed_lexemes)
+                    );
+                }
+                false
+            }
             Some((next_state, None)) => {
                 // lexer advanced, but no lexeme
                 self.lexer_stack.push(LexerState {
@@ -859,28 +926,23 @@ impl Recognizer for Parser {
             }
             Some((next_state, Some(lexeme_idx))) => {
                 let lexeme = if self.scratch.definitive {
-                    let mut bytes = vec![];
-                    for back in self.lexer_stack.iter().rev() {
-                        if back.row_idx != curr.row_idx {
-                            break;
-                        }
-                        bytes.push(back.byte);
-                    }
-                    bytes.reverse();
-                    if !self.grammar.lexer_spec().greedy {
+                    let mut bytes = self.curr_row_bytes();
+                    if !self.lexer_spec().greedy {
                         bytes.push(byte);
                     }
-                    Lexeme {
+                    let res = Lexeme {
                         idx: lexeme_idx,
                         bytes,
                         hidden_len: 0, // TODO
-                    }
+                    };
+                    debug!("  lexer -> {}", self.lexer_spec().dbg_lexeme(&res));
+                    res
                 } else {
                     Lexeme::just_idx(lexeme_idx)
                 };
                 if self.scan(lexeme) {
                     self.lexer_stack.push(LexerState {
-                        row_idx: self.num_rows() as u32,
+                        row_idx: self.num_rows() as u32 - 1,
                         lexer_state: next_state,
                         byte,
                     });

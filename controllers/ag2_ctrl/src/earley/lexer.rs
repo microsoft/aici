@@ -1,4 +1,4 @@
-use aici_abi::svob::SimpleVob;
+use aici_abi::{bytes::limit_str, svob::SimpleVob};
 use regex_automata::{
     dfa::{dense, Automaton},
     util::syntax,
@@ -39,7 +39,7 @@ impl Lexeme {
     }
 }
 
-const DEBUG: bool = false;
+const DEBUG: bool = true;
 
 macro_rules! debug {
     ($($arg:tt)*) => {
@@ -114,6 +114,7 @@ impl VobSet {
 
 #[derive(Debug, Clone)]
 pub struct LexemeSpec {
+    pub name: String,
     pub rx: String,
     pub ends_at_eos_only: bool,
     pub allow_others: bool,
@@ -152,10 +153,17 @@ impl LexerSpec {
         let str = String::from_utf8_lossy(&lex.bytes).to_string();
         let info = &self.lexemes[lex.idx.0];
         if str == info.rx {
-            format!("{:?}", str)
+            format!("[{}]", info.name)
         } else {
-            format!("{:?} ({:?})", info.rx, str)
+            format!("[{}] match={:?}", info.name, limit_str(&str, 32))
         }
+    }
+
+    pub fn dbg_lexeme_set(&self, vob: &SimpleVob) -> String {
+        vob.iter()
+            .map(|idx| self.lexemes[idx as usize].name.as_str())
+            .collect::<Vec<_>>()
+            .join(", ")
     }
 }
 
@@ -180,7 +188,7 @@ impl Lexer {
             patterns.len(),
         );
         for p in patterns {
-            debug!("  {}", p.rx)
+            debug!("  pattern: {:?}", p.rx)
         }
 
         let mut incoming = FxHashMap::default();
@@ -213,7 +221,7 @@ impl Lexer {
                 for idx in 0..dfa.match_len(s2) {
                     let idx = dfa.match_pattern(s2, idx).as_usize();
                     v.set(idx, true);
-                    debug!("  match: {:?} {}", *s, patterns[idx].rx)
+                    debug!("  match: {:?} {:?}", *s, patterns[idx].rx)
                 }
             }
             reachable_patterns.insert(*s, v);
@@ -253,7 +261,7 @@ impl Lexer {
             let state_idx = k.as_usize() >> shift;
             info_by_state_off[state_idx].reachable = vobset.insert_or_get(v);
 
-            let state = *k;
+            let state = dfa.next_eoi_state(*k);
             if dfa.is_match_state(state) {
                 let mut accepting = SimpleVob::alloc(patterns.len());
                 for pat_idx in 0..dfa.match_len(state) {
@@ -280,7 +288,7 @@ impl Lexer {
                 }
             }
 
-            debug!("reachable: {:#?}", reachable_patterns);
+            // debug!("reachable: {:#?}", reachable_patterns);
         }
 
         lex
@@ -355,6 +363,7 @@ impl Lexer {
         prev: StateID,
         byte: u8,
         max_tokens_reached: bool,
+        definitive: bool,
     ) -> Option<(StateID, Option<LexemeIdx>)> {
         let dfa = &self.dfa;
 
@@ -375,14 +384,20 @@ impl Lexer {
         }
 
         let state = dfa.next_state(prev, byte);
-        debug!(
-            "lex: {:?} -{:?}-> {:?} d={}",
-            prev,
-            byte as char,
-            state,
-            self.is_dead(state),
-        );
         let info = self.state_info(state);
+        if definitive {
+            debug!(
+                "lex: {:?} -{:?}-> {:?} d={}, acpt={:?}",
+                prev,
+                byte as char,
+                state,
+                self.is_dead(state),
+                self.vobset
+                    .resolve(info.accepting)
+                    .first_bit_set_here_and_in(allowed_lexems)
+                    .map(|x| self.spec.lexemes[x].name.as_str())
+            );
+        }
         if self
             .vobset
             .resolve(info.reachable)
@@ -398,7 +413,9 @@ impl Lexer {
                 None
             } else {
                 let state = dfa.next_state(self.initial, byte);
-                debug!("lex0: {:?} -{:?}-> {:?}", self.initial, byte as char, state);
+                if definitive {
+                    debug!("lex0: {:?} -{:?}-> {:?}", self.initial, byte as char, state);
+                }
                 Some((state, tok))
             }
         } else {

@@ -94,7 +94,7 @@ def main():
     lm += gen("words", regex=r"[A-Z ]+", stop="\n")
     grm = lm
 
-    @guidance(stateless=True, dedent=False)
+    @guidance(stateless=True, dedent=True)
     def character_maker(lm, id, description, valid_weapons):
         lm += f"""\
         The following is a character profile for an RPG game in JSON format.
@@ -114,7 +114,23 @@ def main():
         return lm
 
 
-    grm = character_maker(1, "A nimble fighter", ["axe", "sword", "bow"])
+    @guidance(stateless=True, dedent=True)
+    def character_maker2(lm, id, description, valid_weapons):
+        lm += f"""\
+        {{
+            "name": "{gen('name', stop='"')}",
+            "age": {gen('age', regex='[0-9]+', stop=',')},
+            "armor": "{select(options=['leather', 'chainmail', 'plate'], name='armor')}",
+            "weapon": "{select(options=valid_weapons, name='weapon')}",
+            "class": "{gen('class', stop='"')}",
+            "mantra": "{gen('mantra', stop='"')}",
+            "strength": {gen('strength', regex='[0-9]+', stop=',')},
+            "items": ["{gen('item', list_append=True, stop='"')}", "{gen('item', list_append=True, stop='"')}", "{gen('item', list_append=True, stop='"')}"]
+        }}"""
+        return lm
+
+
+    grm = character_maker2(1, "A nimble fighter", ["axe", "sword", "bow"])
     prompt = ""
 
     ag2_json = {"grammar": grm.ag2_serialize()}

@@ -18,7 +18,7 @@ pub fn earley_test(trie: toktree::TokTrie) {
 
     let grm = cfg.compile();
 
-    let mut parser = Parser::new(grm.clone());
+    let mut parser = Parser::new(grm.clone()).unwrap();
     for b in input {
         if !parser.try_push_byte(*b) {
             println!("reject");
@@ -41,7 +41,7 @@ pub fn earley_test(trie: toktree::TokTrie) {
         let mut line = 1;
         let mut vob = trie.alloc_token_set();
 
-        parser = Parser::new(grm.clone());
+        parser = Parser::new(grm.clone()).unwrap();
         let mut times = vec![];
 
         #[cfg(not(target_arch = "wasm32"))]
