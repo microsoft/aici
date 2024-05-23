@@ -9,6 +9,7 @@ members = [
     "controllers/jsctrl",
     "controllers/guidance_ctrl",
     "controllers/ag2_ctrl",
+    "controllers/ag2_tester",
     "controllers/uppercase",
     "rllm/rllm-base",
     "rllm/rllm-cuda",

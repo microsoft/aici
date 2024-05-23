@@ -1,0 +1,17 @@
+[package]
+name = "ag2_tester"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+aici_abi = { path = "../aici_abi" }
+ag2_ctrl = { path = "../ag2_ctrl" }
+aici_native = { path = "../aici_native" }
+anyhow = "1.0.75"
+serde = { version = "1.0.192", features = ["derive"] }
+serde_json = "1.0.108"
+rustc-hash = "1.1.0"
+
+[[bin]]
+name = "ag2_tester"
+path = "src/ag2_tester.rs"

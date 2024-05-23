@@ -1,12 +1,18 @@
 use aici_abi::toktree::{self, Recognizer};
+use serde::{Deserialize, Serialize};
 
 use super::Parser;
-use crate::earley::from_guidance::grammars_from_json;
+use crate::{api::TopLevelGrammar, earley::from_guidance::grammars_from_json};
+
+#[derive(Serialize, Deserialize)]
+struct RunnerArg {
+    grammar: TopLevelGrammar,
+}
 
 pub fn earley_test(trie: toktree::TokTrie) {
-    let g_bytes = include_bytes!("../../../aici_abi/grammars/json0.guidance");
-    let data = serde_json::from_slice(g_bytes).unwrap();
-    let cfg = grammars_from_json(data).unwrap();
+    let g_bytes = include_bytes!("../../grammars/character.json");
+    let data: RunnerArg = serde_json::from_slice(g_bytes).unwrap();
+    let cfg = grammars_from_json(data.grammar).unwrap();
     // println!("cfg0: {:?}", cfg);
     let cfg = cfg[0].optimize();
     println!("cfg: {:?}", cfg);
