@@ -48,9 +48,27 @@ pub struct LexemeSpec {
     pub idx: LexemeIdx,
     pub name: String,
     pub rx: String,
+    pub simple_text: Option<String>,
     pub ends_at_eos_only: bool,
     pub allow_others: bool,
     pub hidden: HiddenLexeme,
+}
+
+impl LexemeSpec {
+    pub fn has_hidden_len(&self) -> bool {
+        match &self.hidden {
+            HiddenLexeme::Fixed(0) => false,
+            _ => true,
+        }
+    }
+
+    /// Check if the lexeme always matches bytes, and has at least one more byte to spare.
+    pub fn has_forced_bytes(&self, bytes: &[u8]) -> bool {
+        match &self.simple_text {
+            Some(s) if s.len() > bytes.len() => &s.as_bytes()[0..bytes.len()] == bytes,
+            _ => false,
+        }
+    }
 }
 
 impl Debug for LexemeSpec {
@@ -111,12 +129,20 @@ impl Lexeme {
         Lexeme::just_idx(LexemeIdx(0))
     }
 
+    pub fn num_hidden_bytes(&self) -> usize {
+        self.hidden_len
+    }
+
     pub fn num_visible_bytes(&self) -> usize {
         self.bytes.len() - self.hidden_len
     }
 
     pub fn visible_bytes(&self) -> &[u8] {
         &self.bytes[0..self.num_visible_bytes()]
+    }
+
+    pub fn hidden_bytes(&self) -> &[u8] {
+        &self.bytes[self.num_visible_bytes()..]
     }
 }
 
@@ -210,6 +236,7 @@ impl Default for StateInfo {
 pub struct Lexer {
     dfa: dense::DFA<Vec<u32>>,
     initial: StateID,
+    a_dead_state: StateID,
     info_by_state_off: Vec<StateInfo>,
     spec: LexerSpec,
     vobset: Rc<VobSet>,
@@ -241,6 +268,10 @@ impl LexerSpec {
 
     pub fn new_lexeme(&self, idx: LexemeIdx, bytes: Vec<u8>) -> Result<Lexeme> {
         Lexeme::new(&self.lexemes[idx.0], bytes)
+    }
+
+    pub fn lexeme_spec(&self, idx: LexemeIdx) -> &LexemeSpec {
+        &self.lexemes[idx.0]
     }
 }
 
@@ -274,6 +305,7 @@ impl Lexer {
             .expect("dfa has no start state");
         let mut todo = vec![initial];
         incoming.insert(initial, Vec::new());
+        let mut a_dead_state = StateID::ZERO;
 
         // TIME: 1.5ms
         while todo.len() > 0 {
@@ -281,6 +313,9 @@ impl Lexer {
             for b in 0..=255 {
                 let s2 = dfa.next_state(s, b);
                 if !incoming.contains_key(&s2) {
+                    if dfa.is_dead_state(s2) {
+                        a_dead_state = s2;
+                    }
                     todo.push(s2);
                     incoming.insert(s2, Vec::new());
                 }
@@ -356,6 +391,7 @@ impl Lexer {
             initial,
             vobset: Rc::new(vobset),
             spec,
+            a_dead_state,
         };
 
         if DEBUG {
@@ -380,6 +416,10 @@ impl Lexer {
         // pretend we've just seen a newline at the beginning of the file
         // TODO: this should be configurable
         // self.dfa.next_state(self.initial.state, b'\n')
+    }
+
+    pub fn a_dead_state(&self) -> StateID {
+        self.a_dead_state
     }
 
     fn state_info(&self, state: StateID) -> &StateInfo {

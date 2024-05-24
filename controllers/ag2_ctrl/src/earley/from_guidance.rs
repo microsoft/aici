@@ -91,6 +91,7 @@ pub fn grammar_from_json(input: GrammarWithLexer) -> Result<Grammar> {
                 grm.add_rule(lhs, rhs);
             }
             Node::Gen { data, .. } => {
+                // parser backtracking relies on only lazy lexers having hidden lexemes
                 ensure!(is_lazy, "gen() only allowed in lazy grammars");
                 let body_rx = if data.body_rx.is_empty() {
                     ".*"
@@ -103,6 +104,7 @@ pub fn grammar_from_json(input: GrammarWithLexer) -> Result<Grammar> {
                     idx: LexemeIdx(0),
                     name: format!("gen_{}", grm.sym_name(lhs)),
                     rx: format!("({})({})", body_rx, data.stop_rx),
+                    simple_text: None,
                     ends_at_eos_only: data.stop_rx.is_empty(),
                     allow_others: false,
                     hidden,
@@ -119,6 +121,7 @@ pub fn grammar_from_json(input: GrammarWithLexer) -> Result<Grammar> {
                 ensure!(is_greedy, "lexeme() only allowed in greedy grammars");
                 let info = LexemeSpec {
                     idx: LexemeIdx(0),
+                    simple_text: None,
                     name: format!("lex_{}", grm.sym_name(lhs)),
                     rx: rx.clone(),
                     ends_at_eos_only: false,
@@ -130,6 +133,7 @@ pub fn grammar_from_json(input: GrammarWithLexer) -> Result<Grammar> {
             Node::String { literal, .. } => {
                 let info = LexemeSpec {
                     idx: LexemeIdx(0),
+                    simple_text: Some(literal.clone()),
                     name: format!("str_{}", grm.sym_name(lhs)),
                     rx: quote_regex(&literal),
                     ends_at_eos_only: false,

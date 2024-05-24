@@ -17,7 +17,7 @@ use crate::earley::lexer::Lexer;
 
 use super::{
     grammar::{CGrammar, CSymIdx, CSymbol, ModelVariable, RuleIdx},
-    lexer::{Lexeme, LexerSpec, StateID},
+    lexer::{Lexeme, LexemeIdx, LexerSpec, StateID},
 };
 
 const TRACE: bool = false;
@@ -156,7 +156,7 @@ impl RowInfo {
 #[derive(Clone, Copy)]
 struct LexerState {
     row_idx: u32,
-    lexer_state: StateID,
+    lexer_state: StateID, // state after consuming byte
     byte: u8,
 }
 
@@ -326,7 +326,7 @@ impl Parser {
             r.scratch.add_unique(Item::new(rule, 0), 0, "init");
         }
         debug!("initial push");
-        let _ = r.push_row(r.scratch.row_start, Lexeme::bogus());
+        let _ = r.push_row(r.scratch.row_start, &Lexeme::bogus());
         ensure_internal!(
             r.num_rows() == 1 && r.rows.len() == 1,
             "initial push failed"
@@ -378,7 +378,7 @@ impl Parser {
 
     #[inline(always)]
     pub fn num_rows(&self) -> usize {
-        self.lexer_stack[self.lexer_stack.len() - 1].row_idx as usize + 1
+        self.lexer_stack.last().unwrap().row_idx as usize + 1
     }
 
     fn pop_lexer_states(&mut self, n: usize) {
@@ -651,11 +651,13 @@ impl Parser {
         if self.scratch.row_len() == 0 {
             false
         } else {
-            self.push_row(self.scratch.row_start, Lexeme::bogus())
+            self.push_row(self.scratch.row_start, &Lexeme::bogus())
         }
     }
 
-    fn scan(&mut self, lexeme: Lexeme) -> bool {
+    // lexeme body only used for captures (in definitive mode)
+    // and debugging (lexeme.idx used always)
+    fn scan(&mut self, lexeme: &Lexeme) -> bool {
         let row_idx = self.num_rows() - 1;
         let last = self.rows[row_idx].last_item;
         let mut i = self.rows[row_idx].first_item;
@@ -688,8 +690,9 @@ impl Parser {
         &self.captures
     }
 
+    // lexeme only used for captures (in definitive mode)
     #[inline(always)]
-    fn push_row(&mut self, mut agenda_ptr: usize, lexeme: Lexeme) -> bool {
+    fn push_row(&mut self, mut agenda_ptr: usize, lexeme: &Lexeme) -> bool {
         let curr_idx = self.num_rows();
         let mut allowed_lexemes = SimpleVob::alloc(self.grammar.num_terminals());
         let mut max_tokens = 0;
@@ -807,6 +810,7 @@ impl Parser {
         }
     }
 
+    #[inline(always)]
     fn curr_row_bytes(&self) -> Vec<u8> {
         let mut bytes = vec![];
         let row_idx = self.num_rows() - 1;
@@ -825,6 +829,115 @@ impl Parser {
 
     fn lexer_spec(&self) -> &LexerSpec {
         self.grammar.lexer_spec()
+    }
+
+    #[inline(always)]
+    fn mk_lexeme(&self, byte: u8, lexeme_idx: LexemeIdx) -> Lexeme {
+        let mut bytes = self.curr_row_bytes();
+        if !self.lexer_spec().greedy {
+            bytes.push(byte);
+        }
+        self.lexer_spec()
+            .new_lexeme(lexeme_idx, bytes)
+            .expect("TODO")
+    }
+
+    fn has_forced_bytes(&self, allowed_lexemes: &SimpleVob, bytes: &[u8]) -> bool {
+        for lexeme_idx in allowed_lexemes.iter() {
+            let lex_spec = &self.lexer_spec().lexemes[lexeme_idx as usize];
+            if !lex_spec.has_forced_bytes(bytes) {
+                return false;
+            }
+        }
+        true
+    }
+
+    /// Advance the parser with given lexeme_idx.
+    /// lexer_state is state *after* consuming the byte.
+    /// It either initial lexer states for lazy lexers,
+    /// or lexer_initial_state+byte for greedy lexers.
+    /// lexer_byte is the byte that led to producing the lexeme.
+    fn advance_parser(
+        &mut self,
+        lexer_state: StateID,
+        lexeme_idx: LexemeIdx,
+        lexer_byte: u8,
+    ) -> bool {
+        let lexeme = if self.scratch.definitive {
+            let res = self.mk_lexeme(lexer_byte, lexeme_idx);
+            debug!("  lexer -> {}", self.lexer_spec().dbg_lexeme(&res));
+            res
+        } else {
+            Lexeme::just_idx(lexeme_idx)
+        };
+        if self.scan(&lexeme) {
+            let next_row_idx = self.num_rows() as u32;
+            let curr_row = next_row_idx as usize - 1;
+            if self.scratch.definitive {
+                // save lexeme at the new row, before we mess with the stack
+                self.row_infos[curr_row].lexeme = lexeme;
+            }
+            let lex_spec = self.lexer_spec().lexeme_spec(lexeme_idx);
+            let no_hidden = LexerState {
+                row_idx: next_row_idx,
+                lexer_state,
+                byte: lexer_byte,
+            };
+            if lex_spec.has_hidden_len() {
+                // greedy lexers don't have stop tokens
+                assert!(!self.lexer_spec().greedy);
+
+                // make sure we have a real lexeme
+                let lexeme = self.mk_lexeme(lexer_byte, lexeme_idx);
+
+                let hidden_bytes = lexeme.hidden_bytes();
+                let allowed_lexemes = &self.rows[curr_row].allowed_lexemes;
+
+                if hidden_bytes.len() == 0 {
+                    self.lexer_stack.push(no_hidden);
+                } else if self.has_forced_bytes(allowed_lexemes, &hidden_bytes) {
+                    // if the bytes are forced, we just advance the lexer
+                    // by replacing the top lexer states
+                    self.pop_lexer_states(hidden_bytes.len() - 1);
+                    let allowed_lexemes = &self.rows[curr_row].allowed_lexemes;
+                    let mut lexer_state = lexer_state;
+                    for b in hidden_bytes {
+                        match self.lexer.advance(
+                            allowed_lexemes,
+                            lexer_state,
+                            *b,
+                            false,
+                            self.scratch.definitive,
+                        ) {
+                            Some((next_state, None)) => {
+                                lexer_state = next_state;
+                            }
+                            None => panic!("hidden byte failed"),
+                            _ => panic!("hidden byte produced lexeme"),
+                        }
+                        self.lexer_stack.push(LexerState {
+                            row_idx: next_row_idx,
+                            lexer_state,
+                            byte: *b,
+                        });
+                    }
+                } else {
+                    // prevent any further matches in this branch
+                    self.lexer_stack.push(LexerState {
+                        lexer_state: self.lexer.a_dead_state(),
+                        ..no_hidden
+                    });
+                }
+            } else {
+                self.lexer_stack.push(no_hidden);
+            }
+            if self.scratch.definitive {
+                self.assert_definitive();
+            }
+            true
+        } else {
+            false
+        }
     }
 }
 
@@ -920,35 +1033,7 @@ impl Recognizer for Parser {
                 true
             }
             Some((next_state, Some(lexeme_idx))) => {
-                let lexeme = if self.scratch.definitive {
-                    let mut bytes = self.curr_row_bytes();
-                    if !self.lexer_spec().greedy {
-                        bytes.push(byte);
-                    }
-                    let res = self
-                        .lexer_spec()
-                        .new_lexeme(lexeme_idx, bytes)
-                        .expect("TODO");
-                    debug!("  lexer -> {}", self.lexer_spec().dbg_lexeme(&res));
-                    res
-                } else {
-                    Lexeme::just_idx(lexeme_idx)
-                };
-                if self.scan(lexeme.clone()) {
-                    let next_row_idx = self.num_rows();
-                    self.lexer_stack.push(LexerState {
-                        row_idx: next_row_idx as u32,
-                        lexer_state: next_state,
-                        byte,
-                    });
-                    if self.scratch.definitive {
-                        self.row_infos[next_row_idx - 1].lexeme = lexeme;
-                        self.assert_definitive();
-                    }
-                    true
-                } else {
-                    false
-                }
+                self.advance_parser(next_state, lexeme_idx, byte)
             }
         }
     }
