@@ -73,13 +73,11 @@ impl LexemeSpec {
 
 impl Debug for LexemeSpec {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "[{}] {} {:?}",
-            self.idx.0,
-            self.name,
-            limit_str(&self.rx, 32),
-        )?;
+        write!(f, "[{}] {} ", self.idx.0, self.name)?;
+        match self.simple_text {
+            Some(ref s) => write!(f, "{:?}", limit_str(s, 32))?,
+            None => write!(f, "rx:{:?}", limit_str(&self.rx, 32))?,
+        }
         if self.ends_at_eos_only {
             write!(f, " eos-only")?;
         }
