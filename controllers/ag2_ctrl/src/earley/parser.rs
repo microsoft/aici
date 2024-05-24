@@ -153,11 +153,18 @@ impl RowInfo {
     }
 }
 
+
+// State transition is:
+// if (next_lexeme, next_lexer_state) := lexer(top.lexer_state, next_byte) {
+//     row_idx = scan(top.row_idx, next_lexeme)
+//     push(LexerState { row_idx, next_byte, next_lexer_state })
+// }
 #[derive(Clone, Copy)]
 struct LexerState {
     row_idx: u32,
     lexer_state: StateID, // state after consuming byte
     byte: u8,
+    use_byte: bool,
 }
 
 pub struct Parser {
@@ -319,6 +326,7 @@ impl Parser {
                 row_idx: 0,
                 lexer_state,
                 byte: 0,
+                use_byte: false,
             }],
         };
         info!("new parser");
@@ -455,9 +463,9 @@ impl Parser {
         tokens: &[TokenId],
         mut num_skip: usize,
     ) -> Result<&'static str> {
+        debug!("apply_tokens: {:?} {}", tokens, self.lexer_stack.len());
         self.assert_definitive();
         let mut tok_idx = 0;
-        debug!("apply_tokens: {:?} {}", tokens, self.lexer_stack.len());
         // reset token_idx
         for ri in self.row_infos.iter_mut() {
             ri.token_idx_start = usize::MAX;
@@ -814,14 +822,13 @@ impl Parser {
     fn curr_row_bytes(&self) -> Vec<u8> {
         let mut bytes = vec![];
         let row_idx = self.num_rows() - 1;
-        for back in self.lexer_stack.iter().skip(1).rev() {
+        for back in self.lexer_stack.iter().rev() {
             if back.row_idx as usize != row_idx {
                 break;
             }
-            bytes.push(back.byte);
-        }
-        if !self.lexer_spec().greedy && row_idx > 0 && bytes.len() > 0 {
-            bytes.pop();
+            if back.use_byte {
+                bytes.push(back.byte);
+            }
         }
         bytes.reverse();
         bytes
@@ -871,17 +878,21 @@ impl Parser {
             Lexeme::just_idx(lexeme_idx)
         };
         if self.scan(&lexeme) {
-            let next_row_idx = self.num_rows() as u32;
-            let curr_row = next_row_idx as usize - 1;
+            let added_row = self.num_rows();
+            let row_idx = added_row as u32;
             if self.scratch.definitive {
                 // save lexeme at the new row, before we mess with the stack
-                self.row_infos[curr_row].lexeme = lexeme;
+                self.row_infos[added_row - 1].lexeme = lexeme;
             }
             let lex_spec = self.lexer_spec().lexeme_spec(lexeme_idx);
+            if self.scratch.definitive {
+                debug!("  lexeme: {:?}", lex_spec);
+            }
             let no_hidden = LexerState {
-                row_idx: next_row_idx,
+                row_idx,
                 lexer_state,
                 byte: lexer_byte,
+                use_byte: self.lexer_spec().greedy,
             };
             if lex_spec.has_hidden_len() {
                 // greedy lexers don't have stop tokens
@@ -891,15 +902,26 @@ impl Parser {
                 let lexeme = self.mk_lexeme(lexer_byte, lexeme_idx);
 
                 let hidden_bytes = lexeme.hidden_bytes();
-                let allowed_lexemes = &self.rows[curr_row].allowed_lexemes;
+                let allowed_lexemes = &self.rows[added_row].allowed_lexemes;
+
+                if self.scratch.definitive {
+                    trace!(
+                        "  allowed lexemes: {:?}",
+                        self.lexer_spec().dbg_lexeme_set(allowed_lexemes)
+                    );
+                    trace!("  hidden: {:?}", String::from_utf8_lossy(&hidden_bytes));
+                }
 
                 if hidden_bytes.len() == 0 {
                     self.lexer_stack.push(no_hidden);
                 } else if self.has_forced_bytes(allowed_lexemes, &hidden_bytes) {
+                    if self.scratch.definitive {
+                        trace!("  hidden forced");
+                    }
                     // if the bytes are forced, we just advance the lexer
                     // by replacing the top lexer states
                     self.pop_lexer_states(hidden_bytes.len() - 1);
-                    let allowed_lexemes = &self.rows[curr_row].allowed_lexemes;
+                    let allowed_lexemes = &self.rows[added_row].allowed_lexemes;
                     let mut lexer_state = lexer_state;
                     for b in hidden_bytes {
                         match self.lexer.advance(
@@ -916,15 +938,17 @@ impl Parser {
                             _ => panic!("hidden byte produced lexeme"),
                         }
                         self.lexer_stack.push(LexerState {
-                            row_idx: next_row_idx,
+                            row_idx,
                             lexer_state,
                             byte: *b,
+                            use_byte: true,
                         });
                     }
                 } else {
                     // prevent any further matches in this branch
                     self.lexer_stack.push(LexerState {
                         lexer_state: self.lexer.a_dead_state(),
+                        use_byte: false, // ?
                         ..no_hidden
                     });
                 }
@@ -993,6 +1017,7 @@ impl Recognizer for Parser {
         // clean up stack
         self.pop_lexer_states(self.lexer_stack.len() - self.trie_lexer_stack);
         self.scratch.definitive = true;
+        self.assert_definitive();
     }
 
     fn try_push_byte(&mut self, byte: u8) -> bool {
@@ -1029,6 +1054,7 @@ impl Recognizer for Parser {
                     row_idx: curr.row_idx,
                     lexer_state: next_state,
                     byte,
+                    use_byte: true,
                 });
                 true
             }

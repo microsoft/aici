@@ -252,10 +252,15 @@ impl LexerSpec {
     pub fn dbg_lexeme(&self, lex: &Lexeme) -> String {
         let str = String::from_utf8_lossy(&lex.bytes).to_string();
         let info = &self.lexemes[lex.idx.0];
-        if str == info.rx {
+        if str == info.rx && lex.hidden_len == 0 {
             format!("[{}]", info.name)
         } else {
-            format!("[{}] match={:?}", info.name, limit_str(&str, 32))
+            format!(
+                "[{}] match={:?} hidden={}",
+                info.name,
+                limit_str(&str, 32),
+                lex.hidden_len
+            )
         }
     }
 
@@ -480,7 +485,7 @@ impl Lexer {
         prev: StateID,
         byte: u8,
         max_tokens_reached: bool,
-        definitive: bool,
+        enable_logging: bool,
     ) -> Option<(StateID, Option<LexemeIdx>)> {
         let dfa = &self.dfa;
 
@@ -502,7 +507,7 @@ impl Lexer {
 
         let state = dfa.next_state(prev, byte);
         let info = self.state_info(state);
-        if definitive {
+        if enable_logging {
             debug!(
                 "lex: {:?} -{:?}-> {:?} d={}, acpt={:?}",
                 prev,
@@ -530,7 +535,7 @@ impl Lexer {
                 None
             } else {
                 let state = dfa.next_state(self.initial, byte);
-                if definitive {
+                if enable_logging {
                     debug!("lex0: {:?} -{:?}-> {:?}", self.initial, byte as char, state);
                 }
                 Some((state, tok))
