@@ -1,83 +1,43 @@
-use std::collections::HashMap;
+use std::{collections::HashMap, rc::Rc};
 
-use bytemuck_derive::{Pod, Zeroable};
-
-#[derive(Clone, Copy, Zeroable, Pod)]
-#[repr(transparent)]
-pub struct HashNode(u32);
-
-pub struct HashConstructor {
-    data: Vec<u32>,
-    hash: HashMap<Vec<u32>, u32>,
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+struct VecHolder {
+    data: Rc<Vec<u32>>,
 }
 
-pub struct BoundNode<'a> {
-    constructor: &'a HashConstructor,
-    node: HashNode,
+pub struct VecHashMap {
+    by_id: Vec<VecHolder>,
+    by_data: HashMap<VecHolder, u32>,
 }
 
-impl<'a> BoundNode<'a> {
-    pub fn head(&self) -> u8 {
-        self.constructor.head(self.node)
+impl VecHashMap {
+    pub fn new() -> Self {
+        let mut r = VecHashMap {
+            by_id: Vec::new(),
+            by_data: HashMap::new(),
+        };
+        r.insert(Vec::new());
+        r
     }
 
-    pub fn children(&self) -> &[HashNode] {
-        self.constructor.children(self.node)
-    }
-
-    pub fn iter(&'a self) -> impl Iterator<Item = BoundNode<'a>> {
-        self.children().iter().map(move |&n| self.constructor.bind(n))
-    }
-}
-
-pub type HeadType = u8;
-
-impl HashConstructor {
-    fn mk_head(&self, head: HeadType, arity: usize) -> u32 {
-        assert!(arity < 1 << 20);
-        (head as u32) | ((arity as u32) << 8)
-    }
-
-    pub fn bind(&self, node: HashNode) -> BoundNode {
-        BoundNode {
-            constructor: self,
-            node,
+    pub fn insert(&mut self, data: Vec<u32>) -> u32 {
+        let holder = VecHolder {
+            data: Rc::new(data),
+        };
+        if let Some(&id) = self.by_data.get(&holder) {
+            return id;
         }
+        let id = self.by_id.len() as u32;
+        self.by_id.push(holder.clone());
+        self.by_data.insert(holder, id);
+        id
     }
 
-    pub fn mk(&mut self, head: HeadType, children: &[HashNode]) -> HashNode {
-        let mut data: Vec<u32> = Vec::with_capacity(1 + children.len());
-        data.push(self.mk_head(head, children.len()));
-        for child in children {
-            data.push(child.0);
-        }
-        if let Some(r) = self.hash.get(&data) {
-            HashNode(*r)
-        } else {
-            let r = self.data.len() as u32;
-            self.data.extend_from_slice(&data);
-            self.hash.insert(data, r);
-            HashNode(r)
-        }
+    pub fn get(&self, id: u32) -> Option<&[u32]> {
+        self.by_id.get(id as usize).map(|holder| &holder.data[..])
     }
 
-    pub fn get(&self, node: HashNode) -> (HeadType, &[HashNode]) {
-        let idx = node.0 as usize;
-        let head = self.data[idx];
-        let arity = (head >> 8) as usize;
-        let head = head as u8;
-        let children = bytemuck::cast_slice(&self.data[idx + 1..idx + 1 + arity]);
-        (head, children)
-    }
-
-    pub fn head(&self, node: HashNode) -> HeadType {
-        let idx = node.0 as usize;
-        (self.data[idx] & 0xff) as HeadType
-    }
-
-    pub fn children(&self, node: HashNode) -> &[HashNode] {
-        let idx = node.0 as usize;
-        let arity = (self.data[idx] >> 8) as usize;
-        bytemuck::cast_slice(&self.data[idx + 1..idx + 1 + arity])
+    pub fn len(&self) -> usize {
+        self.by_id.len()
     }
 }
