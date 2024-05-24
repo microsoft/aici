@@ -17,7 +17,7 @@ pub fn earley_test(trie: toktree::TokTrie) {
     let cfg = cfg[0].optimize();
     println!("cfg: {:?}", cfg);
 
-    let input = "{\n    \"name\": \"Michal\"\",\n    \"age\": 77".as_bytes();
+    let input = "{\n    \"name\": \"Michal".as_bytes();
 
     let toks = trie.greedy_tokenize(input);
     println!("tokens: {:?}", toks.len());

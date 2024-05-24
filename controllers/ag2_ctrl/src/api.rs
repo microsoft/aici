@@ -100,7 +100,7 @@ pub struct GenOptions {
 
 macro_rules! id_type {
     ($name:ident) => {
-        #[derive(Serialize, Deserialize)]
+        #[derive(Serialize, Deserialize, Hash, PartialEq, Eq, Clone, Copy, Debug)]
         #[serde(transparent)]
         pub struct $name(pub usize);
     };

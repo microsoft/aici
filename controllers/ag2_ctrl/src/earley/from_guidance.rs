@@ -4,7 +4,10 @@ use super::{
 };
 use crate::{
     api::{GrammarWithLexer, Node, TopLevelGrammar},
-    earley::{grammar::SymbolProps, lexer::LexemeSpec},
+    earley::{
+        grammar::SymbolProps,
+        lexer::{HiddenLexeme, LexemeIdx, LexemeSpec},
+    },
 };
 use anyhow::{bail, ensure, Result};
 
@@ -94,11 +97,15 @@ pub fn grammar_from_json(input: GrammarWithLexer) -> Result<Grammar> {
                 } else {
                     &data.body_rx
                 };
+                let rx = format!("({})({})", body_rx, data.stop_rx);
+                let hidden = HiddenLexeme::from_rx(&rx, &data.stop_rx)?;
                 let info = LexemeSpec {
+                    idx: LexemeIdx(0),
                     name: format!("gen_{}", grm.sym_name(lhs)),
                     rx: format!("({})({})", body_rx, data.stop_rx),
                     ends_at_eos_only: data.stop_rx.is_empty(),
                     allow_others: false,
+                    hidden,
                 };
                 grm.make_terminal(lhs, info)?;
                 let symprops = grm.sym_props_mut(lhs);
@@ -111,19 +118,23 @@ pub fn grammar_from_json(input: GrammarWithLexer) -> Result<Grammar> {
             } => {
                 ensure!(is_greedy, "lexeme() only allowed in greedy grammars");
                 let info = LexemeSpec {
+                    idx: LexemeIdx(0),
                     name: format!("lex_{}", grm.sym_name(lhs)),
                     rx: rx.clone(),
                     ends_at_eos_only: false,
                     allow_others: *allow_others,
+                    hidden: HiddenLexeme::default(),
                 };
                 grm.make_terminal(lhs, info)?;
             }
             Node::String { literal, .. } => {
                 let info = LexemeSpec {
+                    idx: LexemeIdx(0),
                     name: format!("str_{}", grm.sym_name(lhs)),
                     rx: quote_regex(&literal),
                     ends_at_eos_only: false,
                     allow_others: false,
+                    hidden: HiddenLexeme::default(),
                 };
                 grm.make_terminal(lhs, info)?;
             }

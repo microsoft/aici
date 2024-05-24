@@ -666,7 +666,11 @@ impl Parser {
         let trg = self.grammar.lexeme_to_sym_idx(lexeme.idx);
 
         if self.scratch.definitive {
-            debug!("scan: {} at {}", self.lexer_spec().dbg_lexeme(&lexeme), row_idx);
+            debug!(
+                "scan: {} at {}",
+                self.lexer_spec().dbg_lexeme(&lexeme),
+                row_idx
+            );
         }
 
         while i < last {
@@ -921,11 +925,10 @@ impl Recognizer for Parser {
                     if !self.lexer_spec().greedy {
                         bytes.push(byte);
                     }
-                    let res = Lexeme {
-                        idx: lexeme_idx,
-                        bytes,
-                        hidden_len: 0, // TODO
-                    };
+                    let res = self
+                        .lexer_spec()
+                        .new_lexeme(lexeme_idx, bytes)
+                        .expect("TODO");
                     debug!("  lexer -> {}", self.lexer_spec().dbg_lexeme(&res));
                     res
                 } else {

@@ -1,10 +1,15 @@
-use aici_abi::{bytes::limit_str, svob::SimpleVob};
+use aici_abi::{
+    bytes::{limit_bytes, limit_str},
+    svob::SimpleVob,
+};
+use anyhow::{bail, Result};
+use regex::bytes::Regex;
 use regex_automata::{
     dfa::{dense, Automaton},
     util::syntax,
 };
 use rustc_hash::FxHashMap;
-use std::{hash::Hash, rc::Rc, vec};
+use std::{fmt::Debug, hash::Hash, rc::Rc, vec};
 
 #[derive(Debug, Clone, Copy, Hash, PartialEq, Eq)]
 pub struct LexemeIdx(pub usize);
@@ -13,11 +18,87 @@ pub type StateID = regex_automata::util::primitives::StateID;
 #[derive(Clone)]
 pub struct Lexeme {
     pub idx: LexemeIdx,
-    pub bytes: Vec<u8>,
-    pub hidden_len: usize,
+    bytes: Vec<u8>,
+    hidden_len: usize,
+}
+
+#[derive(Debug, Clone)]
+pub enum HiddenLexeme {
+    Regex(Regex),
+    Fixed(usize),
+}
+
+impl HiddenLexeme {
+    pub fn from_rx(full_rx: &str, stop_rx: &str) -> Result<Self> {
+        match guess_regex_len(stop_rx.as_bytes()) {
+            Some(len) => Ok(HiddenLexeme::Fixed(len)),
+            None => Ok(HiddenLexeme::Regex(Regex::new(full_rx)?)),
+        }
+    }
+}
+
+impl Default for HiddenLexeme {
+    fn default() -> Self {
+        HiddenLexeme::Fixed(0)
+    }
+}
+
+#[derive(Clone)]
+pub struct LexemeSpec {
+    pub idx: LexemeIdx,
+    pub name: String,
+    pub rx: String,
+    pub ends_at_eos_only: bool,
+    pub allow_others: bool,
+    pub hidden: HiddenLexeme,
+}
+
+impl Debug for LexemeSpec {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "[{}] {} {:?}",
+            self.idx.0,
+            self.name,
+            limit_str(&self.rx, 32),
+        )?;
+        if self.ends_at_eos_only {
+            write!(f, " eos-only")?;
+        }
+        if self.allow_others {
+            write!(f, " allow-others")?;
+        }
+        match &self.hidden {
+            HiddenLexeme::Fixed(len) => write!(f, " hidden={}", len),
+            HiddenLexeme::Regex(_) => write!(f, " hidden=regex"),
+        }
+    }
 }
 
 impl Lexeme {
+    fn new(spec: &LexemeSpec, bytes: Vec<u8>) -> Result<Self> {
+        let hidden_len = match &spec.hidden {
+            HiddenLexeme::Fixed(len) => *len,
+            HiddenLexeme::Regex(re) => {
+                if let Some(c) = re.captures(&bytes) {
+                    let visible_len = c.get(1).unwrap().end();
+                    bytes.len() - visible_len
+                } else {
+                    bail!(
+                        "no match for {} matching {}",
+                        spec.name,
+                        limit_bytes(&bytes, 100)
+                    );
+                }
+            }
+        };
+        Ok(Lexeme {
+            idx: spec.idx,
+            bytes,
+            hidden_len,
+        })
+    }
+
     pub fn just_idx(idx: LexemeIdx) -> Self {
         Lexeme {
             idx,
@@ -112,14 +193,6 @@ impl VobSet {
     }
 }
 
-#[derive(Debug, Clone)]
-pub struct LexemeSpec {
-    pub name: String,
-    pub rx: String,
-    pub ends_at_eos_only: bool,
-    pub allow_others: bool,
-}
-
 struct StateInfo {
     reachable: VobIdx,
     accepting: VobIdx,
@@ -165,6 +238,10 @@ impl LexerSpec {
             .collect::<Vec<_>>()
             .join(", ")
     }
+
+    pub fn new_lexeme(&self, idx: LexemeIdx, bytes: Vec<u8>) -> Result<Lexeme> {
+        Lexeme::new(&self.lexemes[idx.0], bytes)
+    }
 }
 
 impl Lexer {
@@ -188,7 +265,7 @@ impl Lexer {
             patterns.len(),
         );
         for p in patterns {
-            debug!("  pattern: {:?}", p.rx)
+            debug!("  pattern: {:?}", p)
         }
 
         let mut incoming = FxHashMap::default();
@@ -434,14 +511,44 @@ impl Lexer {
     }
 }
 
+fn is_regex_special(b: char) -> bool {
+    match b {
+        '\\' | '+' | '*' | '?' | '^' | '$' | '(' | ')' | '[' | ']' | '{' | '}' | '.' | '|' => true,
+        _ => false,
+    }
+}
+
+fn guess_regex_len(bytes: &[u8]) -> Option<usize> {
+    let mut len = 0;
+    let mut idx = 0;
+    while idx < bytes.len() {
+        let c = bytes[idx] as char;
+        match c {
+            '\\' => {
+                idx += 2;
+                len += 1;
+            }
+            // TODO we could do char classes too; watch for unicode though!
+            '.' => {
+                // dot is OK
+            }
+            _ if is_regex_special(c) => {
+                return None;
+            }
+            _ => {}
+        }
+
+        len += 1;
+        idx += 1;
+    }
+    Some(len)
+}
+
 pub fn quote_regex(s: &str) -> String {
     let mut out = String::new();
     for c in s.chars() {
-        match c {
-            '\\' | '+' | '*' | '?' | '^' | '$' | '(' | ')' | '[' | ']' | '{' | '}' | '.' | '|' => {
-                out.push_str("\\")
-            }
-            _ => {}
+        if is_regex_special(c) {
+            out.push('\\');
         }
         out.push(c);
     }
