@@ -17,7 +17,7 @@ pub fn earley_test(trie: toktree::TokTrie) {
     let cfg = cfg[0].optimize();
     println!("cfg: {:?}", cfg);
 
-    let input = "{\n    \"name\": \"Michal\",\n    \"age\": 42,\n".as_bytes();
+    let input = "{\n    \"name\": \"John Doe\",\n    \"age\": 30,\n    \"armor\": \"leather\",\n    \"weapon\": \"sword\",\n    \"class\": \"warrior\",\n    \"mantra\": \"I am the master of my fate, I am the captain of my soul.\",\n    \"strength\": 18,\n    \"items\": [\"health potion\", \"mana potion\", \"bandages\"]".as_bytes();
 
     let toks = trie.greedy_tokenize(input);
     println!("tokens: {:?}", toks.len());
@@ -31,10 +31,17 @@ pub fn earley_test(trie: toktree::TokTrie) {
         }
     }
 
+    let forced = parser.force_bytes();
+    println!("forced: {:?}", String::from_utf8_lossy(&forced));
+
     println!("final: {:?}", String::from_utf8_lossy(&parser.get_bytes()));
 
     if !parser.is_accepting() {
         panic!("final non-accept");
+    }
+
+    if true {
+        return;
     }
 
     const COLLECT_TIMES: bool = false;

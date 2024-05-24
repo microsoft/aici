@@ -153,7 +153,6 @@ impl RowInfo {
     }
 }
 
-
 // State transition is:
 // if (next_lexeme, next_lexer_state) := lexer(top.lexer_state, next_byte) {
 //     row_idx = scan(top.row_idx, next_lexeme)
@@ -781,7 +780,7 @@ impl Parser {
 
         let row_len = self.scratch.row_len();
 
-        if row_len == 0 || allowed_lexemes.is_zero() {
+        if row_len == 0 {
             false
         } else {
             self.stats.all_items += row_len;
@@ -960,6 +959,9 @@ impl Parser {
             }
             true
         } else {
+            if self.scratch.definitive {
+                debug!("  scan failed");
+            }
             false
         }
     }

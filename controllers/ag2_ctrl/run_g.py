@@ -155,7 +155,7 @@ def main():
         controller=mod_id,
         controller_arg=ag2_arg,
         temperature=0.0,
-        max_tokens=100,
+        max_tokens=300,
     )
     print("Usage:", res["usage"])
     print("Timing:", res["timing"])
