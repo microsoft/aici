@@ -4,7 +4,7 @@ use crate::{
 };
 
 struct Regex<'a> {
-    exprs: HashCons<'a, Expr<'a>>,
+    exprs: HashCons<Expr<'a>>,
 }
 
 impl<'a> Regex<'a> {
@@ -15,17 +15,20 @@ impl<'a> Regex<'a> {
     }
 
     pub fn empty_string(&mut self) -> ExprRef {
-        self.exprs.insert(Expr::EmptyString)
+        let d = self.exprs.serialize(&Expr::EmptyString);
+        self.exprs.insert(d)
     }
 
-    pub fn mk_and(&mut self, es: &'a [ExprRef]) -> ExprRef {
-        self.exprs.insert(Expr::And(es))
+    pub fn mk_and<'b>(&mut self, es: &'b [ExprRef]) -> ExprRef
+    {
+        let d = self.exprs.serialize(&Expr::And(es));
+        self.exprs.insert(d)
     }
 }
 
 fn foo() -> Regex<'static> {
     let mut r = Regex::new();
     let emp = r.empty_string();
-    let and1 = r.mk_and(&[emp, emp]);
+    let _and1 = r.mk_and(&[emp, emp]);
     r
 }

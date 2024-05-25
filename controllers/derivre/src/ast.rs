@@ -17,17 +17,7 @@ pub enum Expr<'a> {
     And(&'a [ExprRef]),
 }
 
-impl<'a> VecNode<'a> for Expr<'a> {
-    type Ref = ExprRef;
-
-    fn wrap_ref(v: u32) -> ExprRef {
-        ExprRef(v)
-    }
-
-    fn unwrap_ref(r: ExprRef) -> u32 {
-        r.0
-    }
-
+impl<'a> Expr<'a> {
     fn from_slice(s: &'a [u32]) -> Expr<'a> {
         match s[0] {
             1 => Expr::EmptyString,
@@ -40,6 +30,18 @@ impl<'a> VecNode<'a> for Expr<'a> {
             8 => Expr::And(bytemuck::cast_slice(&s[1..])),
             _ => panic!("invalid tag: {}", s[0]),
         }
+    }
+}
+
+impl<'a> VecNode for Expr<'a> {
+    type Ref = ExprRef;
+
+    fn wrap_ref(v: u32) -> ExprRef {
+        ExprRef(v)
+    }
+
+    fn unwrap_ref(r: ExprRef) -> u32 {
+        r.0
     }
 
     fn serialize(&self) -> Vec<u32> {

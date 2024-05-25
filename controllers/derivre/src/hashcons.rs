@@ -42,23 +42,19 @@ impl VecHashMap {
     }
 }
 
-pub trait VecNode<'a> {
+pub trait VecNode {
     type Ref;
-    fn from_slice(s: &'a [u32]) -> Self;
     fn serialize(&self) -> Vec<u32>;
     fn wrap_ref(v: u32) -> Self::Ref;
     fn unwrap_ref(r: Self::Ref) -> u32;
 }
 
-pub struct HashCons<'a, Node> {
+pub struct HashCons<Node: VecNode> {
     map: VecHashMap,
-    _phantom1: std::marker::PhantomData<&'a Node>,
+    _phantom1: std::marker::PhantomData<Node>,
 }
 
-impl<'a, Node> HashCons<'a, Node>
-where
-    Node: VecNode<'a>,
-{
+impl<Node: VecNode> HashCons<Node> {
     pub fn new() -> Self {
         HashCons {
             map: VecHashMap::new(),
@@ -66,13 +62,22 @@ where
         }
     }
 
-    pub fn insert(&mut self, node: Node) -> <Node as VecNode<'a>>::Ref {
-        let data = node.serialize();
-        let id = self.map.insert(data);
+    pub fn serialize(&self, node: &Node) -> Vec<u32> {
+        node.serialize()
+    }
+
+    pub fn insert(&mut self, d: Vec<u32>) -> Node::Ref {
+        let id = self.map.insert(d);
         Node::wrap_ref(id)
     }
 
-    pub fn get(&'a self, ref_: <Node as VecNode<'a>>::Ref) -> Option<Node> {
-        self.map.get(Node::unwrap_ref(ref_)).map(Node::from_slice)
+    // pub fn insert<'s, 'a>(&'s mut self, node: &'a Node) -> Node::Ref {
+    //     let data = node.serialize();
+    //     let id = self.map.insert(data);
+    //     Node::wrap_ref(id)
+    // }
+
+    pub fn get<'a>(&'a self, ref_: Node::Ref) -> Option<&'a [u32]> {
+        self.map.get(Node::unwrap_ref(ref_))
     }
 }
