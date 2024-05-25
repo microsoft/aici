@@ -50,14 +50,14 @@ pub trait VecNode<'a> {
     fn unwrap_ref(r: Self::Ref) -> u32;
 }
 
-pub struct HashCons<Node> {
+pub struct HashCons<'a, Node> {
     map: VecHashMap,
-    _phantom1: std::marker::PhantomData<Node>,
+    _phantom1: std::marker::PhantomData<&'a Node>,
 }
 
-impl<Node> HashCons<Node>
+impl<'a, Node> HashCons<'a, Node>
 where
-    for<'a> Node: VecNode<'a>,
+    Node: VecNode<'a>,
 {
     pub fn new() -> Self {
         HashCons {
@@ -66,13 +66,13 @@ where
         }
     }
 
-    pub fn insert<'a>(&mut self, node: Node) -> <Node as VecNode<'a>>::Ref {
+    pub fn insert(&mut self, node: Node) -> <Node as VecNode<'a>>::Ref {
         let data = node.serialize();
         let id = self.map.insert(data);
         Node::wrap_ref(id)
     }
 
-    pub fn get<'a>(&'a self, ref_: <Node as VecNode<'a>>::Ref) -> Option<Node> {
+    pub fn get(&'a self, ref_: <Node as VecNode<'a>>::Ref) -> Option<Node> {
         self.map.get(Node::unwrap_ref(ref_)).map(Node::from_slice)
     }
 }
