@@ -7,7 +7,6 @@ pub mod recognizer;
 pub mod rng;
 pub mod svob;
 pub mod toktree;
-pub mod hashcons;
 
 #[cfg(feature = "cfg")]
 pub mod cfg;

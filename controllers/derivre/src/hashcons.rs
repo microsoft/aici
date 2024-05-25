@@ -41,3 +41,38 @@ impl VecHashMap {
         self.by_id.len()
     }
 }
+
+pub trait VecNode<'a> {
+    type Ref;
+    fn from_slice(s: &'a [u32]) -> Self;
+    fn serialize(&self) -> Vec<u32>;
+    fn wrap_ref(v: u32) -> Self::Ref;
+    fn unwrap_ref(r: Self::Ref) -> u32;
+}
+
+pub struct HashCons<Node> {
+    map: VecHashMap,
+    _phantom1: std::marker::PhantomData<Node>,
+}
+
+impl<Node> HashCons<Node>
+where
+    for<'a> Node: VecNode<'a>,
+{
+    pub fn new() -> Self {
+        HashCons {
+            map: VecHashMap::new(),
+            _phantom1: std::marker::PhantomData,
+        }
+    }
+
+    pub fn insert<'a>(&mut self, node: Node) -> <Node as VecNode<'a>>::Ref {
+        let data = node.serialize();
+        let id = self.map.insert(data);
+        Node::wrap_ref(id)
+    }
+
+    pub fn get<'a>(&'a self, ref_: <Node as VecNode<'a>>::Ref) -> Option<Node> {
+        self.map.get(Node::unwrap_ref(ref_)).map(Node::from_slice)
+    }
+}

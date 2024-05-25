@@ -11,6 +11,7 @@ members = [
     "controllers/ag2_ctrl",
     "controllers/ag2_tester",
     "controllers/uppercase",
+    "controllers/derivre",
     "rllm/rllm-base",
     "rllm/rllm-cuda",
     "rllm/rllm-llamacpp",
