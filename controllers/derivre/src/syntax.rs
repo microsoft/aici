@@ -1,6 +1,6 @@
 use anyhow::{bail, Result};
 use regex_syntax::{
-    hir::{self, Hir, HirKind},
+    hir::{self, ClassUnicode, Hir, HirKind},
     ParserBuilder,
 };
 
@@ -67,6 +67,35 @@ impl ExprSet {
         }
     }
 
+    fn handle_unicode_ranges(&mut self, u: &ClassUnicode) -> ExprRef {
+        let mut alternatives = Vec::new();
+        let mut b_start = [0; 4];
+        let mut b_end = [0; 4];
+        let mut b_tmp = [0; 4];
+        let mut b_tmp2 = [0; 4];
+        for range in u.ranges() {
+            let start = range.start();
+            let end = range.end();
+            let mut start_bytes = start.encode_utf8(&mut b_start).as_bytes();
+            let end_bytes = end.encode_utf8(&mut b_end).as_bytes();
+            while start_bytes.len() < end_bytes.len() {
+                let c = utf8_len_to_max(start_bytes.len());
+                let tmp_bytes = char::from_u32(c)
+                    .unwrap()
+                    .encode_utf8(&mut b_tmp)
+                    .as_bytes();
+                alternatives.push(self.utf8_range(start_bytes, tmp_bytes));
+                start_bytes = char::from_u32(c + 1)
+                    .unwrap()
+                    .encode_utf8(&mut b_tmp2)
+                    .as_bytes();
+            }
+            alternatives.push(self.utf8_range(start_bytes, end_bytes));
+        }
+
+        self.mk_or(alternatives)
+    }
+
     fn from_ast(&mut self, ast: &Hir) -> Result<ExprRef> {
         let mut todo = vec![StackEntry {
             ast,
@@ -77,6 +106,7 @@ impl ExprSet {
         while let Some(mut node) = todo.pop() {
             let subs = node.ast.kind().subs();
             if subs.len() != node.args.len() {
+                assert!(node.args.len() == 0);
                 node.args = subs.iter().map(|_| ExprRef::INVALID).collect();
                 let result_stack_idx = todo.len();
                 todo.push(node);
@@ -89,6 +119,8 @@ impl ExprSet {
                     });
                 }
                 continue;
+            } else {
+                assert!(node.args.iter().all(|&x| x != ExprRef::INVALID));
             }
 
             let r = match node.ast.kind() {
@@ -106,34 +138,7 @@ impl ExprSet {
                     }
                     self.mk_byte_set(&bs)
                 }
-                HirKind::Class(hir::Class::Unicode(u)) => {
-                    let mut alternatives = Vec::new();
-                    let mut b_start = [0; 4];
-                    let mut b_end = [0; 4];
-                    let mut b_tmp = [0; 4];
-                    let mut b_tmp2 = [0; 4];
-                    for range in u.ranges() {
-                        let start = range.start();
-                        let end = range.end();
-                        let mut start_bytes = start.encode_utf8(&mut b_start).as_bytes();
-                        let end_bytes = end.encode_utf8(&mut b_end).as_bytes();
-                        while start_bytes.len() < end_bytes.len() {
-                            let c = utf8_len_to_max(start_bytes.len());
-                            let tmp_bytes = char::from_u32(c)
-                                .unwrap()
-                                .encode_utf8(&mut b_tmp)
-                                .as_bytes();
-                            alternatives.push(self.utf8_range(start_bytes, tmp_bytes));
-                            start_bytes = char::from_u32(c + 1)
-                                .unwrap()
-                                .encode_utf8(&mut b_tmp2)
-                                .as_bytes();
-                        }
-                        alternatives.push(self.utf8_range(start_bytes, end_bytes));
-                    }
-
-                    self.mk_or(alternatives)
-                }
+                HirKind::Class(hir::Class::Unicode(u)) => self.handle_unicode_ranges(u),
                 HirKind::Look(l) => {
                     bail!("lookarounds not supported yet; {:?}", l)
                 }
