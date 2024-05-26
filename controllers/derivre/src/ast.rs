@@ -1,7 +1,7 @@
 use crate::{hashcons::VecHashMap, pp::PrettyPrinter};
 use bytemuck_derive::{Pod, Zeroable};
 
-#[derive(Pod, Zeroable, Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Pod, Zeroable, Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
 #[repr(transparent)]
 pub struct ExprRef(u32);
 
@@ -96,6 +96,13 @@ pub fn byteset_contains(s: &[u32], b: usize) -> bool {
 #[inline(always)]
 pub fn byteset_set(s: &mut [u32], b: usize) {
     s[b / 32] |= 1 << (b % 32);
+}
+
+#[inline(always)]
+pub fn byteset_union(s: &mut [u32], other: &[u32]) {
+    for i in 0..s.len() {
+        s[i] |= other[i];
+    }
 }
 
 pub fn byteset_256() -> Vec<u32> {
@@ -321,6 +328,7 @@ impl ExprSet {
         let mut dp = 0;
         let mut prev = ExprRef::NO_MATCH;
         let mut nullable = false;
+        let mut num_bytes = 0;
         for idx in 0..args.len() {
             let arg = args[idx];
             if arg == prev || arg == ExprRef::NO_MATCH {
@@ -328,6 +336,12 @@ impl ExprSet {
             }
             if arg == ExprRef::ANY_STRING {
                 return ExprRef::ANY_STRING;
+            }
+            match self.get(arg) {
+                Expr::Byte(_) | Expr::ByteSet(_) => {
+                    num_bytes += 1;
+                }
+                _ => {}
             }
             if !nullable && self.is_nullable(arg) {
                 nullable = true;
@@ -337,6 +351,27 @@ impl ExprSet {
             prev = arg;
         }
         args.truncate(dp);
+
+        // TODO we should probably do sth similar in And
+        if num_bytes > 1 {
+            let mut byteset = vec![0u32; self.alphabet_words];
+            args.retain(|&e| {
+                let n = self.get(e);
+                match n {
+                    Expr::Byte(b) => {
+                        byteset_set(&mut byteset, b as usize);
+                        false
+                    }
+                    Expr::ByteSet(s) => {
+                        byteset_union(&mut byteset, s);
+                        false
+                    }
+                    _ => true,
+                }
+            });
+            let node = self.mk_byte_set(&byteset);
+            add_to_sorted(&mut args, node);
+        }
 
         if args.len() == 0 {
             ExprRef::NO_MATCH
@@ -461,4 +496,10 @@ impl ExprSet {
     pub fn is_nullable(&self, id: ExprRef) -> bool {
         self.get_flags(id).is_nullable()
     }
+}
+
+fn add_to_sorted(args: &mut Vec<ExprRef>, e: ExprRef) {
+    let idx = args.binary_search(&e).unwrap_or_else(|x| x);
+    assert!(idx == args.len() || args[idx] != e);
+    args.insert(idx, e);
 }

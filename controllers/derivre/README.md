@@ -16,7 +16,7 @@ We do not use rustc-hash, but the standard HashMap to limit possibility of DoS.
 ## TODO
 
 - [ ] look-aheads, locations
-- [ ] simplification of Byte/ByteSet in And/Or
+- [x] simplification of Byte/ByteSet in Or
 - [ ] place limit on number of states
 - [ ] alphabet size == 0 => invalid state loop
 
