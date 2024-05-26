@@ -10,7 +10,7 @@ pub struct DerivCache {
 impl DerivCache {
     pub fn new() -> Self {
         DerivCache {
-            exprs: ExprSet::new(),
+            exprs: ExprSet::new(256),
             state_table: FxHashMap::default(),
         }
     }

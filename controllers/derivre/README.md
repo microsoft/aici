@@ -28,3 +28,4 @@ and the [sbre](https://github.com/ieviev/sbre/) implementation of it.
 - [ ] build trie from alternative over many strings in re parser
 - [ ] use Hir format
 - [ ] `(idx, state_expr)*` for state transitions
+- [ ] use hashbrown raw table for VecHashMap

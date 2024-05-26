@@ -22,8 +22,6 @@ impl ExprRef {
     }
 }
 
-pub const BYTE_SET_SIZE: usize = 256 / 32;
-
 pub enum Expr<'a> {
     EmptyString,
     NoMatch,
@@ -152,7 +150,6 @@ impl<'a> Expr<'a> {
             Expr::NoMatch => vec![zf.encode(ExprTag::NoMatch)],
             Expr::Byte(b) => vec![zf.encode(ExprTag::Byte), *b as u32],
             Expr::ByteSet(s) => {
-                assert!(s.len() == BYTE_SET_SIZE);
                 let mut v = Vec::with_capacity(1 + s.len());
                 v.push(zf.encode(ExprTag::ByteSet));
                 v.extend_from_slice(s);
@@ -169,16 +166,18 @@ impl<'a> Expr<'a> {
 
 pub struct ExprSet {
     exprs: VecHashMap,
+    alphabet_words: usize,
 }
 
 impl ExprSet {
-    pub fn new() -> Self {
+    pub fn new(alphabet_size: usize) -> Self {
         let mut exprs = VecHashMap::new();
+        let alphabet_words = (alphabet_size + 31) / 32;
         let inserts = vec![
             (Expr::EmptyString.serialize(), ExprRef::EMPTY_STRING),
             (Expr::NoMatch.serialize(), ExprRef::NO_MATCH),
             (
-                Expr::ByteSet(&vec![0xffffffff; BYTE_SET_SIZE]).serialize(),
+                Expr::ByteSet(&vec![0xffffffff; alphabet_words]).serialize(),
                 ExprRef::ANY_BYTE,
             ),
             (
@@ -196,7 +195,10 @@ impl ExprSet {
             assert!(r == id.0, "id: {r}, expected: {}", id.0);
         }
 
-        ExprSet { exprs }
+        ExprSet {
+            exprs,
+            alphabet_words,
+        }
     }
 
     pub fn len(&self) -> usize {
@@ -212,7 +214,7 @@ impl ExprSet {
     }
 
     pub fn mk_byte_set(&mut self, s: &[u32]) -> ExprRef {
-        assert!(s.len() == BYTE_SET_SIZE);
+        assert!(s.len() == self.alphabet_words);
         if s.iter().all(|&x| x == 0) {
             return ExprRef::NO_MATCH;
         }
