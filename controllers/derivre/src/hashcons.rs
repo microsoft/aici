@@ -6,6 +6,7 @@ struct VecHolder {
 }
 
 pub struct VecHashMap {
+    num_elts: usize,
     by_id: Vec<VecHolder>,
     by_data: HashMap<VecHolder, u32>,
 }
@@ -21,6 +22,7 @@ impl VecHashMap {
         let mut r = VecHashMap {
             by_id: Vec::new(),
             by_data: HashMap::new(),
+            num_elts: 0,
         };
         r.insert(Vec::new());
         r
@@ -34,6 +36,7 @@ impl VecHashMap {
             return id;
         }
         let id = self.by_id.len() as u32;
+        self.num_elts += holder.data.len();
         self.by_id.push(holder.clone());
         self.by_data.insert(holder, id);
         id
@@ -45,5 +48,10 @@ impl VecHashMap {
 
     pub fn len(&self) -> usize {
         self.by_id.len()
+    }
+
+    pub fn bytes(&self) -> usize {
+        // estimate 8 void* per hashtable entry + Vec + Rc
+        (self.num_elts * 4) + (self.len() * 8 * std::mem::size_of::<usize>())
     }
 }

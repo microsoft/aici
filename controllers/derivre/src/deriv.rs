@@ -3,6 +3,8 @@ use crate::ast::{Expr, ExprRef, ExprSet};
 pub struct Regex {
     exprs: ExprSet,
     state_table: Vec<Vec<ExprRef>>,
+    num_states: usize,
+    num_transitions: usize,
 }
 
 impl Regex {
@@ -10,6 +12,8 @@ impl Regex {
         Regex {
             exprs: ExprSet::new(),
             state_table: vec![],
+            num_states: 0,
+            num_transitions: 0,
         }
     }
 
@@ -18,7 +22,7 @@ impl Regex {
 
         if idx >= self.state_table.len() {
             self.state_table
-                .extend((self.state_table.len()..=idx).map(|_| vec![]));
+                .extend((self.state_table.len()..(idx + 20)).map(|_| vec![]));
         }
         let vec = &self.state_table[idx];
         if vec.len() > 0 && vec[b as usize].is_valid() {
@@ -29,10 +33,21 @@ impl Regex {
 
         if self.state_table[idx].len() == 0 {
             self.state_table[idx] = vec![ExprRef::INVALID; 256];
+            self.num_states += 1;
         }
         self.state_table[idx][b as usize] = d;
+        self.num_transitions += 1;
 
         d
+    }
+
+    pub fn stats(&self) -> String {
+        format!(
+            "states: {} (+ {} temp exprs); transitions: {}",
+            self.num_states,
+            self.exprs.len() - self.num_states,
+            self.num_transitions
+        )
     }
 
     fn derivative_inner(&mut self, e: ExprRef, b: u8) -> ExprRef {

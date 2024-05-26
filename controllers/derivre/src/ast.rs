@@ -178,6 +178,14 @@ impl ExprSet {
         }
     }
 
+    pub fn len(&self) -> usize {
+        self.exprs.len()
+    }
+
+    pub fn bytes(&self) -> usize {
+        self.exprs.bytes()
+    }
+
     pub fn mk_empty_string(&mut self) -> ExprRef {
         self.empty
     }
