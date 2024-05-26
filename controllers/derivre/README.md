@@ -19,3 +19,12 @@ and the [sbre](https://github.com/ieviev/sbre/) implementation of it.
 - [ ] more simplification rules from sbre
 - [ ] tests
 - [ ] benchmarks
+
+- [x] use constants for common expressions
+- [ ] use contiguous state transition array
+- [ ] place limit on number of states
+- [ ] alphabet size == 0 => invalid state loop
+- [ ] alphabet compression
+- [ ] build trie from alternative over many strings in re parser
+- [ ] use Hir format
+- [ ] `(idx, state_expr)*` for state transitions
