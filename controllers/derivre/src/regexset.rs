@@ -1,3 +1,5 @@
+use std::fmt::Debug;
+
 use aici_abi::svob::SimpleVob;
 
 use crate::{
@@ -198,10 +200,18 @@ impl RegexVec {
 
     pub fn stats(&self) -> String {
         format!(
-            "states: {}; transitions: {}; bytes: {}",
+            "regexps: {}, states: {}; transitions: {}; bytes: {}; alphabet size: {}",
+            self.rx_list.len(),
             self.state_descs.len(),
             self.num_transitions,
-            self.bytes()
+            self.bytes(),
+            self.alphabet_size
         )
+    }
+}
+
+impl Debug for RegexVec {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "RegexVec({})", self.stats())
     }
 }
