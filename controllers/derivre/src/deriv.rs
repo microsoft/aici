@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use crate::ast::{Expr, ExprRef, ExprSet};
 
 pub struct DerivCache {
-    exprs: ExprSet,
+    pub exprs: ExprSet,
     state_table: HashMap<(ExprRef, u8), ExprRef>,
 }
 
@@ -26,10 +26,6 @@ impl DerivCache {
         self.state_table.insert(idx, d);
 
         d
-    }
-
-    pub fn get_expr(&self, e: ExprRef) -> Expr {
-        self.exprs.get(e)
     }
 
     /// Estimate the size of the regex tables in bytes.

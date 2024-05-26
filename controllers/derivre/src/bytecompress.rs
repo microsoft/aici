@@ -8,16 +8,18 @@ use crate::{
 };
 
 pub struct ByteCompressor {
-    pub mapping: [u8; 256],
-    alphabet_size: usize,
+    pub mapping: Vec<u8>,
+    pub alphabet_size: usize,
     bytesets: Vec<Vec<u32>>,
     map_cache: HashMap<ExprRef, ExprRef>,
 }
 
+const INVALID_MAPPING: u8 = 0xff;
+
 impl ByteCompressor {
     pub fn new() -> Self {
         ByteCompressor {
-            mapping: [0xff; 256],
+            mapping: Vec::new(),
             alphabet_size: 0,
             bytesets: Vec::new(),
             map_cache: HashMap::new(),
@@ -55,7 +57,7 @@ impl ByteCompressor {
                 Expr::Byte(b) => trg.mk_byte(self.mapping[b as usize]),
                 Expr::ByteSet(bs) => {
                     let mut new_bs = vec![0u32; trg.alphabet_words()];
-                    for b in 0..256 {
+                    for b in 0..exprset.alphabet_size() {
                         if byteset_contains(bs, b) {
                             let m = self.mapping[b as usize] as usize;
                             new_bs[m / 32] |= 1 << (m % 32);
@@ -78,6 +80,8 @@ impl ByteCompressor {
     }
 
     pub fn compress(&mut self, exprset: &ExprSet, rx_list: &[ExprRef]) -> (ExprSet, Vec<ExprRef>) {
+        self.mapping = vec![INVALID_MAPPING; exprset.alphabet_size()];
+
         let mut todo = rx_list.to_vec();
         let mut visited = SimpleVob::alloc(rx_list.len());
         while let Some(e) = todo.pop() {
@@ -89,7 +93,7 @@ impl ByteCompressor {
             match exprset.get(e) {
                 Expr::Byte(b) => {
                     assert!(
-                        self.mapping[b as usize] == 0xff,
+                        self.mapping[b as usize] == INVALID_MAPPING,
                         "visiting the same byte the second time"
                     );
                     self.mapping[b as usize] = self.alphabet_size as u8;
@@ -124,8 +128,8 @@ impl ByteCompressor {
         set_true: impl Fn(&mut T, usize),
     ) {
         let mut byte_mapping = HashMap::new();
-        for b in 0..256 {
-            if self.mapping[b] == 0xff {
+        for b in 0..self.mapping.len() {
+            if self.mapping[b] == INVALID_MAPPING {
                 let mut v = alloc(self.bytesets.len());
                 for (idx, bs) in self.bytesets.iter().enumerate() {
                     if byteset_contains(bs, b) {

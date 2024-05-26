@@ -25,11 +25,11 @@ We do not use rustc-hash, but the standard HashMap to limit possibility of DoS.
 - [ ] benchmarks
 
 - [x] use constants for common expressions
-- [ ] use contiguous state transition array
+- [x] use contiguous state transition array
 - [ ] place limit on number of states
 - [ ] alphabet size == 0 => invalid state loop
-- [ ] alphabet compression
+- [x] alphabet compression
 - [ ] build trie from alternative over many strings in re parser
 - [ ] use Hir format
-- [ ] `(idx, state_expr)*` for state transitions
+- [x] `(idx, state_expr)*` for state transitions
 - [ ] use hashbrown raw table for VecHashMap
