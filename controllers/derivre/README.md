@@ -9,6 +9,10 @@ and
 [Derivative Based Extended Regular Expression Matching Supporting Intersection, Complement and Lookarounds](https://arxiv.org/pdf/2309.14401)
 and the [sbre](https://github.com/ieviev/sbre/) implementation of it.
 
+## Performance
+
+We do not use rustc-hash, but the standard HashMap to limit possibility of DoS.
+
 ## TODO
 
 - [ ] look-aheads, locations

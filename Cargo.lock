@@ -1179,7 +1179,6 @@ dependencies = [
  "bytemuck",
  "bytemuck_derive",
  "regex-syntax 0.8.3",
- "rustc-hash",
 ]
 
 [[package]]

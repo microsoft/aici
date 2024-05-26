@@ -1,17 +1,17 @@
-use rustc_hash::FxHashMap;
+use std::collections::HashMap;
 
 use crate::ast::{Expr, ExprRef, ExprSet};
 
 pub struct DerivCache {
     exprs: ExprSet,
-    state_table: FxHashMap<(ExprRef, u8), ExprRef>,
+    state_table: HashMap<(ExprRef, u8), ExprRef>,
 }
 
 impl DerivCache {
     pub fn new() -> Self {
         DerivCache {
             exprs: ExprSet::new(256),
-            state_table: FxHashMap::default(),
+            state_table: HashMap::default(),
         }
     }
 
