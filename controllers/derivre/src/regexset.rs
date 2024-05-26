@@ -10,6 +10,16 @@ use crate::{
     hashcons::VecHashMap,
 };
 
+const DEBUG: bool = true;
+
+macro_rules! debug {
+    ($($arg:tt)*) => {
+        if DEBUG {
+            eprintln!($($arg)*);
+        }
+    };
+}
+
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
 pub struct StateID(u32);
 
@@ -28,7 +38,19 @@ impl StateID {
     }
 
     pub fn is_valid(&self) -> bool {
-        self.0 != 0
+        *self != Self::MISSING
+    }
+}
+
+impl Debug for StateID {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        if *self == StateID::DEAD {
+            write!(f, "DEAD")
+        } else if *self == StateID::MISSING {
+            write!(f, "MISSING")
+        } else {
+            write!(f, "StateID({})", self.0)
+        }
     }
 }
 
@@ -41,6 +63,7 @@ pub struct RegexVec {
     state_table: Vec<StateID>,
     state_descs: Vec<StateDesc>,
     num_transitions: usize,
+    num_ast_nodes: usize,
 }
 
 #[derive(Clone)]
@@ -50,9 +73,23 @@ pub struct StateDesc {
     pub possible: SimpleVob,
 }
 
+impl StateDesc {
+    pub fn is_accepting(&self) -> bool {
+        self.lowest_accepting != -1
+    }
+
+    pub fn is_dead(&self) -> bool {
+        self.possible.is_zero()
+    }
+}
+
 // public implementation
 impl RegexVec {
-    pub fn new(rx_list: &[&str]) -> Result<Self> {
+    pub fn new_single(rx: &str) -> Result<Self> {
+        Self::new_vec(&[rx])
+    }
+
+    pub fn new_vec(rx_list: &[&str]) -> Result<Self> {
         let mut parser = regex_syntax::ParserBuilder::new().build();
         Self::new_with_parser(&mut parser, rx_list)
     }
@@ -82,15 +119,37 @@ impl RegexVec {
     pub fn transition(&mut self, state: StateID, b: u8) -> StateID {
         let mapped = self.alphabet_mapping[b as usize] as usize;
         let idx = state.as_usize() * self.alphabet_size + mapped;
-        let state = self.state_table[idx];
-        if state != StateID::MISSING {
-            state
+        let new_state = self.state_table[idx];
+        if new_state != StateID::MISSING {
+            new_state
         } else {
             let new_state = self.transition_inner(state, b);
             self.num_transitions += 1;
             self.state_table[idx] = new_state;
             new_state
         }
+    }
+
+    pub fn transition_bytes(&mut self, state: StateID, bytes: &[u8]) -> StateID {
+        let mut state = state;
+        for &b in bytes {
+            state = self.transition(state, b);
+        }
+        state
+    }
+
+    pub fn is_match(&mut self, text: &str) -> bool {
+        let selected = SimpleVob::alloc(self.rx_list.len());
+        let mut state = self.initial_state(&selected.negated());
+        for b in text.bytes() {
+            let new_state = self.transition(state, b);
+            debug!("b: {:?} --{:?}--> {:?}", state, b as char, new_state);
+            state = new_state;
+            if state == StateID::DEAD {
+                return false;
+            }
+        }
+        self.state_desc(state).is_accepting()
     }
 
     /// Estimate the size of the regex tables in bytes.
@@ -103,8 +162,10 @@ impl RegexVec {
 
     pub fn stats(&self) -> String {
         format!(
-            "regexps: {}, states: {}; transitions: {}; bytes: {}; alphabet size: {}",
+            "regexps: {} with {} nodes (+ {} derived), states: {}; transitions: {}; bytes: {}; alphabet size: {}",
             self.rx_list.len(),
+            self.num_ast_nodes,
+            self.cache.exprs.len() - self.num_ast_nodes,
             self.state_descs.len(),
             self.num_transitions,
             self.num_bytes(),
@@ -135,6 +196,8 @@ impl RegexVec {
             )
         };
 
+        let num_ast_nodes = exprset.len();
+
         let mut rx_sets = VecHashMap::new();
         let id = rx_sets.insert(vec![]);
         assert!(id == StateID::DEAD.as_u32());
@@ -150,6 +213,7 @@ impl RegexVec {
             state_table: vec![],
             state_descs: vec![],
             num_transitions: 0,
+            num_ast_nodes,
         };
         r.insert_state(vec![]);
         // also append state for the "MISSING"
@@ -208,6 +272,9 @@ impl RegexVec {
                 }
             }
         });
+        if res.possible.is_zero() {
+            assert!(state == StateID::DEAD);
+        }
         res
     }
 
@@ -217,6 +284,8 @@ impl RegexVec {
     }
 
     fn transition_inner(&mut self, state: StateID, b: u8) -> StateID {
+        assert!(state.is_valid());
+
         let mut vec_desc = vec![];
 
         Self::iter_state(&self.rx_sets, state, |(idx, e)| {

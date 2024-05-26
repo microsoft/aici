@@ -17,19 +17,21 @@ We do not use rustc-hash, but the standard HashMap to limit possibility of DoS.
 
 - [ ] look-aheads, locations
 - [x] use regex-syntax crate to create Expr
-- [ ] the actual matching of strings
-- [x] add matcher on a vector of Expr (lexer style)  
+- [x] the actual matching of strings
+- [x] add matcher on a vector of Expr (lexer style)
 - [ ] simplification of Byte/ByteSet in And/Or
-- [ ] more simplification rules from sbre
-- [ ] tests
-- [ ] benchmarks
-
 - [x] use constants for common expressions
 - [x] use contiguous state transition array
 - [ ] place limit on number of states
 - [ ] alphabet size == 0 => invalid state loop
 - [x] alphabet compression
-- [ ] build trie from alternative over many strings in re parser
 - [x] use Hir format
 - [x] `(idx, state_expr)*` for state transitions
+
+### Future improvements
+
+- [ ] build trie from alternative over many strings in re parser
 - [ ] use hashbrown raw table for VecHashMap
+- [ ] more simplification rules from sbre
+- [ ] tests
+- [ ] benchmarks
