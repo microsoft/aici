@@ -8,6 +8,12 @@ pub struct ExprRef(pub u32);
 
 impl ExprRef {
     pub const INVALID: ExprRef = ExprRef(0);
+    pub const EMPTY_STRING: ExprRef = ExprRef(1);
+    pub const NO_MATCH: ExprRef = ExprRef(2);
+    pub const ANY_BYTE: ExprRef = ExprRef(3);
+    pub const ANY_STRING: ExprRef = ExprRef(4);
+    pub const NON_EMPTY_STRING: ExprRef = ExprRef(5);
+
     pub fn is_valid(&self) -> bool {
         self.0 != 0
     }
@@ -162,34 +168,35 @@ impl<'a> Expr<'a> {
 }
 
 pub struct ExprSet {
-    empty: ExprRef,
-    no_match: ExprRef,
-    any_byte: ExprRef,
-    any_string: ExprRef,
-    non_empty: ExprRef,
     exprs: VecHashMap,
 }
 
 impl ExprSet {
     pub fn new() -> Self {
         let mut exprs = VecHashMap::new();
-        let empty = ExprRef(exprs.insert(Expr::EmptyString.serialize()));
-        assert!(empty.is_valid());
-        let no_match = exprs.insert(Expr::NoMatch.serialize());
-        let any_byte =
-            ExprRef(exprs.insert(Expr::ByteSet(&vec![0xffffffff; BYTE_SET_SIZE]).serialize()));
-        let everything =
-            exprs.insert(Expr::Repeat(ExprFlags::NULLABLE, any_byte, 0, u32::MAX).serialize());
-        let non_empty =
-            exprs.insert(Expr::Repeat(ExprFlags::ZERO, any_byte, 1, u32::MAX).serialize());
-        ExprSet {
-            empty,
-            no_match: ExprRef(no_match),
-            any_byte,
-            any_string: ExprRef(everything),
-            non_empty: ExprRef(non_empty),
-            exprs,
+        let inserts = vec![
+            (Expr::EmptyString.serialize(), ExprRef::EMPTY_STRING),
+            (Expr::NoMatch.serialize(), ExprRef::NO_MATCH),
+            (
+                Expr::ByteSet(&vec![0xffffffff; BYTE_SET_SIZE]).serialize(),
+                ExprRef::ANY_BYTE,
+            ),
+            (
+                Expr::Repeat(ExprFlags::NULLABLE, ExprRef::ANY_BYTE, 0, u32::MAX).serialize(),
+                ExprRef::ANY_STRING,
+            ),
+            (
+                Expr::Repeat(ExprFlags::ZERO, ExprRef::ANY_BYTE, 1, u32::MAX).serialize(),
+                ExprRef::NON_EMPTY_STRING,
+            ),
+        ];
+
+        for (e, id) in inserts {
+            let r = exprs.insert(e);
+            assert!(r == id.0, "id: {r}, expected: {}", id.0);
         }
+
+        ExprSet { exprs }
     }
 
     pub fn len(&self) -> usize {
@@ -200,26 +207,6 @@ impl ExprSet {
         self.exprs.bytes()
     }
 
-    pub fn mk_empty_string(&mut self) -> ExprRef {
-        self.empty
-    }
-
-    pub fn mk_no_match(&mut self) -> ExprRef {
-        self.no_match
-    }
-
-    pub fn mk_any_byte(&mut self) -> ExprRef {
-        self.any_byte
-    }
-
-    pub fn mk_non_empty(&mut self) -> ExprRef {
-        self.non_empty
-    }
-
-    pub fn mk_any_string(&mut self) -> ExprRef {
-        self.any_string
-    }
-
     pub fn mk_byte(&mut self, b: u8) -> ExprRef {
         self.mk(Expr::Byte(b))
     }
@@ -227,24 +214,24 @@ impl ExprSet {
     pub fn mk_byte_set(&mut self, s: &[u32]) -> ExprRef {
         assert!(s.len() == BYTE_SET_SIZE);
         if s.iter().all(|&x| x == 0) {
-            return self.no_match;
+            return ExprRef::NO_MATCH;
         }
         self.mk(Expr::ByteSet(s))
     }
 
     pub fn mk_repeat(&mut self, e: ExprRef, min: u32, max: u32) -> ExprRef {
-        if e == self.no_match {
+        if e == ExprRef::NO_MATCH {
             if min == 0 {
-                self.empty
+                ExprRef::EMPTY_STRING
             } else {
-                self.no_match
+                ExprRef::NO_MATCH
             }
         } else if min == max {
-            self.empty
+            ExprRef::EMPTY_STRING
         } else if min + 1 == max {
             e
         } else if min > max {
-            self.no_match
+            ExprRef::NO_MATCH
         } else {
             let min = if self.is_nullable(e) { 0 } else { min };
             let flags = ExprFlags::from_nullable(min == 0);
@@ -288,15 +275,15 @@ impl ExprSet {
         args = self.flatten_tag(ExprTag::Or, args);
         args.sort_by_key(|&e| e.0);
         let mut dp = 0;
-        let mut prev = self.no_match;
+        let mut prev = ExprRef::NO_MATCH;
         let mut nullable = false;
         for idx in 0..args.len() {
             let arg = args[idx];
-            if arg == prev || arg == self.no_match {
+            if arg == prev || arg == ExprRef::NO_MATCH {
                 continue;
             }
-            if arg == self.any_string {
-                return self.any_string;
+            if arg == ExprRef::ANY_STRING {
+                return ExprRef::ANY_STRING;
             }
             if !nullable && self.is_nullable(arg) {
                 nullable = true;
@@ -308,7 +295,7 @@ impl ExprSet {
         args.truncate(dp);
 
         if args.len() == 0 {
-            self.no_match
+            ExprRef::NO_MATCH
         } else if args.len() == 1 {
             args[0]
         } else {
@@ -321,18 +308,18 @@ impl ExprSet {
         args = self.flatten_tag(ExprTag::And, args);
         args.sort_by_key(|&e| e.0);
         let mut dp = 0;
-        let mut prev = self.any_string;
+        let mut prev = ExprRef::ANY_STRING;
         let mut had_empty = false;
         let mut nullable = true;
         for idx in 0..args.len() {
             let arg = args[idx];
-            if arg == prev || arg == self.any_string {
+            if arg == prev || arg == ExprRef::ANY_STRING {
                 continue;
             }
-            if arg == self.no_match {
-                return self.no_match;
+            if arg == ExprRef::NO_MATCH {
+                return ExprRef::NO_MATCH;
             }
-            if arg == self.empty {
+            if arg == ExprRef::EMPTY_STRING {
                 had_empty = true;
             }
             if nullable && !self.is_nullable(arg) {
@@ -345,14 +332,14 @@ impl ExprSet {
         args.truncate(dp);
 
         if args.len() == 0 {
-            self.any_string
+            ExprRef::ANY_STRING
         } else if args.len() == 1 {
             args[0]
         } else if had_empty {
             if nullable {
-                self.empty
+                ExprRef::EMPTY_STRING
             } else {
-                self.no_match
+                ExprRef::NO_MATCH
             }
         } else {
             let flags = ExprFlags::from_nullable(nullable);
@@ -362,13 +349,13 @@ impl ExprSet {
 
     pub fn mk_concat(&mut self, mut args: Vec<ExprRef>) -> ExprRef {
         args = self.flatten_tag(ExprTag::Concat, args);
-        args.retain(|&e| e != self.empty);
+        args.retain(|&e| e != ExprRef::EMPTY_STRING);
         if args.len() == 0 {
-            self.empty
+            ExprRef::EMPTY_STRING
         } else if args.len() == 1 {
             args[0]
-        } else if args.iter().any(|&e| e == self.no_match) {
-            self.no_match
+        } else if args.iter().any(|&e| e == ExprRef::NO_MATCH) {
+            ExprRef::NO_MATCH
         } else {
             let flags = ExprFlags::from_nullable(args.iter().all(|&e| self.is_nullable(e)));
             self.mk(Expr::Concat(flags, &args))
@@ -376,14 +363,14 @@ impl ExprSet {
     }
 
     pub fn mk_not(&mut self, e: ExprRef) -> ExprRef {
-        if e == self.empty {
-            self.non_empty
-        } else if e == self.non_empty {
-            self.empty
-        } else if e == self.any_string {
-            self.no_match
-        } else if e == self.no_match {
-            self.any_string
+        if e == ExprRef::EMPTY_STRING {
+            ExprRef::NON_EMPTY_STRING
+        } else if e == ExprRef::NON_EMPTY_STRING {
+            ExprRef::EMPTY_STRING
+        } else if e == ExprRef::ANY_STRING {
+            ExprRef::NO_MATCH
+        } else if e == ExprRef::NO_MATCH {
+            ExprRef::ANY_STRING
         } else {
             let n = self.get(e);
             match n {

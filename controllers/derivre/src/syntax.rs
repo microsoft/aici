@@ -6,7 +6,7 @@ use crate::{ast::ExprSet, ExprRef};
 impl ExprSet {
     fn from_ast(&mut self, ast: &Ast) -> Result<ExprRef> {
         match ast {
-            Ast::Empty(_) => Ok(self.mk_empty_string()),
+            Ast::Empty(_) => Ok(ExprRef::EMPTY_STRING),
             Ast::Flags(_) => bail!("flags not supported"),
             Ast::Literal(l) => {
                 ensure!((l.c as u32) < 0x80, "only ASCII supported right now");

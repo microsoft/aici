@@ -42,9 +42,9 @@ impl DerivCache {
         match e {
             Expr::EmptyString | Expr::NoMatch | Expr::ByteSet(_) | Expr::Byte(_) => {
                 if e.matches_byte(b) {
-                    self.exprs.mk_empty_string()
+                    ExprRef::EMPTY_STRING
                 } else {
-                    self.exprs.mk_no_match()
+                    ExprRef::NO_MATCH
                 }
             }
             Expr::And(_, args) => {
