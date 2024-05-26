@@ -124,7 +124,8 @@ impl<'a> Expr<'a> {
 
     fn get_flags(&self) -> ExprFlags {
         match self {
-            Expr::EmptyString | Expr::NoMatch | Expr::Byte(_) | Expr::ByteSet(_) => ExprFlags::ZERO,
+            Expr::EmptyString => ExprFlags::NULLABLE,
+            Expr::NoMatch | Expr::Byte(_) | Expr::ByteSet(_) => ExprFlags::ZERO,
             Expr::Not(f, _) => *f,
             Expr::Repeat(f, _, _, _) => *f,
             Expr::Concat(f, _) => *f,
@@ -227,6 +228,10 @@ impl ExprSet {
 
     pub fn expr_to_string(&self, id: ExprRef) -> String {
         self.pp.expr_to_string(&self, id)
+    }
+
+    pub fn byte_to_string(&self, b: u8) -> String {
+        self.pp.byte_to_string(b)
     }
 
     pub fn alphabet_size(&self) -> usize {
@@ -431,6 +436,9 @@ impl ExprSet {
 
     fn get_flags(&self, id: ExprRef) -> ExprFlags {
         assert!(id.is_valid());
+        if id == ExprRef::EMPTY_STRING {
+            return ExprFlags::NULLABLE;
+        }
         ExprFlags(self.exprs.get(id.0).unwrap()[0] & !0xff)
     }
 

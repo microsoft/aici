@@ -67,7 +67,7 @@ pub struct RegexVec {
     num_ast_nodes: usize,
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct StateDesc {
     pub lowest_accepting: isize, // -1 if no accepting state
     pub accepting: SimpleVob,
@@ -124,7 +124,7 @@ impl RegexVec {
         if new_state != StateID::MISSING {
             new_state
         } else {
-            let new_state = self.transition_inner(state, b);
+            let new_state = self.transition_inner(state, mapped as u8);
             self.num_transitions += 1;
             self.state_table[idx] = new_state;
             new_state
@@ -286,6 +286,7 @@ impl RegexVec {
         if res.possible.is_zero() {
             assert!(state == StateID::DEAD);
         }
+        // debug!("state {:?} desc: {:?}", state, res);
         res
     }
 

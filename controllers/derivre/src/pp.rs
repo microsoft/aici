@@ -20,6 +20,11 @@ impl PrettyPrinter {
         s
     }
 
+    pub fn byte_to_string(&self, b: u8) -> String {
+        self.compute_alphabet_names();
+        self.cached_alphabet_names.borrow()[b as usize].clone()
+    }
+
     pub fn new_simple(alphabet_size: usize) -> Self {
         Self::new((0..=(alphabet_size - 1) as u8).collect(), alphabet_size)
     }

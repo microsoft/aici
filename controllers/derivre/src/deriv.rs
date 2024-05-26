@@ -2,6 +2,16 @@ use std::collections::HashMap;
 
 use crate::ast::{Expr, ExprRef, ExprSet};
 
+const DEBUG: bool = true;
+macro_rules! debug {
+    ($($arg:tt)*) => {
+        if DEBUG {
+            eprint!("  ");
+            eprintln!($($arg)*);
+        }
+    };
+}
+
 pub struct DerivCache {
     pub exprs: ExprSet,
     state_table: HashMap<(ExprRef, u8), ExprRef>,
@@ -22,6 +32,12 @@ impl DerivCache {
         }
 
         let d = self.derivative_inner(e, b);
+        debug!(
+            "deriv({}) via {} = {}",
+            self.exprs.expr_to_string(e),
+            self.exprs.byte_to_string(b),
+            self.exprs.expr_to_string(d)
+        );
 
         self.state_table.insert(idx, d);
 
