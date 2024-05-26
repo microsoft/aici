@@ -8,9 +8,9 @@ pub struct DerivCache {
 }
 
 impl DerivCache {
-    pub fn new() -> Self {
+    pub fn new(exprs: ExprSet) -> Self {
         DerivCache {
-            exprs: ExprSet::new(256),
+            exprs,
             state_table: HashMap::default(),
         }
     }

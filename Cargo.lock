@@ -1175,6 +1175,7 @@ dependencies = [
 name = "derivre"
 version = "0.1.0"
 dependencies = [
+ "aici_abi",
  "anyhow",
  "bytemuck",
  "bytemuck_derive",

@@ -87,13 +87,18 @@ impl ExprTag {
     }
 }
 
+#[inline(always)]
+pub fn byteset_contains(s: &[u32], b: usize) -> bool {
+    s[b / 32] & (1 << (b % 32)) != 0
+}
+
 impl<'a> Expr<'a> {
     pub fn matches_byte(&self, b: u8) -> bool {
         match self {
             Expr::EmptyString => false,
             Expr::NoMatch => false,
             Expr::Byte(b2) => b == *b2,
-            Expr::ByteSet(s) => s[(b / 32) as usize] & (1 << (b % 32)) != 0,
+            Expr::ByteSet(s) => byteset_contains(s, b as usize),
             _ => panic!("not a simple expression"),
         }
     }
@@ -166,6 +171,7 @@ impl<'a> Expr<'a> {
 
 pub struct ExprSet {
     exprs: VecHashMap,
+    alphabet_size: usize,
     alphabet_words: usize,
 }
 
@@ -197,8 +203,17 @@ impl ExprSet {
 
         ExprSet {
             exprs,
+            alphabet_size,
             alphabet_words,
         }
+    }
+
+    pub fn alphabet_size(&self) -> usize {
+        self.alphabet_size
+    }
+
+    pub fn alphabet_words(&self) -> usize {
+        self.alphabet_words
     }
 
     pub fn len(&self) -> usize {
@@ -403,12 +418,13 @@ impl ExprSet {
         ExprTag::from_u8(tag as u8)
     }
 
-    fn get_args(&self, id: ExprRef) -> &[ExprRef] {
+    pub fn get_args(&self, id: ExprRef) -> &[ExprRef] {
         let s = self.exprs.get(id.0).unwrap();
         let tag = ExprTag::from_u8((s[0] & 0xff) as u8);
         match tag {
             ExprTag::Concat | ExprTag::Or | ExprTag::And => bytemuck::cast_slice(&s[1..]),
-            _ => panic!("not a n-ary expression"),
+            ExprTag::Not | ExprTag::Repeat => bytemuck::cast_slice(&s[1..2]),
+            ExprTag::EmptyString | ExprTag::NoMatch | ExprTag::Byte | ExprTag::ByteSet => &[],
         }
     }
 

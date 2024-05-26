@@ -1,5 +1,6 @@
 use crate::{
-    ast::{ExprRef, MatchState},
+    ast::{ExprRef, ExprSet, MatchState},
+    bytecompress::ByteCompressor,
     deriv::DerivCache,
     hashcons::VecHashMap,
 };
@@ -28,18 +29,36 @@ impl StateID {
     }
 }
 
-pub struct RegexSet {
+pub struct RegexVec {
     cache: DerivCache,
+    mapping: [u8; 256],
+    rx_list: Vec<ExprRef>,
     rx_sets: VecHashMap,
     state_table: Vec<Vec<StateID>>,
     num_states: usize,
     num_transitions: usize,
 }
 
-impl RegexSet {
-    pub fn new() -> Self {
-        RegexSet {
-            cache: DerivCache::new(),
+impl RegexVec {
+    pub fn new(exprset: ExprSet, rx_list: &[ExprRef]) -> Self {
+        assert!(exprset.alphabet_size() == 256);
+        let compress = true;
+
+        let ((exprset, rx_list), mapping) = if compress {
+            let mut compressor = ByteCompressor::new();
+            (compressor.compress(&exprset, rx_list), compressor.mapping)
+        } else {
+            let mut mapping = [0u8; 256];
+            for i in 0..256 {
+                mapping[i] = i as u8;
+            }
+            ((exprset, rx_list.to_vec()), mapping)
+        };
+
+        RegexVec {
+            cache: DerivCache::new(exprset),
+            mapping,
+            rx_list,
             rx_sets: VecHashMap::new(),
             state_table: Vec::new(),
             num_states: 0,

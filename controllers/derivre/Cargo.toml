@@ -7,6 +7,7 @@ edition = "2021"
 name = "derivre"
 
 [dependencies]
+aici_abi = { path = "../aici_abi" }
 anyhow = "1.0.75"
 bytemuck = "1.16.0"
 bytemuck_derive = "1.6.1"
