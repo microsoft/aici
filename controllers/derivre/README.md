@@ -30,6 +30,6 @@ We do not use rustc-hash, but the standard HashMap to limit possibility of DoS.
 - [ ] alphabet size == 0 => invalid state loop
 - [x] alphabet compression
 - [ ] build trie from alternative over many strings in re parser
-- [ ] use Hir format
+- [x] use Hir format
 - [x] `(idx, state_expr)*` for state transitions
 - [ ] use hashbrown raw table for VecHashMap

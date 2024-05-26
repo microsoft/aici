@@ -94,6 +94,24 @@ pub fn byteset_contains(s: &[u32], b: usize) -> bool {
     s[b / 32] & (1 << (b % 32)) != 0
 }
 
+#[inline(always)]
+pub fn byteset_set(s: &mut [u32], b: usize) {
+    s[b / 32] |= 1 << (b % 32);
+}
+
+pub fn byteset_256() -> Vec<u32> {
+    vec![0u32; 256 / 32]
+}
+
+pub fn byteset_from_range(start: u8, end: u8) -> Vec<u32> {
+    assert!(start <= end, "start: {start}, end: {end}");
+    let mut s = byteset_256();
+    for b in start..=end {
+        byteset_set(&mut s, b as usize);
+    }
+    s
+}
+
 impl<'a> Expr<'a> {
     pub fn matches_byte(&self, b: u8) -> bool {
         match self {

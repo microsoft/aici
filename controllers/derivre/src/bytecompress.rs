@@ -3,7 +3,7 @@ use std::{collections::HashMap, hash::Hash};
 use aici_abi::svob::SimpleVob;
 
 use crate::{
-    ast::{byteset_contains, Expr, ExprSet},
+    ast::{byteset_contains, byteset_set, Expr, ExprSet},
     ExprRef,
 };
 
@@ -60,7 +60,7 @@ impl ByteCompressor {
                     for b in 0..exprset.alphabet_size() {
                         if byteset_contains(bs, b) {
                             let m = self.mapping[b as usize] as usize;
-                            new_bs[m / 32] |= 1 << (m % 32);
+                            byteset_set(&mut new_bs, m);
                         }
                     }
                     trg.mk_byte_set(&new_bs)
