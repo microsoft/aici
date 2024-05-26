@@ -16,11 +16,6 @@ impl StateID {
     // MISSING state corresponds to yet not computed entries in the state table
     pub const MISSING: StateID = StateID(1);
 
-    pub fn new(id: u32) -> Self {
-        assert!(id != 0, "StateID(0) is reserved for invalid state");
-        StateID(id)
-    }
-
     pub fn as_usize(&self) -> usize {
         self.0 as usize
     }
@@ -123,7 +118,7 @@ impl RegexVec {
     fn iter_state(rx_sets: &VecHashMap, state: StateID, mut f: impl FnMut((usize, ExprRef))) {
         let lst = rx_sets.get(state.as_u32()).unwrap();
         for idx in (0..lst.len()).step_by(2) {
-            f((lst[idx] as usize, ExprRef(lst[idx + 1])));
+            f((lst[idx] as usize, ExprRef::new(lst[idx + 1])));
         }
     }
 
@@ -149,11 +144,15 @@ impl RegexVec {
         res
     }
 
+    fn push_rx(vec_desc: &mut Vec<u32>, idx: usize, e: ExprRef) {
+        vec_desc.push(idx as u32);
+        vec_desc.push(e.as_u32());
+    }
+
     pub fn initial_state(&mut self, selected: &SimpleVob) -> StateID {
         let mut vec_desc = vec![];
         for idx in selected.iter() {
-            vec_desc.push(idx);
-            vec_desc.push(self.rx_list[idx as usize].0);
+            Self::push_rx(&mut vec_desc, idx as usize, self.rx_list[idx as usize]);
         }
         self.insert_state(vec_desc)
     }
@@ -182,8 +181,7 @@ impl RegexVec {
         Self::iter_state(&self.rx_sets, state, |(idx, e)| {
             let d = self.cache.derivative(e, b);
             if d != ExprRef::NO_MATCH {
-                vec_desc.push(idx as u32);
-                vec_desc.push(d.as_u32());
+                Self::push_rx(&mut vec_desc, idx, d);
             }
         });
 

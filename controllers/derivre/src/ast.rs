@@ -4,7 +4,7 @@ use crate::hashcons::VecHashMap;
 
 #[derive(Pod, Zeroable, Clone, Copy, Debug, PartialEq, Eq, Hash)]
 #[repr(transparent)]
-pub struct ExprRef(pub u32);
+pub struct ExprRef(u32);
 
 impl ExprRef {
     pub const INVALID: ExprRef = ExprRef(0);
@@ -13,6 +13,11 @@ impl ExprRef {
     pub const ANY_BYTE: ExprRef = ExprRef(3);
     pub const ANY_STRING: ExprRef = ExprRef(4);
     pub const NON_EMPTY_STRING: ExprRef = ExprRef(5);
+
+    pub fn new(id: u32) -> Self {
+        assert!(id != 0, "ExprRef(0) is reserved for invalid reference");
+        ExprRef(id)
+    }
 
     pub fn is_valid(&self) -> bool {
         self.0 != 0
@@ -123,8 +128,8 @@ impl<'a> Expr<'a> {
             ExprTag::NoMatch => Expr::NoMatch,
             ExprTag::Byte => Expr::Byte(s[1] as u8),
             ExprTag::ByteSet => Expr::ByteSet(&s[1..]),
-            ExprTag::Not => Expr::Not(flags, ExprRef(s[1])),
-            ExprTag::Repeat => Expr::Repeat(flags, ExprRef(s[1]), s[2], s[3]),
+            ExprTag::Not => Expr::Not(flags, ExprRef::new(s[1])),
+            ExprTag::Repeat => Expr::Repeat(flags, ExprRef::new(s[1]), s[2], s[3]),
             ExprTag::Concat => Expr::Concat(flags, bytemuck::cast_slice(&s[1..])),
             ExprTag::Or => Expr::Or(flags, bytemuck::cast_slice(&s[1..])),
             ExprTag::And => Expr::And(flags, bytemuck::cast_slice(&s[1..])),
