@@ -16,7 +16,7 @@ We do not use rustc-hash, but the standard HashMap to limit possibility of DoS.
 ## TODO
 
 - [ ] look-aheads, locations
-- [ ] use regex-syntax crate to create Expr
+- [x] use regex-syntax crate to create Expr
 - [ ] the actual matching of strings
 - [x] add matcher on a vector of Expr (lexer style)  
 - [ ] simplification of Byte/ByteSet in And/Or

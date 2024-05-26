@@ -228,12 +228,13 @@ impl ExprSet {
         self.alphabet_words
     }
 
+    #[allow(dead_code)]
     pub fn len(&self) -> usize {
         self.exprs.len()
     }
 
     pub fn bytes(&self) -> usize {
-        self.exprs.bytes()
+        self.exprs.num_bytes()
     }
 
     pub fn mk_byte(&mut self, b: u8) -> ExprRef {
@@ -268,13 +269,13 @@ impl ExprSet {
         }
     }
 
-    pub fn mk_star(&mut self, e: ExprRef) -> ExprRef {
-        self.mk_repeat(e, 0, u32::MAX)
-    }
+    // pub fn mk_star(&mut self, e: ExprRef) -> ExprRef {
+    //     self.mk_repeat(e, 0, u32::MAX)
+    // }
 
-    pub fn mk_plus(&mut self, e: ExprRef) -> ExprRef {
-        self.mk_repeat(e, 1, u32::MAX)
-    }
+    // pub fn mk_plus(&mut self, e: ExprRef) -> ExprRef {
+    //     self.mk_repeat(e, 1, u32::MAX)
+    // }
 
     fn flatten_tag(&self, exp_tag: ExprTag, args: Vec<ExprRef>) -> Vec<ExprRef> {
         let mut i = 0;

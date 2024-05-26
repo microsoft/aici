@@ -1,6 +1,7 @@
 use std::fmt::Debug;
 
 use aici_abi::svob::SimpleVob;
+use anyhow::Result;
 
 use crate::{
     ast::{ExprRef, ExprSet},
@@ -49,8 +50,72 @@ pub struct StateDesc {
     pub possible: SimpleVob,
 }
 
+// public implementation
 impl RegexVec {
-    pub fn new(exprset: ExprSet, rx_list: &[ExprRef]) -> Self {
+    pub fn new(rx_list: &[&str]) -> Result<Self> {
+        let mut parser = regex_syntax::ParserBuilder::new().build();
+        Self::new_with_parser(&mut parser, rx_list)
+    }
+
+    pub fn new_with_parser(parser: &mut regex_syntax::Parser, rx_list: &[&str]) -> Result<Self> {
+        let mut exprset = ExprSet::new(256);
+        let mut acc = Vec::new();
+        for rx in rx_list {
+            let ast = exprset.parse_expr(parser, rx)?;
+            acc.push(ast);
+        }
+        Ok(Self::new_with_exprset(exprset, &acc))
+    }
+
+    pub fn initial_state(&mut self, selected: &SimpleVob) -> StateID {
+        let mut vec_desc = vec![];
+        for idx in selected.iter() {
+            Self::push_rx(&mut vec_desc, idx as usize, self.rx_list[idx as usize]);
+        }
+        self.insert_state(vec_desc)
+    }
+
+    pub fn state_desc(&self, state: StateID) -> &StateDesc {
+        &self.state_descs[state.as_usize()]
+    }
+
+    pub fn transition(&mut self, state: StateID, b: u8) -> StateID {
+        let mapped = self.alphabet_mapping[b as usize] as usize;
+        let idx = state.as_usize() * self.alphabet_size + mapped;
+        let state = self.state_table[idx];
+        if state != StateID::MISSING {
+            state
+        } else {
+            let new_state = self.transition_inner(state, b);
+            self.num_transitions += 1;
+            self.state_table[idx] = new_state;
+            new_state
+        }
+    }
+
+    /// Estimate the size of the regex tables in bytes.
+    pub fn num_bytes(&self) -> usize {
+        self.cache.num_bytes()
+            + self.state_descs.len() * 100
+            + self.state_table.len() * std::mem::size_of::<StateID>()
+            + self.rx_sets.num_bytes()
+    }
+
+    pub fn stats(&self) -> String {
+        format!(
+            "regexps: {}, states: {}; transitions: {}; bytes: {}; alphabet size: {}",
+            self.rx_list.len(),
+            self.state_descs.len(),
+            self.num_transitions,
+            self.num_bytes(),
+            self.alphabet_size
+        )
+    }
+}
+
+// private implementation
+impl RegexVec {
+    fn new_with_exprset(exprset: ExprSet, rx_list: &[ExprRef]) -> Self {
         assert!(exprset.alphabet_size() == 256);
         let compress = true;
 
@@ -151,32 +216,6 @@ impl RegexVec {
         vec_desc.push(e.as_u32());
     }
 
-    pub fn initial_state(&mut self, selected: &SimpleVob) -> StateID {
-        let mut vec_desc = vec![];
-        for idx in selected.iter() {
-            Self::push_rx(&mut vec_desc, idx as usize, self.rx_list[idx as usize]);
-        }
-        self.insert_state(vec_desc)
-    }
-
-    pub fn state_desc(&self, state: StateID) -> &StateDesc {
-        &self.state_descs[state.as_usize()]
-    }
-
-    pub fn transition(&mut self, state: StateID, b: u8) -> StateID {
-        let mapped = self.alphabet_mapping[b as usize] as usize;
-        let idx = state.as_usize() * self.alphabet_size + mapped;
-        let state = self.state_table[idx];
-        if state != StateID::MISSING {
-            state
-        } else {
-            let new_state = self.transition_inner(state, b);
-            self.num_transitions += 1;
-            self.state_table[idx] = new_state;
-            new_state
-        }
-    }
-
     fn transition_inner(&mut self, state: StateID, b: u8) -> StateID {
         let mut vec_desc = vec![];
 
@@ -188,25 +227,6 @@ impl RegexVec {
         });
 
         self.insert_state(vec_desc)
-    }
-
-    /// Estimate the size of the regex tables in bytes.
-    pub fn bytes(&self) -> usize {
-        self.cache.bytes()
-            + self.state_descs.len() * 100
-            + self.state_table.len() * std::mem::size_of::<StateID>()
-            + self.rx_sets.bytes()
-    }
-
-    pub fn stats(&self) -> String {
-        format!(
-            "regexps: {}, states: {}; transitions: {}; bytes: {}; alphabet size: {}",
-            self.rx_list.len(),
-            self.state_descs.len(),
-            self.num_transitions,
-            self.bytes(),
-            self.alphabet_size
-        )
     }
 }
 

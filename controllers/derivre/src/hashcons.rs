@@ -50,7 +50,7 @@ impl VecHashMap {
         self.by_id.len()
     }
 
-    pub fn bytes(&self) -> usize {
+    pub fn num_bytes(&self) -> usize {
         // estimate 8 void* per hashtable entry + Vec + Rc
         (self.num_elts * 4) + (self.len() * 8 * std::mem::size_of::<usize>())
     }

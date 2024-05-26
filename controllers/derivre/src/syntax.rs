@@ -1,7 +1,7 @@
 use anyhow::{bail, Result};
 use regex_syntax::{
     hir::{self, ClassUnicode, Hir, HirKind},
-    ParserBuilder,
+    Parser,
 };
 
 use crate::{
@@ -76,6 +76,7 @@ impl ExprSet {
         for range in u.ranges() {
             let start = range.start();
             let end = range.end();
+            assert!(start <= end);
             let mut start_bytes = start.encode_utf8(&mut b_start).as_bytes();
             let end_bytes = end.encode_utf8(&mut b_end).as_bytes();
             while start_bytes.len() < end_bytes.len() {
@@ -171,8 +172,7 @@ impl ExprSet {
         unreachable!()
     }
 
-    pub fn expr_from_str(&mut self, rx: &str) -> Result<ExprRef> {
-        let mut parser = ParserBuilder::new().unicode(true).utf8(true).build();
+    pub fn parse_expr(&mut self, parser: &mut Parser, rx: &str) -> Result<ExprRef> {
         let hir = parser.parse(rx)?;
         self.from_ast(&hir)
     }

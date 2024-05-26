@@ -29,7 +29,7 @@ impl DerivCache {
     }
 
     /// Estimate the size of the regex tables in bytes.
-    pub fn bytes(&self) -> usize {
+    pub fn num_bytes(&self) -> usize {
         self.exprs.bytes() + self.state_table.len() * 8 * std::mem::size_of::<isize>()
     }
 

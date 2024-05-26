@@ -12,3 +12,7 @@ anyhow = "1.0.75"
 bytemuck = "1.16.0"
 bytemuck_derive = "1.6.1"
 regex-syntax = { version = "0.8.3", default-features = false, features = ["std"] }
+
+[[bin]]
+name = "derivre"
+path = "src/derivre.rs"
