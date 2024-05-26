@@ -1,13 +1,14 @@
-use std::{cell::RefCell, collections::HashMap, fmt::Debug};
+use std::fmt::Debug;
 
 use aici_abi::svob::SimpleVob;
 use anyhow::Result;
 
 use crate::{
-    ast::{byte_to_string, byteset_256, byteset_set, byteset_to_string, ExprRef, ExprSet},
+    ast::{ExprRef, ExprSet},
     bytecompress::ByteCompressor,
     deriv::DerivCache,
     hashcons::VecHashMap,
+    pp::PrettyPrinter,
 };
 
 const DEBUG: bool = true;
@@ -57,7 +58,6 @@ impl Debug for StateID {
 pub struct RegexVec {
     cache: DerivCache,
     alphabet_mapping: Vec<u8>,
-    cached_alphabet_names: RefCell<Vec<String>>,
     alphabet_size: usize,
     rx_list: Vec<ExprRef>,
     rx_sets: VecHashMap,
@@ -181,12 +181,17 @@ impl RegexVec {
         assert!(exprset.alphabet_size() == 256);
         let compress = true;
 
-        debug!("rx0: {}", exprset.expr_to_string(rx_list[0], &vec![]));
+        debug!("rx0: {}", exprset.expr_to_string(rx_list[0]));
 
         let ((exprset, rx_list), mapping, alphabet_size) = if compress {
             let mut compressor = ByteCompressor::new();
+            let (mut exprset, rx_list) = compressor.compress(&exprset, rx_list);
+            exprset.set_pp(PrettyPrinter::new(
+                compressor.mapping.clone(),
+                compressor.alphabet_size,
+            ));
             (
-                compressor.compress(&exprset, rx_list),
+                (exprset, rx_list),
                 compressor.mapping,
                 compressor.alphabet_size,
             )
@@ -198,6 +203,8 @@ impl RegexVec {
                 alphabet_size,
             )
         };
+
+        debug!("compressed: {}", exprset.expr_to_string(rx_list[0]));
 
         let num_ast_nodes = exprset.len();
 
@@ -215,12 +222,9 @@ impl RegexVec {
             alphabet_size,
             state_table: vec![],
             state_descs: vec![],
-            cached_alphabet_names: RefCell::new(vec![]),
             num_transitions: 0,
             num_ast_nodes,
         };
-
-        debug!("compressed: {}", r.expr_to_string(r.rx_list[0]));
 
         r.insert_state(vec![]);
         // also append state for the "MISSING"
@@ -232,43 +236,6 @@ impl RegexVec {
             r.state_table.push(StateID::DEAD);
         }
         r
-    }
-
-    fn compute_alphabet_names(&self) {
-        if self.cached_alphabet_names.borrow().is_empty() {
-            let mut r = vec![];
-            let mut bytes_by_alpha_id = HashMap::new();
-            for (b, &alpha_id) in self.alphabet_mapping.iter().enumerate() {
-                bytes_by_alpha_id
-                    .entry(alpha_id)
-                    .or_insert_with(Vec::new)
-                    .push(b as u8);
-            }
-
-            for alpha_id in 0..self.alphabet_size {
-                if let Some(bytes) = bytes_by_alpha_id.get(&(alpha_id as u8)) {
-                    if bytes.len() == 1 {
-                        r.push(byte_to_string(bytes[0]));
-                    } else {
-                        let mut byteset = byteset_256();
-                        for b in bytes {
-                            byteset_set(&mut byteset, *b as usize);
-                        }
-                        r.push(byteset_to_string(&byteset));
-                    }
-                } else {
-                    r.push("?".to_string());
-                }
-            }
-
-            *self.cached_alphabet_names.borrow_mut() = r;
-        }
-    }
-
-    fn expr_to_string(&self, e: ExprRef) -> String {
-        self.compute_alphabet_names();
-        self.exprs()
-            .expr_to_string(e, &self.cached_alphabet_names.borrow())
     }
 
     fn append_state(&mut self, state_desc: StateDesc) {

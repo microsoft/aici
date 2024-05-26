@@ -1,6 +1,5 @@
-use crate::hashcons::VecHashMap;
+use crate::{hashcons::VecHashMap, pp::PrettyPrinter};
 use bytemuck_derive::{Pod, Zeroable};
-use std::fmt::Write as _;
 
 #[derive(Pod, Zeroable, Clone, Copy, Debug, PartialEq, Eq, Hash)]
 #[repr(transparent)]
@@ -185,6 +184,7 @@ pub struct ExprSet {
     exprs: VecHashMap,
     alphabet_size: usize,
     alphabet_words: usize,
+    pp: PrettyPrinter,
 }
 
 impl ExprSet {
@@ -217,7 +217,16 @@ impl ExprSet {
             exprs,
             alphabet_size,
             alphabet_words,
+            pp: PrettyPrinter::new_simple(alphabet_size),
         }
+    }
+
+    pub fn set_pp(&mut self, pp: PrettyPrinter) {
+        self.pp = pp;
+    }
+
+    pub fn expr_to_string(&self, id: ExprRef) -> String {
+        self.pp.expr_to_string(&self, id)
     }
 
     pub fn alphabet_size(&self) -> usize {
@@ -444,105 +453,4 @@ impl ExprSet {
     pub fn is_nullable(&self, id: ExprRef) -> bool {
         self.get_flags(id).is_nullable()
     }
-
-    fn write_exprs(
-        &self,
-        sep: &str,
-        ids: &[ExprRef],
-        alpha_names: &[String],
-        f: &mut String,
-    ) -> std::fmt::Result {
-        write!(f, "(")?;
-        for i in 0..ids.len() {
-            if i > 0 {
-                write!(f, "{}", sep)?;
-            }
-            self.write_expr(ids[i], alpha_names, f)?;
-        }
-        write!(f, ")")
-    }
-
-    pub fn expr_to_string(&self, id: ExprRef, alpha_names: &[String]) -> String {
-        let mut s = String::new();
-        self.write_expr(id, alpha_names, &mut s).unwrap();
-        s
-    }
-
-    fn write_expr(&self, id: ExprRef, alpha_names: &[String], f: &mut String) -> std::fmt::Result {
-        let e = self.get(id);
-        match e {
-            Expr::EmptyString => write!(f, "ε"),
-            Expr::NoMatch => write!(f, "∅"),
-            Expr::Byte(b) if alpha_names.len() == 0 => write!(f, "{}", byte_to_string(b)),
-            Expr::Byte(b) => write!(f, "{}", alpha_names[b as usize]),
-            Expr::ByteSet(s) => {
-                write!(f, "[")?;
-                if alpha_names.len() == 0 {
-                    write!(f, "{}", byteset_to_string(s))?;
-                } else {
-                    for i in 0..self.alphabet_size {
-                        if byteset_contains(s, i) {
-                            write!(f, "{} ", alpha_names[i])?;
-                        }
-                    }
-                }
-                write!(f, "]")
-            }
-            Expr::Not(_, e) => write!(f, "¬({})", e.0),
-            Expr::Repeat(_, e, min, max) => {
-                self.write_exprs("", &[e], alpha_names, f)?;
-                if min == 0 && max == u32::MAX {
-                    write!(f, "*")
-                } else if min == 1 && max == u32::MAX {
-                    write!(f, "+")
-                } else if min == 0 && max == 1 {
-                    write!(f, "?")
-                } else {
-                    write!(f, "{{{}, {}}}", min, max)
-                }
-            }
-            Expr::Concat(_, es) => self.write_exprs(" ", es, alpha_names, f),
-            Expr::Or(_, es) => self.write_exprs(" | ", es, alpha_names, f),
-            Expr::And(_, es) => self.write_exprs(" & ", es, alpha_names, f),
-        }
-    }
-}
-
-pub fn byte_to_string(b: u8) -> String {
-    if b >= 0x7f {
-        format!("x{:02x}", b)
-    } else {
-        let b = b as char;
-        match b {
-            '_' | 'a'..='z' | 'A'..='Z' | '0'..='9' => format!("{}", b),
-            _ => format!("{:?}", b as char),
-        }
-    }
-}
-
-pub fn byteset_to_string(s: &[u32]) -> String {
-    let mut res = String::new();
-    let mut start = None;
-    let mut first = true;
-    for i in 0..=256 {
-        if i <= 0xff && byteset_contains(s, i) {
-            if start.is_none() {
-                start = Some(i);
-            }
-        } else {
-            if let Some(start) = start {
-                if !first {
-                    res.push(';');
-                }
-                first = false;
-                res.push_str(&byte_to_string(start as u8));
-                if i - start > 1 {
-                    res.push('-');
-                    res.push_str(&byte_to_string((i - 1) as u8));
-                }
-            }
-            start = None;
-        }
-    }
-    res
 }
