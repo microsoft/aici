@@ -41,12 +41,20 @@ impl Regex {
         d
     }
 
+    /// Estimate the size of the regex tables in bytes.
+    pub fn bytes(&self) -> usize {
+        self.exprs.bytes()
+            + self.num_states * 256 * std::mem::size_of::<ExprRef>()
+            + self.state_table.len() * std::mem::size_of::<Vec<ExprRef>>()
+    }
+
     pub fn stats(&self) -> String {
         format!(
-            "states: {} (+ {} temp exprs); transitions: {}",
+            "states: {} (+ {} temp exprs); transitions: {}; bytes: {}",
             self.num_states,
             self.exprs.len() - self.num_states,
-            self.num_transitions
+            self.num_transitions,
+            self.bytes()
         )
     }
 
