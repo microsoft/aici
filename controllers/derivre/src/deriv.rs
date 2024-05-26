@@ -1,61 +1,40 @@
+use rustc_hash::FxHashMap;
+
 use crate::ast::{Expr, ExprRef, ExprSet};
 
-pub struct Regex {
+pub struct DerivCache {
     exprs: ExprSet,
-    state_table: Vec<Vec<ExprRef>>,
-    num_states: usize,
-    num_transitions: usize,
+    state_table: FxHashMap<(ExprRef, u8), ExprRef>,
 }
 
-impl Regex {
+impl DerivCache {
     pub fn new() -> Self {
-        Regex {
+        DerivCache {
             exprs: ExprSet::new(),
-            state_table: vec![],
-            num_states: 0,
-            num_transitions: 0,
+            state_table: FxHashMap::default(),
         }
     }
 
     pub fn derivative(&mut self, e: ExprRef, b: u8) -> ExprRef {
-        let idx = e.as_usize();
-
-        if idx >= self.state_table.len() {
-            self.state_table
-                .extend((self.state_table.len()..(idx + 20)).map(|_| vec![]));
-        }
-        let vec = &self.state_table[idx];
-        if vec.len() > 0 && vec[b as usize].is_valid() {
-            return vec[b as usize];
+        let idx = (e, b);
+        if let Some(&d) = self.state_table.get(&idx) {
+            return d;
         }
 
         let d = self.derivative_inner(e, b);
 
-        if self.state_table[idx].len() == 0 {
-            self.state_table[idx] = vec![ExprRef::INVALID; 256];
-            self.num_states += 1;
-        }
-        self.state_table[idx][b as usize] = d;
-        self.num_transitions += 1;
+        self.state_table.insert(idx, d);
 
         d
     }
 
-    /// Estimate the size of the regex tables in bytes.
-    pub fn bytes(&self) -> usize {
-        self.exprs.bytes()
-            + self.num_states * 256 * std::mem::size_of::<ExprRef>()
-            + self.state_table.len() * std::mem::size_of::<Vec<ExprRef>>()
+    pub fn get_expr(&self, e: ExprRef) -> Expr {
+        self.exprs.get(e)
     }
 
-    pub fn stats(&self) -> String {
-        format!(
-            "states: {} (+ {} temp exprs); transitions: {}; bytes: {}",
-            self.num_states,
-            self.exprs.len() - self.num_states,
-            self.num_transitions,
-            self.bytes()
-        )
+    /// Estimate the size of the regex tables in bytes.
+    pub fn bytes(&self) -> usize {
+        self.exprs.bytes() + self.state_table.len() * 8 * std::mem::size_of::<isize>()
     }
 
     fn derivative_inner(&mut self, e: ExprRef, b: u8) -> ExprRef {

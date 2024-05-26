@@ -30,6 +30,12 @@ pub enum Expr<'a> {
     And(ExprFlags, &'a [ExprRef]),
 }
 
+pub enum MatchState {
+    Accept,
+    Reject,
+    Continue,
+}
+
 #[derive(Clone, Copy)]
 pub struct ExprFlags(u32);
 impl ExprFlags {
@@ -101,6 +107,14 @@ impl<'a> Expr<'a> {
 
     pub fn nullable(&self) -> bool {
         self.get_flags().is_nullable()
+    }
+
+    pub fn classify_state(&self) -> MatchState {
+        match self {
+            Expr::NoMatch => MatchState::Reject,
+            _ if self.nullable() => MatchState::Accept,
+            _ => MatchState::Continue,
+        }
     }
 
     fn from_slice(s: &'a [u32]) -> Expr<'a> {

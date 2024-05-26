@@ -1,3 +1,6 @@
+mod deriv;
+mod hashcons;
+
 pub mod ast;
-pub mod deriv;
-pub mod hashcons;
+pub mod regexset;
+

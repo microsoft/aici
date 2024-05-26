@@ -14,7 +14,7 @@ and the [sbre](https://github.com/ieviev/sbre/) implementation of it.
 - [ ] look-aheads, locations
 - [ ] use regex-syntax crate to create Expr
 - [ ] the actual matching of strings
-- [ ] add matcher on a vector of Expr (lexer style)  
+- [x] add matcher on a vector of Expr (lexer style)  
 - [ ] simplification of Byte/ByteSet in And/Or
 - [ ] more simplification rules from sbre
 - [ ] tests
