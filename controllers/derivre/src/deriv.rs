@@ -35,7 +35,7 @@ impl DerivCache {
         debug!(
             "deriv({}) via {} = {}",
             self.exprs.expr_to_string(e),
-            self.exprs.byte_to_string(b),
+            self.exprs.pp().byte_to_string(b),
             self.exprs.expr_to_string(d)
         );
 

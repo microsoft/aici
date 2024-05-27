@@ -41,12 +41,14 @@ fn main() {
     println!("{:?}", rx);
 
     let mut rx = RegexVec::new_single("a[bc]*(de|fg)*x").unwrap();
-
     no_match_many(&mut rx, &["", "a", "b", "axb"]);
     match_many(&mut rx, &["ax", "abdex", "abcbcbcbcdex", "adefgdefgx"]);
     println!("{:?}", rx);
     //
     //
     //
+
+    let mut rx = RegexVec::new_single("a.*b").unwrap();
+    println!("{:?}", rx);
 
 }

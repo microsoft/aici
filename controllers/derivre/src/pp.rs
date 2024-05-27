@@ -1,5 +1,5 @@
+use std::collections::HashMap;
 use std::fmt::Write as _;
-use std::{cell::RefCell, collections::HashMap};
 
 use crate::{
     ast::{byteset_256, byteset_contains, byteset_set, Expr, ExprSet},
@@ -9,63 +9,88 @@ use crate::{
 pub struct PrettyPrinter {
     alphabet_mapping: Vec<u8>,
     alphabet_size: usize,
-    cached_alphabet_names: RefCell<Vec<String>>,
+    has_mapping: bool,
 }
 
 impl PrettyPrinter {
     pub fn expr_to_string(&self, exprset: &ExprSet, id: ExprRef) -> String {
-        self.compute_alphabet_names();
         let mut s = String::new();
         self.write_expr(exprset, id, &mut s).unwrap();
         s
     }
 
     pub fn byte_to_string(&self, b: u8) -> String {
-        self.compute_alphabet_names();
-        self.cached_alphabet_names.borrow()[b as usize].clone()
+        if self.has_mapping {
+            symbol_to_string(b)
+        } else {
+            byte_to_string(b)
+        }
+    }
+
+    pub fn byteset_to_string(&self, s: &[u32]) -> String {
+        if self.has_mapping {
+            symbolset_to_string(s, self.alphabet_size)
+        } else {
+            byteset_to_string(s)
+        }
     }
 
     pub fn new_simple(alphabet_size: usize) -> Self {
-        Self::new((0..=(alphabet_size - 1) as u8).collect(), alphabet_size)
+        PrettyPrinter {
+            alphabet_mapping: (0..=(alphabet_size - 1) as u8).collect(),
+            alphabet_size,
+            has_mapping: false,
+        }
     }
 
     pub fn new(alphabet_mapping: Vec<u8>, alphabet_size: usize) -> Self {
+        let has_mapping = alphabet_size < 256
+            || !alphabet_mapping
+                .iter()
+                .enumerate()
+                .all(|(i, &v)| i == v as usize);
         PrettyPrinter {
             alphabet_mapping,
             alphabet_size,
-            cached_alphabet_names: RefCell::new(vec![]),
+            has_mapping,
         }
     }
 
-    fn compute_alphabet_names(&self) {
-        if self.cached_alphabet_names.borrow().is_empty() {
-            let mut r = vec![];
-            let mut bytes_by_alpha_id = HashMap::new();
-            for (b, &alpha_id) in self.alphabet_mapping.iter().enumerate() {
-                bytes_by_alpha_id
-                    .entry(alpha_id)
-                    .or_insert_with(Vec::new)
-                    .push(b as u8);
-            }
-
-            for alpha_id in 0..self.alphabet_size {
-                if let Some(bytes) = bytes_by_alpha_id.get(&(alpha_id as u8)) {
-                    if bytes.len() == 1 {
-                        r.push(byte_to_string(bytes[0]));
-                    } else {
-                        let mut byteset = byteset_256();
-                        for b in bytes {
-                            byteset_set(&mut byteset, *b as usize);
-                        }
-                        r.push(byteset_to_string(&byteset));
-                    }
-                } else {
-                    r.push("?".to_string());
-                }
-            }
-
-            *self.cached_alphabet_names.borrow_mut() = r;
+    #[allow(dead_code)]
+    pub fn alphabet_info(&self) -> String {
+        if !self.has_mapping {
+            return "".to_string();
         }
+
+        let mut bytes_by_alpha_id = HashMap::new();
+        for (b, &alpha_id) in self.alphabet_mapping.iter().enumerate() {
+            bytes_by_alpha_id
+                .entry(alpha_id)
+                .or_insert_with(Vec::new)
+                .push(b as u8);
+        }
+
+        let mut r = "\n".to_string();
+
+        for alpha_id in 0..self.alphabet_size {
+            r.push_str(&format!("    {}: ", symbol_to_string(alpha_id as u8)));
+            if let Some(bytes) = bytes_by_alpha_id.get(&(alpha_id as u8)) {
+                if bytes.len() == 1 {
+                    r.push_str(&byte_to_string(bytes[0]));
+                } else {
+                    let mut byteset = byteset_256();
+                    for b in bytes {
+                        byteset_set(&mut byteset, *b as usize);
+                    }
+                    r.push_str(&byteset_to_string(&byteset));
+                }
+            } else {
+                r.push_str("???");
+            }
+            r.push('\n');
+        }
+
+        r
     }
 
     fn write_exprs(
@@ -90,17 +115,8 @@ impl PrettyPrinter {
         match e {
             Expr::EmptyString => write!(f, "ε"),
             Expr::NoMatch => write!(f, "∅"),
-            Expr::Byte(b) => write!(f, "{}", self.cached_alphabet_names.borrow()[b as usize]),
-            Expr::ByteSet(s) => {
-                write!(f, "[")?;
-                let alpha_names = self.cached_alphabet_names.borrow();
-                for i in 0..self.alphabet_size {
-                    if byteset_contains(s, i) {
-                        write!(f, "{} ", alpha_names[i])?;
-                    }
-                }
-                write!(f, "]")
-            }
+            Expr::Byte(b) => write!(f, "{}", self.byte_to_string(b)),
+            Expr::ByteSet(s) => write!(f, "[{}]", self.byteset_to_string(s)),
             Expr::Not(_, e) => {
                 write!(f, "¬(")?;
                 self.write_exprs(exprset, "", &[e], f)?;
@@ -125,13 +141,44 @@ impl PrettyPrinter {
     }
 }
 
+pub fn symbol_to_string(b: u8) -> String {
+    format!("s{}", b)
+}
+
+pub fn symbolset_to_string(s: &[u32], alpha_size: usize) -> String {
+    let mut res = String::new();
+    let mut start = None;
+    let mut first = true;
+    for i in 0..=alpha_size {
+        if i < alpha_size && byteset_contains(s, i) {
+            if start.is_none() {
+                start = Some(i);
+            }
+        } else {
+            if let Some(start) = start {
+                if !first {
+                    res.push(';');
+                }
+                first = false;
+                res.push_str(&symbol_to_string(start as u8));
+                if i - start > 1 {
+                    res.push('-');
+                    res.push_str(&symbol_to_string((i - 1) as u8));
+                }
+            }
+            start = None;
+        }
+    }
+    res
+}
+
 pub fn byte_to_string(b: u8) -> String {
-    if b >= 0x7f {
-        format!("x{:02x}", b)
+    if b < 0x20 || b >= 0x7f {
+        format!("{:02X}", b)
     } else {
         let b = b as char;
         match b {
-            '_' | 'a'..='z' | 'A'..='Z' | '0'..='9' => format!("{}", b),
+            // '_' | 'a'..='z' | 'A'..='Z' | '0'..='9' => format!("{}", b),
             _ => format!("{:?}", b as char),
         }
     }

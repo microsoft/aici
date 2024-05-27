@@ -181,7 +181,7 @@ impl RegexVec {
         assert!(exprset.alphabet_size() == 256);
         let compress = true;
 
-        debug!("rx0: {}", exprset.expr_to_string(rx_list[0]));
+        debug!("rx0: {}", exprset.expr_to_string_with_info(rx_list[0]));
 
         let ((exprset, rx_list), mapping, alphabet_size) = if compress {
             let mut compressor = ByteCompressor::new();
@@ -204,7 +204,10 @@ impl RegexVec {
             )
         };
 
-        debug!("compressed: {}", exprset.expr_to_string(rx_list[0]));
+        debug!(
+            "compressed: {}",
+            exprset.expr_to_string_with_info(rx_list[0])
+        );
 
         let num_ast_nodes = exprset.len();
 

@@ -233,12 +233,18 @@ impl ExprSet {
         self.pp = pp;
     }
 
+    pub fn pp(&self) -> &PrettyPrinter {
+        &self.pp
+    }
+
     pub fn expr_to_string(&self, id: ExprRef) -> String {
         self.pp.expr_to_string(&self, id)
     }
 
-    pub fn byte_to_string(&self, b: u8) -> String {
-        self.pp.byte_to_string(b)
+    pub fn expr_to_string_with_info(&self, id: ExprRef) -> String {
+        let mut r = self.expr_to_string(id);
+        r.push_str(&self.pp.alphabet_info());
+        r
     }
 
     pub fn alphabet_size(&self) -> usize {
