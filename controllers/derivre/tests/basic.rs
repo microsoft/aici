@@ -31,6 +31,17 @@ fn no_match_many(rx: &mut RegexVec, ss: &[&str]) {
     }
 }
 
+fn look(rx: &mut RegexVec, s: &str, exp: Option<usize>) {
+    let res = rx.lookahead_len(s);
+    if res == exp {
+    } else {
+        panic!(
+            "lookahead len error for: {:?}; expected {:?}, got {:?}",
+            s, exp, res
+        )
+    }
+}
+
 #[test]
 fn test_basic() {
     let mut rx = RegexVec::new_single("a[bc](de|fg)").unwrap();
@@ -117,4 +128,30 @@ fn test_unicode() {
     let mut rx = RegexVec::new_single("a.*b").unwrap();
     match_many(&mut rx, &["ab", "a123b", "a \r\t123b"]);
     no_match_many(&mut rx, &["a", "a\nb", "a1\n2b"]);
+}
+
+#[test]
+fn test_lookaround() {
+    let mut rx = RegexVec::new_single("[ab]*(?P<stop>xx)").unwrap();
+    match_(&mut rx, "axx");
+    look(&mut rx, "axx", Some(2));
+    look(&mut rx, "ax", None);
+
+    let mut rx = RegexVec::new_single("[ab]*(?P<stop>x*y)").unwrap();
+    look(&mut rx, "axy", Some(2));
+    look(&mut rx, "ay", Some(1));
+    look(&mut rx, "axxy", Some(3));
+    look(&mut rx, "aaaxxy", Some(3));
+    look(&mut rx, "abaxxy", Some(3));
+    no_match_many(&mut rx, &["ax", "bx", "aaayy", "axb", "axyxx"]);
+
+    let mut rx = RegexVec::new_single("[abx]*(?P<stop>[xq]*y)").unwrap();
+    look(&mut rx, "axxxxxxxy", Some(1));
+    look(&mut rx, "axxxxxxxqy", Some(2));
+    look(&mut rx, "axxxxxxxqqqy", Some(4));
+
+    let mut rx = RegexVec::new_single("(f|foob)(?P<stop>o*y)").unwrap();
+    look(&mut rx, "fooby", Some(1));
+    look(&mut rx, "fooy", Some(3));
+    look(&mut rx, "fy", Some(1));
 }

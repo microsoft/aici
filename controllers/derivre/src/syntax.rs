@@ -153,10 +153,15 @@ impl ExprSet {
                     // ignoring greedy flag
                     self.mk_repeat(node.args[0], r.min, r.max.unwrap_or(u32::MAX))
                 }
-                HirKind::Capture(_) => {
+                HirKind::Capture(c) => {
                     assert!(node.args.len() == 1);
-                    // ignore capture idx/name
-                    node.args[0]
+                    // use (?P<stop>R) as syntax for lookahead
+                    if c.name.as_deref() == Some("stop") {
+                        self.mk_lookahead(node.args[0], 0)
+                    } else {
+                        // ignore capture idx/name
+                        node.args[0]
+                    }
                 }
                 HirKind::Concat(args) => {
                     assert!(args.len() == node.args.len());

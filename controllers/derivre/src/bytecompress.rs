@@ -67,6 +67,7 @@ impl ByteCompressor {
                 }
                 Expr::EmptyString => ExprRef::EMPTY_STRING,
                 Expr::NoMatch => ExprRef::NO_MATCH,
+                Expr::Lookahead(_, _, x) => trg.mk_lookahead(args[0], x),
                 Expr::Not(_, _) => trg.mk_not(args[0]),
                 Expr::Repeat(_, _, x, y) => trg.mk_repeat(args[0], x, y),
                 Expr::Concat(_, _) => trg.mk_concat(args),

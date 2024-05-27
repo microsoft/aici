@@ -31,11 +31,23 @@ fn no_match_many(rx: &mut RegexVec, ss: &[&str]) {
     }
 }
 
+fn look(rx: &mut RegexVec, s: &str, exp: Option<usize>) {
+    let res = rx.lookahead_len(s);
+    if res == exp {
+    } else {
+        panic!(
+            "lookahead len error for: {:?}; expected {:?}, got {:?}",
+            s, exp, res
+        )
+    }
+}
+
 fn main() {
     let mut rx = RegexVec::new_single("a[bc](de|fg)").unwrap();
     println!("{:?}", rx);
     no_match(&mut rx, "abd");
     match_(&mut rx, "abde");
+    look(&mut rx, "abde", Some(0));
 
     no_match(&mut rx, "abdea");
     println!("{:?}", rx);
@@ -47,8 +59,4 @@ fn main() {
     //
     //
     //
-
-    let mut rx = RegexVec::new_single("a.*b").unwrap();
-    println!("{:?}", rx);
-
 }

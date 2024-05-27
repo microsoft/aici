@@ -100,6 +100,14 @@ impl DerivCache {
                 }
                 self.exprs.mk_or(or_branches)
             }
+            Expr::Lookahead(_, e, offset) => {
+                if e == ExprRef::EMPTY_STRING {
+                    ExprRef::NO_MATCH
+                } else {
+                    let inner = self.derivative(e, b);
+                    self.exprs.mk_lookahead(inner, offset + 1)
+                }
+            }
         }
     }
 }

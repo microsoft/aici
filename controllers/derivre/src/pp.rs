@@ -117,6 +117,11 @@ impl PrettyPrinter {
             Expr::NoMatch => write!(f, "∅"),
             Expr::Byte(b) => write!(f, "{}", self.byte_to_string(b)),
             Expr::ByteSet(s) => write!(f, "[{}]", self.byteset_to_string(s)),
+            Expr::Lookahead(_, e, offset) => {
+                write!(f, "(?[+{offset}]=")?;
+                self.write_exprs(exprset, "", &[e], f)?;
+                write!(f, ")")
+            }
             Expr::Not(_, e) => {
                 write!(f, "(¬")?;
                 self.write_exprs(exprset, "", &[e], f)?;

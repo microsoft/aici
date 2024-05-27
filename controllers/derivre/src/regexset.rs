@@ -117,6 +117,24 @@ impl RegexVec {
         &self.state_descs[state.as_usize()]
     }
 
+    pub fn lookahead_len_for_state(&self, state: StateID) -> Option<usize> {
+        let state_desc = self.state_desc(state);
+        let idx = state_desc.lowest_accepting;
+        if idx < 0 {
+            return None;
+        }
+        let mut res = None;
+
+        Self::iter_state(&self.rx_sets, state, |(idx2, e)| {
+            if res.is_none() && self.exprs().is_nullable(e) {
+                assert!(idx == idx2 as isize);
+                res = Some(self.exprs().lookahead_len(e).unwrap_or(0));
+            }
+        });
+
+        res
+    }
+
     pub fn transition(&mut self, state: StateID, b: u8) -> StateID {
         let mapped = self.alphabet_mapping[b as usize] as usize;
         let idx = state.as_usize() * self.alphabet_size + mapped;
@@ -140,6 +158,10 @@ impl RegexVec {
     }
 
     pub fn is_match(&mut self, text: &str) -> bool {
+        self.lookahead_len(text).is_some()
+    }
+
+    pub fn lookahead_len(&mut self, text: &str) -> Option<usize> {
         let selected = SimpleVob::alloc(self.rx_list.len());
         let mut state = self.initial_state(&selected.negated());
         for b in text.bytes() {
@@ -147,10 +169,10 @@ impl RegexVec {
             debug!("b: {:?} --{:?}--> {:?}", state, b as char, new_state);
             state = new_state;
             if state == StateID::DEAD {
-                return false;
+                return None;
             }
         }
-        self.state_desc(state).is_accepting()
+        self.lookahead_len_for_state(state)
     }
 
     /// Estimate the size of the regex tables in bytes.

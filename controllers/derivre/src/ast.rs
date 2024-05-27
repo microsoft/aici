@@ -34,6 +34,7 @@ pub enum Expr<'a> {
     NoMatch,
     Byte(u8),
     ByteSet(&'a [u32]),
+    Lookahead(ExprFlags, ExprRef, u32),
     Not(ExprFlags, ExprRef),
     Repeat(ExprFlags, ExprRef, u32, u32),
     Concat(ExprFlags, &'a [ExprRef]),
@@ -71,11 +72,12 @@ enum ExprTag {
     NoMatch,
     Byte,
     ByteSet,
+    Lookahead,
     Not,
     Repeat,
     Concat,
     Or,
-    And,
+    And, // has to be last, see below
 }
 
 impl ExprTag {
@@ -133,6 +135,7 @@ impl<'a> Expr<'a> {
         match self {
             Expr::EmptyString => ExprFlags::NULLABLE,
             Expr::NoMatch | Expr::Byte(_) | Expr::ByteSet(_) => ExprFlags::ZERO,
+            Expr::Lookahead(f, _, _) => *f,
             Expr::Not(f, _) => *f,
             Expr::Repeat(f, _, _, _) => *f,
             Expr::Concat(f, _) => *f,
@@ -153,6 +156,7 @@ impl<'a> Expr<'a> {
             ExprTag::NoMatch => Expr::NoMatch,
             ExprTag::Byte => Expr::Byte(s[1] as u8),
             ExprTag::ByteSet => Expr::ByteSet(&s[1..]),
+            ExprTag::Lookahead => Expr::Lookahead(flags, ExprRef::new(s[1]), s[2]),
             ExprTag::Not => Expr::Not(flags, ExprRef::new(s[1])),
             ExprTag::Repeat => Expr::Repeat(flags, ExprRef::new(s[1]), s[2], s[3]),
             ExprTag::Concat => Expr::Concat(flags, bytemuck::cast_slice(&s[1..])),
@@ -179,6 +183,7 @@ impl<'a> Expr<'a> {
                 v.extend_from_slice(s);
                 v
             }
+            Expr::Lookahead(flags, e, n) => vec![flags.encode(ExprTag::Lookahead), e.0, *n],
             Expr::Not(flags, e) => vec![flags.encode(ExprTag::Not), e.0],
             Expr::Repeat(flags, e, a, b) => vec![flags.encode(ExprTag::Repeat), e.0, *a, *b],
             Expr::Concat(flags, es) => nary_serialize(flags.encode(ExprTag::Concat), es),
@@ -348,6 +353,7 @@ impl ExprSet {
         let mut prev = ExprRef::NO_MATCH;
         let mut nullable = false;
         let mut num_bytes = 0;
+        let mut num_lookahead = 0;
         for idx in 0..args.len() {
             let arg = args[idx];
             if arg == prev || arg == ExprRef::NO_MATCH {
@@ -359,6 +365,9 @@ impl ExprSet {
             match self.get(arg) {
                 Expr::Byte(_) | Expr::ByteSet(_) => {
                     num_bytes += 1;
+                }
+                Expr::Lookahead(_, _, _) => {
+                    num_lookahead += 1;
                 }
                 _ => {}
             }
@@ -390,6 +399,33 @@ impl ExprSet {
             });
             let node = self.mk_byte_set(&byteset);
             add_to_sorted(&mut args, node);
+        }
+
+        if num_lookahead > 1 {
+            let mut lookahead = vec![];
+            args.retain(|&e| {
+                let n = self.get(e);
+                match n {
+                    Expr::Lookahead(_, inner, n) => {
+                        lookahead.push((e, inner, n));
+                        false
+                    }
+                    _ => true,
+                }
+            });
+            lookahead.sort_by_key(|&(_, e, n)| (e.0, n));
+
+            let mut prev = ExprRef::INVALID;
+            for idx in 0..lookahead.len() {
+                let (l, inner, _) = lookahead[idx];
+                if inner == prev {
+                    continue;
+                }
+                prev = inner;
+                args.push(l);
+            }
+
+            args.sort_by_key(|&e| e.0);
         }
 
         if args.len() == 0 {
@@ -480,12 +516,43 @@ impl ExprSet {
         }
     }
 
+    pub fn mk_lookahead(&mut self, mut e: ExprRef, offset: u32) -> ExprRef {
+        if e == ExprRef::NO_MATCH {
+            return ExprRef::NO_MATCH;
+        }
+
+        let flags = if self.is_nullable(e) {
+            e = ExprRef::EMPTY_STRING;
+            ExprFlags::NULLABLE
+        } else {
+            ExprFlags::ZERO
+        };
+        self.mk(Expr::Lookahead(flags, e, offset))
+    }
+
     fn mk(&mut self, e: Expr) -> ExprRef {
         ExprRef(self.exprs.insert(e.serialize()))
     }
 
     pub fn get(&self, id: ExprRef) -> Expr {
         Expr::from_slice(self.exprs.get(id.0).unwrap())
+    }
+
+    fn lookahead_len_inner(&self, e: ExprRef) -> Option<usize> {
+        match self.get(e) {
+            Expr::Lookahead(_, ExprRef::EMPTY_STRING, n) => Some(n as usize),
+            _ => None,
+        }
+    }
+
+    pub fn lookahead_len(&self, e: ExprRef) -> Option<usize> {
+        match self.get(e) {
+            Expr::Or(_, args) => args
+                .iter()
+                .filter_map(|&arg| self.lookahead_len_inner(arg))
+                .min(),
+            _ => self.lookahead_len_inner(e),
+        }
     }
 
     fn get_flags(&self, id: ExprRef) -> ExprFlags {
@@ -507,7 +574,7 @@ impl ExprSet {
         let tag = ExprTag::from_u8((s[0] & 0xff) as u8);
         match tag {
             ExprTag::Concat | ExprTag::Or | ExprTag::And => bytemuck::cast_slice(&s[1..]),
-            ExprTag::Not | ExprTag::Repeat => bytemuck::cast_slice(&s[1..2]),
+            ExprTag::Not | ExprTag::Repeat | ExprTag::Lookahead => bytemuck::cast_slice(&s[1..2]),
             ExprTag::EmptyString | ExprTag::NoMatch | ExprTag::Byte | ExprTag::ByteSet => &[],
         }
     }
