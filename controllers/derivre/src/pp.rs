@@ -118,7 +118,7 @@ impl PrettyPrinter {
             Expr::Byte(b) => write!(f, "{}", self.byte_to_string(b)),
             Expr::ByteSet(s) => write!(f, "[{}]", self.byteset_to_string(s)),
             Expr::Not(_, e) => {
-                write!(f, "¬(")?;
+                write!(f, "(¬")?;
                 self.write_exprs(exprset, "", &[e], f)?;
                 write!(f, ")")
             }
@@ -149,8 +149,10 @@ pub fn symbolset_to_string(s: &[u32], alpha_size: usize) -> String {
     let mut res = String::new();
     let mut start = None;
     let mut first = true;
+    let mut num_set = 0;
     for i in 0..=alpha_size {
         if i < alpha_size && byteset_contains(s, i) {
+            num_set += 1;
             if start.is_none() {
                 start = Some(i);
             }
@@ -168,6 +170,9 @@ pub fn symbolset_to_string(s: &[u32], alpha_size: usize) -> String {
             }
             start = None;
         }
+    }
+    if num_set == alpha_size {
+        res = "_".to_string();
     }
     res
 }

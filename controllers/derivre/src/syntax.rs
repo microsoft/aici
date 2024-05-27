@@ -4,6 +4,8 @@ use regex_syntax::{
     Parser,
 };
 
+// TODO possibly use Utf8Sequences from regex-syntax crate
+
 use crate::{
     ast::{byteset_256, byteset_from_range, byteset_set, ExprSet},
     ExprRef,
@@ -24,10 +26,6 @@ fn utf8_len_to_max(len: usize) -> u32 {
         4 => 0x10FFFF,
         _ => unreachable!(),
     }
-}
-
-fn num_chars(u: &ClassUnicode) -> usize {
-    u.ranges().iter().map(|r| r.len()).sum()
 }
 
 impl ExprSet {
@@ -71,20 +69,7 @@ impl ExprSet {
         }
     }
 
-    fn handle_unicode_ranges(&mut self,  u: &ClassUnicode) -> ExprRef {
-        let negate_limit = 100;
-        let mut negate = false;
-        let mut u = u.clone();
-
-        if num_chars(&u) > negate_limit {
-            let mut u_neg = u.clone();
-            u_neg.negate();
-            if num_chars(&u_neg) < negate_limit {
-                u = u_neg;
-                negate = true;
-            }
-        }
-
+    fn handle_unicode_ranges(&mut self, u: &ClassUnicode) -> ExprRef {
         let mut alternatives = Vec::new();
         let mut b_start = [0; 4];
         let mut b_end = [0; 4];
@@ -113,7 +98,6 @@ impl ExprSet {
         }
 
         let r = self.mk_or(alternatives);
-        let r = if negate { self.mk_not(r) } else { r };
         // println!("result: {}", self.expr_to_string(r));
         r
     }

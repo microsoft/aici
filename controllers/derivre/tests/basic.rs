@@ -109,4 +109,12 @@ fn test_unicode() {
         ],
     );
     no_match_many(&mut rx, &["xcy", "xªy", "x\u{07fe}y", "x\u{0802}y"]);
+
+    let mut rx = RegexVec::new_single(".").unwrap();
+    no_match(&mut rx, "\n");
+    match_many(&mut rx, &["a", "1", " ", "\r"]);
+
+    let mut rx = RegexVec::new_single("a.*b").unwrap();
+    match_many(&mut rx, &["ab", "a123b", "a \r\t123b"]);
+    no_match_many(&mut rx, &["a", "a\nb", "a1\n2b"]);
 }
