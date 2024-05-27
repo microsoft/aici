@@ -83,7 +83,7 @@ impl ByteCompressor {
         self.mapping = vec![INVALID_MAPPING; exprset.alphabet_size()];
 
         let mut todo = rx_list.to_vec();
-        let mut visited = SimpleVob::alloc(rx_list.len());
+        let mut visited = SimpleVob::alloc(exprset.len());
         while let Some(e) = todo.pop() {
             if visited.get(e.as_usize()) {
                 continue;
