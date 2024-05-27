@@ -26,6 +26,10 @@ fn utf8_len_to_max(len: usize) -> u32 {
     }
 }
 
+fn num_chars(u: &ClassUnicode) -> usize {
+    u.ranges().iter().map(|r| r.len()).sum()
+}
+
 impl ExprSet {
     const UTF8_CONT_START: u8 = 0b10_00_0000;
     const UTF8_CONT_END: u8 = 0b10_11_1111;
@@ -67,13 +71,27 @@ impl ExprSet {
         }
     }
 
-    fn handle_unicode_ranges(&mut self, u: &ClassUnicode) -> ExprRef {
+    fn handle_unicode_ranges(&mut self,  u: &ClassUnicode) -> ExprRef {
+        let negate_limit = 100;
+        let mut negate = false;
+        let mut u = u.clone();
+
+        if num_chars(&u) > negate_limit {
+            let mut u_neg = u.clone();
+            u_neg.negate();
+            if num_chars(&u_neg) < negate_limit {
+                u = u_neg;
+                negate = true;
+            }
+        }
+
         let mut alternatives = Vec::new();
         let mut b_start = [0; 4];
         let mut b_end = [0; 4];
         let mut b_tmp = [0; 4];
         let mut b_tmp2 = [0; 4];
         for range in u.ranges() {
+            // println!("   range: {:?}", range);
             let start = range.start();
             let end = range.end();
             assert!(start <= end);
@@ -94,7 +112,10 @@ impl ExprSet {
             alternatives.push(self.utf8_range(start_bytes, end_bytes));
         }
 
-        self.mk_or(alternatives)
+        let r = self.mk_or(alternatives);
+        let r = if negate { self.mk_not(r) } else { r };
+        // println!("result: {}", self.expr_to_string(r));
+        r
     }
 
     fn from_ast(&mut self, ast: &Hir) -> Result<ExprRef> {

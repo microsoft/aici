@@ -1,3 +1,5 @@
+// TODO use hashbrown::HashTable to avoid Rc<>
+
 use std::{collections::HashMap, rc::Rc};
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
