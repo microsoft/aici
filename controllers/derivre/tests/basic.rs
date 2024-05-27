@@ -61,6 +61,17 @@ fn test_basic() {
     no_match_many(&mut rx, &["cc", "dd", "ac", "ac", "bc"]);
 
     println!("{:?}", rx);
+
+    let mut rx = RegexVec::new_single("ab{3,5}c").unwrap();
+    match_many(&mut rx, &["abbbc", "abbbbc", "abbbbbc"]);
+    no_match_many(
+        &mut rx,
+        &["", "ab", "abc", "abbc", "abbb", "abbbx", "abbbbbbc"],
+    );
+
+    let mut rx = RegexVec::new_single("x*A[0-9]{5}").unwrap();
+    match_many(&mut rx, &["A12345", "xxxxxA12345", "xA12345"]);
+    no_match_many(&mut rx, &["A1234", "xxxxxA123456", "xA123457"]);
 }
 
 #[test]
@@ -99,4 +110,3 @@ fn test_unicode() {
     );
     no_match_many(&mut rx, &["xcy", "xªy", "x\u{07fe}y", "x\u{0802}y"]);
 }
-

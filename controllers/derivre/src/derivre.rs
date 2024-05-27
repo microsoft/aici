@@ -45,4 +45,8 @@ fn main() {
     no_match_many(&mut rx, &["", "a", "b", "axb"]);
     match_many(&mut rx, &["ax", "abdex", "abcbcbcbcdex", "adefgdefgx"]);
     println!("{:?}", rx);
+    //
+    //
+    //
+
 }

@@ -277,12 +277,13 @@ impl ExprSet {
             } else {
                 ExprRef::NO_MATCH
             }
-        } else if min == max {
-            ExprRef::EMPTY_STRING
-        } else if min + 1 == max {
-            e
         } else if min > max {
-            ExprRef::NO_MATCH
+            panic!();
+            // ExprRef::NO_MATCH
+        } else if max == 0 {
+            ExprRef::EMPTY_STRING
+        } else if min == 1 && max == 1 {
+            e
         } else {
             let min = if self.is_nullable(e) { 0 } else { min };
             let flags = ExprFlags::from_nullable(min == 0);
