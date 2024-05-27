@@ -270,10 +270,22 @@ impl ExprSet {
 
     pub fn mk_byte_set(&mut self, s: &[u32]) -> ExprRef {
         assert!(s.len() == self.alphabet_words);
-        if s.iter().all(|&x| x == 0) {
-            return ExprRef::NO_MATCH;
+        let mut num_set = 0;
+        for x in s.iter() {
+            num_set += x.count_ones();
         }
-        self.mk(Expr::ByteSet(s))
+        if num_set == 0 {
+            ExprRef::NO_MATCH
+        } else if num_set == 1 {
+            for i in 0..self.alphabet_size {
+                if byteset_contains(s, i) {
+                    return self.mk_byte(i as u8);
+                }
+            }
+            unreachable!()
+        } else {
+            self.mk(Expr::ByteSet(s))
+        }
     }
 
     pub fn mk_repeat(&mut self, e: ExprRef, min: u32, max: u32) -> ExprRef {
