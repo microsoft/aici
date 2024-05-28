@@ -1,6 +1,7 @@
 mod deriv;
 mod hashcons;
 
+mod simplify;
 mod ast;
 mod bytecompress;
 mod regexset;

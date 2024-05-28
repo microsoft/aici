@@ -54,5 +54,5 @@ You can also run several regexes at once, [see sample](./tests/sample_multi.rs).
 - [ ] build trie from alternative over many strings in re parser
 - [x] use hashbrown raw table for VecHashMap
 - [ ] more simplification rules from sbre
-- [ ] tests
+- [x] tests
 - [ ] benchmarks
