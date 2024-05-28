@@ -31,11 +31,13 @@ impl VecHashCons {
     pub fn new() -> Self {
         VecHashCons {
             hasher: RandomState::new(),
-            backing: vec![42],
+            backing: Vec::new(),
             elements: Vec::new(),
             table: HashTable::new(),
+            // we start at 4, so there is no implied initial start_insert()
+            // but data is still aligned if needed
             curr_elt: Element {
-                backing_start: 1,
+                backing_start: 4,
                 backing_end: 0,
             },
         }
@@ -76,30 +78,31 @@ impl VecHashCons {
         self.curr_elt.backing_end = self.curr_elt.backing_start;
     }
 
+    #[inline(always)]
+    fn ensure_size(&mut self) {
+        assert!(self.curr_elt.backing_end >= self.curr_elt.backing_start);
+        let size = self.curr_elt.backing_end as usize;
+        if self.backing.len() < size {
+            self.backing.resize(size + 128, 0);
+        }
+    }
+
     /// Add an element to the vector being inserted.
     /// Requires start_insert() to have been called.
     #[inline(always)]
     pub fn push_u32(&mut self, head: u32) {
-        assert!(self.curr_elt.backing_end >= self.curr_elt.backing_start);
         self.curr_elt.backing_end += 1;
-        if self.backing.len() < self.curr_elt.backing_end as usize {
-            self.backing.push(head);
-        } else {
-            self.backing[self.curr_elt.backing_end as usize - 1] = head;
-        }
+        self.ensure_size();
+        self.backing[self.curr_elt.backing_end as usize - 1] = head;
     }
 
     /// Add a slice to the vector being inserted.
     /// Requires start_insert() to have been called.
     #[inline(always)]
     pub fn push_slice(&mut self, elts: &[u32]) {
-        assert!(self.curr_elt.backing_end >= self.curr_elt.backing_start);
         let slice_start = self.curr_elt.backing_end;
         self.curr_elt.backing_end += elts.len() as u32;
-        if self.backing.len() < self.curr_elt.backing_end as usize {
-            self.backing
-                .resize(self.curr_elt.backing_end as usize + 1000, 0);
-        }
+        self.ensure_size();
         self.backing[slice_start as usize..self.curr_elt.backing_end as usize]
             .copy_from_slice(elts);
     }
