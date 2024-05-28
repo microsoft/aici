@@ -1,5 +1,3 @@
-// TODO use hashbrown::HashTable to avoid Rc<>
-
 use ahash::RandomState;
 use hashbrown::hash_table::Entry;
 
@@ -34,14 +32,16 @@ impl Default for VecHashCons {
 }
 
 impl VecHashCons {
+    /// Create a new hashcons.
+    /// The first element (id 0) is always the empty vector.
     pub fn new() -> Self {
         let mut r = VecHashCons {
             hasher: RandomState::new(),
-            backing: Vec::new(),
+            backing: vec![42],
             elements: Vec::new(),
             table: HashTable::new(),
             curr_elt: Element {
-                backing_start: 0,
+                backing_start: 1,
                 backing_end: 0,
             },
         };
