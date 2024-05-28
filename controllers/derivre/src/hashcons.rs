@@ -17,6 +17,7 @@ impl Element {
 
 /// A hashconsing data structure for vectors of u32.
 /// Given a vector, it stores it only once and returns a unique id.
+/// The ids are consecutive and start at 0.
 pub struct VecHashCons {
     hasher: RandomState,
     backing: Vec<u32>,
@@ -25,17 +26,10 @@ pub struct VecHashCons {
     curr_elt: Element,
 }
 
-impl Default for VecHashCons {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
 impl VecHashCons {
     /// Create a new hashcons.
-    /// The first element (id 0) is always the empty vector.
     pub fn new() -> Self {
-        let mut r = VecHashCons {
+        VecHashCons {
             hasher: RandomState::new(),
             backing: vec![42],
             elements: Vec::new(),
@@ -44,9 +38,7 @@ impl VecHashCons {
                 backing_start: 1,
                 backing_end: 0,
             },
-        };
-        r.insert(&[]);
-        r
+        }
     }
 
     /// Insert a given vector and return its unique id.
@@ -73,7 +65,7 @@ impl VecHashCons {
         self.backing.len() * std::mem::size_of::<u32>()
             + self.elements.len() * (5 + std::mem::size_of::<Element>())
     }
-    
+
     // Incremental, zero-copy insertion:
 
     /// Start insertion process for a vector.

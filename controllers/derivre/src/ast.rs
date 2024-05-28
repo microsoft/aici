@@ -214,6 +214,8 @@ impl ExprSet {
             pp: PrettyPrinter::new_simple(alphabet_size),
         };
 
+        let id = r.exprs.insert(&[]);
+        assert!(id == 0);
         let inserts = vec![
             (r.mk(Expr::EmptyString), ExprRef::EMPTY_STRING),
             (r.mk(Expr::NoMatch), ExprRef::NO_MATCH),
