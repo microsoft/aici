@@ -19,7 +19,7 @@ impl Element {
 
 /// A hashconsing data structure for vectors of u32.
 /// Given a vector, it stores it only once and returns a unique id.
-pub struct VecHashMap {
+pub struct VecHashCons {
     hasher: RandomState,
     backing: Vec<u32>,
     elements: Vec<Element>,
@@ -27,15 +27,15 @@ pub struct VecHashMap {
     curr_elt: Element,
 }
 
-impl Default for VecHashMap {
+impl Default for VecHashCons {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl VecHashMap {
+impl VecHashCons {
     pub fn new() -> Self {
-        let mut r = VecHashMap {
+        let mut r = VecHashCons {
             hasher: RandomState::new(),
             backing: Vec::new(),
             elements: Vec::new(),

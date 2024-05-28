@@ -7,7 +7,7 @@ use crate::{
     ast::{ExprRef, ExprSet},
     bytecompress::ByteCompressor,
     deriv::DerivCache,
-    hashcons::VecHashMap,
+    hashcons::VecHashCons,
     pp::PrettyPrinter,
 };
 
@@ -60,7 +60,7 @@ pub struct RegexVec {
     alphabet_mapping: Vec<u8>,
     alphabet_size: usize,
     rx_list: Vec<ExprRef>,
-    rx_sets: VecHashMap,
+    rx_sets: VecHashCons,
     state_table: Vec<StateID>,
     state_descs: Vec<StateDesc>,
     num_transitions: usize,
@@ -233,7 +233,7 @@ impl RegexVec {
 
         let num_ast_nodes = exprset.len();
 
-        let mut rx_sets = VecHashMap::new();
+        let mut rx_sets = VecHashCons::new();
         let id = rx_sets.insert(&[]);
         assert!(id == StateID::DEAD.as_u32());
         let id = rx_sets.insert(&[0]);
@@ -282,7 +282,7 @@ impl RegexVec {
         id
     }
 
-    fn iter_state(rx_sets: &VecHashMap, state: StateID, mut f: impl FnMut((usize, ExprRef))) {
+    fn iter_state(rx_sets: &VecHashCons, state: StateID, mut f: impl FnMut((usize, ExprRef))) {
         let lst = rx_sets.get(state.as_u32());
         for idx in (0..lst.len()).step_by(2) {
             f((lst[idx] as usize, ExprRef::new(lst[idx + 1])));

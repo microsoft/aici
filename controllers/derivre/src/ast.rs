@@ -1,4 +1,4 @@
-use crate::{hashcons::VecHashMap, pp::PrettyPrinter};
+use crate::{hashcons::VecHashCons, pp::PrettyPrinter};
 use bytemuck_derive::{Pod, Zeroable};
 
 #[derive(Pod, Zeroable, Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
@@ -165,9 +165,9 @@ impl<'a> Expr<'a> {
         }
     }
 
-    fn serialize(&self, trg: &mut VecHashMap) {
+    fn serialize(&self, trg: &mut VecHashCons) {
         #[inline(always)]
-        fn nary_serialize(trg: &mut VecHashMap, tag: u32, es: &[ExprRef]) {
+        fn nary_serialize(trg: &mut VecHashCons, tag: u32, es: &[ExprRef]) {
             trg.push_u32(tag);
             trg.push_slice(bytemuck::cast_slice(es));
         }
@@ -197,7 +197,7 @@ impl<'a> Expr<'a> {
 }
 
 pub struct ExprSet {
-    exprs: VecHashMap,
+    exprs: VecHashCons,
     alphabet_size: usize,
     alphabet_words: usize,
     pp: PrettyPrinter,
@@ -205,7 +205,7 @@ pub struct ExprSet {
 
 impl ExprSet {
     pub fn new(alphabet_size: usize) -> Self {
-        let exprs = VecHashMap::new();
+        let exprs = VecHashCons::new();
         let alphabet_words = (alphabet_size + 31) / 32;
         let mut r = ExprSet {
             exprs,
