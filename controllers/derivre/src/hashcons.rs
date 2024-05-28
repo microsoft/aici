@@ -52,6 +52,7 @@ impl VecHashMap {
         self.curr_elt.backing_end = self.curr_elt.backing_start;
     }
 
+    #[inline(always)]
     pub fn insert_u32(&mut self, head: u32) {
         assert!(self.curr_elt.backing_end >= self.curr_elt.backing_start);
         self.curr_elt.backing_end += 1;
@@ -62,12 +63,13 @@ impl VecHashMap {
         }
     }
 
+    #[inline(always)]
     pub fn insert_slice(&mut self, elts: &[u32]) {
         assert!(self.curr_elt.backing_end >= self.curr_elt.backing_start);
         let slice_start = self.curr_elt.backing_end;
         self.curr_elt.backing_end += elts.len() as u32;
         if self.backing.len() < self.curr_elt.backing_end as usize {
-            self.backing.resize(self.curr_elt.backing_end as usize, 0);
+            self.backing.resize(self.curr_elt.backing_end as usize + 1000, 0);
         }
         self.backing[slice_start as usize..self.curr_elt.backing_end as usize]
             .copy_from_slice(elts);

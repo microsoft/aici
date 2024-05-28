@@ -165,30 +165,33 @@ impl<'a> Expr<'a> {
         }
     }
 
-    fn serialize(&self) -> Vec<u32> {
-        fn nary_serialize(tag: u32, es: &[ExprRef]) -> Vec<u32> {
-            let mut v = Vec::with_capacity(1 + es.len());
-            v.push(tag);
-            v.extend_from_slice(bytemuck::cast_slice(es));
-            v
+    fn serialize(&self, trg: &mut VecHashMap) {
+        #[inline(always)]
+        fn nary_serialize(trg: &mut VecHashMap, tag: u32, es: &[ExprRef]) {
+            trg.insert_u32(tag);
+            trg.insert_slice(bytemuck::cast_slice(es));
         }
         let zf = ExprFlags::ZERO;
         match self {
-            Expr::EmptyString => vec![zf.encode(ExprTag::EmptyString)],
-            Expr::NoMatch => vec![zf.encode(ExprTag::NoMatch)],
-            Expr::Byte(b) => vec![zf.encode(ExprTag::Byte), *b as u32],
-            Expr::ByteSet(s) => {
-                let mut v = Vec::with_capacity(1 + s.len());
-                v.push(zf.encode(ExprTag::ByteSet));
-                v.extend_from_slice(s);
-                v
+            Expr::EmptyString => trg.insert_u32(zf.encode(ExprTag::EmptyString)),
+            Expr::NoMatch => trg.insert_u32(zf.encode(ExprTag::NoMatch)),
+            Expr::Byte(b) => {
+                trg.insert_slice(&[zf.encode(ExprTag::Byte), *b as u32]);
             }
-            Expr::Lookahead(flags, e, n) => vec![flags.encode(ExprTag::Lookahead), e.0, *n],
-            Expr::Not(flags, e) => vec![flags.encode(ExprTag::Not), e.0],
-            Expr::Repeat(flags, e, a, b) => vec![flags.encode(ExprTag::Repeat), e.0, *a, *b],
-            Expr::Concat(flags, es) => nary_serialize(flags.encode(ExprTag::Concat), es),
-            Expr::Or(flags, es) => nary_serialize(flags.encode(ExprTag::Or), es),
-            Expr::And(flags, es) => nary_serialize(flags.encode(ExprTag::And), es),
+            Expr::ByteSet(s) => {
+                trg.insert_u32(zf.encode(ExprTag::ByteSet));
+                trg.insert_slice(s);
+            }
+            Expr::Lookahead(flags, e, n) => {
+                trg.insert_slice(&[flags.encode(ExprTag::Lookahead), e.0, *n]);
+            }
+            Expr::Not(flags, e) => trg.insert_slice(&[flags.encode(ExprTag::Not), e.0]),
+            Expr::Repeat(flags, e, a, b) => {
+                trg.insert_slice(&[flags.encode(ExprTag::Repeat), e.0, *a, *b])
+            }
+            Expr::Concat(flags, es) => nary_serialize(trg, flags.encode(ExprTag::Concat), es),
+            Expr::Or(flags, es) => nary_serialize(trg, flags.encode(ExprTag::Or), es),
+            Expr::And(flags, es) => nary_serialize(trg, flags.encode(ExprTag::And), es),
         }
     }
 }
@@ -202,36 +205,47 @@ pub struct ExprSet {
 
 impl ExprSet {
     pub fn new(alphabet_size: usize) -> Self {
-        let mut exprs = VecHashMap::new();
+        let exprs = VecHashMap::new();
         let alphabet_words = (alphabet_size + 31) / 32;
-        let inserts = vec![
-            (Expr::EmptyString.serialize(), ExprRef::EMPTY_STRING),
-            (Expr::NoMatch.serialize(), ExprRef::NO_MATCH),
-            (
-                Expr::ByteSet(&vec![0xffffffff; alphabet_words]).serialize(),
-                ExprRef::ANY_BYTE,
-            ),
-            (
-                Expr::Repeat(ExprFlags::NULLABLE, ExprRef::ANY_BYTE, 0, u32::MAX).serialize(),
-                ExprRef::ANY_STRING,
-            ),
-            (
-                Expr::Repeat(ExprFlags::ZERO, ExprRef::ANY_BYTE, 1, u32::MAX).serialize(),
-                ExprRef::NON_EMPTY_STRING,
-            ),
-        ];
-
-        for (e, id) in inserts {
-            let r = exprs.insert(&e);
-            assert!(r == id.0, "id: {r}, expected: {}", id.0);
-        }
-
-        ExprSet {
+        let mut r = ExprSet {
             exprs,
             alphabet_size,
             alphabet_words,
             pp: PrettyPrinter::new_simple(alphabet_size),
+        };
+
+        let inserts = vec![
+            (r.mk(Expr::EmptyString), ExprRef::EMPTY_STRING),
+            (r.mk(Expr::NoMatch), ExprRef::NO_MATCH),
+            (
+                r.mk(Expr::ByteSet(&vec![0xffffffff; alphabet_words])),
+                ExprRef::ANY_BYTE,
+            ),
+            (
+                r.mk(Expr::Repeat(
+                    ExprFlags::NULLABLE,
+                    ExprRef::ANY_BYTE,
+                    0,
+                    u32::MAX,
+                )),
+                ExprRef::ANY_STRING,
+            ),
+            (
+                r.mk(Expr::Repeat(
+                    ExprFlags::ZERO,
+                    ExprRef::ANY_BYTE,
+                    1,
+                    u32::MAX,
+                )),
+                ExprRef::NON_EMPTY_STRING,
+            ),
+        ];
+
+        for (x, y) in inserts {
+            assert!(x == y, "id: {x:?}, expected: {y:?}");
         }
+
+        r
     }
 
     pub fn set_pp(&mut self, pp: PrettyPrinter) {
@@ -531,7 +545,9 @@ impl ExprSet {
     }
 
     fn mk(&mut self, e: Expr) -> ExprRef {
-        ExprRef(self.exprs.insert(&e.serialize()))
+        self.exprs.start_insert();
+        e.serialize(&mut self.exprs);
+        ExprRef(self.exprs.finish_insert())
     }
 
     pub fn get(&self, id: ExprRef) -> Expr {
