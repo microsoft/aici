@@ -7,10 +7,12 @@ edition = "2021"
 name = "derivre"
 
 [dependencies]
+ahash = "0.8.11"
 aici_abi = { path = "../aici_abi" }
 anyhow = "1.0.75"
 bytemuck = "1.16.0"
 bytemuck_derive = "1.6.1"
+hashbrown = "0.14.5"
 regex-syntax = { version = "0.8.3", default-features = false, features = ["std"] }
 
 [[bin]]

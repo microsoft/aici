@@ -23,7 +23,7 @@ We do not use rustc-hash, but the standard HashMap to limit possibility of DoS.
 ### Future improvements
 
 - [ ] build trie from alternative over many strings in re parser
-- [ ] use hashbrown raw table for VecHashMap
+- [x] use hashbrown raw table for VecHashMap
 - [ ] more simplification rules from sbre
 - [ ] tests
 - [ ] benchmarks

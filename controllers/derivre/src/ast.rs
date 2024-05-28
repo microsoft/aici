@@ -222,7 +222,7 @@ impl ExprSet {
         ];
 
         for (e, id) in inserts {
-            let r = exprs.insert(e);
+            let r = exprs.insert(&e);
             assert!(r == id.0, "id: {r}, expected: {}", id.0);
         }
 
@@ -531,11 +531,11 @@ impl ExprSet {
     }
 
     fn mk(&mut self, e: Expr) -> ExprRef {
-        ExprRef(self.exprs.insert(e.serialize()))
+        ExprRef(self.exprs.insert(&e.serialize()))
     }
 
     pub fn get(&self, id: ExprRef) -> Expr {
-        Expr::from_slice(self.exprs.get(id.0).unwrap())
+        Expr::from_slice(self.exprs.get(id.0))
     }
 
     fn lookahead_len_inner(&self, e: ExprRef) -> Option<usize> {
@@ -560,17 +560,17 @@ impl ExprSet {
         if id == ExprRef::EMPTY_STRING {
             return ExprFlags::NULLABLE;
         }
-        ExprFlags(self.exprs.get(id.0).unwrap()[0] & !0xff)
+        ExprFlags(self.exprs.get(id.0)[0] & !0xff)
     }
 
     fn get_tag(&self, id: ExprRef) -> ExprTag {
         assert!(id.is_valid());
-        let tag = self.exprs.get(id.0).unwrap()[0] & 0xff;
+        let tag = self.exprs.get(id.0)[0] & 0xff;
         ExprTag::from_u8(tag as u8)
     }
 
     pub fn get_args(&self, id: ExprRef) -> &[ExprRef] {
-        let s = self.exprs.get(id.0).unwrap();
+        let s = self.exprs.get(id.0);
         let tag = ExprTag::from_u8((s[0] & 0xff) as u8);
         match tag {
             ExprTag::Concat | ExprTag::Or | ExprTag::And => bytemuck::cast_slice(&s[1..]),

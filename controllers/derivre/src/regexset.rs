@@ -234,9 +234,9 @@ impl RegexVec {
         let num_ast_nodes = exprset.len();
 
         let mut rx_sets = VecHashMap::new();
-        let id = rx_sets.insert(vec![]);
+        let id = rx_sets.insert(&[]);
         assert!(id == StateID::DEAD.as_u32());
-        let id = rx_sets.insert(vec![0]);
+        let id = rx_sets.insert(&[0]);
         assert!(id == StateID::MISSING.as_u32());
 
         let mut r = RegexVec {
@@ -275,7 +275,7 @@ impl RegexVec {
         //     return StateID::DEAD;
         // }
         assert!(lst.len() % 2 == 0);
-        let id = StateID(self.rx_sets.insert(lst));
+        let id = StateID(self.rx_sets.insert(&lst));
         if id.as_usize() >= self.state_descs.len() {
             self.append_state(self.compute_state_desc(id));
         }
@@ -283,7 +283,7 @@ impl RegexVec {
     }
 
     fn iter_state(rx_sets: &VecHashMap, state: StateID, mut f: impl FnMut((usize, ExprRef))) {
-        let lst = rx_sets.get(state.as_u32()).unwrap();
+        let lst = rx_sets.get(state.as_u32());
         for idx in (0..lst.len()).step_by(2) {
             f((lst[idx] as usize, ExprRef::new(lst[idx + 1])));
         }
