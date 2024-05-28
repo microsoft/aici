@@ -17,6 +17,8 @@ impl Element {
     }
 }
 
+/// A hashconsing data structure for vectors of u32.
+/// Given a vector, it stores it only once and returns a unique id.
 pub struct VecHashMap {
     hasher: RandomState,
     backing: Vec<u32>,
@@ -47,13 +49,45 @@ impl VecHashMap {
         r
     }
 
+    /// Insert a given vector and return its unique id.
+    pub fn insert(&mut self, data: &[u32]) -> u32 {
+        self.start_insert();
+        self.push_slice(data);
+        self.finish_insert()
+    }
+
+    /// Get vector with given unique id.
+    /// Panics if id is out of bounds.
+    #[inline(always)]
+    pub fn get(&self, id: u32) -> &[u32] {
+        &self.backing[self.elements[id as usize].as_range()]
+    }
+
+    /// Return number of elements in the hashcons (also largest unique id + 1).
+    pub fn len(&self) -> usize {
+        self.elements.len()
+    }
+
+    /// Estimate number of bytes used by the hashcons.
+    pub fn num_bytes(&self) -> usize {
+        self.backing.len() * std::mem::size_of::<u32>()
+            + self.elements.len() * (5 + std::mem::size_of::<Element>())
+    }
+    
+    // Incremental, zero-copy insertion:
+
+    /// Start insertion process for a vector.
+    /// Panics if start_insert() is called twice without finish_insert().
+    #[inline(always)]
     pub fn start_insert(&mut self) {
         assert!(self.curr_elt.backing_end == 0);
         self.curr_elt.backing_end = self.curr_elt.backing_start;
     }
 
+    /// Add an element to the vector being inserted.
+    /// Requires start_insert() to have been called.
     #[inline(always)]
-    pub fn insert_u32(&mut self, head: u32) {
+    pub fn push_u32(&mut self, head: u32) {
         assert!(self.curr_elt.backing_end >= self.curr_elt.backing_start);
         self.curr_elt.backing_end += 1;
         if self.backing.len() < self.curr_elt.backing_end as usize {
@@ -63,18 +97,24 @@ impl VecHashMap {
         }
     }
 
+    /// Add a slice to the vector being inserted.
+    /// Requires start_insert() to have been called.
     #[inline(always)]
-    pub fn insert_slice(&mut self, elts: &[u32]) {
+    pub fn push_slice(&mut self, elts: &[u32]) {
         assert!(self.curr_elt.backing_end >= self.curr_elt.backing_start);
         let slice_start = self.curr_elt.backing_end;
         self.curr_elt.backing_end += elts.len() as u32;
         if self.backing.len() < self.curr_elt.backing_end as usize {
-            self.backing.resize(self.curr_elt.backing_end as usize + 1000, 0);
+            self.backing
+                .resize(self.curr_elt.backing_end as usize + 1000, 0);
         }
         self.backing[slice_start as usize..self.curr_elt.backing_end as usize]
             .copy_from_slice(elts);
     }
 
+    /// Finish insertion process for a vector.
+    /// Returns the unique id of the vector.
+    /// Requires start_insert() to have been called.
     pub fn finish_insert(&mut self) -> u32 {
         let hasher = &self.hasher;
         let curr_backing = &self.backing[self.curr_elt.as_range()];
@@ -98,25 +138,5 @@ impl VecHashMap {
                 id
             }
         }
-    }
-
-    pub fn insert(&mut self, data: &[u32]) -> u32 {
-        self.start_insert();
-        self.insert_slice(data);
-        self.finish_insert()
-    }
-
-    #[inline(always)]
-    pub fn get(&self, id: u32) -> &[u32] {
-        &self.backing[self.elements[id as usize].as_range()]
-    }
-
-    pub fn len(&self) -> usize {
-        self.elements.len()
-    }
-
-    pub fn num_bytes(&self) -> usize {
-        self.backing.len() * std::mem::size_of::<u32>()
-            + self.elements.len() * (5 + std::mem::size_of::<Element>())
     }
 }

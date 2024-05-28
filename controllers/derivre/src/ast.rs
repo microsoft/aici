@@ -168,26 +168,26 @@ impl<'a> Expr<'a> {
     fn serialize(&self, trg: &mut VecHashMap) {
         #[inline(always)]
         fn nary_serialize(trg: &mut VecHashMap, tag: u32, es: &[ExprRef]) {
-            trg.insert_u32(tag);
-            trg.insert_slice(bytemuck::cast_slice(es));
+            trg.push_u32(tag);
+            trg.push_slice(bytemuck::cast_slice(es));
         }
         let zf = ExprFlags::ZERO;
         match self {
-            Expr::EmptyString => trg.insert_u32(zf.encode(ExprTag::EmptyString)),
-            Expr::NoMatch => trg.insert_u32(zf.encode(ExprTag::NoMatch)),
+            Expr::EmptyString => trg.push_u32(zf.encode(ExprTag::EmptyString)),
+            Expr::NoMatch => trg.push_u32(zf.encode(ExprTag::NoMatch)),
             Expr::Byte(b) => {
-                trg.insert_slice(&[zf.encode(ExprTag::Byte), *b as u32]);
+                trg.push_slice(&[zf.encode(ExprTag::Byte), *b as u32]);
             }
             Expr::ByteSet(s) => {
-                trg.insert_u32(zf.encode(ExprTag::ByteSet));
-                trg.insert_slice(s);
+                trg.push_u32(zf.encode(ExprTag::ByteSet));
+                trg.push_slice(s);
             }
             Expr::Lookahead(flags, e, n) => {
-                trg.insert_slice(&[flags.encode(ExprTag::Lookahead), e.0, *n]);
+                trg.push_slice(&[flags.encode(ExprTag::Lookahead), e.0, *n]);
             }
-            Expr::Not(flags, e) => trg.insert_slice(&[flags.encode(ExprTag::Not), e.0]),
+            Expr::Not(flags, e) => trg.push_slice(&[flags.encode(ExprTag::Not), e.0]),
             Expr::Repeat(flags, e, a, b) => {
-                trg.insert_slice(&[flags.encode(ExprTag::Repeat), e.0, *a, *b])
+                trg.push_slice(&[flags.encode(ExprTag::Repeat), e.0, *a, *b])
             }
             Expr::Concat(flags, es) => nary_serialize(trg, flags.encode(ExprTag::Concat), es),
             Expr::Or(flags, es) => nary_serialize(trg, flags.encode(ExprTag::Or), es),
