@@ -4,9 +4,9 @@ mod hashcons;
 mod simplify;
 mod ast;
 mod bytecompress;
-mod regexset;
+mod regexvec;
 mod syntax;
 mod pp;
 
 pub use ast::ExprRef;
-pub use regexset::{RegexVec, StateDesc, StateID};
+pub use regexvec::{RegexVec, StateDesc, StateID};

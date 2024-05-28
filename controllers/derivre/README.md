@@ -42,6 +42,21 @@ assert!(rx.lookahead_len("ccqy") == None);
 
 You can also run several regexes at once, [see sample](./tests/sample_multi.rs).
 
+## Code map
+
+In recommended reading order:
+
+- [simplify.rs](./src/simplify.rs) - simplification (rewrite rules) of AST
+- [deriv.rs](./src/deriv.rs) - derivative computation
+- [bytecompress.rs](./src/bytecompress.rs) - alphabet compression
+- [syntax.rs](./src/syntax.rs) - uses `regex-syntax` crate for parsing
+- [regexvec.rs](./src/regexvec.rs) - top-level memoization of state transition and user interface
+
+The rest:
+
+- [ast.rs](./src/ast.rs) - AST for regexes
+- [hashcons.rs](./src/hashcons.rs) - hash-consing of u32 vectors (used by AST)
+
 ## TODO
 
 - [x] look-aheads, locations
