@@ -43,8 +43,19 @@ fn look(rx: &mut RegexVec, s: &str, exp: Option<usize>) {
 }
 
 fn main() {
+    let mut rx = RegexVec::new_single("[ab]c").unwrap();
+    assert!(rx.is_match("ac"));
+    assert!(rx.is_match("bc"));
+    assert!(!rx.is_match("xxac"));
+    assert!(!rx.is_match("acxx"));
+
+    let mut rx = RegexVec::new_single("[abx]*(?P<stop>[xq]*y)").unwrap();
+    assert!(rx.lookahead_len("axxxxxxxy") == Some(1));
+    assert!(rx.lookahead_len("axxxxxxxqqqy") == Some(4));
+    assert!(rx.lookahead_len("axxxxxxxqqq") == None);
+    assert!(rx.lookahead_len("ccqy") == None);
+
     let mut rx = RegexVec::new_single("a[bc](de|fg)").unwrap();
-    println!("{:?}", rx);
     no_match(&mut rx, "abd");
     match_(&mut rx, "abde");
     look(&mut rx, "abde", Some(0));

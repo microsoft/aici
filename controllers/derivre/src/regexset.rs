@@ -91,15 +91,15 @@ impl RegexVec {
     }
 
     pub fn new_vec(rx_list: &[&str]) -> Result<Self> {
-        let mut parser = regex_syntax::ParserBuilder::new().build();
-        Self::new_with_parser(&mut parser, rx_list)
+        let parser = regex_syntax::ParserBuilder::new().build();
+        Self::new_with_parser(parser, rx_list)
     }
 
-    pub fn new_with_parser(parser: &mut regex_syntax::Parser, rx_list: &[&str]) -> Result<Self> {
+    pub fn new_with_parser(parser: regex_syntax::Parser, rx_list: &[&str]) -> Result<Self> {
         let mut exprset = ExprSet::new(256);
         let mut acc = Vec::new();
         for rx in rx_list {
-            let ast = exprset.parse_expr(parser, rx)?;
+            let ast = exprset.parse_expr(parser.clone(), rx)?;
             acc.push(ast);
         }
         Ok(Self::new_with_exprset(exprset, &acc))

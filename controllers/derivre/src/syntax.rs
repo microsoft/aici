@@ -182,7 +182,7 @@ impl ExprSet {
         unreachable!()
     }
 
-    pub fn parse_expr(&mut self, parser: &mut Parser, rx: &str) -> Result<ExprRef> {
+    pub fn parse_expr(&mut self, mut parser: Parser, rx: &str) -> Result<ExprRef> {
         let hir = parser.parse(rx)?;
         self.from_ast(&hir)
     }

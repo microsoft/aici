@@ -52,6 +52,14 @@ impl SimpleVob {
         }
     }
 
+    pub fn from_slice(bits: &[bool]) -> Self {
+        let mut r = Self::alloc(bits.len());
+        for (idx, b) in bits.iter().enumerate() {
+            r.set(idx, *b);
+        }
+        r
+    }
+
     pub fn alloc(size: usize) -> Self {
         let mut r = Self::new();
         r.resize(size);
@@ -71,6 +79,14 @@ impl SimpleVob {
             // disallow tokens that are out of range
             self.disallow_token(i as TokenId);
         }
+    }
+
+    pub fn to_bin_string(&self) -> String {
+        let mut s = String::new();
+        for i in 0..self.size {
+            s.push(if self.is_allowed(i as TokenId) { '1' } else { '0' });
+        }
+        s
     }
 
     pub fn negated(&self) -> Self {
