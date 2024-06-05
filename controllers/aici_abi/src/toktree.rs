@@ -20,12 +20,6 @@ pub enum SpecialToken {
 }
 
 pub trait Recognizer {
-    /// If `stack.top()` transitions via `byte` to `X`, execute `stack.push(X)`.
-    fn push_byte(&mut self, byte: u8) {
-        if !self.try_push_byte(byte) {
-            panic!("byte {:?} not allowed", byte as char)
-        }
-    }
     /// for _ in 0..num { stack.pop() }
     fn pop_bytes(&mut self, num: usize);
     /// X = stack.top(); stack.empty(); stack.push(X)
@@ -562,6 +556,7 @@ impl TokTrie {
         let bytes = self.token(t);
         let mut num = 0;
         let mut ok = true;
+        r.trie_started();
         for &byte in bytes {
             if r.try_push_byte(byte) {
                 num += 1;
@@ -571,6 +566,7 @@ impl TokTrie {
             }
         }
         r.pop_bytes(num);
+        r.trie_finished();
         ok
     }
 

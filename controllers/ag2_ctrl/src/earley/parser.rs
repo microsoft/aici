@@ -483,7 +483,7 @@ impl Parser {
 
                 if byte_idx >= bytes.len() {
                     self.token_idx = tok_idx; // save local pointer, in case push_row() uses it
-                    if !self.try_push_byte(*b) {
+                    if !self.try_push_byte_definitive(*b) {
                         return Ok("parse reject");
                     }
 
@@ -577,7 +577,7 @@ impl Parser {
         let mut bytes = vec![];
         while let Some(b) = self.forced_byte() {
             debug!("  forced: {:?}", b as char);
-            if !self.try_push_byte(b) {
+            if !self.try_push_byte_definitive(b) {
                 // shouldn't happen?
                 info!("  force_bytes reject {}", b as char);
                 break;
@@ -590,6 +590,62 @@ impl Parser {
             self.lexer_stack.len()
         );
         bytes
+    }
+
+    #[inline(always)]
+    fn advance_lexer_or_parser(
+        &mut self,
+        byte: u8,
+        curr: LexerState,
+        next_state: StateID,
+        lexeme: Option<LexemeIdx>,
+    ) -> bool {
+        match lexeme {
+            None => {
+                // lexer advanced, but no lexeme
+                self.lexer_stack.push(LexerState {
+                    row_idx: curr.row_idx,
+                    lexer_state: next_state,
+                    byte,
+                    use_byte: true,
+                });
+                true
+            }
+            Some(lexeme_idx) => self.advance_parser(next_state, lexeme_idx, byte),
+        }
+    }
+
+    fn try_push_byte_definitive(&mut self, byte: u8) -> bool {
+        let curr = self.lexer_stack[self.lexer_stack.len() - 1];
+        let row = &self.rows[curr.row_idx as usize];
+
+        debug!("B: {:?}", byte as char);
+        let info = &self.row_infos[curr.row_idx as usize];
+        let max_tokens_reached = info.token_idx_stop - info.token_idx_start > info.max_tokens;
+
+        let res = if max_tokens_reached {
+            Some(
+                self.lexer
+                    .force_lexeme_end(&row.allowed_lexemes, curr.lexer_state),
+            )
+        } else {
+            self.lexer.advance(
+                &row.allowed_lexemes,
+                curr.lexer_state,
+                byte,
+                self.scratch.definitive,
+            )
+        };
+
+        if let Some((next_state, lexeme)) = res {
+            self.advance_lexer_or_parser(byte, curr, next_state, lexeme)
+        } else {
+            debug!(
+                "  lexer fail; allowed: {}",
+                self.lexer_spec().dbg_lexeme_set(&row.allowed_lexemes)
+            );
+            false
+        }
     }
 
     fn curr_row(&self) -> &Row {
@@ -927,7 +983,6 @@ impl Parser {
                             allowed_lexemes,
                             lexer_state,
                             *b,
-                            false,
                             self.scratch.definitive,
                         ) {
                             Some((next_state, None)) => {
@@ -1022,47 +1077,23 @@ impl Recognizer for Parser {
         self.assert_definitive();
     }
 
+    #[inline(always)]
     fn try_push_byte(&mut self, byte: u8) -> bool {
+        assert!(!self.scratch.definitive);
+
         let curr = self.lexer_stack[self.lexer_stack.len() - 1];
-        let row = &self.rows[curr.row_idx as usize];
 
-        let mut max_tokens_reached = false;
-
-        if self.scratch.definitive {
-            debug!("B: {:?}", byte as char);
-            let info = &self.row_infos[curr.row_idx as usize];
-            max_tokens_reached = info.token_idx_stop - info.token_idx_start > info.max_tokens;
-        }
-
-        match self.lexer.advance(
-            &row.allowed_lexemes,
+        let res = self.lexer.advance(
+            &self.rows[curr.row_idx as usize].allowed_lexemes,
             curr.lexer_state,
             byte,
-            max_tokens_reached,
             self.scratch.definitive,
-        ) {
-            None => {
-                if self.scratch.definitive {
-                    debug!(
-                        "  lexer fail; allowed: {}",
-                        self.lexer_spec().dbg_lexeme_set(&row.allowed_lexemes)
-                    );
-                }
-                false
-            }
-            Some((next_state, None)) => {
-                // lexer advanced, but no lexeme
-                self.lexer_stack.push(LexerState {
-                    row_idx: curr.row_idx,
-                    lexer_state: next_state,
-                    byte,
-                    use_byte: true,
-                });
-                true
-            }
-            Some((next_state, Some(lexeme_idx))) => {
-                self.advance_parser(next_state, lexeme_idx, byte)
-            }
+        );
+
+        if let Some((next_state, lexeme)) = res {
+            self.advance_lexer_or_parser(byte, curr, next_state, lexeme)
+        } else {
+            false
         }
     }
 }
