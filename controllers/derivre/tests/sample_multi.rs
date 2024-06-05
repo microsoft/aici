@@ -1,5 +1,4 @@
-use aici_abi::svob::SimpleVob;
-use derivre::RegexVec;
+use derivre::{RegexVec, SimpleVob};
 
 #[test]
 fn multi_matching_sample() {

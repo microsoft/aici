@@ -61,13 +61,16 @@ The rest:
 
 - [x] look-aheads, locations
 - [x] simplification of Byte/ByteSet in Or
-- [ ] place limit on number of states
-- [ ] alphabet size == 0 => invalid state loop
+- [x] place limit on number of states, ast nodes, etc.
+- [x] alphabet size == 0 => invalid state loop
 
 ### Future improvements
 
-- [ ] build trie from alternative over many strings in re parser
+- [x] build trie from alternative over many strings in re parser
+- [x] check on surrogate handling (use UTF8Sequences from regex-syntax?)
 - [x] use hashbrown raw table for VecHashMap
-- [ ] more simplification rules from sbre
 - [x] tests
+- [ ] more simplification rules from sbre
 - [ ] benchmarks
+- [ ] extend regex-syntax for `&` and `~` operators
+- [ ] add `& valid-utf8` if there is negation somewhere 

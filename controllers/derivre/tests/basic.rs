@@ -155,3 +155,104 @@ fn test_lookaround() {
     look(&mut rx, "fooy", Some(3));
     look(&mut rx, "fy", Some(1));
 }
+
+#[test]
+fn test_fuel() {
+    let mut rx = RegexVec::new_single("a(bc+|b[eh])g|.h").unwrap();
+    println!("{:?}", rx);
+    rx.set_fuel(200);
+    match_(&mut rx, "abcg");
+    assert!(!rx.has_error());
+
+    let mut rx = RegexVec::new_single("a(bc+|b[eh])g|.h").unwrap();
+    println!("{:?}", rx);
+    rx.set_fuel(20);
+    no_match(&mut rx, "abcg");
+    assert!(rx.has_error());
+}
+
+#[test]
+fn utf8_dfa() {
+    let parser = regex_syntax::ParserBuilder::new()
+        .unicode(false)
+        .utf8(false)
+        .ignore_whitespace(true)
+        .build();
+
+    let utf8_rx = r#"
+   ( [\x00-\x7F]                        # ASCII
+   | [\xC2-\xDF][\x80-\xBF]             # non-overlong 2-byte
+   |  \xE0[\xA0-\xBF][\x80-\xBF]        # excluding overlongs
+   | [\xE1-\xEC\xEE\xEF][\x80-\xBF]{2}  # straight 3-byte
+   |  \xED[\x80-\x9F][\x80-\xBF]        # excluding surrogates
+   |  \xF0[\x90-\xBF][\x80-\xBF]{2}     # planes 1-3
+   | [\xF1-\xF3][\x80-\xBF]{3}          # planes 4-15
+   |  \xF4[\x80-\x8F][\x80-\xBF]{2}     # plane 16
+   )*
+   "#;
+
+    let mut rx = RegexVec::new_with_parser(parser, &[utf8_rx]).unwrap();
+    println!("UTF8 {:?}", rx);
+    //match_many(&mut rx, &["a", "ą", "ę", "ó", "≈ø¬", "\u{1f600}"]);
+    println!("UTF8 {:?}", rx);
+    let compiled = rx.dfa();
+    println!("UTF8 {:?}", rx);
+    println!("mapping ({}) {:?}", rx.alphabet_size(), &compiled[0..256]);
+    println!("states {:?}", &compiled[256..]);
+    println!("initial {:?}", rx.initial_state_all());
+}
+
+#[test]
+fn utf8_restrictions() {
+    let mut rx = RegexVec::new_single("(.|\n)*").unwrap();
+    println!("{:?}", rx);
+    match_many(&mut rx, &["", "a", "\n", "\n\n", "\x00", "\x7f"]);
+    let s0 = rx.initial_state_all();
+    assert!(rx.transition(s0, 0x80).is_dead());
+    assert!(rx.transition(s0, 0xC0).is_dead());
+    assert!(rx.transition(s0, 0xC1).is_dead());
+    // more overlong:
+    assert!(rx.transition_bytes(s0, &[0xE0, 0x80]).is_dead());
+    assert!(rx.transition_bytes(s0, &[0xE0, 0x9F]).is_dead());
+    assert!(rx.transition_bytes(s0, &[0xF0, 0x80]).is_dead());
+    assert!(rx.transition_bytes(s0, &[0xF0, 0x8F]).is_dead());
+    // surrogates:
+    assert!(rx.transition_bytes(s0, &[0xED, 0xA0]).is_dead());
+    assert!(rx.transition_bytes(s0, &[0xED, 0xAF]).is_dead());
+    assert!(rx.transition_bytes(s0, &[0xED, 0xBF]).is_dead());
+}
+
+#[test]
+fn trie() {
+    let mut rx = RegexVec::new_single("(foo|far|bar|baz)").unwrap();
+    match_many(&mut rx, &["foo", "far", "bar", "baz"]);
+    no_match_many(&mut rx, &["fo", "fa", "b", "ba", "baa", "f", "faz"]);
+
+    let mut rx = RegexVec::new_single("(foobarbazqux123|foobarbazqux124)").unwrap();
+    match_many(&mut rx, &["foobarbazqux123", "foobarbazqux124"]);
+    no_match_many(
+        &mut rx,
+        &["foobarbazqux12", "foobarbazqux125", "foobarbazqux12x"],
+    );
+
+    let mut rx = RegexVec::new_single("(1a|12a|123a|1234a|12345a|123456a)").unwrap();
+    match_many(
+        &mut rx,
+        &["1a", "12a", "123a", "1234a", "12345a", "123456a"],
+    );
+    no_match_many(
+        &mut rx,
+        &["1234567a", "123456", "12345", "1234", "123", "12", "1"],
+    );
+}
+
+#[test]
+fn unicode_case() {
+    let mut rx = RegexVec::new_single("(?i)Żółw").unwrap();
+    match_many(&mut rx, &["Żółw", "żółw", "ŻÓŁW", "żóŁw"]);
+    no_match_many(&mut rx, &["zółw"]);
+
+    let mut rx = RegexVec::new_single("Żółw").unwrap();
+    match_(&mut rx, "Żółw");
+    no_match_many(&mut rx, &["żółw", "ŻÓŁW", "żóŁw"]);
+}

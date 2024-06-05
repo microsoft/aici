@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use crate::ast::{Expr, ExprRef, ExprSet};
 
-const DEBUG: bool = true;
+const DEBUG: bool = false;
 macro_rules! debug {
     ($($arg:tt)*) => {
         if DEBUG {
@@ -14,6 +14,7 @@ macro_rules! debug {
 
 pub struct DerivCache {
     pub exprs: ExprSet,
+    pub num_deriv: usize,
     state_table: HashMap<(ExprRef, u8), ExprRef>,
 }
 
@@ -21,6 +22,7 @@ impl DerivCache {
     pub fn new(exprs: ExprSet) -> Self {
         DerivCache {
             exprs,
+            num_deriv: 0,
             state_table: HashMap::default(),
         }
     }
@@ -31,6 +33,7 @@ impl DerivCache {
             return d;
         }
 
+        self.num_deriv += 1;
         let d = self.derivative_inner(e, b);
         debug!(
             "deriv({}) via {} = {}",

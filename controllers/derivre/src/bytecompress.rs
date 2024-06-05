@@ -1,10 +1,8 @@
 use std::{collections::HashMap, hash::Hash};
 
-use aici_abi::svob::SimpleVob;
-
 use crate::{
     ast::{byteset_contains, byteset_set, Expr, ExprSet},
-    ExprRef,
+    ExprRef, SimpleVob,
 };
 
 pub struct ByteCompressor {

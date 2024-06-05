@@ -1,3 +1,5 @@
+use std::ops::RangeInclusive;
+
 use crate::{hashcons::VecHashCons, pp::PrettyPrinter};
 use bytemuck_derive::{Pod, Zeroable};
 
@@ -101,6 +103,13 @@ pub fn byteset_set(s: &mut [u32], b: usize) {
 }
 
 #[inline(always)]
+pub fn byteset_set_range(s: &mut [u32], range: RangeInclusive<u8>) {
+    for elt in range {
+        byteset_set(s, elt as usize);
+    }
+}
+
+#[inline(always)]
 pub fn byteset_union(s: &mut [u32], other: &[u32]) {
     for i in 0..s.len() {
         s[i] |= other[i];
@@ -112,11 +121,8 @@ pub fn byteset_256() -> Vec<u32> {
 }
 
 pub fn byteset_from_range(start: u8, end: u8) -> Vec<u32> {
-    assert!(start <= end, "start: {start}, end: {end}");
     let mut s = byteset_256();
-    for b in start..=end {
-        byteset_set(&mut s, b as usize);
-    }
+    byteset_set_range(&mut s, start..=end);
     s
 }
 
@@ -200,7 +206,9 @@ pub struct ExprSet {
     exprs: VecHashCons,
     pub(crate) alphabet_size: usize,
     pub(crate) alphabet_words: usize,
+    pub(crate) cost: usize,
     pp: PrettyPrinter,
+    pub(crate) optimize: bool,
 }
 
 impl ExprSet {
@@ -211,7 +219,9 @@ impl ExprSet {
             exprs,
             alphabet_size,
             alphabet_words,
+            cost: 0,
             pp: PrettyPrinter::new_simple(alphabet_size),
+            optimize: true,
         };
 
         let id = r.exprs.insert(&[]);
@@ -285,6 +295,7 @@ impl ExprSet {
         self.exprs.num_bytes()
     }
 
+    // When called outside ctor, one should also call self.pay()
     pub(crate) fn mk(&mut self, e: Expr) -> ExprRef {
         self.exprs.start_insert();
         e.serialize(&mut self.exprs);

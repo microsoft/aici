@@ -1,5 +1,6 @@
-use crate::TokenId;
 use std::{fmt::Debug, hash::Hash, ops::Index};
+
+pub type TokenId = u32;
 
 #[derive(Clone)]
 pub struct SimpleVob {
@@ -63,6 +64,12 @@ impl SimpleVob {
     pub fn alloc(size: usize) -> Self {
         let mut r = Self::new();
         r.resize(size);
+        r
+    }
+
+    pub fn all_true(size: usize) -> Self {
+        let mut r = Self::alloc(size);
+        r.set_all(true);
         r
     }
 

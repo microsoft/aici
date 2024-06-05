@@ -1,6 +1,5 @@
-use std::fmt::Debug;
+use std::{collections::HashSet, fmt::Debug};
 
-use aici_abi::svob::SimpleVob;
 use anyhow::Result;
 
 use crate::{
@@ -9,9 +8,10 @@ use crate::{
     deriv::DerivCache,
     hashcons::VecHashCons,
     pp::PrettyPrinter,
+    SimpleVob,
 };
 
-const DEBUG: bool = true;
+const DEBUG: bool = false;
 
 macro_rules! debug {
     ($($arg:tt)*) => {
@@ -41,6 +41,11 @@ impl StateID {
     pub fn is_valid(&self) -> bool {
         *self != Self::MISSING
     }
+
+    #[inline(always)]
+    pub fn is_dead(&self) -> bool {
+        *self == Self::DEAD
+    }
 }
 
 impl Debug for StateID {
@@ -65,6 +70,8 @@ pub struct RegexVec {
     state_descs: Vec<StateDesc>,
     num_transitions: usize,
     num_ast_nodes: usize,
+    max_states: usize,
+    fuel: usize,
 }
 
 #[derive(Clone, Debug)]
@@ -105,6 +112,10 @@ impl RegexVec {
         Ok(Self::new_with_exprset(exprset, &acc))
     }
 
+    pub fn initial_state_all(&mut self) -> StateID {
+        self.initial_state(&SimpleVob::all_true(self.rx_list.len()))
+    }
+
     pub fn initial_state(&mut self, selected: &SimpleVob) -> StateID {
         let mut vec_desc = vec![];
         for idx in selected.iter() {
@@ -135,6 +146,15 @@ impl RegexVec {
         res
     }
 
+    pub fn alphabet_mapping(&self) -> &[u8] {
+        &self.alphabet_mapping
+    }
+
+    pub fn alphabet_size(&self) -> usize {
+        self.alphabet_size
+    }
+
+    #[inline(always)]
     pub fn transition(&mut self, state: StateID, b: u8) -> StateID {
         let mapped = self.alphabet_mapping[b as usize] as usize;
         let idx = state.as_usize() * self.alphabet_size + mapped;
@@ -183,17 +203,103 @@ impl RegexVec {
             + self.rx_sets.num_bytes()
     }
 
+    pub fn total_fuel_spent(&self) -> usize {
+        self.cache.exprs.cost
+    }
+
+    pub fn set_max_states(&mut self, max_states: usize) {
+        if !self.has_error() {
+            self.max_states = max_states;
+        }
+    }
+
+    // Each fuel point is on the order 100ns (though it varies).
+    // So, for ~10ms limit, do a .set_fuel(100_000).
+    pub fn set_fuel(&mut self, fuel: usize) {
+        if !self.has_error() {
+            self.fuel = fuel;
+        }
+    }
+
+    pub fn has_error(&self) -> bool {
+        self.alphabet_size == 0
+    }
+
+    pub fn get_error(&self) -> Option<String> {
+        if self.has_error() {
+            if self.fuel == 0 {
+                Some("too many expressions constructed".to_string())
+            } else if self.state_descs.len() >= self.max_states {
+                Some(format!(
+                    "too many states: {} >= {}",
+                    self.state_descs.len(),
+                    self.max_states
+                ))
+            } else {
+                Some("unknown error".to_string())
+            }
+        } else {
+            None
+        }
+    }
+
     pub fn stats(&self) -> String {
         format!(
-            "regexps: {} with {} nodes (+ {} derived), states: {}; transitions: {}; bytes: {}; alphabet size: {}",
+            "regexps: {} with {} nodes (+ {} derived via {} derivatives with total fuel {}), states: {}; transitions: {}; bytes: {}; alphabet size: {} {}",
             self.rx_list.len(),
             self.num_ast_nodes,
             self.cache.exprs.len() - self.num_ast_nodes,
+            self.cache.num_deriv,
+            self.total_fuel_spent(),
             self.state_descs.len(),
             self.num_transitions,
             self.num_bytes(),
-            self.alphabet_size
+            self.alphabet_size,
+            if self.alphabet_size == 0 {
+                "ERROR"
+            } else { "" }
         )
+    }
+
+    pub fn dfa(&mut self) -> Vec<u8> {
+        let mut used = HashSet::new();
+        let mut designated_bytes = vec![];
+        for b in 0..=255 {
+            let m = self.alphabet_mapping[b];
+            if !used.contains(&m) {
+                used.insert(m);
+                designated_bytes.push(b as u8);
+            }
+        }
+
+        let mut stack = vec![self.initial_state_all()];
+        let mut visited = HashSet::new();
+        while let Some(state) = stack.pop() {
+            for b in &designated_bytes {
+                let new_state = self.transition(state, *b);
+                if !visited.contains(&new_state) {
+                    stack.push(new_state);
+                    visited.insert(new_state);
+                    assert!(visited.len() < 250);
+                }
+            }
+        }
+
+        assert!(!self.state_table.contains(&StateID::MISSING));
+        let mut res = self.alphabet_mapping.clone();
+        res.extend(self.state_table.iter().map(|s| s.as_u32() as u8));
+        res
+    }
+
+    pub fn print_state_table(&self) {
+        let mut state = 0;
+        for row in self.state_table.chunks(self.alphabet_size) {
+            println!("state: {}", state);
+            for (b, &new_state) in row.iter().enumerate() {
+                println!("  s{:?} -> {:?}", b, new_state);
+            }
+            state += 1;
+        }
     }
 }
 
@@ -207,7 +313,9 @@ impl RegexVec {
 
         let ((exprset, rx_list), mapping, alphabet_size) = if compress {
             let mut compressor = ByteCompressor::new();
+            let cost0 = exprset.cost;
             let (mut exprset, rx_list) = compressor.compress(&exprset, rx_list);
+            exprset.cost += cost0;
             exprset.set_pp(PrettyPrinter::new(
                 compressor.mapping.clone(),
                 compressor.alphabet_size,
@@ -249,17 +357,19 @@ impl RegexVec {
             state_descs: vec![],
             num_transitions: 0,
             num_ast_nodes,
+            fuel: usize::MAX,
+            max_states: usize::MAX,
         };
+
+        // disable expensive optimizations after initial construction
+        r.cache.exprs.optimize = false;
 
         r.insert_state(vec![]);
         // also append state for the "MISSING"
         r.append_state(r.state_descs[0].clone());
         // in fact, transition from MISSING and DEAD should both lead to DEAD
         r.state_table.fill(StateID::DEAD);
-        // guard against corner-case
-        if r.alphabet_size == 0 {
-            r.state_table.push(StateID::DEAD);
-        }
+        assert!(r.alphabet_size > 0);
         r
     }
 
@@ -267,6 +377,9 @@ impl RegexVec {
         let mut new_states = vec![StateID::MISSING; self.alphabet_size];
         self.state_table.append(&mut new_states);
         self.state_descs.push(state_desc);
+        if self.state_descs.len() >= self.max_states {
+            self.enter_error_state();
+        }
     }
 
     fn insert_state(&mut self, lst: Vec<u32>) -> StateID {
@@ -325,6 +438,10 @@ impl RegexVec {
 
         let mut vec_desc = vec![];
 
+        let d0 = self.cache.num_deriv;
+        let c0 = self.cache.exprs.cost;
+        let t0 = std::time::Instant::now();
+
         Self::iter_state(&self.rx_sets, state, |(idx, e)| {
             let d = self.cache.derivative(e, b);
             if d != ExprRef::NO_MATCH {
@@ -332,7 +449,25 @@ impl RegexVec {
             }
         });
 
+        let num_deriv = self.cache.num_deriv - d0;
+        let cost = self.cache.exprs.cost - c0;
+        self.fuel = self.fuel.saturating_sub(cost);
+        if self.fuel == 0 {
+            self.enter_error_state();
+        }
+        if false && cost > 40 {
+            println!(
+                "cost: {:?} {} {}",
+                t0.elapsed() / (cost as u32),
+                num_deriv,
+                cost
+            );
+        }
         self.insert_state(vec_desc)
+    }
+
+    fn enter_error_state(&mut self) {
+        self.alphabet_size = 0;
     }
 }
 
