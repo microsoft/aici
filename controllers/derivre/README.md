@@ -74,3 +74,4 @@ The rest:
 - [ ] benchmarks
 - [ ] extend regex-syntax for `&` and `~` operators
 - [ ] add `& valid-utf8` if there is negation somewhere 
+- [ ] either make `derivative()` non-recursive (`mk_*()` already are?) or limit the regex depth

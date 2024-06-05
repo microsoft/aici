@@ -480,20 +480,31 @@ impl Lexer {
         &self,
         allowed_lexems: &SimpleVob,
         prev: StateID,
+        byte: Option<u8>,
     ) -> (StateID, Option<LexemeIdx>) {
         let info = self.state_info(prev);
-        let idx = if let Some(idx) = self
-            .vobset
-            .resolve(info.reachable)
-            .first_bit_set_here_and_in(allowed_lexems)
-        {
-            idx
+        let lexeme = if prev == self.initial {
+            None
         } else {
-            allowed_lexems
-                .first_bit_set()
-                .expect("empty allowed lexemes")
+            let idx = if let Some(idx) = self
+                .vobset
+                .resolve(info.reachable)
+                .first_bit_set_here_and_in(allowed_lexems)
+            {
+                idx
+            } else {
+                allowed_lexems
+                    .first_bit_set()
+                    .expect("empty allowed lexemes")
+            };
+            Some(LexemeIdx(idx))
         };
-        (self.initial, Some(LexemeIdx(idx)))
+        let state = if let Some(b) = byte {
+            self.dfa.next_state(self.initial, b)
+        } else {
+            self.initial
+        };
+        (state, lexeme)
     }
 
     #[inline(always)]

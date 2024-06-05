@@ -384,8 +384,13 @@ impl Parser {
     }
 
     #[inline(always)]
+    fn lexer_state(&self) -> LexerState {
+        self.lexer_stack[self.lexer_stack.len() - 1]
+    }
+
+    #[inline(always)]
     pub fn num_rows(&self) -> usize {
-        self.lexer_stack.last().unwrap().row_idx as usize + 1
+        self.lexer_state().row_idx as usize + 1
     }
 
     fn pop_lexer_states(&mut self, n: usize) {
@@ -611,12 +616,14 @@ impl Parser {
                 });
                 true
             }
-            Some(lexeme_idx) => self.advance_parser(next_state, lexeme_idx, byte),
+            Some(lexeme_idx) => self.advance_parser(next_state, lexeme_idx, Some(byte)),
         }
     }
 
     fn try_push_byte_definitive(&mut self, byte: u8) -> bool {
-        let curr = self.lexer_stack[self.lexer_stack.len() - 1];
+        assert!(self.scratch.definitive);
+
+        let curr = self.lexer_state();
         let row = &self.rows[curr.row_idx as usize];
 
         debug!("B: {:?}", byte as char);
@@ -624,10 +631,11 @@ impl Parser {
         let max_tokens_reached = info.token_idx_stop - info.token_idx_start > info.max_tokens;
 
         let res = if max_tokens_reached {
-            Some(
+            // TODO the byte gets lost
+            let (state, lexeme) =
                 self.lexer
-                    .force_lexeme_end(&row.allowed_lexemes, curr.lexer_state),
-            )
+                    .force_lexeme_end(&row.allowed_lexemes, curr.lexer_state, Some(byte));
+            Some((state, lexeme))
         } else {
             self.lexer.advance(
                 &row.allowed_lexemes,
@@ -649,7 +657,7 @@ impl Parser {
     }
 
     fn curr_row(&self) -> &Row {
-        &self.rows[self.num_rows() - 1]
+        &self.rows[self.lexer_state().row_idx as usize]
     }
 
     pub fn model_variables(&self) -> Vec<ModelVariable> {
@@ -689,13 +697,30 @@ impl Parser {
         byte_sym
     }
 
-    pub fn scan_model_variable(&mut self, mv: ModelVariable) -> bool {
-        if true {
-            todo!();
+    fn flush_lexer(&mut self) -> bool {
+        let curr = self.lexer_state();
+        let row = self.curr_row();
+        let (next_state, lexeme) =
+            self.lexer
+                .force_lexeme_end(&row.allowed_lexemes, curr.lexer_state, None);
+
+        if let Some(lexeme) = lexeme {
+            if !self.advance_parser(next_state, lexeme, None) {
+                return false;
+            }
         }
 
-        if self.scratch.definitive {
-            debug!("  scan mv: {:?}", mv);
+        true
+    }
+
+    pub fn scan_model_variable(&mut self, mv: ModelVariable) -> bool {
+        self.assert_definitive(); // ???
+
+        debug!("  scan mv: {:?}", mv);
+
+        if !self.flush_lexer() {
+            debug!("  flush_lexer() failed");
+            return false;
         }
 
         self.scratch.new_row(self.curr_row().last_item);
@@ -712,9 +737,12 @@ impl Parser {
         }
 
         if self.scratch.row_len() == 0 {
+            debug!("  scan_model_variable: no items");
             false
         } else {
-            self.push_row(self.scratch.row_start, &Lexeme::bogus())
+            let r = self.push_row(self.scratch.row_start, &Lexeme::bogus());
+            debug!("  scan_model_variable: {}", r);
+            r
         }
     }
 
@@ -894,14 +922,14 @@ impl Parser {
     }
 
     #[inline(always)]
-    fn mk_lexeme(&self, byte: u8, lexeme_idx: LexemeIdx) -> Lexeme {
+    fn mk_lexeme(&self, byte: Option<u8>, lexeme_idx: LexemeIdx) -> Lexeme {
         let mut bytes = self.curr_row_bytes();
-        if !self.lexer_spec().greedy {
-            bytes.push(byte);
+        if byte.is_some() && !self.lexer_spec().greedy {
+            bytes.push(byte.unwrap());
         }
         self.lexer_spec()
             .new_lexeme(lexeme_idx, bytes)
-            .expect("TODO")
+            .expect("TODO max_token, no stop token?")
     }
 
     fn has_forced_bytes(&self, allowed_lexemes: &SimpleVob, bytes: &[u8]) -> bool {
@@ -919,11 +947,12 @@ impl Parser {
     /// It either initial lexer states for lazy lexers,
     /// or lexer_initial_state+byte for greedy lexers.
     /// lexer_byte is the byte that led to producing the lexeme.
+    #[inline(always)]
     fn advance_parser(
         &mut self,
         lexer_state: StateID,
         lexeme_idx: LexemeIdx,
-        lexer_byte: u8,
+        lexer_byte: Option<u8>,
     ) -> bool {
         let lexeme = if self.scratch.definitive {
             let res = self.mk_lexeme(lexer_byte, lexeme_idx);
@@ -946,10 +975,10 @@ impl Parser {
             let no_hidden = LexerState {
                 row_idx,
                 lexer_state,
-                byte: lexer_byte,
-                use_byte: self.lexer_spec().greedy,
+                byte: lexer_byte.unwrap_or(0),
+                use_byte: lexer_byte.is_some() && self.lexer_spec().greedy,
             };
-            if lex_spec.has_hidden_len() {
+            if lexer_byte.is_some() && lex_spec.has_hidden_len() {
                 // greedy lexers don't have stop tokens
                 assert!(!self.lexer_spec().greedy);
 
@@ -1081,8 +1110,7 @@ impl Recognizer for Parser {
     fn try_push_byte(&mut self, byte: u8) -> bool {
         assert!(!self.scratch.definitive);
 
-        let curr = self.lexer_stack[self.lexer_stack.len() - 1];
-
+        let curr = self.lexer_state();
         let res = self.lexer.advance(
             &self.rows[curr.row_idx as usize].allowed_lexemes,
             curr.lexer_state,
