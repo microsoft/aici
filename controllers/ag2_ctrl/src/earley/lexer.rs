@@ -67,14 +67,23 @@ impl LexemeSpec {
     }
 
     pub fn from_rx_and_stop(name: String, body_rx: &str, stop_rx: &str) -> Result<Self> {
-        let rx = format!("({})({})", body_rx, stop_rx);
+        let ends_at_eos_only = stop_rx.is_empty();
+        let rx = format!(
+            "({})({})",
+            body_rx,
+            if ends_at_eos_only {
+                Self::EOS_MARKER
+            } else {
+                stop_rx
+            }
+        );
         let hidden = HiddenLexeme::from_rx(&rx, stop_rx)?;
         let info = LexemeSpec {
             idx: LexemeIdx(0),
             name,
             rx,
             simple_text: None,
-            ends_at_eos_only: stop_rx.is_empty(),
+            ends_at_eos_only,
             allow_others: false,
             hidden,
         };
@@ -328,6 +337,16 @@ impl LexerSpec {
     pub fn lexeme_spec(&self, idx: LexemeIdx) -> &LexemeSpec {
         &self.lexemes[idx.0]
     }
+
+    pub fn eos_lexemes(&self) -> SimpleVob {
+        let mut v = SimpleVob::alloc(self.lexemes.len());
+        for (idx, lex) in self.lexemes.iter().enumerate() {
+            if lex.ends_at_eos_only {
+                v.set(idx, true);
+            }
+        }
+        v
+    }
 }
 
 impl Lexer {
@@ -511,6 +530,22 @@ impl Lexer {
             Some(LexemeIdx(idx))
         } else {
             None
+        }
+    }
+
+    pub fn allows_eos(&self, mut state: StateID, allowed_eos_lexemes: &SimpleVob) -> bool {
+        if allowed_eos_lexemes.is_zero() {
+            return false;
+        }
+
+        for b in LexemeSpec::EOS_MARKER.as_bytes() {
+            state = self.dfa.next_state(state, *b);
+        }
+        let accepting = self.vobset.resolve(self.state_info(state).accepting);
+        if accepting.and_is_zero(allowed_eos_lexemes) {
+            false
+        } else {
+            true
         }
     }
 

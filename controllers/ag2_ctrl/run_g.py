@@ -133,7 +133,8 @@ def main():
     grm = character_maker2(1, "A nimble fighter", ["axe", "sword", "bow"])
     prompt = ""
 
-    grm = "Write a number: " + gen("text", max_tokens=3)
+    # grm = "Write a number: " + gen("text", max_tokens=3)
+    grm = "Write a number: " + gen("text", regex="[0-9]+", max_tokens=3)
 
     ag2_json = {"grammar": grm.ag2_serialize()}
     ag2_arg = json.dumps(ag2_json, indent=1)

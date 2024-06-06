@@ -357,6 +357,13 @@ impl Parser {
         false
     }
 
+    pub fn lexer_allows_eos(&self) -> bool {
+        let mut allowed_eos = self.lexer_spec().eos_lexemes();
+        allowed_eos.and(&self.curr_row().allowed_lexemes);
+        let curr = self.lexer_state();
+        self.lexer.allows_eos(curr.lexer_state, &allowed_eos)
+    }
+
     fn item_to_string(&self, idx: usize) -> String {
         self.scratch.item_to_string(idx)
     }
@@ -1083,7 +1090,7 @@ impl Recognizer for Parser {
         {
             true
         } else if tok == SpecialToken::EndOfSentence {
-            self.is_accepting()
+            self.is_accepting() || self.lexer_allows_eos()
         } else {
             false
         }

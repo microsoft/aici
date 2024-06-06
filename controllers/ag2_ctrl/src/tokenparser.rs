@@ -1,6 +1,6 @@
 use crate::{
     api::TopLevelGrammar,
-    earley::{grammars_from_json, ModelVariable, Parser},
+    earley::{grammars_from_json, lexer::LexemeSpec, ModelVariable, Parser},
 };
 use aici_abi::{MidProcessArg, MidProcessResult, TokenId, TokenizerEnv};
 use anyhow::Result;
@@ -18,6 +18,7 @@ macro_rules! infoln {
 pub struct TokenParser {
     pub token_env: Box<dyn TokenizerEnv>,
     pub parser: Parser,
+    first_token_of_eos_marker: TokenId,
     // tokens currently in KV cache
     llm_tokens: Vec<TokenId>,
     llm_bytes: Vec<u8>,
@@ -35,9 +36,15 @@ impl TokenParser {
         infoln!("optimized: {:?}", grm);
         let cgrm = grm.compile();
         let parser = Parser::new(cgrm)?;
+
+        let first_token_of_eos_marker = token_env
+            .tok_trie()
+            .greedy_tokenize(&LexemeSpec::EOS_MARKER.as_bytes())[0];
+
         Ok(TokenParser {
             token_env,
             parser,
+            first_token_of_eos_marker,
             llm_tokens: Vec::new(),
             llm_bytes: Vec::new(),
             grm_prefix: Vec::new(),
@@ -221,6 +228,12 @@ impl TokenParser {
         let mut set = trie.alloc_token_set();
         self.parser.print_row(self.parser.num_rows() - 1);
         trie.compute_bias_ext(&mut self.parser, &mut set, &token_prefix);
+
+        // clean damage from EOS_MARKER
+        if self.parser.lexer_allows_eos() {
+            set.disallow_token(self.first_token_of_eos_marker);
+        }
+
         infoln!(
             "bias: (pref: {:?}) {:?} {}",
             String::from_utf8_lossy(&token_prefix),
