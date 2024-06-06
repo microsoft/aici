@@ -324,10 +324,13 @@ impl LexerSpec {
     }
 
     pub fn dbg_lexeme_set(&self, vob: &SimpleVob) -> String {
-        vob.iter()
-            .map(|idx| self.lexemes[idx as usize].name.as_str())
-            .collect::<Vec<_>>()
-            .join(", ")
+        format!(
+            "Lexemes: [{}]",
+            vob.iter()
+                .map(|idx| self.lexemes[idx as usize].name.as_str())
+                .collect::<Vec<_>>()
+                .join(", ")
+        )
     }
 
     pub fn new_lexeme(&self, idx: LexemeIdx, bytes: Vec<u8>) -> Result<Lexeme> {

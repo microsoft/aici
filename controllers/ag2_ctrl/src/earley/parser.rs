@@ -20,7 +20,7 @@ use super::{
     lexer::{Lexeme, LexemeIdx, LexerSpec, StateID},
 };
 
-const TRACE: bool = false;
+const TRACE: bool = true;
 const DEBUG: bool = true;
 const INFO: bool = true;
 const MAX_ROW: usize = 100;
@@ -474,26 +474,25 @@ impl Parser {
         tokens: &[TokenId],
         mut num_skip: usize,
     ) -> Result<&'static str> {
-        debug!("apply_tokens: {:?} {}", tokens, self.lexer_stack.len());
+        debug!("apply_tokens: {:?}\n  {}", tokens, trie.tokens_dbg(tokens));
         self.assert_definitive();
-        let mut tok_idx = 0;
         // reset token_idx
         for ri in self.row_infos.iter_mut() {
             ri.token_idx_start = usize::MAX;
             ri.token_idx_stop = 0;
         }
         let mut last_lexeme = 0;
-        let (indices, bytes) = self.get_bytes_and_lexeme_indices();
+        let (indices, grm_bytes) = self.get_bytes_and_lexeme_indices();
         let mut byte_idx = 0;
 
-        for t in tokens {
+        for (tok_idx, t) in tokens.iter().enumerate() {
             for b in trie.token(*t).iter() {
                 if num_skip > 0 {
                     num_skip -= 1;
                     continue;
                 }
 
-                if byte_idx >= bytes.len() {
+                if byte_idx >= grm_bytes.len() {
                     self.token_idx = tok_idx; // save local pointer, in case push_row() uses it
                     if !self.try_push_byte_definitive(*b) {
                         return Ok("parse reject");
@@ -517,10 +516,10 @@ impl Parser {
                         last_lexeme += 1;
                     }
 
-                    if bytes[byte_idx] != *b {
+                    if grm_bytes[byte_idx] != *b {
                         println!(
                             "byte mismatch: {} != {} at {}",
-                            bytes[byte_idx], b, last_lexeme
+                            grm_bytes[byte_idx], b, last_lexeme
                         );
                         return Ok("static reject");
                     }
@@ -528,13 +527,22 @@ impl Parser {
 
                 byte_idx += 1;
             }
-            tok_idx += 1;
         }
+
+        self.token_idx = tokens.len();
         while last_lexeme < self.row_infos.len() {
-            self.row_infos[last_lexeme].apply_token_idx(tok_idx);
+            self.row_infos[last_lexeme].apply_token_idx(self.token_idx);
             last_lexeme += 1;
         }
-        self.token_idx = tok_idx;
+
+        for infos in self.row_infos.iter() {
+            debug!(
+                "  token_idx: {}-{} {}",
+                infos.token_idx_start,
+                infos.token_idx_stop,
+                self.lexer_spec().dbg_lexeme(&infos.lexeme)
+            );
+        }
 
         // self.print_row(self.num_rows() - 1);
 
@@ -614,7 +622,7 @@ impl Parser {
     ) -> bool {
         match lexeme {
             None => {
-                // lexer advanced, but no lexeme
+                // lexer advanced, but no lexeme - fast path
                 self.lexer_stack.push(LexerState {
                     row_idx: curr.row_idx,
                     lexer_state: next_state,
@@ -633,12 +641,17 @@ impl Parser {
         let curr = self.lexer_state();
         let row = &self.rows[curr.row_idx as usize];
 
-        debug!("B: {:?}", byte as char);
         let info = &self.row_infos[curr.row_idx as usize];
-        let max_tokens_reached = info.token_idx_stop - info.token_idx_start > info.max_tokens;
+        let info_tokens = std::cmp::max(
+            0,
+            self.token_idx as isize - info.token_idx_start as isize,
+        ) as usize;
+        let max_tokens_reached = info_tokens >= info.max_tokens;
+
+        debug!("B: {:?} tokens={}", byte as char, info_tokens);
 
         let res = if max_tokens_reached {
-            // TODO the byte gets lost
+            debug!("  max_tokens={} reached", info.max_tokens);
             let (state, lexeme) =
                 self.lexer
                     .force_lexeme_end(&row.allowed_lexemes, curr.lexer_state, Some(byte));
@@ -949,6 +962,9 @@ impl Parser {
     }
 
     fn has_forced_bytes(&self, allowed_lexemes: &SimpleVob, bytes: &[u8]) -> bool {
+        if allowed_lexemes.is_zero() {
+            return false;
+        }
         for lexeme_idx in allowed_lexemes.iter() {
             let lex_spec = &self.lexer_spec().lexemes[lexeme_idx as usize];
             if !lex_spec.has_forced_bytes(bytes) {
@@ -1002,7 +1018,7 @@ impl Parser {
 
                 if self.scratch.definitive {
                     trace!(
-                        "  allowed lexemes: {:?}",
+                        "  allowed lexemes: {}",
                         self.lexer_spec().dbg_lexeme_set(allowed_lexemes)
                     );
                     trace!("  hidden: {:?}", String::from_utf8_lossy(&hidden_bytes));
@@ -1012,13 +1028,13 @@ impl Parser {
                     self.lexer_stack.push(no_hidden);
                 } else if self.has_forced_bytes(allowed_lexemes, &hidden_bytes) {
                     if self.scratch.definitive {
-                        trace!("  hidden forced");
+                        trace!("  hidden forced",);
                     }
                     // if the bytes are forced, we just advance the lexer
                     // by replacing the top lexer states
                     self.pop_lexer_states(hidden_bytes.len() - 1);
                     let allowed_lexemes = &self.rows[added_row].allowed_lexemes;
-                    let mut lexer_state = lexer_state;
+                    let mut lexer_state = self.lexer.file_start_state();
                     for b in hidden_bytes {
                         match self.lexer.advance(
                             allowed_lexemes,
@@ -1029,7 +1045,7 @@ impl Parser {
                             Some((next_state, None)) => {
                                 lexer_state = next_state;
                             }
-                            None => panic!("hidden byte failed"),
+                            None => panic!("hidden byte failed; {:?}", hidden_bytes),
                             _ => panic!("hidden byte produced lexeme"),
                         }
                         self.lexer_stack.push(LexerState {

@@ -133,8 +133,16 @@ def main():
     grm = character_maker2(1, "A nimble fighter", ["axe", "sword", "bow"])
     prompt = ""
 
-    # grm = "Write a number: " + gen("text", max_tokens=3)
-    grm = "Q: 7 * 8\nA: " + gen("text", regex="[0-9]+", max_tokens=20)
+    grm = "Write a number: " + gen("text", max_tokens=3)
+    grm = "Q: 1000 + 3\nA: " + gen("text", regex="[0-9]+", max_tokens=20)
+    grm = "Q: 1000 + 3\nA: " + gen("text", regex="[0-9]+", max_tokens=2)
+
+    grm = "Count to 10: 1, 2, 3, 4, 5, 6, 7, " + gen("text", stop=",")
+
+    grm = "this is a test" + gen("test", max_tokens=1)
+    grm = "How much is 2 + 2? " + gen(name="test", max_tokens=4) + gen(name="test2", max_tokens=4) + "\n"
+
+    # grm = "Q: 7 * 8\nA: " + gen("text", regex="[0-9]+", max_tokens=20) + "\n"
 
     ag2_json = {"grammar": grm.ag2_serialize()}
     ag2_arg = json.dumps(ag2_json, indent=1)

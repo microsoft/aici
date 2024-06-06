@@ -234,6 +234,11 @@ impl TokenParser {
             set.disallow_token(self.first_token_of_eos_marker);
         }
 
+        if set.num_set() == 1 && set.is_allowed(trie.eos_token()) {
+            infoln!("only eos token allowed, stopping");
+            return MidProcessResult::stop();
+        }
+
         infoln!(
             "bias: (pref: {:?}) {:?} {}",
             String::from_utf8_lossy(&token_prefix),
