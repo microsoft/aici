@@ -60,7 +60,7 @@ impl LexemeSpec {
     // Once we switch regex engines, we can also use 0xFF,
     // as it is not a valid UTF-8 byte, but for now we stick to 0x02,
     // which is OK for all tokenizers we use.
-    pub const EOS_MARKER: &'static str = "\u{02}-E-o-S-\u{02}";
+    pub const EOS_MARKER: &'static str = "\u{02}-EoS";
 
     pub fn key(&self) -> &str {
         &self.rx

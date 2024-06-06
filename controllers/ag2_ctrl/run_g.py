@@ -134,7 +134,7 @@ def main():
     prompt = ""
 
     # grm = "Write a number: " + gen("text", max_tokens=3)
-    grm = "Write a number: " + gen("text", regex="[0-9]+", max_tokens=3)
+    grm = "Q: 7 * 8\nA: " + gen("text", regex="[0-9]+", max_tokens=20)
 
     ag2_json = {"grammar": grm.ag2_serialize()}
     ag2_arg = json.dumps(ag2_json, indent=1)

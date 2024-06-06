@@ -723,11 +723,19 @@ impl Parser {
     pub fn scan_model_variable(&mut self, mv: ModelVariable) -> bool {
         self.assert_definitive(); // ???
 
-        debug!("  scan mv: {:?}", mv);
+        let lexer_eos = self.lexer_allows_eos();
+
+        debug!("  scan mv: {:?}; lexer_eos={}", mv, lexer_eos);
 
         if !self.flush_lexer() {
             debug!("  flush_lexer() failed");
             return false;
+        }
+
+        debug!("  flush_lexer() OK");
+
+        if lexer_eos {
+            return true;
         }
 
         self.scratch.new_row(self.curr_row().last_item);
@@ -767,9 +775,10 @@ impl Parser {
 
         if self.scratch.definitive {
             debug!(
-                "scan: {} at {}",
+                "  scan: {} at {} (spec: {:?})",
                 self.lexer_spec().dbg_lexeme(&lexeme),
-                row_idx
+                row_idx,
+                self.lexer_spec().lexeme_spec(lexeme.idx),
             );
         }
 
@@ -901,7 +910,7 @@ impl Parser {
                     token_idx_stop: self.token_idx,
                     max_tokens,
                 });
-                debug!("  push: {idx} {} {}", self.rows.len(), self.row_infos.len());
+                // debug!("  push: {idx} {} {}", self.rows.len(), self.row_infos.len());
             }
 
             true
@@ -963,7 +972,6 @@ impl Parser {
     ) -> bool {
         let lexeme = if self.scratch.definitive {
             let res = self.mk_lexeme(lexer_byte, lexeme_idx);
-            debug!("  lexer -> {}", self.lexer_spec().dbg_lexeme(&res));
             res
         } else {
             Lexeme::just_idx(lexeme_idx)
@@ -976,9 +984,6 @@ impl Parser {
                 self.row_infos[added_row - 1].lexeme = lexeme;
             }
             let lex_spec = self.lexer_spec().lexeme_spec(lexeme_idx);
-            if self.scratch.definitive {
-                debug!("  lexeme: {:?}", lex_spec);
-            }
             let no_hidden = LexerState {
                 row_idx,
                 lexer_state,

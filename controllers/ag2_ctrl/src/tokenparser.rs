@@ -162,11 +162,11 @@ impl TokenParser {
 
         let mut backtrack = 0;
 
-        println!(
-            "\nllm_bytes: {:?}\ngrm_bytes: {:?}\n",
-            String::from_utf8_lossy(&self.llm_bytes),
-            String::from_utf8_lossy(&grm_bytes),
-        );
+        // println!(
+        //     "\nllm_bytes: {:?}\ngrm_bytes: {:?}\n",
+        //     String::from_utf8_lossy(&self.llm_bytes),
+        //     String::from_utf8_lossy(&grm_bytes),
+        // );
 
         // now, see if we need to backtrack
         if self.llm_bytes.len() > grm_bytes.len()
@@ -226,7 +226,7 @@ impl TokenParser {
         }
 
         let mut set = trie.alloc_token_set();
-        self.parser.print_row(self.parser.num_rows() - 1);
+        // self.parser.print_row(self.parser.num_rows() - 1);
         trie.compute_bias_ext(&mut self.parser, &mut set, &token_prefix);
 
         // clean damage from EOS_MARKER
