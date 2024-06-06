@@ -476,6 +476,23 @@ impl TokTrie {
         None
     }
 
+    pub fn all_subtokens(&self, bytes: &[u8]) -> Vec<TokenId> {
+        let mut r = Vec::new();
+        for i in 0..bytes.len() {
+            let mut n = self.root();
+            for j in i..bytes.len() {
+                n = match self.child_at_byte(n, bytes[j]) {
+                    Some(n) => n,
+                    None => break,
+                };
+                if let Some(tok) = n.token_id() {
+                    r.push(tok);
+                }
+            }
+        }
+        r
+    }
+
     pub fn node_children(&self, n: &TrieNode) -> NodeChildren {
         let off = self.node_offset(n);
         NodeChildren {

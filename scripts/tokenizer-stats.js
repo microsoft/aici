@@ -70,6 +70,8 @@ function stats(fn) {
   const tokensByClass = {}
 
   const isFallback = tokenizer.model.vocab.hasOwnProperty("▁▁▁");
+  const byteCounts = []
+  for (let i = 0; i < 256; ++i) byteCounts.push(0)
 
   for (const [str, id] of Object.entries(tokenizer.model.vocab)) {
     const len = Math.floor(str.length / 10)
@@ -82,6 +84,13 @@ function stats(fn) {
       console.log("Long token: ", id, JSON.stringify(str))
     }
     const t = isFallback ? str.replace(/▁/g, " ") : tokenNameToString(str)
+    const bytes = isFallback ?
+      ((str.startsWith("<0x") && str.endsWith(">")) ? Buffer.from([parseInt(str.slice(3, 5), 16)]) :
+        Buffer.from(t, 'utf8')) : tokenNameToBytes(str)
+
+    for (const b of bytes) {
+      byteCounts[b] += 1
+    }
     const tclasses = []
     if (addedTokens.hasOwnProperty(str)) {
       tclasses.push('ADDED')
@@ -94,7 +103,7 @@ function stats(fn) {
       }
     }
     if (tclasses.length == 0) {
-      console.log("No class: ", id, JSON.stringify(t))
+      // console.log("No class: ", id, JSON.stringify(t))
       tclasses.push('UNKNOWN')
     } else if (tclasses.length > 1 && !tclasses.includes('BAD_UTF') && !/^[ ']+$/.test(t)) {
       console.log("Multiple classes: ", id, JSON.stringify(t), tclasses)
@@ -121,6 +130,9 @@ function stats(fn) {
       console.log("     ", JSON.stringify(permute(elts).slice(0, 10)))
     }
   }
+  const ones = byteCounts.map((c, i) => c == 1 ? i : undefined).filter(x => x !== undefined)
+  const zeros = byteCounts.map((c, i) => c == 0 ? i : undefined).filter(x => x !== undefined)
+  console.log("Byte counts:", { ones, zeros })
 }
 
 function permute(arr) {

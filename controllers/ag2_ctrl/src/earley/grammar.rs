@@ -146,7 +146,7 @@ impl Grammar {
     }
 
     pub fn make_terminal(&mut self, lhs: SymIdx, mut info: LexemeSpec) -> Result<()> {
-        if let Some(sym) = self.symbol_by_rx.get(&info.rx) {
+        if let Some(sym) = self.symbol_by_rx.get(info.key()) {
             // TODO: check that the lexeme is the same
             self.add_rule(lhs, vec![*sym]);
             return Ok(());
@@ -155,7 +155,7 @@ impl Grammar {
         let sym = self.sym_data_mut(lhs);
         assert!(sym.rules.is_empty());
         sym.lexeme = Some(idx);
-        self.symbol_by_rx.insert(info.rx.clone(), lhs);
+        self.symbol_by_rx.insert(info.key().to_string(), lhs);
         info.idx = idx;
         self.lexer_spec.lexemes.push(info);
         Ok(())

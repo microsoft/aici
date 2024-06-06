@@ -1,13 +1,7 @@
-use super::{
-    lexer::{quote_regex, LexerSpec},
-    Grammar,
-};
+use super::{lexer::LexerSpec, Grammar};
 use crate::{
     api::{GrammarWithLexer, Node, TopLevelGrammar},
-    earley::{
-        grammar::SymbolProps,
-        lexer::{HiddenLexeme, LexemeIdx, LexemeSpec},
-    },
+    earley::{grammar::SymbolProps, lexer::LexemeSpec},
 };
 use anyhow::{bail, ensure, Result};
 
@@ -98,17 +92,11 @@ pub fn grammar_from_json(input: GrammarWithLexer) -> Result<Grammar> {
                 } else {
                     &data.body_rx
                 };
-                let rx = format!("({})({})", body_rx, data.stop_rx);
-                let hidden = HiddenLexeme::from_rx(&rx, &data.stop_rx)?;
-                let info = LexemeSpec {
-                    idx: LexemeIdx(0),
-                    name: format!("gen_{}", grm.sym_name(lhs)),
-                    rx: format!("({})({})", body_rx, data.stop_rx),
-                    simple_text: None,
-                    ends_at_eos_only: data.stop_rx.is_empty(),
-                    allow_others: false,
-                    hidden,
-                };
+                let info = LexemeSpec::from_rx_and_stop(
+                    format!("gen_{}", grm.sym_name(lhs)),
+                    body_rx,
+                    &data.stop_rx,
+                )?;
                 grm.make_terminal(lhs, info)?;
                 let symprops = grm.sym_props_mut(lhs);
                 if let Some(t) = data.temperature {
@@ -119,27 +107,16 @@ pub fn grammar_from_json(input: GrammarWithLexer) -> Result<Grammar> {
                 rx, allow_others, ..
             } => {
                 ensure!(is_greedy, "lexeme() only allowed in greedy grammars");
-                let info = LexemeSpec {
-                    idx: LexemeIdx(0),
-                    simple_text: None,
-                    name: format!("lex_{}", grm.sym_name(lhs)),
-                    rx: rx.clone(),
-                    ends_at_eos_only: false,
-                    allow_others: *allow_others,
-                    hidden: HiddenLexeme::default(),
-                };
+                let info = LexemeSpec::from_greedy_lexeme(
+                    format!("lex_{}", grm.sym_name(lhs)),
+                    rx,
+                    *allow_others,
+                );
                 grm.make_terminal(lhs, info)?;
             }
             Node::String { literal, .. } => {
-                let info = LexemeSpec {
-                    idx: LexemeIdx(0),
-                    simple_text: Some(literal.clone()),
-                    name: format!("str_{}", grm.sym_name(lhs)),
-                    rx: quote_regex(&literal),
-                    ends_at_eos_only: false,
-                    allow_others: false,
-                    hidden: HiddenLexeme::default(),
-                };
+                let info =
+                    LexemeSpec::from_simple_literal(format!("str_{}", grm.sym_name(lhs)), &literal);
                 grm.make_terminal(lhs, info)?;
             }
             Node::GrammarRef { grammar_id, .. } => {

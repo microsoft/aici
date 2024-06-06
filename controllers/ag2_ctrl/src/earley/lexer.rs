@@ -23,7 +23,7 @@ pub struct Lexeme {
 }
 
 #[derive(Debug, Clone)]
-pub enum HiddenLexeme {
+enum HiddenLexeme {
     Regex(Regex),
     Fixed(usize),
 }
@@ -45,16 +45,68 @@ impl Default for HiddenLexeme {
 
 #[derive(Clone)]
 pub struct LexemeSpec {
-    pub idx: LexemeIdx,
-    pub name: String,
-    pub rx: String,
-    pub simple_text: Option<String>,
-    pub ends_at_eos_only: bool,
-    pub allow_others: bool,
-    pub hidden: HiddenLexeme,
+    pub(crate) idx: LexemeIdx,
+    name: String,
+    rx: String,
+    simple_text: Option<String>,
+    ends_at_eos_only: bool,
+    allow_others: bool,
+    hidden: HiddenLexeme,
 }
 
 impl LexemeSpec {
+    // The first byte of EOS_MARKER should not occur in any token,
+    // other than the token representing this byte itself.
+    // Once we switch regex engines, we can also use 0xFF,
+    // as it is not a valid UTF-8 byte, but for now we stick to 0x02,
+    // which is OK for all tokenizers we use.
+    pub const EOS_MARKER: &'static str = "\u{02}-E-o-S-\u{02}";
+
+    pub fn key(&self) -> &str {
+        &self.rx
+    }
+
+    pub fn from_rx_and_stop(name: String, body_rx: &str, stop_rx: &str) -> Result<Self> {
+        let rx = format!("({})({})", body_rx, stop_rx);
+        let hidden = HiddenLexeme::from_rx(&rx, stop_rx)?;
+        let info = LexemeSpec {
+            idx: LexemeIdx(0),
+            name,
+            rx,
+            simple_text: None,
+            ends_at_eos_only: stop_rx.is_empty(),
+            allow_others: false,
+            hidden,
+        };
+        Ok(info)
+    }
+
+    pub fn from_simple_literal(name: String, literal: &str) -> Self {
+        let info = LexemeSpec {
+            idx: LexemeIdx(0),
+            name,
+            rx: quote_regex(literal),
+            simple_text: Some(literal.to_string()),
+            ends_at_eos_only: false,
+            allow_others: false,
+            hidden: HiddenLexeme::default(),
+        };
+        info
+    }
+
+    pub fn from_greedy_lexeme(name: String, rx: &str, allow_others: bool) -> Self {
+        let info = LexemeSpec {
+            idx: LexemeIdx(0),
+            name,
+            rx: rx.to_string(),
+            simple_text: None,
+            ends_at_eos_only: false,
+            allow_others,
+            hidden: HiddenLexeme::default(),
+        };
+        info
+    }
+
     pub fn has_hidden_len(&self) -> bool {
         match &self.hidden {
             HiddenLexeme::Fixed(0) => false,

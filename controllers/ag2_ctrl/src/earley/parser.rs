@@ -1110,12 +1110,13 @@ impl Recognizer for Parser {
     fn try_push_byte(&mut self, byte: u8) -> bool {
         assert!(!self.scratch.definitive);
 
+        let lexer_logging = false;
         let curr = self.lexer_state();
         let res = self.lexer.advance(
             &self.rows[curr.row_idx as usize].allowed_lexemes,
             curr.lexer_state,
             byte,
-            self.scratch.definitive,
+            lexer_logging,
         );
 
         if let Some((next_state, lexeme)) = res {

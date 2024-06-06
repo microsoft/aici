@@ -37,6 +37,41 @@ impl Runner {
             arg.grammar,
         )
         .expect("invalid guidance protobuf");
+
+        // let trie = tok_parser.token_env.tok_trie();
+        // let mut subtokens = trie.alloc_token_set();
+        // let mut bytecounts = vec![0; 256];
+        // for i in 0..trie.vocab_size() {
+        //     let tok = trie.token(i as u32);
+        //     if tok.is_empty() {
+        //         continue;
+        //     }
+        //     for &b in tok {
+        //         bytecounts[b as usize] += 1;
+        //     }
+        //     if tok.contains(&0xff) {
+        //         infoln!("FF: {i} {}", trie.token_dbg(i as u32));
+        //     }
+        //     let subt = trie.all_subtokens(&tok[1..]);
+        //     for id in subt {
+        //         subtokens.allow_token(id);
+        //     }
+        // }
+
+        // for (i, &c) in bytecounts.iter().enumerate() {
+        //     infoln!("byte {:02x}: {}", i, c);
+        // }
+
+        // trie.apply_duplicates(&mut subtokens);
+        // subtokens = subtokens.negated();
+        // for t in subtokens.iter() {
+        //     let tok = trie.token(t);
+        //     if tok.len() > 1 && tok[0] & 0x80 != 0 && String::from_utf8(tok.to_vec()).is_ok() {
+        //         infoln!("subtoken: {}", trie.token_dbg(t));
+        //     }
+        // }
+        // infoln!("subtokens: {}", trie.token_set_dbg(&subtokens));
+
         let token_ptr = tok_parser.num_tokens();
         Runner {
             tok_parser,

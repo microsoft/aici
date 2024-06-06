@@ -92,6 +92,7 @@ pub struct GenOptions {
 
     /// The whole generation must match `body_rx + stop_rx`.
     /// Whatever matched `stop_rx` is discarded.
+    /// If `stop_rx` is empty, it's assumed to be EOS.
     pub stop_rx: String,
 
     /// Override sampling temperature.

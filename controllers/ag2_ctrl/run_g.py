@@ -125,13 +125,15 @@ def main():
             "class": "{gen('class', stop='"')}",
             "mantra": "{gen('mantra', stop='"')}",
             "strength": {gen('strength', regex='[0-9]+', stop=',')},
-            "items": ["{gen('item', list_append=True, stop='"')}", "{gen('item', list_append=True, stop='"')}", "{gen('item', list_append=True, stop='"')}"]
+            "items_with_colors": ["{gen('item', list_append=True, stop='"')}", "{gen('item', list_append=True, stop='"')}", "{gen('item', list_append=True, stop='"')}"]
         }}"""
         return lm
 
 
     grm = character_maker2(1, "A nimble fighter", ["axe", "sword", "bow"])
     prompt = ""
+
+    grm = "Write a number: " + gen("text", max_tokens=3)
 
     ag2_json = {"grammar": grm.ag2_serialize()}
     ag2_arg = json.dumps(ag2_json, indent=1)
