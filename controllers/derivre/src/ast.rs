@@ -323,6 +323,24 @@ impl ExprSet {
         }
     }
 
+    fn possible_lookahead_len_inner(&self, e: ExprRef) -> usize {
+        match self.get(e) {
+            Expr::Lookahead(_, _, n) => n as usize,
+            _ => 0,
+        }
+    }
+
+    pub fn possible_lookahead_len(&self, e: ExprRef) -> usize {
+        match self.get(e) {
+            Expr::Or(_, args) => args
+                .iter()
+                .map(|&arg| self.possible_lookahead_len_inner(arg))
+                .max()
+                .unwrap_or(0),
+            _ => self.possible_lookahead_len_inner(e),
+        }
+    }
+
     fn get_flags(&self, id: ExprRef) -> ExprFlags {
         assert!(id.is_valid());
         if id == ExprRef::EMPTY_STRING {

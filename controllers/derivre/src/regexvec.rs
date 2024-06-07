@@ -128,6 +128,14 @@ impl RegexVec {
         &self.state_descs[state.as_usize()]
     }
 
+    pub fn possible_lookahead_len_for_state(&self, state: StateID) -> usize {
+        let mut max_len = 0;
+        Self::iter_state(&self.rx_sets, state, |(_, e)| {
+            max_len = max_len.max(self.exprs().possible_lookahead_len(e));
+        });
+        max_len
+    }
+
     pub fn lookahead_len_for_state(&self, state: StateID) -> Option<usize> {
         let state_desc = self.state_desc(state);
         let idx = state_desc.lowest_accepting;
