@@ -76,9 +76,13 @@ pub struct RegexVec {
 
 #[derive(Clone, Debug)]
 pub struct StateDesc {
+    pub state: StateID,
     pub lowest_accepting: isize, // -1 if no accepting state
     pub accepting: SimpleVob,
     pub possible: SimpleVob,
+
+    possible_lookahead_len: Option<usize>,
+    lookahead_len: Option<Option<usize>>,
 }
 
 impl StateDesc {
@@ -128,29 +132,38 @@ impl RegexVec {
         &self.state_descs[state.as_usize()]
     }
 
-    pub fn possible_lookahead_len_for_state(&self, state: StateID) -> usize {
+    pub fn possible_lookahead_len(&mut self, state: StateID) -> usize {
+        let desc = &mut self.state_descs[state.as_usize()];
+        if let Some(len) = desc.possible_lookahead_len {
+            return len;
+        }
         let mut max_len = 0;
+        let exprs = &self.cache.exprs;
         Self::iter_state(&self.rx_sets, state, |(_, e)| {
-            max_len = max_len.max(self.exprs().possible_lookahead_len(e));
+            max_len = max_len.max(exprs.possible_lookahead_len(e));
         });
+        desc.possible_lookahead_len = Some(max_len);
         max_len
     }
 
-    pub fn lookahead_len_for_state(&self, state: StateID) -> Option<usize> {
-        let state_desc = self.state_desc(state);
-        let idx = state_desc.lowest_accepting;
+    pub fn lookahead_len_for_state(&mut self, state: StateID) -> Option<usize> {
+        let desc = &mut self.state_descs[state.as_usize()];
+        let idx = desc.lowest_accepting;
         if idx < 0 {
             return None;
         }
+        if let Some(len) = desc.lookahead_len {
+            return len;
+        }
         let mut res = None;
-
+        let exprs = &self.cache.exprs;
         Self::iter_state(&self.rx_sets, state, |(idx2, e)| {
-            if res.is_none() && self.exprs().is_nullable(e) {
+            if res.is_none() && exprs.is_nullable(e) {
                 assert!(idx == idx2 as isize);
-                res = Some(self.exprs().lookahead_len(e).unwrap_or(0));
+                res = Some(exprs.lookahead_len(e).unwrap_or(0));
             }
         });
-
+        desc.lookahead_len = Some(res);
         res
     }
 
@@ -416,9 +429,12 @@ impl RegexVec {
 
     fn compute_state_desc(&self, state: StateID) -> StateDesc {
         let mut res = StateDesc {
+            state,
             lowest_accepting: -1,
             accepting: SimpleVob::alloc(self.rx_list.len()),
             possible: SimpleVob::alloc(self.rx_list.len()),
+            possible_lookahead_len: None,
+            lookahead_len: None,
         };
         Self::iter_state(&self.rx_sets, state, |(idx, e)| {
             res.possible.set(idx, true);
