@@ -141,8 +141,9 @@ def main():
 
     grm = "this is a test" + gen("test", max_tokens=1)
     grm = "How much is 2 + 2? " + gen(name="test", max_tokens=4) + gen(name="test2", max_tokens=4) + "\n"
-    grm = "one, two, three, " + gen(name="test", max_tokens=2) + gen(name="test2", max_tokens=2)
-    #grm = "one, two, three, " + gen(name="test", max_tokens=1) + gen(name="test2", max_tokens=1)
+    grm = "one, two, three, " + gen(name="a", max_tokens=2) + gen(name="b", max_tokens=2)
+    grm = "one, two, three, " + gen(name="a", max_tokens=1) + gen(name="b", max_tokens=1)
+    grm = "one, two, three, " + gen(name="a", max_tokens=100)
 
     # grm = "Q: 7 * 8\nA: " + gen("text", regex="[0-9]+", max_tokens=20) + "\n"
 
@@ -168,7 +169,7 @@ def main():
         controller=mod_id,
         controller_arg=ag2_arg,
         temperature=0.0,
-        max_tokens=300,
+        max_tokens=30,
     )
     print("Usage:", res["usage"])
     print("Timing:", res["timing"])

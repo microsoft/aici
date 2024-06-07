@@ -570,7 +570,6 @@ impl Lexer {
         &self,
         allowed_lexems: &SimpleVob,
         prev: StateID,
-        byte: Option<u8>,
     ) -> (StateID, Option<LexemeIdx>) {
         let info = self.state_info(prev);
         let lexeme = if prev == self.initial {
@@ -584,12 +583,7 @@ impl Lexer {
                 .expect("no allowed lexemes");
             Some(LexemeIdx(idx))
         };
-        let state = if let Some(b) = byte {
-            self.dfa.next_state(self.initial, b)
-        } else {
-            self.initial
-        };
-        (state, lexeme)
+        (self.initial, lexeme)
     }
 
     #[inline(always)]
