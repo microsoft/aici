@@ -176,8 +176,7 @@ impl RowInfo {
 struct LexerState {
     row_idx: u32,
     lexer_state: StateID, // state after consuming byte
-    byte: u8,
-    use_byte: bool,
+    byte: Option<u8>,
 }
 
 pub struct Parser {
@@ -338,8 +337,7 @@ impl Parser {
             lexer_stack: vec![LexerState {
                 row_idx: 0,
                 lexer_state,
-                byte: 0,
-                use_byte: false,
+                byte: None,
             }],
         };
         info!("new parser");
@@ -665,8 +663,7 @@ impl Parser {
                 self.lexer_stack.push(LexerState {
                     row_idx: curr.row_idx,
                     lexer_state: next_state,
-                    byte,
-                    use_byte: true,
+                    byte: Some(byte),
                 });
                 true
             }
@@ -960,8 +957,8 @@ impl Parser {
             if back.row_idx as usize != row_idx {
                 break;
             }
-            if back.use_byte {
-                bytes.push(back.byte);
+            if let Some(b) = back.byte {
+                bytes.push(b);
             }
         }
         bytes.reverse();
@@ -1028,8 +1025,7 @@ impl Parser {
             let no_hidden = LexerState {
                 row_idx: added_row as u32,
                 lexer_state: self.lexer.start_state(added_row_lexemes, transition_byte),
-                byte: transition_byte.unwrap_or(0),
-                use_byte: transition_byte.is_some(),
+                byte: transition_byte,
             };
             if pre_lexeme.hidden_len > 0 {
                 // greedy lexers don't have stop tokens
@@ -1070,8 +1066,7 @@ impl Parser {
                         }
                         self.lexer_stack.push(LexerState {
                             lexer_state,
-                            byte: *b,
-                            use_byte: true,
+                            byte: Some(*b),
                             ..no_hidden
                         });
                     }
@@ -1080,14 +1075,14 @@ impl Parser {
                         // set it up for matching after backtrack
                         self.lexer_stack.push(LexerState {
                             lexer_state: self.lexer.start_state(added_row_lexemes, None),
-                            use_byte: false,
+                            byte: None,
                             ..no_hidden
                         });
                     } else {
                         // prevent any further matches in this branch
                         self.lexer_stack.push(LexerState {
                             lexer_state: self.lexer.a_dead_state(),
-                            use_byte: false, // ?
+                            byte: None,
                             ..no_hidden
                         });
                     }
