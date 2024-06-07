@@ -151,6 +151,9 @@ def main():
     grm =  gen(name="bla", list_append=True, suffix="\n")
     prompt = "1. Here is a sentence "
 
+    grm = gen(stop="</color>") + ' and test2'
+    prompt = '<color>red</color>\n<color>'
+
     # grm = "Q: 7 * 8\nA: " + gen("text", regex="[0-9]+", max_tokens=20) + "\n"
 
     ag2_json = {"grammar": grm.ag2_serialize()}
