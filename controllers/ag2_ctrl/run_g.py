@@ -154,6 +154,10 @@ def main():
     grm = gen(stop="</color>") + ' and test2'
     prompt = '<color>red</color>\n<color>'
 
+
+    grm = gen("text", stop=",")
+    prompt = "Count to 10: 1, 2, 3, 4, 5, 6, 7, "
+
     # grm = "Q: 7 * 8\nA: " + gen("text", regex="[0-9]+", max_tokens=20) + "\n"
 
     ag2_json = {"grammar": grm.ag2_serialize()}

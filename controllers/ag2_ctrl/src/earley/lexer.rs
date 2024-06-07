@@ -1,7 +1,6 @@
 use aici_abi::{bytes::limit_str, svob::SimpleVob};
 use anyhow::Result;
 use derivre::{RegexVec, StateDesc};
-use regex::bytes::Regex;
 use std::{fmt::Debug, hash::Hash, rc::Rc};
 
 use super::vobset::VobSet;
@@ -36,7 +35,6 @@ pub struct LexemeSpec {
     simple_text: Option<String>,
     ends_at_eos_only: bool,
     allow_others: bool,
-    hidden: HiddenLexeme,
 }
 
 #[derive(Debug, Clone, Copy, Hash, PartialEq, Eq)]
@@ -64,27 +62,6 @@ pub struct Lexeme {
     hidden_len: usize,
 }
 
-#[derive(Debug, Clone)]
-enum HiddenLexeme {
-    Regex(Regex),
-    Fixed(usize),
-}
-
-impl HiddenLexeme {
-    pub fn from_rx(full_rx: &str, stop_rx: &str) -> Result<Self> {
-        match guess_regex_len(stop_rx.as_bytes()) {
-            Some(len) => Ok(HiddenLexeme::Fixed(len)),
-            None => Ok(HiddenLexeme::Regex(Regex::new(full_rx)?)),
-        }
-    }
-}
-
-impl Default for HiddenLexeme {
-    fn default() -> Self {
-        HiddenLexeme::Fixed(0)
-    }
-}
-
 impl LexemeSpec {
     // The first byte of EOS_MARKER should not occur in any token,
     // other than the token representing this byte itself.
@@ -100,7 +77,7 @@ impl LexemeSpec {
     pub fn from_rx_and_stop(name: String, body_rx: &str, stop_rx: &str) -> Result<Self> {
         let ends_at_eos_only = stop_rx.is_empty();
         let rx = format!(
-            "({})({})",
+            "({})(?P<stop>{})",
             body_rx,
             if ends_at_eos_only {
                 Self::EOS_MARKER
@@ -108,7 +85,6 @@ impl LexemeSpec {
                 stop_rx
             }
         );
-        let hidden = HiddenLexeme::from_rx(&rx, stop_rx)?;
         let info = LexemeSpec {
             idx: LexemeIdx(0),
             name,
@@ -116,7 +92,6 @@ impl LexemeSpec {
             simple_text: None,
             ends_at_eos_only,
             allow_others: false,
-            hidden,
         };
         Ok(info)
     }
@@ -129,7 +104,6 @@ impl LexemeSpec {
             simple_text: Some(literal.to_string()),
             ends_at_eos_only: false,
             allow_others: false,
-            hidden: HiddenLexeme::default(),
         };
         info
     }
@@ -142,16 +116,8 @@ impl LexemeSpec {
             simple_text: None,
             ends_at_eos_only: false,
             allow_others,
-            hidden: HiddenLexeme::default(),
         };
         info
-    }
-
-    pub fn has_hidden_len(&self) -> bool {
-        match &self.hidden {
-            HiddenLexeme::Fixed(0) => false,
-            _ => true,
-        }
     }
 
     /// Check if the lexeme always matches bytes, and has at least one more byte to spare.
@@ -176,10 +142,7 @@ impl Debug for LexemeSpec {
         if self.allow_others {
             write!(f, " allow-others")?;
         }
-        match &self.hidden {
-            HiddenLexeme::Fixed(len) => write!(f, " hidden={}", len),
-            HiddenLexeme::Regex(_) => write!(f, " hidden=regex"),
-        }
+        Ok(())
     }
 }
 
@@ -393,32 +356,6 @@ fn is_regex_special(b: char) -> bool {
         '\\' | '+' | '*' | '?' | '^' | '$' | '(' | ')' | '[' | ']' | '{' | '}' | '.' | '|' => true,
         _ => false,
     }
-}
-
-fn guess_regex_len(bytes: &[u8]) -> Option<usize> {
-    let mut len = 0;
-    let mut idx = 0;
-    while idx < bytes.len() {
-        let c = bytes[idx] as char;
-        match c {
-            '\\' => {
-                idx += 2;
-                len += 1;
-            }
-            // TODO we could do char classes too; watch for unicode though!
-            '.' => {
-                // dot is OK
-            }
-            _ if is_regex_special(c) => {
-                return None;
-            }
-            _ => {}
-        }
-
-        len += 1;
-        idx += 1;
-    }
-    Some(len)
 }
 
 pub fn quote_regex(s: &str) -> String {

@@ -103,6 +103,7 @@
         "logit",
         "logits",
         "logprobs",
+        "lookarounds",
         "lstrip",
         "maxtol",
         "mixtral",
