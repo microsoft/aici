@@ -57,6 +57,7 @@ struct Item {
 // These are only tracked in definitive mode
 #[derive(Debug, Clone)]
 struct ItemProps {
+    // TODO remove; we're no longer using this
     hidden_start: usize,
 }
 
@@ -140,6 +141,7 @@ struct Scratch {
 }
 
 struct RowInfo {
+    start_byte_idx: usize,
     lexeme: Lexeme,
     token_idx_start: usize,
     token_idx_stop: usize,
@@ -191,6 +193,7 @@ pub struct Parser {
     stats: Stats,
     last_collapse: usize,
     token_idx: usize,
+    byte_idx: usize,
 }
 
 impl Scratch {
@@ -220,13 +223,6 @@ impl Scratch {
             last_item: self.row_end,
             allowed_lexemes,
         }
-    }
-
-    fn hidden_start(&self, r: &Row) -> usize {
-        r.item_indices()
-            .map(|i| self.item_props[i].hidden_start)
-            .min()
-            .unwrap_or(usize::MAX)
     }
 
     #[inline(always)]
@@ -334,6 +330,7 @@ impl Parser {
             stats: Stats::default(),
             last_collapse: 0,
             token_idx: 0,
+            byte_idx: 0,
             lexer_stack: vec![LexerState {
                 row_idx: 0,
                 lexer_state,
@@ -445,25 +442,27 @@ impl Parser {
         }
     }
 
-    fn get_bytes_and_lexeme_indices(&self) -> (Vec<usize>, Vec<u8>) {
+    fn get_bytes_and_lexeme_indices(&mut self) -> (Vec<usize>, Vec<u8>) {
         self.assert_definitive();
         let mut indices = vec![];
         let mut allbytes = vec![];
         trace!("get_bytes:");
-        for (idx, ri) in self.row_infos.iter().enumerate() {
+        for idx in 0..self.row_infos.len() {
+            let ri = &self.row_infos[idx];
             trace!("  lexeme: {}", self.lexer_spec().dbg_lexeme(&ri.lexeme));
             let mut bytes = ri.lexeme.visible_bytes().to_vec();
             if bytes.is_empty() && idx == self.num_rows() - 1 {
                 bytes = self.curr_row_bytes();
                 trace!("    bytes: {:?}", String::from_utf8_lossy(&bytes));
             };
+            self.row_infos[idx].start_byte_idx = allbytes.len();
             indices.extend((0..bytes.len()).map(|_| idx));
             allbytes.extend_from_slice(&bytes);
         }
         (indices, allbytes)
     }
 
-    pub fn get_bytes(&self) -> Vec<u8> {
+    pub fn get_bytes(&mut self) -> Vec<u8> {
         self.get_bytes_and_lexeme_indices().1
     }
 
@@ -475,8 +474,16 @@ impl Parser {
         self.grammar.sym_data(self.item_lhs(item))
     }
 
-    pub fn hidden_start(&self) -> usize {
-        self.scratch.hidden_start(&self.curr_row())
+    pub fn hidden_start(&mut self) -> usize {
+        let hidden_len = self
+            .lexer
+            .possible_hidden_len(self.lexer_state().lexer_state);
+        if hidden_len == 0 {
+            return usize::MAX;
+        }
+        let last_lexeme_visible_len = self.curr_row_bytes().len() - hidden_len;
+        let prefix_len = self.row_infos[self.num_rows() - 1].start_byte_idx;
+        prefix_len + last_lexeme_visible_len
     }
 
     pub fn temperature(&self) -> f32 {
@@ -518,6 +525,7 @@ impl Parser {
 
                 if byte_idx >= grm_bytes.len() {
                     self.token_idx = tok_idx; // save local pointer, in case push_row() uses it
+                    self.byte_idx = byte_idx;
                     let row_idx = self.num_rows() - 1;
                     self.row_infos[row_idx].apply_token_idx(tok_idx);
                     debug!(
@@ -599,6 +607,7 @@ impl Parser {
 
         self.row_infos.push(RowInfo {
             lexeme: Lexeme::bogus(),
+            start_byte_idx: 0,
             token_idx_start: self.token_idx,
             token_idx_stop: self.token_idx,
             max_tokens: usize::MAX,
@@ -940,6 +949,7 @@ impl Parser {
                     lexeme: Lexeme::bogus(),
                     token_idx_start: self.token_idx,
                     token_idx_stop: self.token_idx,
+                    start_byte_idx: self.byte_idx,
                     max_tokens,
                 });
                 // debug!("  push: {idx} {} {}", self.rows.len(), self.row_infos.len());

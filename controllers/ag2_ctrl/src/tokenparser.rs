@@ -62,7 +62,7 @@ impl TokenParser {
         &self.llm_bytes[self.grm_prefix.len()..]
     }
 
-    pub fn bytes_since(&self, mut idx: usize) -> &[u8] {
+    pub fn bytes_since(&mut self, mut idx: usize) -> &[u8] {
         idx += self.grm_prefix.len();
         let endp = std::cmp::min(self.llm_bytes.len(), self.parser.hidden_start());
         if idx >= self.llm_bytes.len() || idx >= endp {
@@ -105,7 +105,7 @@ impl TokenParser {
         res_prompt
     }
 
-    fn grm_bytes(&self) -> Vec<u8> {
+    fn grm_bytes(&mut self) -> Vec<u8> {
         let mut grm_bytes = self.grm_prefix.clone();
         grm_bytes.extend_from_slice(&self.parser.get_bytes());
         grm_bytes
@@ -168,6 +168,7 @@ impl TokenParser {
         // force after scanning tokens from LLM (this may walk the parser some more)
         self.parser.force_bytes();
         let grm_bytes = self.grm_bytes();
+        let trie = self.token_env.tok_trie(); // make borrow-checker happy
 
         let mut backtrack = 0;
 
@@ -216,7 +217,12 @@ impl TokenParser {
 
         if new_forced.len() > 0 || backtrack > 0 {
             let mut grm_tokens = self.token_env.tokenize_bytes(&new_forced);
-            infoln!("forced: {} {:?} {:?}", trie.tokens_dbg(&grm_tokens), new_forced, grm_tokens);
+            infoln!(
+                "forced: {} {:?} {:?}",
+                trie.tokens_dbg(&grm_tokens),
+                new_forced,
+                grm_tokens
+            );
             let (chop_tokens, chop_bytes) = trie.chop_tokens(&mut self.parser, &grm_tokens);
             token_prefix = new_forced[new_forced.len() - chop_bytes..].to_vec();
             // here we remove a suffix from grm_tokens that could be possibly tokenized differently

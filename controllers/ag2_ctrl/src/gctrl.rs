@@ -49,14 +49,14 @@ impl Runner {
 
     fn report_captures(&mut self) {
         // first report newly generated text
+        let num_tokens = self.tok_parser.num_tokens();
         let new_text = self.tok_parser.bytes_since(self.text_ptr);
         if new_text.len() > 0 {
             // TODO log_prob
-            let text =
-                Text::from_bytes(new_text, 0.0, self.tok_parser.num_tokens() - self.token_ptr);
+            let text = Text::from_bytes(new_text, 0.0, num_tokens - self.token_ptr);
             json_out(&text);
             self.text_ptr += new_text.len();
-            self.token_ptr = self.tok_parser.num_tokens();
+            self.token_ptr = num_tokens;
         }
 
         // then the captures

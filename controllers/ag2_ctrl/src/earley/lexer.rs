@@ -276,6 +276,10 @@ impl Lexer {
         StateID::DEAD
     }
 
+    pub fn possible_hidden_len(&mut self, state: StateID) -> usize {
+        self.dfa.possible_lookahead_len(state)
+    }
+
     fn state_info(&self, state: StateID) -> &StateDesc {
         self.dfa.state_desc(state)
     }

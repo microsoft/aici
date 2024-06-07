@@ -8,6 +8,15 @@ if [ "X$AZURE_GUIDANCE_URL" = "X" ] ; then
 fi
 export AZURE_GUIDANCE_URL
 
+TEST_SUFF=
+# if $1 starts with :: then set it as TEST_SUFF
+if [ "X$1" != "X" ] ; then
+    if [ "X${1:0:2}" = "X::" ] ; then
+        TEST_SUFF="$1"
+        shift
+    fi
+fi
+
 cd $(dirname $0)/../py/guidance
-pytest --selected_model azure_guidance --durations=10 tests/models/test_azure_guidance.py"$@"
-#pytest --selected_model azure_guidance_chat tests/models/test_azure_guidance_chat.py"$@"
+pytest --selected_model azure_guidance --durations=10 tests/models/test_azure_guidance.py$TEST_SUFF "$@"
+
