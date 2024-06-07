@@ -11,6 +11,44 @@ use regex_automata::{
 use rustc_hash::FxHashMap;
 use std::{fmt::Debug, hash::Hash, rc::Rc, vec};
 
+use super::vobset::{VobIdx, VobSet};
+
+const DEBUG: bool = true;
+
+macro_rules! debug {
+    ($($arg:tt)*) => {
+        if DEBUG {
+            println!($($arg)*);
+        }
+    }
+}
+
+pub struct Lexer {
+    dfa: dense::DFA<Vec<u32>>,
+    initial: StateID,
+    a_dead_state: StateID,
+    info_by_state_off: Vec<StateInfo>,
+    spec: LexerSpec,
+    vobset: Rc<VobSet>,
+}
+
+#[derive(Clone)]
+pub struct LexerSpec {
+    pub greedy: bool,
+    pub lexemes: Vec<LexemeSpec>,
+}
+
+#[derive(Clone)]
+pub struct LexemeSpec {
+    pub(crate) idx: LexemeIdx,
+    name: String,
+    rx: String,
+    simple_text: Option<String>,
+    ends_at_eos_only: bool,
+    allow_others: bool,
+    hidden: HiddenLexeme,
+}
+
 #[derive(Debug, Clone, Copy, Hash, PartialEq, Eq)]
 pub struct LexemeIdx(pub usize);
 pub type StateID = regex_automata::util::primitives::StateID;
@@ -28,6 +66,11 @@ enum HiddenLexeme {
     Fixed(usize),
 }
 
+struct StateInfo {
+    reachable: VobIdx,
+    accepting: VobIdx,
+}
+
 impl HiddenLexeme {
     pub fn from_rx(full_rx: &str, stop_rx: &str) -> Result<Self> {
         match guess_regex_len(stop_rx.as_bytes()) {
@@ -41,17 +84,6 @@ impl Default for HiddenLexeme {
     fn default() -> Self {
         HiddenLexeme::Fixed(0)
     }
-}
-
-#[derive(Clone)]
-pub struct LexemeSpec {
-    pub(crate) idx: LexemeIdx,
-    name: String,
-    rx: String,
-    simple_text: Option<String>,
-    ends_at_eos_only: bool,
-    allow_others: bool,
-    hidden: HiddenLexeme,
 }
 
 impl LexemeSpec {
@@ -210,84 +242,6 @@ impl Lexeme {
     }
 }
 
-const DEBUG: bool = true;
-
-macro_rules! debug {
-    ($($arg:tt)*) => {
-        if DEBUG {
-            println!($($arg)*);
-        }
-    }
-}
-
-#[derive(Debug, Clone, Hash, PartialEq, Eq, Copy)]
-pub struct VobIdx {
-    v: u32,
-}
-
-impl VobIdx {
-    pub fn new(v: usize) -> Self {
-        VobIdx { v: v as u32 }
-    }
-
-    pub fn all_zero() -> Self {
-        VobIdx { v: 0 }
-    }
-
-    pub fn as_usize(&self) -> usize {
-        self.v as usize
-    }
-
-    pub fn is_zero(&self) -> bool {
-        self.v == 0
-    }
-}
-
-pub struct VobSet {
-    vobs: Vec<SimpleVob>,
-    by_vob: FxHashMap<SimpleVob, VobIdx>,
-}
-
-impl VobSet {
-    pub fn new(single_vob_size: usize) -> Self {
-        let mut r = VobSet {
-            vobs: Vec::new(),
-            by_vob: FxHashMap::default(),
-        };
-        let v = SimpleVob::alloc(single_vob_size);
-        r.insert_or_get(&v);
-        r.insert_or_get(&v.negated());
-        r
-    }
-
-    pub fn insert_or_get(&mut self, vob: &SimpleVob) -> VobIdx {
-        if let Some(idx) = self.by_vob.get(vob) {
-            return *idx;
-        }
-        let len = self.vobs.len();
-        if len == 0 && !vob.is_zero() {
-            panic!("first vob must be empty");
-        }
-        let idx = VobIdx::new(len);
-        self.vobs.push(vob.clone());
-        self.by_vob.insert(vob.clone(), idx);
-        idx
-    }
-
-    pub fn resolve(&self, idx: VobIdx) -> &SimpleVob {
-        &self.vobs[idx.as_usize()]
-    }
-
-    pub fn and_is_zero(&self, a: VobIdx, b: VobIdx) -> bool {
-        self.vobs[a.as_usize()].and_is_zero(&self.vobs[b.as_usize()])
-    }
-}
-
-struct StateInfo {
-    reachable: VobIdx,
-    accepting: VobIdx,
-}
-
 impl Default for StateInfo {
     fn default() -> Self {
         StateInfo {
@@ -295,21 +249,6 @@ impl Default for StateInfo {
             accepting: VobIdx::all_zero(),
         }
     }
-}
-
-pub struct Lexer {
-    dfa: dense::DFA<Vec<u32>>,
-    initial: StateID,
-    a_dead_state: StateID,
-    info_by_state_off: Vec<StateInfo>,
-    spec: LexerSpec,
-    vobset: Rc<VobSet>,
-}
-
-#[derive(Clone)]
-pub struct LexerSpec {
-    pub greedy: bool,
-    pub lexemes: Vec<LexemeSpec>,
 }
 
 impl LexerSpec {
