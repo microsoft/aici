@@ -82,6 +82,7 @@ impl WasmContext {
 
         let globals = GlobalInfo {
             tokrx_info: tokenizer.tokrx_info(),
+            tok_trie: Arc::new(trie2),
             trie_bytes: Arc::new(bytes),
             hf_tokenizer: Arc::new(tokenizer.hf_tokenizer),
             inference_caps,
@@ -320,7 +321,7 @@ impl ModuleInstance {
     }
 
     pub fn tokenize(&mut self, s: &str) -> Result<Vec<u32>> {
-        self.store.data_mut().tokenize(s)
+        self.store.data_mut().tokenize_bytes(s.as_bytes())
     }
 
     fn setup_inner(&mut self, prompt: Vec<TokenId>) -> Result<InitPromptResult> {

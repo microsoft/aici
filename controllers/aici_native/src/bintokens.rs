@@ -371,13 +371,13 @@ impl TokenizerEnv for ByteTokenizerEnv {
     }
 
     fn tokenize_bytes(&self, s: &[u8]) -> Vec<TokenId> {
-        let tokens = self
-            .tokenizer
-            .hf_tokenizer
-            .encode(String::from_utf8_lossy(s), false);
-        match tokens {
-            Err(e) => panic!("tokenize error: {e}"),
-            Ok(tokens) => Vec::from(tokens.get_ids()),
-        }
+        self.tok_trie.tokenize_with_greedy_fallback(s, |s| {
+            self.tokenizer
+                .hf_tokenizer
+                .encode(s, false)
+                .expect("tokenizer error")
+                .get_ids()
+                .to_vec()
+        })
     }
 }

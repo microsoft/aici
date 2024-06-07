@@ -335,6 +335,29 @@ impl TokTrie {
         r
     }
 
+    pub fn tokenize_with_greedy_fallback(
+        &self,
+        s: &[u8],
+        str_tokenize: impl FnOnce(&str) -> Vec<TokenId>,
+    ) -> Vec<TokenId> {
+        let utf8_str = String::from_utf8_lossy(s);
+        // if the string ends with a replacement character, remove them
+        let to_tokenize = if utf8_str.ends_with('\u{FFFD}') {
+            utf8_str.trim_end_matches('\u{FFFD}')
+        } else {
+            &utf8_str
+        };
+        let mut r = str_tokenize(to_tokenize);
+        // if we didn't tokenize everything (because of the replacement character)
+        // we tokenize the suffix using greedy tokenizer that is happy with bytes
+        let last_tokenized = to_tokenize.len();
+        if last_tokenized < s.len() {
+            let mut added = self.greedy_tokenize(&s[last_tokenized..]);
+            r.append(&mut added);
+        }
+        r
+    }
+
     pub fn has_extensions(&self, bytes: &[u8]) -> bool {
         match self.child_at_bytes(self.root(), bytes) {
             None => false,

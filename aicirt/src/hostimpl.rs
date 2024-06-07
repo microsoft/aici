@@ -1,6 +1,7 @@
 use crate::worker::{GroupCmd, GroupHandle, GroupResp, RtMidProcessArg};
 use aici_abi::{
     bytes::{clone_vec_as_bytes, limit_str, vec_from_bytes, TokRxInfo, U32Pair},
+    toktree::TokTrie,
     StorageCmd,
 };
 use aicirt::{
@@ -8,7 +9,7 @@ use aicirt::{
     shm::ShmAllocator,
     user_error,
 };
-use anyhow::{anyhow, Result};
+use anyhow::Result;
 use std::{
     rc::Rc,
     sync::Arc,
@@ -137,12 +138,15 @@ impl ModuleData {
         self.logit_offsets.clear();
     }
 
-    pub fn tokenize(&mut self, s: &str) -> Result<Vec<u32>> {
-        let tokens = self.globals.hf_tokenizer.encode(s, false);
-        match tokens {
-            Err(e) => Err(anyhow!(e)),
-            Ok(tokens) => Ok(Vec::from(tokens.get_ids())),
-        }
+    pub fn tokenize_bytes(&mut self, s: &[u8]) -> Result<Vec<u32>> {
+        Ok(self.globals.tok_trie.tokenize_with_greedy_fallback(s, |s| {
+            self.globals
+                .hf_tokenizer
+                .encode(s, false)
+                .expect("tokenizer error")
+                .get_ids()
+                .to_vec()
+        }))
     }
 
     pub fn fatal(&mut self, msg: &str) {
@@ -231,6 +235,7 @@ pub struct GlobalInfo {
     pub inference_caps: InferenceCapabilities,
     pub tokrx_info: TokRxInfo,
     pub trie_bytes: Arc<Vec<u8>>,
+    pub tok_trie: Arc<TokTrie>,
     pub hf_tokenizer: Arc<Tokenizer>,
 }
 
@@ -438,8 +443,7 @@ pub fn setup_linker(engine: &wasmtime::Engine) -> Result<Arc<wasmtime::Linker<Mo
         "aici_host_tokenize",
         |mut caller: wasmtime::Caller<'_, ModuleData>, src: u32, src_size: u32| {
             let m = read_caller_mem(&caller, src, src_size);
-            let s = String::from_utf8_lossy(&m);
-            let tokens = caller.data_mut().tokenize(&s);
+            let tokens = caller.data_mut().tokenize_bytes(&m);
             match tokens {
                 Err(e) => {
                     caller.data_mut().warn(&format!("tokenize error: {e:?}"));
