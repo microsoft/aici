@@ -384,18 +384,25 @@ impl Parser {
 
     pub fn print_row(&self, row_idx: usize) {
         let row = &self.rows[row_idx];
-        println!("row {}; lexer_stack={}", row_idx, self.lexer_stack.len());
+        println!(
+            "row {}; lexer_stack={} top_state={:?}",
+            row_idx,
+            self.lexer_stack.len(),
+            self.lexer_stack.last().unwrap().lexer_state
+        );
 
         println!(
             "  allowed: {}",
             self.lexer_spec().dbg_lexeme_set(&row.allowed_lexemes)
         );
 
-        if row_idx == 0 {
-            println!("  no lexeme on first row")
-        } else if row_idx < self.row_infos.len() {
+        if row_idx < self.row_infos.len() {
             let info = &self.row_infos[row_idx];
-            println!("  lexeme: {}", self.lexer_spec().dbg_lexeme(&info.lexeme));
+            if info.lexeme.is_bogus() {
+                println!("  lexeme: placeholder");
+            } else {
+                println!("  lexeme: {}", self.lexer_spec().dbg_lexeme(&info.lexeme));
+            }
         } else {
             println!("  speculative");
         }
@@ -679,6 +686,12 @@ impl Parser {
             let (state, lexeme) = self
                 .lexer
                 .force_lexeme_end(&row.allowed_lexemes, curr.lexer_state);
+            if lexeme.is_none() {
+                debug!(
+                    "    lexer fail on forced end; allowed: {}",
+                    self.lexer_spec().dbg_lexeme_set(&row.allowed_lexemes)
+                );
+            }
             // the current byte goes to the next lexeme/row
             Some((state, lexeme))
         } else {
@@ -721,17 +734,21 @@ impl Parser {
 
     fn forced_byte(&mut self) -> Option<u8> {
         if self.is_accepting() {
-            // we're not forced when in accepting state
+            debug!("  in accept state, not forcing");
             return None;
         }
+
+        // self.print_row(self.num_rows() - 1);
 
         let mut byte_sym = None;
         self.trie_started();
         for b in 0..=255 {
             if self.try_push_byte(b) {
                 self.pop_bytes(1);
+                // debug!("  forced: {:?}", b as char);
                 if byte_sym.is_some() {
                     self.trie_finished();
+                    // debug!("  forced multiple");
                     return None; // more than one option
                 } else {
                     byte_sym = Some(b);
@@ -987,6 +1004,7 @@ impl Parser {
     }
 
     fn has_forced_bytes(&self, allowed_lexemes: &SimpleVob, bytes: &[u8]) -> bool {
+        // note that this is also used when computing token mask
         if allowed_lexemes.is_zero() {
             return false;
         }
@@ -996,6 +1014,7 @@ impl Parser {
                 return false;
             }
         }
+        // debug!("   forced ok {:?}", String::from_utf8_lossy(bytes));
         true
     }
 
@@ -1056,7 +1075,7 @@ impl Parser {
                     self.lexer_stack.push(no_hidden);
                 } else if self.has_forced_bytes(allowed_lexemes, &hidden_bytes) {
                     if self.scratch.definitive {
-                        trace!("  hidden forced",);
+                        trace!("  hidden forced");
                     }
                     // if the bytes are forced, we just advance the lexer
                     // by replacing the top lexer states
@@ -1074,7 +1093,10 @@ impl Parser {
                                 lexer_state = next_state;
                             }
                             None => panic!("hidden byte failed; {:?}", hidden_bytes),
-                            _ => panic!("hidden byte produced lexeme"),
+                            Some((_, Some(lex))) => panic!(
+                                "hidden byte produced lexeme {}",
+                                self.lexer_spec().dbg_lexeme(&Lexeme::just_idx(lex))
+                            ),
                         }
                         self.lexer_stack.push(LexerState {
                             row_idx,

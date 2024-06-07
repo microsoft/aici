@@ -188,6 +188,11 @@ impl Lexeme {
         Lexeme::just_idx(LexemeIdx(0))
     }
 
+    pub fn is_bogus(&self) -> bool {
+        // TODO?
+        self.idx.0 == 0 && self.bytes.is_empty()
+    }
+
     pub fn num_hidden_bytes(&self) -> usize {
         self.hidden_len
     }
@@ -572,7 +577,9 @@ impl Lexer {
         prev: StateID,
     ) -> (StateID, Option<LexemeIdx>) {
         let info = self.state_info(prev);
-        let lexeme = if prev == self.initial {
+        // It's possible for the lexer to loop on initial state,
+        // so let's allow such "empty" tokens for now.
+        let lexeme = if false && prev == self.initial {
             None
         } else {
             let idx = self

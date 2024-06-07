@@ -145,6 +145,12 @@ def main():
     grm = "one, two, three, " + gen(name="a", max_tokens=1) + gen(name="b", max_tokens=1)
     grm = "one, two, three, " + gen(name="a", max_tokens=100)
 
+    grm = gen(name="test", max_tokens=10)
+    prompt = "How much is 2 + 2? "
+
+    grm = "1. Here is a sentence " + gen(name="bla", list_append=True, suffix="\n")
+    prompt = ""
+
     # grm = "Q: 7 * 8\nA: " + gen("text", regex="[0-9]+", max_tokens=20) + "\n"
 
     ag2_json = {"grammar": grm.ag2_serialize()}
@@ -169,7 +175,7 @@ def main():
         controller=mod_id,
         controller_arg=ag2_arg,
         temperature=0.0,
-        max_tokens=30,
+        max_tokens=50,
     )
     print("Usage:", res["usage"])
     print("Timing:", res["timing"])
