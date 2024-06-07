@@ -576,17 +576,12 @@ impl Lexer {
         let lexeme = if prev == self.initial {
             None
         } else {
-            let idx = if let Some(idx) = self
+            let idx = self
                 .vobset
                 .resolve(info.reachable)
                 .first_bit_set_here_and_in(allowed_lexems)
-            {
-                idx
-            } else {
-                allowed_lexems
-                    .first_bit_set()
-                    .expect("empty allowed lexemes")
-            };
+                .or_else(|| allowed_lexems.first_bit_set())
+                .expect("no allowed lexemes");
             Some(LexemeIdx(idx))
         };
         let state = if let Some(b) = byte {

@@ -141,6 +141,8 @@ def main():
 
     grm = "this is a test" + gen("test", max_tokens=1)
     grm = "How much is 2 + 2? " + gen(name="test", max_tokens=4) + gen(name="test2", max_tokens=4) + "\n"
+    grm = "one, two, three, " + gen(name="test", max_tokens=2) + gen(name="test2", max_tokens=2)
+    #grm = "one, two, three, " + gen(name="test", max_tokens=1) + gen(name="test2", max_tokens=1)
 
     # grm = "Q: 7 * 8\nA: " + gen("text", regex="[0-9]+", max_tokens=20) + "\n"
 
