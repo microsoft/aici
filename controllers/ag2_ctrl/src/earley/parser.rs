@@ -639,7 +639,7 @@ impl Parser {
         trace!("force_bytes lexer_stack {}", self.lexer_stack.len());
         let mut bytes = vec![];
         while let Some(b) = self.forced_byte() {
-            debug!("  forced: {:?}", b as char);
+            debug!("  forced: {:?} 0x{:x}", b as char, b);
             if !self.try_push_byte_definitive(Some(b)) {
                 // shouldn't happen?
                 info!("  force_bytes reject {}", b as char);

@@ -23,6 +23,7 @@ pub struct TokenParser {
     llm_tokens: Vec<TokenId>,
     llm_bytes: Vec<u8>,
     grm_prefix: Vec<u8>,
+    max_tokens: usize,
 }
 
 impl TokenParser {
@@ -30,6 +31,7 @@ impl TokenParser {
         token_env: Box<dyn TokenizerEnv>,
         buf: TopLevelGrammar,
     ) -> Result<Self> {
+        let max_tokens = buf.max_tokens.unwrap_or(usize::MAX);
         let grm = grammars_from_json(buf)?;
         infoln!("original: {:?}", grm);
         let grm = grm[0].optimize();
@@ -48,6 +50,7 @@ impl TokenParser {
             llm_tokens: Vec::new(),
             llm_bytes: Vec::new(),
             grm_prefix: Vec::new(),
+            max_tokens,
         })
     }
 
@@ -109,6 +112,12 @@ impl TokenParser {
     }
 
     pub fn mid_process(&mut self, mut arg: MidProcessArg) -> MidProcessResult {
+        if self.max_tokens == 0 {
+            infoln!("max_tokens=0, stopping");
+            return MidProcessResult::stop();
+        }
+        self.max_tokens -= 1;
+
         let start_time = std::time::Instant::now();
 
         infoln!("\n");
@@ -207,7 +216,7 @@ impl TokenParser {
 
         if new_forced.len() > 0 || backtrack > 0 {
             let mut grm_tokens = self.token_env.tokenize_bytes(&new_forced);
-            infoln!("forced: {}", trie.tokens_dbg(&grm_tokens));
+            infoln!("forced: {} {:?} {:?}", trie.tokens_dbg(&grm_tokens), new_forced, grm_tokens);
             let (chop_tokens, chop_bytes) = trie.chop_tokens(&mut self.parser, &grm_tokens);
             token_prefix = new_forced[new_forced.len() - chop_bytes..].to_vec();
             // here we remove a suffix from grm_tokens that could be possibly tokenized differently

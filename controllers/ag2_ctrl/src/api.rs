@@ -6,6 +6,7 @@ use serde::{Deserialize, Serialize};
 #[derive(Serialize, Deserialize)]
 pub struct TopLevelGrammar {
     pub grammars: Vec<GrammarWithLexer>,
+    pub max_tokens: Option<usize>,
 }
 
 #[derive(Serialize, Deserialize)]
