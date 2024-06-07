@@ -1,15 +1,10 @@
-use aici_abi::{
-    bytes::{limit_bytes, limit_str},
-    svob::SimpleVob,
-};
-use anyhow::{bail, Result};
+use aici_abi::{bytes::limit_str, svob::SimpleVob};
+use anyhow::Result;
 use derivre::{RegexVec, StateDesc};
 use regex::bytes::Regex;
-use regex_automata::util::syntax;
-use rustc_hash::FxHashMap;
-use std::{fmt::Debug, hash::Hash, rc::Rc, vec};
+use std::{fmt::Debug, hash::Hash, rc::Rc};
 
-use super::vobset::{VobIdx, VobSet};
+use super::vobset::VobSet;
 
 const DEBUG: bool = true;
 
@@ -309,7 +304,7 @@ impl Lexer {
         &self.vobset
     }
 
-    pub fn start_state(&self, allowed_lexemes: &SimpleVob, first_byte: Option<u8>) -> StateID {
+    pub fn start_state(&mut self, allowed_lexemes: &SimpleVob, first_byte: Option<u8>) -> StateID {
         let s = self.dfa.initial_state(allowed_lexemes);
         first_byte.map(|b| self.dfa.transition(s, b)).unwrap_or(s)
     }
@@ -322,7 +317,7 @@ impl Lexer {
         self.dfa.state_desc(state)
     }
 
-    pub fn allows_eos(&self, state: StateID, allowed_eos_lexemes: &SimpleVob) -> bool {
+    pub fn allows_eos(&mut self, state: StateID, allowed_eos_lexemes: &SimpleVob) -> bool {
         if allowed_eos_lexemes.is_zero() {
             return false;
         }
@@ -350,19 +345,8 @@ impl Lexer {
     }
 
     #[inline(always)]
-    fn result_lexeme(&self, info: &StateDesc, byte: u8) -> LexerResult {
-        LexerResult::Lexeme(PreLexeme {
-            idx: LexemeIdx::from_state_desc(info),
-            byte: Some(byte),
-            hidden_len: self.dfa.possible_lookahead_len(info.state),
-        })
-    }
-
-    #[inline(always)]
-    pub fn advance(&self, prev: StateID, byte: u8, enable_logging: bool) -> LexerResult {
-        let dfa = &self.dfa;
-
-        let state = dfa.transition(prev, byte);
+    pub fn advance(&mut self, prev: StateID, byte: u8, enable_logging: bool) -> LexerResult {
+        let state = self.dfa.transition(prev, byte);
 
         if enable_logging {
             let info = self.state_info(state);
@@ -377,18 +361,26 @@ impl Lexer {
                 return LexerResult::Error;
             }
 
-            let info = dfa.state_desc(prev);
+            let info = self.dfa.state_desc(prev);
             // we take the first token that matched
             // (eg., "while" will match both keyword and identifier, but keyword is first)
             if info.is_accepting() {
-                self.result_lexeme(info, byte)
+                LexerResult::Lexeme(PreLexeme {
+                    idx: LexemeIdx::from_state_desc(info),
+                    byte: Some(byte),
+                    hidden_len: self.dfa.possible_lookahead_len(prev),
+                })
             } else {
                 LexerResult::Error
             }
         } else {
             let info = self.state_info(state);
             if !self.spec.greedy && info.is_accepting() {
-                self.result_lexeme(info, byte)
+                LexerResult::Lexeme(PreLexeme {
+                    idx: LexemeIdx::from_state_desc(info),
+                    byte: Some(byte),
+                    hidden_len: self.dfa.possible_lookahead_len(state),
+                })
             } else {
                 LexerResult::State(state, byte)
             }
@@ -438,10 +430,6 @@ pub fn quote_regex(s: &str) -> String {
         out.push(c);
     }
     out
-}
-
-fn anchored_start() -> regex_automata::util::start::Config {
-    regex_automata::util::start::Config::new().anchored(regex_automata::Anchored::Yes)
 }
 
 impl LexemeIdx {
