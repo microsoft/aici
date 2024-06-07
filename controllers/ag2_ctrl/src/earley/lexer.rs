@@ -3,11 +3,9 @@ use aici_abi::{
     svob::SimpleVob,
 };
 use anyhow::{bail, Result};
+use derivre::{RegexVec, StateDesc};
 use regex::bytes::Regex;
-use regex_automata::{
-    dfa::{dense, Automaton},
-    util::syntax,
-};
+use regex_automata::util::syntax;
 use rustc_hash::FxHashMap;
 use std::{fmt::Debug, hash::Hash, rc::Rc, vec};
 
@@ -24,10 +22,7 @@ macro_rules! debug {
 }
 
 pub struct Lexer {
-    dfa: dense::DFA<Vec<u32>>,
-    initial: StateID,
-    a_dead_state: StateID,
-    info_by_state_off: Vec<StateInfo>,
+    dfa: RegexVec,
     spec: LexerSpec,
     vobset: Rc<VobSet>,
 }
@@ -51,7 +46,21 @@ pub struct LexemeSpec {
 
 #[derive(Debug, Clone, Copy, Hash, PartialEq, Eq)]
 pub struct LexemeIdx(pub usize);
-pub type StateID = regex_automata::util::primitives::StateID;
+pub type StateID = derivre::StateID;
+
+#[derive(Debug, Clone, Copy)]
+pub struct PreLexeme {
+    pub idx: LexemeIdx,
+    pub byte: Option<u8>,
+    pub hidden_len: usize,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub enum LexerResult {
+    Lexeme(PreLexeme),
+    State(StateID, u8),
+    Error,
+}
 
 #[derive(Clone)]
 pub struct Lexeme {
@@ -64,11 +73,6 @@ pub struct Lexeme {
 enum HiddenLexeme {
     Regex(Regex),
     Fixed(usize),
-}
-
-struct StateInfo {
-    reachable: VobIdx,
-    accepting: VobIdx,
 }
 
 impl HiddenLexeme {
@@ -185,22 +189,7 @@ impl Debug for LexemeSpec {
 }
 
 impl Lexeme {
-    fn new(spec: &LexemeSpec, bytes: Vec<u8>) -> Result<Self> {
-        let hidden_len = match &spec.hidden {
-            HiddenLexeme::Fixed(len) => *len,
-            HiddenLexeme::Regex(re) => {
-                if let Some(c) = re.captures(&bytes) {
-                    let visible_len = c.get(1).unwrap().end();
-                    bytes.len() - visible_len
-                } else {
-                    bail!(
-                        "no match for {} matching {}",
-                        spec.name,
-                        limit_bytes(&bytes, 100)
-                    );
-                }
-            }
-        };
+    fn new(spec: &LexemeSpec, bytes: Vec<u8>, hidden_len: usize) -> Result<Self> {
         Ok(Lexeme {
             idx: spec.idx,
             bytes,
@@ -242,15 +231,6 @@ impl Lexeme {
     }
 }
 
-impl Default for StateInfo {
-    fn default() -> Self {
-        StateInfo {
-            reachable: VobIdx::all_zero(),
-            accepting: VobIdx::all_zero(),
-        }
-    }
-}
-
 impl LexerSpec {
     pub fn dbg_lexeme(&self, lex: &Lexeme) -> String {
         let str = String::from_utf8_lossy(&lex.bytes).to_string();
@@ -277,8 +257,8 @@ impl LexerSpec {
         )
     }
 
-    pub fn new_lexeme(&self, idx: LexemeIdx, bytes: Vec<u8>) -> Result<Lexeme> {
-        Lexeme::new(&self.lexemes[idx.0], bytes)
+    pub fn new_lexeme(&self, idx: LexemeIdx, bytes: Vec<u8>, hidden_len: usize) -> Result<Lexeme> {
+        Lexeme::new(&self.lexemes[idx.0], bytes, hidden_len)
     }
 
     pub fn lexeme_spec(&self, idx: LexemeIdx) -> &LexemeSpec {
@@ -297,198 +277,61 @@ impl LexerSpec {
 }
 
 impl Lexer {
-    pub fn from(spec: LexerSpec) -> Self {
+    pub fn from(spec: LexerSpec) -> Result<Self> {
         // TIME: 4ms
         let patterns = &spec.lexemes;
-        let mut vobset = VobSet::new(patterns.len());
-        let dfa = dense::Builder::new()
-            .configure(
-                dense::Config::new()
-                    .start_kind(regex_automata::dfa::StartKind::Anchored)
-                    .match_kind(regex_automata::MatchKind::All),
-            )
-            .syntax(syntax::Config::new().unicode(false).utf8(false))
-            .build_many(&patterns.iter().map(|x| &x.rx).collect::<Vec<_>>())
-            .unwrap();
+        let vobset = VobSet::new(patterns.len());
+        let parser = regex_syntax::ParserBuilder::new()
+            .dot_matches_new_line(false)
+            .unicode(true)
+            .utf8(true)
+            .build();
+        let dfa = RegexVec::new_with_parser(
+            parser,
+            &patterns.iter().map(|x| x.rx.as_str()).collect::<Vec<_>>(),
+        )?;
 
-        println!(
-            "dfa: {} bytes, {} patterns",
-            dfa.memory_usage(),
-            patterns.len(),
-        );
+        println!("dfa: {:?}", dfa);
         for p in patterns {
             debug!("  pattern: {:?}", p)
         }
 
-        let mut incoming = FxHashMap::default();
-        let initial = dfa
-            .start_state(&anchored_start())
-            .expect("dfa has no start state");
-        let mut todo = vec![initial];
-        incoming.insert(initial, Vec::new());
-        let mut a_dead_state = StateID::ZERO;
-
-        // TIME: 1.5ms
-        while todo.len() > 0 {
-            let s = todo.pop().unwrap();
-            for b in 0..=255 {
-                let s2 = dfa.next_state(s, b);
-                if !incoming.contains_key(&s2) {
-                    if dfa.is_dead_state(s2) {
-                        a_dead_state = s2;
-                    }
-                    todo.push(s2);
-                    incoming.insert(s2, Vec::new());
-                }
-                incoming.get_mut(&s2).unwrap().push(s);
-            }
-        }
-
-        let states = incoming.keys().map(|x| *x).collect::<Vec<_>>();
-        let mut reachable_patterns = FxHashMap::default();
-
-        for s in &states {
-            let mut v = SimpleVob::alloc(patterns.len());
-            let s2 = dfa.next_eoi_state(*s);
-            if dfa.is_match_state(s2) {
-                for idx in 0..dfa.match_len(s2) {
-                    let idx = dfa.match_pattern(s2, idx).as_usize();
-                    v.set(idx, true);
-                    debug!("  match: {:?} {:?}", *s, patterns[idx].rx)
-                }
-            }
-            reachable_patterns.insert(*s, v);
-        }
-
-        // TIME: 20ms
-        loop {
-            let mut num_set = 0;
-
-            for s in &states {
-                let ours = reachable_patterns.get(s).unwrap().clone();
-                for o in &incoming[s] {
-                    let theirs = reachable_patterns.get(o).unwrap();
-                    let mut tmp = ours.clone();
-                    tmp.or(theirs);
-                    if tmp != *theirs {
-                        num_set += 1;
-                        reachable_patterns.insert(*o, tmp);
-                    }
-                }
-            }
-
-            debug!("iter {} {}", num_set, states.len());
-            if num_set == 0 {
-                break;
-            }
-        }
-
-        let mut states_idx = states.iter().map(|x| x.as_usize()).collect::<Vec<_>>();
-        states_idx.sort();
-
-        let shift = dfa.stride2();
-        let mut info_by_state_off = (0..1 + (states_idx.iter().max().unwrap() >> shift))
-            .map(|_| StateInfo::default())
-            .collect::<Vec<_>>();
-        for (k, v) in reachable_patterns.iter() {
-            let state_idx = k.as_usize() >> shift;
-            info_by_state_off[state_idx].reachable = vobset.insert_or_get(v);
-
-            let state = dfa.next_eoi_state(*k);
-            if dfa.is_match_state(state) {
-                let mut accepting = SimpleVob::alloc(patterns.len());
-                for pat_idx in 0..dfa.match_len(state) {
-                    accepting.set(dfa.match_pattern(state, pat_idx).as_usize(), true)
-                }
-                info_by_state_off[state_idx].accepting = vobset.insert_or_get(&accepting);
-            }
-        }
-
-        println!("initial: {:?}; {} states", initial, states.len());
-
         let lex = Lexer {
             dfa,
-            info_by_state_off,
-            initial,
             vobset: Rc::new(vobset),
             spec,
-            a_dead_state,
         };
 
-        if DEBUG {
-            for s in &states {
-                if lex.is_dead(*s) {
-                    debug!("dead: {:?} {}", s, lex.dfa.is_dead_state(*s));
-                }
-            }
-
-            // debug!("reachable: {:#?}", reachable_patterns);
-        }
-
-        lex
+        Ok(lex)
     }
 
     pub fn vobset(&self) -> &VobSet {
         &self.vobset
     }
 
-    pub fn file_start_state(&self) -> StateID {
-        self.initial
-        // pretend we've just seen a newline at the beginning of the file
-        // TODO: this should be configurable
-        // self.dfa.next_state(self.initial.state, b'\n')
+    pub fn start_state(&self, allowed_lexemes: &SimpleVob, first_byte: Option<u8>) -> StateID {
+        let s = self.dfa.initial_state(allowed_lexemes);
+        first_byte.map(|b| self.dfa.transition(s, b)).unwrap_or(s)
     }
 
     pub fn a_dead_state(&self) -> StateID {
-        self.a_dead_state
+        StateID::DEAD
     }
 
-    fn state_info(&self, state: StateID) -> &StateInfo {
-        &self.info_by_state_off[state.as_usize() >> self.dfa.stride2()]
+    fn state_info(&self, state: StateID) -> &StateDesc {
+        self.dfa.state_desc(state)
     }
 
-    fn is_dead(&self, state: StateID) -> bool {
-        self.reachable_tokens(state).is_zero()
-    }
-
-    fn reachable_tokens(&self, state: StateID) -> VobIdx {
-        self.state_info(state).reachable
-    }
-
-    fn get_token(&self, prev: StateID, allowed_lexems: &SimpleVob) -> Option<LexemeIdx> {
-        let state = self.dfa.next_eoi_state(prev);
-        if !self.dfa.is_match_state(state) {
-            return None;
-        }
-
-        // we take the first token that matched
-        // (eg., "while" will match both keyword and identifier, but keyword is first)
-        let accepting = self.state_info(state).accepting;
-
-        if accepting.is_zero() {
-            return None;
-        }
-
-        if let Some(idx) = self
-            .vobset
-            .resolve(accepting)
-            .first_bit_set_here_and_in(allowed_lexems)
-        {
-            Some(LexemeIdx(idx))
-        } else {
-            None
-        }
-    }
-
-    pub fn allows_eos(&self, mut state: StateID, allowed_eos_lexemes: &SimpleVob) -> bool {
+    pub fn allows_eos(&self, state: StateID, allowed_eos_lexemes: &SimpleVob) -> bool {
         if allowed_eos_lexemes.is_zero() {
             return false;
         }
 
-        for b in LexemeSpec::EOS_MARKER.as_bytes() {
-            state = self.dfa.next_state(state, *b);
-        }
-        let accepting = self.vobset.resolve(self.state_info(state).accepting);
+        let state = self
+            .dfa
+            .transition_bytes(state, LexemeSpec::EOS_MARKER.as_bytes());
+
+        let accepting = &self.dfa.state_desc(state).accepting;
         if accepting.and_is_zero(allowed_eos_lexemes) {
             false
         } else {
@@ -496,99 +339,59 @@ impl Lexer {
         }
     }
 
-    #[inline(always)]
-    pub fn advance_eof(
-        &self,
-        prev: StateID,
-        allowed_lexems: &SimpleVob,
-    ) -> Option<(StateID, Option<LexemeIdx>)> {
-        let tok = self.get_token(prev, allowed_lexems);
-        if tok.is_none() {
-            None
-        } else {
-            Some((self.initial, tok))
-        }
-    }
-
-    pub fn force_lexeme_end(
-        &self,
-        allowed_lexems: &SimpleVob,
-        prev: StateID,
-    ) -> (StateID, Option<LexemeIdx>) {
+    pub fn force_lexeme_end(&self, prev: StateID) -> LexerResult {
         let info = self.state_info(prev);
-        // It's possible for the lexer to loop on initial state,
-        // so let's allow such "empty" tokens for now.
-        let lexeme = if false && prev == self.initial {
-            None
-        } else {
-            let idx = self
-                .vobset
-                .resolve(info.reachable)
-                .first_bit_set_here_and_in(allowed_lexems)
-                .or_else(|| allowed_lexems.first_bit_set())
-                .expect("no allowed lexemes");
-            Some(LexemeIdx(idx))
-        };
-        (self.initial, lexeme)
+        let idx = info.possible.first_bit_set().expect("no allowed lexemes");
+        LexerResult::Lexeme(PreLexeme {
+            idx: LexemeIdx(idx),
+            byte: None,
+            hidden_len: 0,
+        })
     }
 
     #[inline(always)]
-    pub fn advance(
-        &self,
-        allowed_lexems: &SimpleVob,
-        prev: StateID,
-        byte: u8,
-        enable_logging: bool,
-    ) -> Option<(StateID, Option<LexemeIdx>)> {
+    fn result_lexeme(&self, info: &StateDesc, byte: u8) -> LexerResult {
+        LexerResult::Lexeme(PreLexeme {
+            idx: LexemeIdx::from_state_desc(info),
+            byte: Some(byte),
+            hidden_len: self.dfa.possible_lookahead_len(info.state),
+        })
+    }
+
+    #[inline(always)]
+    pub fn advance(&self, prev: StateID, byte: u8, enable_logging: bool) -> LexerResult {
         let dfa = &self.dfa;
 
-        let state = dfa.next_state(prev, byte);
-        let info = self.state_info(state);
+        let state = dfa.transition(prev, byte);
+
         if enable_logging {
+            let info = self.state_info(state);
             debug!(
-                "lex: {:?} -{:?}-> {:?} d={}, acpt={:?}",
-                prev,
-                byte as char,
-                state,
-                self.is_dead(state),
-                self.vobset
-                    .resolve(info.accepting)
-                    .first_bit_set_here_and_in(allowed_lexems)
-                    .map(|x| self.spec.lexemes[x].name.as_str())
+                "lex: {:?} -{:?}-> {:?}, acpt={}",
+                prev, byte as char, state, info.lowest_accepting
             );
         }
-        if self
-            .vobset
-            .resolve(info.reachable)
-            .and_is_zero(allowed_lexems)
-        {
+
+        if state.is_dead() {
             if !self.spec.greedy {
-                return None;
+                return LexerResult::Error;
             }
 
-            // if final_state is a match state, find the token that matched
-            let tok = self.get_token(prev, allowed_lexems);
-            if tok.is_none() {
-                None
+            let info = dfa.state_desc(prev);
+            // we take the first token that matched
+            // (eg., "while" will match both keyword and identifier, but keyword is first)
+            if info.is_accepting() {
+                self.result_lexeme(info, byte)
             } else {
-                let state = dfa.next_state(self.initial, byte);
-                if enable_logging {
-                    debug!("lex0: {:?} -{:?}-> {:?}", self.initial, byte as char, state);
-                }
-                Some((state, tok))
+                LexerResult::Error
             }
         } else {
-            if !self.spec.greedy && !info.accepting.is_zero() {
-                if let Some(idx) = self
-                    .vobset
-                    .resolve(info.accepting)
-                    .first_bit_set_here_and_in(allowed_lexems)
-                {
-                    return Some((self.initial, Some(LexemeIdx(idx))));
-                }
+            let info = self.state_info(state);
+            if !self.spec.greedy && info.is_accepting() {
+                self.result_lexeme(info, byte)
+            } else {
+                LexerResult::State(state, byte)
             }
-
-            Some((state, None))
         }
     }
 }
@@ -639,4 +442,18 @@ pub fn quote_regex(s: &str) -> String {
 
 fn anchored_start() -> regex_automata::util::start::Config {
     regex_automata::util::start::Config::new().anchored(regex_automata::Anchored::Yes)
+}
+
+impl LexemeIdx {
+    fn from_state_desc(desc: &StateDesc) -> Self {
+        assert!(desc.lowest_accepting >= 0);
+        LexemeIdx(desc.lowest_accepting as usize)
+    }
+}
+
+impl LexerResult {
+    #[inline(always)]
+    pub fn is_error(&self) -> bool {
+        matches!(self, LexerResult::Error)
+    }
 }

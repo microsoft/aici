@@ -17,7 +17,7 @@ use crate::earley::lexer::Lexer;
 
 use super::{
     grammar::{CGrammar, CSymIdx, CSymbol, ModelVariable, RuleIdx},
-    lexer::{Lexeme, LexemeIdx, LexerSpec, StateID},
+    lexer::{Lexeme, LexemeIdx, LexerResult, LexerSpec, PreLexeme, StateID},
 };
 
 const TRACE: bool = true;
@@ -320,10 +320,10 @@ macro_rules! ensure_internal {
 impl Parser {
     pub fn new(grammar: CGrammar) -> Result<Self> {
         let start = grammar.start();
-        let lexer = Lexer::from(grammar.lexer_spec().clone());
+        let lexer = Lexer::from(grammar.lexer_spec().clone())?;
         let grammar = Rc::new(grammar);
         let scratch = Scratch::new(Rc::clone(&grammar));
-        let lexer_state = lexer.file_start_state();
+        let lexer_state = lexer.a_dead_state(); // placeholder
         let mut r = Parser {
             grammar,
             lexer,
@@ -352,7 +352,11 @@ impl Parser {
             r.num_rows() == 1 && r.rows.len() == 1,
             "initial push failed"
         );
+        assert!(r.lexer_stack.len() == 1);
+        // set the correct initial lexer state
+        r.lexer_stack[0].lexer_state = r.lexer.start_state(&r.rows[0].allowed_lexemes, None);
         r.assert_definitive();
+
         Ok(r)
     }
 
@@ -654,25 +658,20 @@ impl Parser {
     }
 
     #[inline(always)]
-    fn advance_lexer_or_parser(
-        &mut self,
-        byte: Option<u8>,
-        curr: LexerState,
-        next_state: StateID,
-        lexeme: Option<LexemeIdx>,
-    ) -> bool {
-        match lexeme {
-            None => {
+    fn advance_lexer_or_parser(&mut self, lex_result: LexerResult, curr: LexerState) -> bool {
+        match lex_result {
+            LexerResult::State(next_state, byte) => {
                 // lexer advanced, but no lexeme - fast path
                 self.lexer_stack.push(LexerState {
                     row_idx: curr.row_idx,
                     lexer_state: next_state,
-                    byte: byte.unwrap_or(0),
-                    use_byte: byte.is_some(),
+                    byte,
+                    use_byte: true,
                 });
                 true
             }
-            Some(lexeme_idx) => self.advance_parser(next_state, lexeme_idx, byte),
+            LexerResult::Error => false,
+            LexerResult::Lexeme(pre_lexeme) => self.advance_parser(pre_lexeme),
         }
     }
 
@@ -681,37 +680,30 @@ impl Parser {
 
         let curr = self.lexer_state();
         let row = &self.rows[curr.row_idx as usize];
+        let mut keep_byte = self.lexer_spec().greedy && byte.is_some();
 
         let res = if byte.is_none() {
-            let (state, lexeme) = self
-                .lexer
-                .force_lexeme_end(&row.allowed_lexemes, curr.lexer_state);
-            if lexeme.is_none() {
+            let lexeme = self.lexer.force_lexeme_end(curr.lexer_state);
+            if lexeme.is_error() {
                 debug!(
                     "    lexer fail on forced end; allowed: {}",
                     self.lexer_spec().dbg_lexeme_set(&row.allowed_lexemes)
                 );
             }
-            // the current byte goes to the next lexeme/row
-            Some((state, lexeme))
+            lexeme
         } else {
-            self.lexer.advance(
-                &row.allowed_lexemes,
-                curr.lexer_state,
-                byte.unwrap(),
-                self.scratch.definitive,
-            )
+            self.lexer
+                .advance(curr.lexer_state, byte.unwrap(), self.scratch.definitive)
         };
 
-        if let Some((next_state, lexeme)) = res {
-            self.advance_lexer_or_parser(byte, curr, next_state, lexeme)
-        } else {
+        if res.is_error() {
             debug!(
                 "  lexer fail; allowed: {}",
                 self.lexer_spec().dbg_lexeme_set(&row.allowed_lexemes)
             );
-            false
         }
+
+        self.advance_lexer_or_parser(res, curr)
     }
 
     fn curr_row(&self) -> &Row {
@@ -761,18 +753,8 @@ impl Parser {
 
     fn flush_lexer(&mut self) -> bool {
         let curr = self.lexer_state();
-        let row = self.curr_row();
-        let (next_state, lexeme) = self
-            .lexer
-            .force_lexeme_end(&row.allowed_lexemes, curr.lexer_state);
-
-        if let Some(lexeme) = lexeme {
-            if !self.advance_parser(next_state, lexeme, None) {
-                return false;
-            }
-        }
-
-        true
+        let lex_result = self.lexer.force_lexeme_end(curr.lexer_state);
+        self.advance_lexer_or_parser(lex_result, curr)
     }
 
     pub fn scan_model_variable(&mut self, mv: ModelVariable) -> bool {
@@ -992,13 +974,13 @@ impl Parser {
     }
 
     #[inline(always)]
-    fn mk_lexeme(&self, byte: Option<u8>, lexeme_idx: LexemeIdx) -> Lexeme {
+    fn mk_lexeme(&self, byte: Option<u8>, pre_lexeme: PreLexeme) -> Lexeme {
         let mut bytes = self.curr_row_bytes();
         if byte.is_some() {
             bytes.push(byte.unwrap());
         }
         self.lexer_spec()
-            .new_lexeme(lexeme_idx, bytes)
+            .new_lexeme(pre_lexeme.idx, bytes, pre_lexeme.hidden_len)
             .expect("TODO max_token, no stop token?")
     }
 
@@ -1023,78 +1005,70 @@ impl Parser {
     /// or lexer_initial_state+byte for greedy lexers.
     /// lexer_byte is the byte that led to producing the lexeme.
     #[inline(always)]
-    fn advance_parser(
-        &mut self,
-        lexer_state: StateID,
-        lexeme_idx: LexemeIdx,
-        byte: Option<u8>,
-    ) -> bool {
-        let lexeme_byte = byte;
+    fn advance_parser(&mut self, pre_lexeme: PreLexeme) -> bool {
+        let byte_next_row = self.lexer_spec().greedy;
+        let transition_byte = if byte_next_row { pre_lexeme.byte } else { None };
+        let lexeme_byte = if byte_next_row { None } else { pre_lexeme.byte };
+        let lexeme_idx = pre_lexeme.idx;
+
         let lexeme = if self.scratch.definitive {
-            let res = self.mk_lexeme(lexeme_byte, lexeme_idx);
-            res
+            self.mk_lexeme(lexeme_byte, pre_lexeme)
         } else {
             Lexeme::just_idx(lexeme_idx)
         };
+
         if self.scan(&lexeme) {
+            // note, that while self.rows[] is updated, the lexer stack is not
+            // so the last added row is at self.num_rows(), and not self.num_rows() - 1
             let added_row = self.num_rows();
             let row_idx = added_row as u32;
             if self.scratch.definitive {
-                // save lexeme at the new row, before we mess with the stack
+                // save lexeme at the last row, before we mess with the stack
                 self.row_infos[added_row - 1].lexeme = lexeme;
             }
-            let lex_spec = self.lexer_spec().lexeme_spec(lexeme_idx);
-            let byte_next_row = self.lexer_spec().greedy;
+            let added_row_lexemes = &self.rows[added_row].allowed_lexemes;
+            let mut lexer_state = self.lexer.start_state(added_row_lexemes, transition_byte);
             let no_hidden = LexerState {
                 row_idx,
                 lexer_state,
-                byte: byte.unwrap_or(0),
-                use_byte: byte.is_some() && byte_next_row,
+                byte: transition_byte.unwrap_or(0),
+                use_byte: transition_byte.is_some(),
             };
-            // if byte is None, it means we're forcing token end, so hidden bytes do not apply
-            if byte.is_some() && lex_spec.has_hidden_len() {
+            if pre_lexeme.hidden_len > 0 {
                 // greedy lexers don't have stop tokens
                 assert!(!self.lexer_spec().greedy);
 
                 // make sure we have a real lexeme
-                let lexeme = self.mk_lexeme(lexeme_byte, lexeme_idx);
+                let lexeme = self.mk_lexeme(lexeme_byte, pre_lexeme);
 
                 let hidden_bytes = lexeme.hidden_bytes();
-                let allowed_lexemes = &self.rows[added_row].allowed_lexemes;
+                assert!(hidden_bytes.len() == pre_lexeme.hidden_len);
 
                 if self.scratch.definitive {
                     trace!(
                         "  allowed lexemes: {}",
-                        self.lexer_spec().dbg_lexeme_set(allowed_lexemes)
+                        self.lexer_spec().dbg_lexeme_set(added_row_lexemes)
                     );
                     trace!("  hidden: {:?}", String::from_utf8_lossy(&hidden_bytes));
                 }
 
-                if hidden_bytes.len() == 0 {
-                    self.lexer_stack.push(no_hidden);
-                } else if self.has_forced_bytes(allowed_lexemes, &hidden_bytes) {
+                if self.has_forced_bytes(added_row_lexemes, &hidden_bytes) {
                     if self.scratch.definitive {
                         trace!("  hidden forced");
                     }
                     // if the bytes are forced, we just advance the lexer
                     // by replacing the top lexer states
                     self.pop_lexer_states(hidden_bytes.len() - 1);
-                    let allowed_lexemes = &self.rows[added_row].allowed_lexemes;
-                    let mut lexer_state = self.lexer.file_start_state();
+                    let mut lexer_state = self.lexer.start_state(added_row_lexemes, None);
                     for b in hidden_bytes {
-                        match self.lexer.advance(
-                            allowed_lexemes,
-                            lexer_state,
-                            *b,
-                            self.scratch.definitive,
-                        ) {
-                            Some((next_state, None)) => {
+                        match self.lexer.advance(lexer_state, *b, self.scratch.definitive) {
+                            LexerResult::State(next_state, _) => {
                                 lexer_state = next_state;
                             }
-                            None => panic!("hidden byte failed; {:?}", hidden_bytes),
-                            Some((_, Some(lex))) => panic!(
+                            LexerResult::Error => panic!("hidden byte failed; {:?}", hidden_bytes),
+                            LexerResult::Lexeme(lex) => panic!(
                                 "hidden byte produced lexeme {}",
-                                self.lexer_spec().dbg_lexeme(&Lexeme::just_idx(lex))
+                                self.lexer_spec().dbg_lexeme(&Lexeme::just_idx(lex.idx))
                             ),
                         }
                         self.lexer_stack.push(LexerState {
@@ -1108,7 +1082,7 @@ impl Parser {
                     if self.scratch.definitive {
                         // set it up for matching after backtrack
                         self.lexer_stack.push(LexerState {
-                            lexer_state: self.lexer.file_start_state(),
+                            lexer_state: self.lexer.start_state(added_row_lexemes, None),
                             use_byte: false,
                             ..no_hidden
                         });
@@ -1195,21 +1169,10 @@ impl Recognizer for Parser {
     #[inline(always)]
     fn try_push_byte(&mut self, byte: u8) -> bool {
         assert!(!self.scratch.definitive);
-
         let lexer_logging = false;
         let curr = self.lexer_state();
-        let res = self.lexer.advance(
-            &self.rows[curr.row_idx as usize].allowed_lexemes,
-            curr.lexer_state,
-            byte,
-            lexer_logging,
-        );
-
-        if let Some((next_state, lexeme)) = res {
-            self.advance_lexer_or_parser(Some(byte), curr, next_state, lexeme)
-        } else {
-            false
-        }
+        let res = self.lexer.advance(curr.lexer_state, byte, lexer_logging);
+        self.advance_lexer_or_parser(res, curr)
     }
 }
 
