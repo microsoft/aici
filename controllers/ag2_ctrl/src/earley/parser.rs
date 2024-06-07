@@ -347,7 +347,7 @@ impl Parser {
             r.scratch.add_unique(Item::new(rule, 0), 0, "init");
         }
         debug!("initial push");
-        let _ = r.push_row(r.scratch.row_start, &Lexeme::bogus());
+        let _ = r.push_row(0, r.scratch.row_start, &Lexeme::bogus());
         ensure_internal!(
             r.num_rows() == 1 && r.rows.len() == 1,
             "initial push failed"
@@ -810,7 +810,7 @@ impl Parser {
             debug!("  scan_model_variable: no items");
             false
         } else {
-            let r = self.push_row(self.scratch.row_start, &Lexeme::bogus());
+            let r = self.push_row(self.num_rows(), self.scratch.row_start, &Lexeme::bogus());
             debug!("  scan_model_variable: {}", r);
             r
         }
@@ -845,7 +845,7 @@ impl Parser {
             }
             i += 1;
         }
-        self.push_row(self.scratch.row_start, lexeme)
+        self.push_row(self.num_rows(), self.scratch.row_start, lexeme)
     }
 
     pub fn captures(&self) -> &[(String, Vec<u8>)] {
@@ -854,8 +854,7 @@ impl Parser {
 
     // lexeme only used for captures (in definitive mode)
     #[inline(always)]
-    fn push_row(&mut self, mut agenda_ptr: usize, lexeme: &Lexeme) -> bool {
-        let curr_idx = self.num_rows();
+    fn push_row(&mut self, curr_idx: usize, mut agenda_ptr: usize, lexeme: &Lexeme) -> bool {
         let mut allowed_lexemes = SimpleVob::alloc(self.grammar.num_terminals());
         let mut max_tokens = 0;
 
@@ -1106,12 +1105,21 @@ impl Parser {
                         });
                     }
                 } else {
-                    // prevent any further matches in this branch
-                    self.lexer_stack.push(LexerState {
-                        lexer_state: self.lexer.a_dead_state(),
-                        use_byte: false, // ?
-                        ..no_hidden
-                    });
+                    if self.scratch.definitive {
+                        // set it up for matching after backtrack
+                        self.lexer_stack.push(LexerState {
+                            lexer_state: self.lexer.file_start_state(),
+                            use_byte: false,
+                            ..no_hidden
+                        });
+                    } else {
+                        // prevent any further matches in this branch
+                        self.lexer_stack.push(LexerState {
+                            lexer_state: self.lexer.a_dead_state(),
+                            use_byte: false, // ?
+                            ..no_hidden
+                        });
+                    }
                 }
             } else {
                 self.lexer_stack.push(no_hidden);

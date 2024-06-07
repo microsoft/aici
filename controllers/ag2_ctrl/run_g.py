@@ -148,8 +148,8 @@ def main():
     grm = gen(name="test", max_tokens=10)
     prompt = "How much is 2 + 2? "
 
-    grm = "1. Here is a sentence " + gen(name="bla", list_append=True, suffix="\n")
-    prompt = ""
+    grm =  gen(name="bla", list_append=True, suffix="\n")
+    prompt = "1. Here is a sentence "
 
     # grm = "Q: 7 * 8\nA: " + gen("text", regex="[0-9]+", max_tokens=20) + "\n"
 
