@@ -1,7 +1,7 @@
 use std::fmt::Debug;
 
 use aici_abi::toktree::SpecialToken;
-use anyhow::Result;
+use anyhow::{bail, Result};
 
 use super::lexer::{LexemeIdx, LexemeSpec, LexerSpec};
 use rustc_hash::FxHashMap;
@@ -146,7 +146,8 @@ impl Grammar {
     }
 
     pub fn make_terminal(&mut self, lhs: SymIdx, mut info: LexemeSpec) -> Result<()> {
-        if let Some(sym) = self.symbol_by_rx.get(info.key()) {
+        let key = info.key();
+        if let Some(sym) = self.symbol_by_rx.get(&key) {
             // TODO: check that the lexeme is the same
             self.add_rule(lhs, vec![*sym]);
             return Ok(());
@@ -155,7 +156,7 @@ impl Grammar {
         let sym = self.sym_data_mut(lhs);
         assert!(sym.rules.is_empty());
         sym.lexeme = Some(idx);
-        self.symbol_by_rx.insert(info.key().to_string(), lhs);
+        self.symbol_by_rx.insert(key, lhs);
         info.idx = idx;
         self.lexer_spec.lexemes.push(info);
         Ok(())
@@ -305,6 +306,20 @@ impl Grammar {
 
     pub fn compile(&self) -> CGrammar {
         CGrammar::from_grammar(self)
+    }
+
+    pub fn validate_grammar_refs(&self, grammars: &[Grammar]) -> Result<()> {
+        for lex in &self.lexer_spec.lexemes {
+            match lex.grammar_options {
+                Some(ref opts) => {
+                    if opts.grammar.0 >= grammars.len() {
+                        bail!("unknown grammar {}", opts.grammar.0);
+                    }
+                }
+                None => {}
+            }
+        }
+        Ok(())
     }
 
     pub fn apply_props(&mut self, sym: SymIdx, mut props: SymbolProps) {

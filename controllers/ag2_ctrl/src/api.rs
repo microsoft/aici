@@ -19,6 +19,10 @@ pub struct GrammarWithLexer {
     /// `String` is allowed in either case as a shorthand for either `Lexeme` or `Gen`.
     #[serde(default)]
     pub greedy_lexer: bool,
+
+    /// Only applies to greedy_lexer grammars.
+    /// This adds a new lexeme that will be ignored when parsing.
+    pub greedy_skip_rx: Option<RegexSpec>,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -42,7 +46,7 @@ pub enum Node {
     /// Lexeme in a greedy grammar.
     Lexeme {
         /// The regular expression that will greedily match the input.
-        rx: String,
+        rx: RegexSpec,
 
         /// When false, when these lexeme is recognized, all other lexemes are excluded.
         /// This is normal behavior for keywords in programming languages.
@@ -54,8 +58,9 @@ pub enum Node {
         props: NodeProps,
     },
     /// Generate according to specified grammar.
-    GrammarRef {
-        grammar_id: GrammarId,
+    GenGrammar {
+        #[serde(flatten)]
+        data: GenGrammarOptions,
 
         #[serde(flatten)]
         props: NodeProps,
@@ -86,15 +91,33 @@ pub struct NodeProps {
     pub capture_name: Option<String>,
 }
 
+pub type RegexSpec = String;
+
 #[derive(Serialize, Deserialize)]
 pub struct GenOptions {
     /// Regular expression matching the body of generation.
-    pub body_rx: String,
+    pub body_rx: RegexSpec,
 
     /// The whole generation must match `body_rx + stop_rx`.
     /// Whatever matched `stop_rx` is discarded.
     /// If `stop_rx` is empty, it's assumed to be EOS.
-    pub stop_rx: String,
+    pub stop_rx: RegexSpec,
+
+    /// Override sampling temperature.
+    pub temperature: Option<f32>,
+}
+
+#[derive(Serialize, Deserialize, Clone)]
+pub struct GenGrammarOptions {
+    pub grammar: GrammarId,
+
+    /// Add a lexeme that causes the generation to stop.
+    pub stop_rx: Option<RegexSpec>,
+
+    /// When set to true, the greedy_skip_rx of the grammar is ignored
+    /// at the beginning of generation.
+    #[serde(default)]
+    pub no_initial_skip: bool,
 
     /// Override sampling temperature.
     pub temperature: Option<f32>,
@@ -117,7 +140,7 @@ impl Node {
             Node::String { props, .. } => props,
             Node::Gen { props, .. } => props,
             Node::Lexeme { props, .. } => props,
-            Node::GrammarRef { props, .. } => props,
+            Node::GenGrammar { props, .. } => props,
             Node::Select { props, .. } => props,
             Node::Join { props, .. } => props,
         }

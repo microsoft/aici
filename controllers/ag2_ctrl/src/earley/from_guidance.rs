@@ -3,7 +3,7 @@ use crate::{
     api::{GrammarWithLexer, Node, TopLevelGrammar},
     earley::{grammar::SymbolProps, lexer::LexemeSpec},
 };
-use anyhow::{bail, ensure, Result};
+use anyhow::{ensure, Result};
 
 #[derive(Debug)]
 pub struct NodeProps {
@@ -38,7 +38,7 @@ impl NodeProps {
     }
 }
 
-pub fn grammar_from_json(input: GrammarWithLexer) -> Result<Grammar> {
+fn grammar_from_json(input: GrammarWithLexer) -> Result<Grammar> {
     let is_greedy = input.greedy_lexer;
     let is_lazy = !is_greedy;
 
@@ -120,9 +120,12 @@ pub fn grammar_from_json(input: GrammarWithLexer) -> Result<Grammar> {
                     LexemeSpec::from_simple_literal(format!("str_{}", grm.sym_name(lhs)), &literal);
                 grm.make_terminal(lhs, info)?;
             }
-            Node::GrammarRef { grammar_id, .. } => {
-                let _ = grammar_id;
-                bail!("TODO: grammar ref")
+            Node::GenGrammar { data, .. } => {
+                let info = LexemeSpec::from_grammar_options(
+                    format!("grm_{}", grm.sym_name(lhs)),
+                    data.clone(),
+                );
+                grm.make_terminal(lhs, info)?;
             }
         }
     }
@@ -130,5 +133,13 @@ pub fn grammar_from_json(input: GrammarWithLexer) -> Result<Grammar> {
 }
 
 pub fn grammars_from_json(input: TopLevelGrammar) -> Result<Vec<Grammar>> {
-    input.grammars.into_iter().map(grammar_from_json).collect()
+    let grammars = input
+        .grammars
+        .into_iter()
+        .map(grammar_from_json)
+        .collect::<Result<Vec<_>>>()?;
+    for g in &grammars {
+        g.validate_grammar_refs(&grammars)?;
+    }
+    Ok(grammars)
 }
