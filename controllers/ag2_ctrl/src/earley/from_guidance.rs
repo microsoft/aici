@@ -75,7 +75,8 @@ pub fn grammar_from_json(input: GrammarWithLexer) -> Result<Grammar> {
         let lhs = *sym;
         match &n {
             Node::Select { among, .. } => {
-                ensure!(among.len() > 0, "empty select");
+                // TODO add some optimization to throw these away?
+                // ensure!(among.len() > 0, "empty select");
                 for v in among {
                     grm.add_rule(lhs, vec![node_map[v.0]]);
                 }

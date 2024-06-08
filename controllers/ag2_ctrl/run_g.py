@@ -15,6 +15,7 @@ from guidance import (
     gen,
     substring,
     optional,
+    string,
 )
 
 
@@ -156,6 +157,9 @@ def main():
 
     prompt = '<color>red</color>\n<color>'
     grm = gen(stop="</color>") + ' and test2'
+
+    prompt = ""
+    grm = string("this is a test")
 
 
     # grm = "Q: 7 * 8\nA: " + gen("text", regex="[0-9]+", max_tokens=20) + "\n"
