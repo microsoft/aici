@@ -15,6 +15,7 @@ Guidance branch: https://github.com/paulbkoch/guidance/tree/lazy_grammars
 
 ## Status in Guidance
 
+- [ ] `gen_mode` in `_gen.py` needs to become a flag on the model/engine
 - [ ] `gen_json()` needs to be re-implemented
 - [ ] `save_stop_text=` doesn't work on `gen()`
 - [ ] `substring()` needs to be re-implemented (translate to regex or primitive?)
