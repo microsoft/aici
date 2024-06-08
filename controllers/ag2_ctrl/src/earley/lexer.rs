@@ -3,8 +3,6 @@ use anyhow::Result;
 use derivre::{RegexVec, StateDesc};
 use std::{fmt::Debug, hash::Hash, rc::Rc};
 
-use crate::api::GenGrammarOptions;
-
 use super::vobset::VobSet;
 
 const DEBUG: bool = true;
@@ -37,7 +35,6 @@ pub struct LexemeSpec {
     simple_text: Option<String>,
     ends_at_eos_only: bool,
     allow_others: bool,
-    pub(crate) grammar_options: Option<GenGrammarOptions>,
 }
 
 #[derive(Debug, Clone, Copy, Hash, PartialEq, Eq)]
@@ -73,11 +70,8 @@ impl LexemeSpec {
     // which is OK for all tokenizers we use.
     pub const EOS_MARKER: &'static str = "\u{02}-EoS";
 
-    pub fn key(&self) -> String {
-        match self.grammar_options {
-            Some(ref go) => serde_json::to_string(go).unwrap(),
-            None => format!("{}:{}", self.allow_others, self.rx),
-        }
+    pub fn key(&self) -> &str {
+        &self.rx
     }
 
     pub fn from_rx_and_stop(name: String, body_rx: &str, stop_rx: &str) -> Result<Self> {
@@ -98,7 +92,6 @@ impl LexemeSpec {
             simple_text: None,
             ends_at_eos_only,
             allow_others: false,
-            grammar_options: None,
         };
         Ok(info)
     }
@@ -111,7 +104,6 @@ impl LexemeSpec {
             simple_text: Some(literal.to_string()),
             ends_at_eos_only: false,
             allow_others: false,
-            grammar_options: None,
         };
         info
     }
@@ -124,20 +116,6 @@ impl LexemeSpec {
             simple_text: None,
             ends_at_eos_only: false,
             allow_others,
-            grammar_options: None,
-        };
-        info
-    }
-
-    pub fn from_grammar_options(name: String, go: GenGrammarOptions) -> Self {
-        let info = LexemeSpec {
-            idx: LexemeIdx(0),
-            name,
-            rx: String::new(),
-            simple_text: None,
-            ends_at_eos_only: false,
-            allow_others: false,
-            grammar_options: Some(go),
         };
         info
     }
