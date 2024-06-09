@@ -1,6 +1,6 @@
 use std::rc::Rc;
 
-use aici_abi::toktree;
+use aici_abi::toktree::{self, Recognizer};
 use serde::{Deserialize, Serialize};
 
 use super::Parser;
@@ -19,7 +19,7 @@ pub fn earley_test(trie: toktree::TokTrie) {
     let cfg = cfg[0].optimize();
     println!("cfg: {:?}", cfg);
 
-    let input = "{\"name\": \"John Doe\",\n    \"age\": 30,\n    \"armor\": \"leather\",\n    \"weapon\": \"sword\",\n    \"class\": \"warrior\",\n    \"mantra\": \"I am the master of my fate, I am the captain of my soul.\",\n    \"strength\": 18,\n    \"items\": [\"health potion\", \"mana potion\", \"bandages\"]".as_bytes();
+    let input = "{\n    \"name\": \"John Doe\",\n    \"age\": 30,\n    \"armor\": \"leather\",\n    \"weapon\": \"sword\",\n    \"class\": \"warrior\",\n    \"mantra\": \"I am the master of my fate, I am the captain of my soul.\",\n    \"strength\": 18,\n    \"items\": [\"health potion\", \"mana potion\", \"bandages\"]".as_bytes();
 
     let toks = trie.greedy_tokenize(input);
     println!("tokens: {:?}", toks.len());
@@ -29,6 +29,15 @@ pub fn earley_test(trie: toktree::TokTrie) {
     let mut parser = Parser::new(grm.clone()).unwrap();
 
     if false {
+        parser.trie_started();
+        let a = parser.try_push_byte(b'{');
+        let b = parser.try_push_byte(b'{');
+        println!("a: {}, b: {}", a, b);
+        parser.pop_bytes(2);
+        parser.trie_finished();
+    }
+
+    if true {
         let mut ts = trie.alloc_token_set();
         trie.compute_bias(&mut parser, &mut ts);
         println!("bias: {}", trie.token_set_dbg(&ts));

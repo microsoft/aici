@@ -1100,7 +1100,8 @@ impl Parser {
                 self.row_infos[added_row - 1].lexeme = lexeme;
                 debug!(
                     "lex: re-start {:?} (via {:?})",
-                    no_hidden.lexer_state, transition_byte.map(|b| b as char)
+                    no_hidden.lexer_state,
+                    transition_byte.map(|b| b as char)
                 );
             }
             if pre_lexeme.hidden_len > 0 {
@@ -1164,6 +1165,9 @@ impl Parser {
                     }
                 }
             } else {
+                if no_hidden.lexer_state.is_dead() {
+                    return false;
+                }
                 self.lexer_stack.push(no_hidden);
             }
             if self.scratch.definitive {
