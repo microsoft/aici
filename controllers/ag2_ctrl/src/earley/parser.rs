@@ -1165,7 +1165,7 @@ impl Parser {
                     }
                 }
             } else {
-                if no_hidden.lexer_state.is_dead() {
+                if byte_next_row && no_hidden.lexer_state.is_dead() {
                     return false;
                 }
                 self.lexer_stack.push(no_hidden);
