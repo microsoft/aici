@@ -1,6 +1,5 @@
 use anyhow::{ensure, Result};
 use regex_syntax::ParserBuilder;
-use serde::{Deserialize, Serialize};
 
 use crate::{ast::ExprSet, mapper::map_ast, ExprRef, RegexVec};
 
@@ -9,26 +8,23 @@ pub struct RegexBuilder {
     exprset: ExprSet,
 }
 
-#[derive(Serialize, Deserialize)]
 pub enum RegexAst {
     And(Vec<RegexAst>),
     Or(Vec<RegexAst>),
     Concat(Vec<RegexAst>),
+    LookAhead(Box<RegexAst>),
     Not(Box<RegexAst>),
     EmptyString,
     NoMatch,
     Regex(String),
-    #[serde(skip)]
     ExprRef(ExprRef),
 }
 
 impl RegexAst {
     fn get_args(&self) -> &[RegexAst] {
         match self {
-            RegexAst::And(asts) => asts,
-            RegexAst::Or(asts) => asts,
-            RegexAst::Concat(asts) => asts,
-            RegexAst::Not(ast) => std::slice::from_ref(ast),
+            RegexAst::And(asts) | RegexAst::Or(asts) | RegexAst::Concat(asts) => asts,
+            RegexAst::LookAhead(ast) | RegexAst::Not(ast) => std::slice::from_ref(ast),
             _ => &[],
         }
     }
@@ -62,6 +58,7 @@ impl RegexBuilder {
                     RegexAst::Or(_) => self.exprset.mk_or(new_args),
                     RegexAst::Concat(_) => self.exprset.mk_concat(new_args),
                     RegexAst::Not(_) => self.exprset.mk_not(new_args[0]),
+                    RegexAst::LookAhead(_) => self.exprset.mk_lookahead(new_args[0], 0),
                     RegexAst::EmptyString => ExprRef::EMPTY_STRING,
                     RegexAst::NoMatch => ExprRef::NO_MATCH,
                 };
