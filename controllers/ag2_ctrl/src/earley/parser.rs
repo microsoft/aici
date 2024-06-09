@@ -680,7 +680,7 @@ impl Parser {
         }
     }
 
-    fn try_push_byte_definitive(&mut self, byte: Option<u8>) -> bool {
+    pub fn try_push_byte_definitive(&mut self, byte: Option<u8>) -> bool {
         assert!(self.scratch.definitive);
 
         let curr = self.lexer_state();
@@ -1089,16 +1089,20 @@ impl Parser {
             // note, that while self.rows[] is updated, the lexer stack is not
             // so the last added row is at self.num_rows(), and not self.num_rows() - 1
             let added_row = self.num_rows();
-            if self.scratch.definitive {
-                // save lexeme at the last row, before we mess with the stack
-                self.row_infos[added_row - 1].lexeme = lexeme;
-            }
             let added_row_lexemes = &self.rows[added_row].allowed_lexemes;
             let no_hidden = LexerState {
                 row_idx: added_row as u32,
                 lexer_state: self.lexer.start_state(added_row_lexemes, transition_byte),
                 byte: transition_byte,
             };
+            if self.scratch.definitive {
+                // save lexeme at the last row, before we mess with the stack
+                self.row_infos[added_row - 1].lexeme = lexeme;
+                debug!(
+                    "lex: re-start {:?} (via {:?})",
+                    no_hidden.lexer_state, transition_byte.map(|b| b as char)
+                );
+            }
             if pre_lexeme.hidden_len > 0 {
                 // greedy lexers don't have stop tokens
                 assert!(!self.lexer_spec().greedy);
