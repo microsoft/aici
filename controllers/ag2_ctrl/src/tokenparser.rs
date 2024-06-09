@@ -313,7 +313,7 @@ impl TokenParser {
             } else {
                 infoln!("pop_parser");
                 self.pop_parser();
-                // re-start the whole process
+                // re-start the whole process with nice tail-recursion
                 return self.mid_process(MidProcessArg {
                     backtrack: 0,
                     tokens: Vec::new(),
