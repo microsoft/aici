@@ -57,6 +57,10 @@ impl VecHashCons {
         &self.backing[self.elements[id as usize].as_range()]
     }
 
+    pub fn is_valid(&self, id: u32) -> bool {
+        id < self.elements.len() as u32
+    }
+
     /// Return number of elements in the hashcons (also largest unique id + 1).
     pub fn len(&self) -> usize {
         self.elements.len()

@@ -306,6 +306,10 @@ impl ExprSet {
         Expr::from_slice(self.exprs.get(id.0))
     }
 
+    pub fn is_valid(&self, id: ExprRef) -> bool {
+        id.is_valid() && self.exprs.is_valid(id.0)
+    }
+
     fn lookahead_len_inner(&self, e: ExprRef) -> Option<usize> {
         match self.get(e) {
             Expr::Lookahead(_, ExprRef::EMPTY_STRING, n) => Some(n as usize),

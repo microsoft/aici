@@ -51,9 +51,9 @@ impl StateID {
 impl Debug for StateID {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         if *self == StateID::DEAD {
-            write!(f, "DEAD")
+            write!(f, "StateID(DEAD)")
         } else if *self == StateID::MISSING {
-            write!(f, "MISSING")
+            write!(f, "StateID(MISSING)")
         } else {
             write!(f, "StateID({})", self.0)
         }
@@ -326,7 +326,7 @@ impl RegexVec {
 
 // private implementation
 impl RegexVec {
-    fn new_with_exprset(exprset: ExprSet, rx_list: &[ExprRef]) -> Self {
+    pub(crate) fn new_with_exprset(exprset: ExprSet, rx_list: &[ExprRef]) -> Self {
         assert!(exprset.alphabet_size() == 256);
         let compress = true;
 

@@ -1,6 +1,6 @@
 use aici_abi::{bytes::limit_str, svob::SimpleVob};
 use anyhow::Result;
-use derivre::{RegexVec, StateDesc};
+use derivre::{RegexBuilder, RegexVec, StateDesc};
 use std::{fmt::Debug, hash::Hash, rc::Rc};
 
 use super::vobset::VobSet;
@@ -238,15 +238,12 @@ impl Lexer {
     pub fn from(spec: LexerSpec) -> Result<Self> {
         let patterns = &spec.lexemes;
         let vobset = VobSet::new(patterns.len());
-        let parser = regex_syntax::ParserBuilder::new()
-            .dot_matches_new_line(false)
-            .unicode(true)
-            .utf8(true)
-            .build();
-        let dfa = RegexVec::new_with_parser(
-            parser,
-            &patterns.iter().map(|x| x.rx.as_str()).collect::<Vec<_>>(),
-        )?;
+        let mut builder = RegexBuilder::new();
+        let refs = patterns
+            .iter()
+            .map(|p| builder.mk_regex(&p.rx))
+            .collect::<Result<Vec<_>>>()?;
+        let dfa = builder.to_regex_vec(&refs);
 
         println!("dfa: {:?}", dfa);
         for p in patterns {
