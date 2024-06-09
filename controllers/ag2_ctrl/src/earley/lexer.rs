@@ -34,7 +34,7 @@ pub struct LexemeSpec {
     rx: String,
     simple_text: Option<String>,
     ends_at_eos_only: bool,
-    allow_others: bool,
+    contextual: bool,
 }
 
 #[derive(Debug, Clone, Copy, Hash, PartialEq, Eq)]
@@ -71,7 +71,7 @@ impl LexemeSpec {
     pub const EOS_MARKER: &'static str = "\u{02}-EoS";
 
     pub fn key(&self) -> String {
-        format!("{}:{}", self.allow_others, self.rx)
+        format!("{}:{}", self.contextual, self.rx)
     }
 
     pub fn from_rx_and_stop(name: String, body_rx: &str, stop_rx: &str) -> Result<Self> {
@@ -91,7 +91,7 @@ impl LexemeSpec {
             rx,
             simple_text: None,
             ends_at_eos_only,
-            allow_others: false,
+            contextual: false,
         };
         Ok(info)
     }
@@ -103,19 +103,19 @@ impl LexemeSpec {
             rx: quote_regex(literal),
             simple_text: Some(literal.to_string()),
             ends_at_eos_only: false,
-            allow_others: false,
+            contextual: false,
         };
         info
     }
 
-    pub fn from_greedy_lexeme(name: String, rx: &str, allow_others: bool) -> Self {
+    pub fn from_greedy_lexeme(name: String, rx: &str, contextual: bool) -> Self {
         let info = LexemeSpec {
             idx: LexemeIdx(0),
             name,
             rx: rx.to_string(),
             simple_text: None,
             ends_at_eos_only: false,
-            allow_others,
+            contextual,
         };
         info
     }
@@ -139,7 +139,7 @@ impl Debug for LexemeSpec {
         if self.ends_at_eos_only {
             write!(f, " eos-only")?;
         }
-        if self.allow_others {
+        if self.contextual {
             write!(f, " allow-others")?;
         }
         Ok(())

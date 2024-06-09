@@ -48,11 +48,12 @@ pub enum Node {
         /// The regular expression that will greedily match the input.
         rx: RegexSpec,
 
-        /// When false, when these lexeme is recognized, all other lexemes are excluded.
+        /// When false, when this lexeme is recognized, all other lexemes are excluded.
         /// This is normal behavior for keywords in programming languages.
-        /// Set to true for eg. a JSON schema with both `/"type"/` and `/"[^"]*"/` as lexemes.
+        /// Set to true for eg. a JSON schema with both `/"type"/` and `/"[^"]*"/` as lexemes,
+        /// or for "get"/"set" contextual keywords in C#.
         #[serde(default)]
-        allow_others: bool,
+        contextual: bool,
 
         #[serde(flatten)]
         props: NodeProps,

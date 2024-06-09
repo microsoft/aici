@@ -104,14 +104,12 @@ fn grammar_from_json(input: GrammarWithLexer) -> Result<Grammar> {
                     symprops.temperature = t;
                 }
             }
-            Node::Lexeme {
-                rx, allow_others, ..
-            } => {
+            Node::Lexeme { rx, contextual, .. } => {
                 ensure!(is_greedy, "lexeme() only allowed in greedy grammars");
                 let info = LexemeSpec::from_greedy_lexeme(
                     format!("lex_{}", grm.sym_name(lhs)),
                     rx,
-                    *allow_others,
+                    *contextual,
                 );
                 grm.make_terminal(lhs, info)?;
             }
