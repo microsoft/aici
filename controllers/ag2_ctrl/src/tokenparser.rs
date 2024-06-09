@@ -2,7 +2,7 @@ use std::rc::Rc;
 
 use crate::{
     api::TopLevelGrammar,
-    earley::{grammars_from_json, lexer::LexemeSpec, CGrammar, ModelVariable, Parser},
+    earley::{grammars_from_json, lexer::LexemeSpec, CGrammar, CSymIdx, ModelVariable, Parser},
 };
 use aici_abi::{MidProcessArg, MidProcessResult, TokenId, TokenizerEnv};
 use anyhow::Result;
@@ -17,10 +17,17 @@ macro_rules! infoln {
     };
 }
 
+macro_rules! warn {
+    ($($arg:tt)*) => {
+        print!("Warning: ");
+        println!($($arg)*);
+    };
+}
+
 pub struct TokenParser {
     pub token_env: Box<dyn TokenizerEnv>,
     pub parser: Parser,
-    parser_stack: Vec<Parser>,
+    parser_stack: Vec<ParserStackEntry>,
     parser_llm_tokens_offset: usize,
     // this is empty for top-level parser,
     // and the previous grm_bytes for sub-parsers
@@ -34,6 +41,13 @@ pub struct TokenParser {
     llm_tokens: Vec<TokenId>,
     llm_bytes: Vec<u8>,
     grm_prefix: Vec<u8>,
+}
+
+struct ParserStackEntry {
+    parser: Parser,
+    parser_llm_tokens_offset: usize,
+    previous_grm_bytes_len: usize,
+    symidx: CSymIdx,
 }
 
 impl TokenParser {
@@ -275,6 +289,14 @@ impl TokenParser {
             }
         }
 
+        if token_prefix.is_empty() {
+            if let Err(e) = self.maybe_gen_grammar() {
+                warn!("Error creating parser: {}", e);
+                return MidProcessResult::stop();
+            }
+        }
+
+        let trie = self.token_env.tok_trie();
         let mut set = trie.alloc_token_set();
         // self.parser.print_row(self.parser.num_rows() - 1);
         trie.compute_bias_ext(&mut self.parser, &mut set, &token_prefix);
@@ -285,15 +307,26 @@ impl TokenParser {
         }
 
         if set.num_set() == 1 && set.is_allowed(trie.eos_token()) {
-            infoln!("only eos token allowed, stopping");
-            return MidProcessResult::stop();
+            if self.parser_stack.is_empty() {
+                infoln!("only eos token allowed, stopping");
+                return MidProcessResult::stop();
+            } else {
+                infoln!("pop_parser");
+                self.pop_parser();
+                // re-start the whole process
+                return self.mid_process(MidProcessArg {
+                    backtrack: 0,
+                    tokens: Vec::new(),
+                    fork_group: Vec::new(),
+                });
+            }
         }
 
         infoln!(
             "bias: (pref: {:?}) {:?} {}",
             String::from_utf8_lossy(&token_prefix),
             start_time.elapsed(),
-            trie.token_set_dbg(&set)
+            self.token_env.tok_trie().token_set_dbg(&set)
         );
 
         if set.num_set() == 0 {
@@ -301,5 +334,35 @@ impl TokenParser {
         }
 
         return MidProcessResult::sample_with_temp(set, Some(self.parser.temperature()));
+    }
+
+    fn maybe_gen_grammar(&mut self) -> Result<()> {
+        if let Some((msg, symidx, gen_grammar)) = self.parser.maybe_gen_grammar() {
+            if msg.len() > 0 {
+                warn!("{}", msg);
+            }
+            let parser = Parser::new(Rc::clone(&self.compiled_grammars[gen_grammar.grammar.0]))?;
+            let old_parser = std::mem::replace(&mut self.parser, parser);
+            let mut entry = ParserStackEntry {
+                parser: old_parser,
+                parser_llm_tokens_offset: self.parser_llm_tokens_offset,
+                previous_grm_bytes_len: self.previous_grm_bytes.len(),
+                symidx,
+            };
+            self.parser_llm_tokens_offset = self.llm_tokens.len();
+            self.previous_grm_bytes
+                .extend_from_slice(&entry.parser.get_bytes());
+            self.parser_stack.push(entry);
+        }
+        Ok(())
+    }
+
+    fn pop_parser(&mut self) {
+        let entry = self.parser_stack.pop().unwrap();
+        self.parser = entry.parser;
+        self.parser_llm_tokens_offset = entry.parser_llm_tokens_offset;
+        self.previous_grm_bytes
+            .truncate(entry.previous_grm_bytes_len);
+        self.parser.scan_gen_grammar(entry.symidx);
     }
 }

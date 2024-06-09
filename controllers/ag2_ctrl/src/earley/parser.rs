@@ -13,7 +13,7 @@ use aici_abi::{
 };
 use anyhow::{bail, ensure, Result};
 
-use crate::earley::lexer::Lexer;
+use crate::{api::GenGrammarOptions, earley::lexer::Lexer};
 
 use super::{
     grammar::{CGrammar, CSymIdx, CSymbol, ModelVariable, RuleIdx},
@@ -759,6 +759,69 @@ impl Parser {
         let curr = self.lexer_state();
         let lex_result = self.lexer.force_lexeme_end(curr.lexer_state);
         self.advance_lexer_or_parser(lex_result, curr)
+    }
+
+    pub fn maybe_gen_grammar(&mut self) -> Option<(String, CSymIdx, GenGrammarOptions)> {
+        self.assert_definitive();
+        let mut res: Option<GenGrammarOptions> = None;
+        let mut res_idx = None;
+        let mut gen_grm = vec![];
+        for i in self.curr_row().item_indices() {
+            let item = self.scratch.items[i];
+            let idx = self.grammar.sym_idx_at(item.rule_idx());
+            let sym_data = self.grammar.sym_data_at(item.rule_idx());
+            if let Some(ref gg) = sym_data.gen_grammar {
+                // break ties by preferring the one with the lowest grammar number
+                if res.is_none() || res.as_ref().unwrap().grammar.0 > gg.grammar.0 {
+                    res = Some(gg.clone());
+                    res_idx = Some(idx);
+                }
+                gen_grm.push(idx);
+            } else if sym_data.is_terminal {
+                gen_grm.push(idx);
+            }
+        }
+
+        if res.is_none() {
+            return None;
+        }
+
+        let msg = if gen_grm.len() > 1 {
+            format!(
+                "ambiguity between GenGrammar and terminals {:?}",
+                gen_grm
+                    .iter()
+                    .map(|&x| self.grammar.sym_name(x))
+                    .collect::<Vec<_>>()
+            )
+        } else {
+            String::new()
+        };
+
+        Some((msg, res_idx.unwrap(), res.unwrap()))
+    }
+
+    pub fn scan_gen_grammar(&mut self, symidx: CSymIdx) -> bool {
+        self.assert_definitive(); // ???
+
+        debug!("  scan gen_grammar: {}", self.grammar.sym_name(symidx));
+
+        self.scratch.new_row(self.curr_row().last_item);
+
+        for idx in self.curr_row().item_indices() {
+            let item = self.scratch.items[idx];
+            let sidx = self.grammar.sym_idx_at(item.rule_idx());
+            if sidx == symidx {
+                self.scratch
+                    .add_unique(item.advance_dot(), idx, "gen_grammar");
+            }
+        }
+
+        assert!(self.scratch.row_len() > 0);
+
+        let r = self.push_row(self.num_rows(), self.scratch.row_start, &Lexeme::bogus());
+        debug!("  gen_grammar: {}", r);
+        r
     }
 
     pub fn scan_model_variable(&mut self, mv: ModelVariable) -> bool {
