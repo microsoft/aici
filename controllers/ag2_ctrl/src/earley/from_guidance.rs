@@ -78,12 +78,12 @@ fn grammar_from_json(input: GrammarWithLexer) -> Result<Grammar> {
                 // TODO add some optimization to throw these away?
                 // ensure!(among.len() > 0, "empty select");
                 for v in among {
-                    grm.add_rule(lhs, vec![node_map[v.0]]);
+                    grm.add_rule(lhs, vec![node_map[v.0]])?;
                 }
             }
             Node::Join { sequence, .. } => {
                 let rhs = sequence.iter().map(|idx| node_map[idx.0]).collect();
-                grm.add_rule(lhs, rhs);
+                grm.add_rule(lhs, rhs)?;
             }
             Node::Gen { data, .. } => {
                 // parser backtracking relies on only lazy lexers having hidden lexemes
@@ -121,11 +121,7 @@ fn grammar_from_json(input: GrammarWithLexer) -> Result<Grammar> {
                 grm.make_terminal(lhs, info)?;
             }
             Node::GenGrammar { data, .. } => {
-                let info = LexemeSpec::from_grammar_options(
-                    format!("grm_{}", grm.sym_name(lhs)),
-                    data.clone(),
-                );
-                grm.make_terminal(lhs, info)?;
+                grm.make_gen_grammar(lhs, data.clone())?;
             }
         }
     }

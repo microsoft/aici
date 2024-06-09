@@ -1,7 +1,9 @@
 use std::fmt::Debug;
 
 use aici_abi::toktree::SpecialToken;
-use anyhow::{bail, Result};
+use anyhow::{bail, ensure, Result};
+
+use crate::api::GenGrammarOptions;
 
 use super::lexer::{LexemeIdx, LexemeSpec, LexerSpec};
 use rustc_hash::FxHashMap;
@@ -11,13 +13,16 @@ pub struct SymIdx(u32);
 
 impl Symbol {
     fn is_terminal(&self) -> bool {
-        self.is_lexeme_terminal() || self.is_model_variable()
+        self.is_lexeme_terminal() || self.is_model_variable() || self.is_grammar_ref()
     }
     fn is_lexeme_terminal(&self) -> bool {
         self.lexeme.is_some()
     }
     fn is_model_variable(&self) -> bool {
         self.props.model_variable.is_some()
+    }
+    fn is_grammar_ref(&self) -> bool {
+        self.gen_grammar.is_some()
     }
 }
 
@@ -93,6 +98,7 @@ struct Symbol {
     idx: SymIdx,
     name: String,
     lexeme: Option<LexemeIdx>,
+    gen_grammar: Option<GenGrammarOptions>,
     rules: Vec<Rule>,
     props: SymbolProps,
 }
@@ -139,26 +145,46 @@ impl Grammar {
         &mut self.symbols[sym.0 as usize]
     }
 
-    pub fn add_rule(&mut self, lhs: SymIdx, rhs: Vec<SymIdx>) {
-        assert!(!self.sym_data(lhs).is_terminal());
+    pub fn add_rule(&mut self, lhs: SymIdx, rhs: Vec<SymIdx>) -> Result<()> {
         let sym = self.sym_data_mut(lhs);
+        ensure!(!sym.is_terminal(), "terminal symbol {}", sym.name);
         sym.rules.push(Rule { lhs, rhs });
+        Ok(())
+    }
+
+    fn check_empty_symbol(&self, sym: SymIdx) -> Result<()> {
+        let sym = self.sym_data(sym);
+        ensure!(sym.rules.is_empty(), "symbol {} has rules", sym.name);
+        ensure!(
+            sym.gen_grammar.is_none(),
+            "symbol {} has grammar options",
+            sym.name
+        );
+        ensure!(sym.lexeme.is_none(), "symbol {} has lexeme", sym.name);
+        Ok(())
     }
 
     pub fn make_terminal(&mut self, lhs: SymIdx, mut info: LexemeSpec) -> Result<()> {
+        self.check_empty_symbol(lhs)?;
         let key = info.key();
         if let Some(sym) = self.symbol_by_rx.get(&key) {
             // TODO: check that the lexeme is the same
-            self.add_rule(lhs, vec![*sym]);
+            self.add_rule(lhs, vec![*sym])?;
             return Ok(());
         }
         let idx = LexemeIdx(self.lexer_spec.lexemes.len());
         let sym = self.sym_data_mut(lhs);
-        assert!(sym.rules.is_empty());
         sym.lexeme = Some(idx);
         self.symbol_by_rx.insert(key, lhs);
         info.idx = idx;
         self.lexer_spec.lexemes.push(info);
+        Ok(())
+    }
+
+    pub fn make_gen_grammar(&mut self, lhs: SymIdx, data: GenGrammarOptions) -> Result<()> {
+        self.check_empty_symbol(lhs)?;
+        let sym = self.sym_data_mut(lhs);
+        sym.gen_grammar = Some(data);
         Ok(())
     }
 
@@ -207,7 +233,9 @@ impl Grammar {
             return *sym;
         }
         let r = self.fresh_symbol_ext(&sym_data.name, sym_data.props.clone());
-        self.sym_data_mut(r).lexeme = sym_data.lexeme;
+        let self_sym = self.sym_data_mut(r);
+        self_sym.lexeme = sym_data.lexeme;
+        self_sym.gen_grammar = sym_data.gen_grammar.clone();
         r
     }
 
@@ -291,7 +319,7 @@ impl Grammar {
                     .flat_map(|s| repl.get(s).cloned().unwrap_or_else(|| vec![*s]))
                     .map(|s| outp.copy_from(self, s))
                     .collect();
-                outp.add_rule(lhs, rhs);
+                outp.add_rule(lhs, rhs).unwrap();
             }
         }
         outp
@@ -309,8 +337,8 @@ impl Grammar {
     }
 
     pub fn validate_grammar_refs(&self, grammars: &[Grammar]) -> Result<()> {
-        for lex in &self.lexer_spec.lexemes {
-            match lex.grammar_options {
+        for sym in &self.symbols {
+            match sym.gen_grammar {
                 Some(ref opts) => {
                     if opts.grammar.0 >= grammars.len() {
                         bail!("unknown grammar {}", opts.grammar.0);
@@ -355,6 +383,7 @@ impl Grammar {
             idx,
             rules: vec![],
             props: symprops,
+            gen_grammar: None,
         });
         self.symbol_by_name.insert(name, idx);
         idx
@@ -369,6 +398,12 @@ impl Debug for Grammar {
                 Some(lx) => {
                     let sp = &self.lexer_spec.lexemes[lx.0];
                     writeln!(f, "{:?}", sp)?
+                }
+                _ => {}
+            }
+            match sym.gen_grammar {
+                Some(ref opts) => {
+                    writeln!(f, "{} ==> {:?}", sym.name, opts.grammar)?;
                 }
                 _ => {}
             }
@@ -454,6 +489,7 @@ pub struct CSymbol {
     pub is_terminal: bool,
     pub is_nullable: bool,
     pub props: SymbolProps,
+    pub gen_grammar: Option<GenGrammarOptions>,
     pub rules: Vec<RuleIdx>,
     pub sym_flags: SymFlags,
 }
@@ -465,6 +501,7 @@ impl SymFlags {
     const COMMIT_POINT: u8 = 1 << 0;
     const HIDDEN: u8 = 1 << 2;
     const CAPTURE: u8 = 1 << 3;
+    const GEN_GRAMMAR: u8 = 1 << 4;
 
     fn from_csymbol(sym: &CSymbol) -> Self {
         let mut flags = 0;
@@ -476,6 +513,9 @@ impl SymFlags {
         }
         if sym.props.capture_name.is_some() {
             flags |= Self::CAPTURE;
+        }
+        if sym.gen_grammar.is_some() {
+            flags |= Self::GEN_GRAMMAR;
         }
         SymFlags(flags)
     }
@@ -495,6 +535,11 @@ impl SymFlags {
     pub fn capture(&self) -> bool {
         self.0 & Self::CAPTURE != 0
     }
+
+    #[inline(always)]
+    pub fn gen_grammar(&self) -> bool {
+        self.0 & Self::GEN_GRAMMAR != 0
+    }
 }
 
 #[derive(Clone)]
@@ -512,10 +557,6 @@ const RULE_SHIFT: usize = 2;
 impl CGrammar {
     pub fn lexer_spec(&self) -> &LexerSpec {
         &self.lexer_spec
-    }
-
-    pub fn is_terminal(&self, sym: CSymIdx) -> bool {
-        self.lexeme_idx_of(sym).is_some()
     }
 
     pub fn num_terminals(&self) -> usize {
@@ -594,6 +635,7 @@ impl CGrammar {
                 rules: vec![],
                 props: SymbolProps::default(),
                 sym_flags: SymFlags(0),
+                gen_grammar: None,
             }],
             rules: vec![CSymIdx::NULL], // make sure RuleIdx::NULL is invalid
             rule_idx_to_sym_idx: vec![],
@@ -615,6 +657,7 @@ impl CGrammar {
                     rules: vec![],
                     props: sym.props.clone(),
                     sym_flags: SymFlags(0),
+                    gen_grammar: None,
                 };
                 sym_map.insert(sym.idx, csym.idx);
                 term_sym[lx.0] = Some(csym);
@@ -625,7 +668,7 @@ impl CGrammar {
         assert!(outp.symbols.len() == outp.num_terminals() + 1);
 
         for sym in &grammar.symbols {
-            if sym.is_lexeme_terminal() {
+            if sym.is_lexeme_terminal()  {
                 continue;
             }
             let cidx = CSymIdx::new_checked(outp.symbols.len());
@@ -637,12 +680,14 @@ impl CGrammar {
                 rules: vec![],
                 props: sym.props.clone(),
                 sym_flags: SymFlags(0),
+                gen_grammar: sym.gen_grammar.clone(),
             });
             sym_map.insert(sym.idx, cidx);
         }
         outp.start_symbol = sym_map[&grammar.start()];
         for sym in &grammar.symbols {
             if sym.is_terminal() {
+                assert!(sym.rules.is_empty());
                 continue;
             }
             let idx = sym_map[&sym.idx];

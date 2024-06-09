@@ -70,8 +70,8 @@ impl LexemeSpec {
     // which is OK for all tokenizers we use.
     pub const EOS_MARKER: &'static str = "\u{02}-EoS";
 
-    pub fn key(&self) -> &str {
-        &self.rx
+    pub fn key(&self) -> String {
+        format!("{}:{}", self.allow_others, self.rx)
     }
 
     pub fn from_rx_and_stop(name: String, body_rx: &str, stop_rx: &str) -> Result<Self> {

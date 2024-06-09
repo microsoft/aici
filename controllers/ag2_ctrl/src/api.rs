@@ -107,7 +107,7 @@ pub struct GenOptions {
     pub temperature: Option<f32>,
 }
 
-#[derive(Serialize, Deserialize, Clone)]
+#[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct GenGrammarOptions {
     pub grammar: GrammarId,
 
