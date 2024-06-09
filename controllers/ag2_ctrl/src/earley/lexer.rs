@@ -1,6 +1,6 @@
 use aici_abi::{bytes::limit_str, svob::SimpleVob};
 use anyhow::Result;
-use derivre::{RegexBuilder, RegexVec, StateDesc};
+use derivre::{ExprRef, RegexAst, RegexBuilder, RegexVec, StateDesc};
 use std::{fmt::Debug, hash::Hash, rc::Rc};
 
 use super::vobset::VobSet;
@@ -31,8 +31,8 @@ pub struct LexerSpec {
 pub struct LexemeSpec {
     pub(crate) idx: LexemeIdx,
     name: String,
-    rx: String,
-    simple_text: Option<String>,
+    rx: RegexAst,
+    compiled_rx: ExprRef,
     ends_at_eos_only: bool,
     contextual: bool,
 }
@@ -71,25 +71,29 @@ impl LexemeSpec {
     pub const EOS_MARKER: &'static str = "\u{02}-EoS";
 
     pub fn key(&self) -> String {
-        format!("{}:{}", self.contextual, self.rx)
+        format!("{}:{:?}", self.contextual, self.compiled_rx)
+    }
+
+    pub fn compile_rx(&mut self, builder: &mut RegexBuilder) -> Result<()> {
+        self.compiled_rx = builder.mk(&self.rx)?;
+        Ok(())
     }
 
     pub fn from_rx_and_stop(name: String, body_rx: &str, stop_rx: &str) -> Result<Self> {
         let ends_at_eos_only = stop_rx.is_empty();
-        let rx = format!(
-            "({})(?P<stop>{})",
-            body_rx,
-            if ends_at_eos_only {
-                Self::EOS_MARKER
+        let rx = RegexAst::Concat(vec![
+            RegexAst::Regex(body_rx.to_string()),
+            RegexAst::LookAhead(Box::new(RegexAst::Regex(if ends_at_eos_only {
+                Self::EOS_MARKER.to_string()
             } else {
-                stop_rx
-            }
-        );
+                stop_rx.to_string()
+            }))),
+        ]);
         let info = LexemeSpec {
             idx: LexemeIdx(0),
             name,
             rx,
-            simple_text: None,
+            compiled_rx: ExprRef::INVALID,
             ends_at_eos_only,
             contextual: false,
         };
@@ -100,8 +104,8 @@ impl LexemeSpec {
         let info = LexemeSpec {
             idx: LexemeIdx(0),
             name,
-            rx: quote_regex(literal),
-            simple_text: Some(literal.to_string()),
+            rx: RegexAst::Literal(literal.to_string()),
+            compiled_rx: ExprRef::INVALID,
             ends_at_eos_only: false,
             contextual: false,
         };
@@ -112,8 +116,8 @@ impl LexemeSpec {
         let info = LexemeSpec {
             idx: LexemeIdx(0),
             name,
-            rx: rx.to_string(),
-            simple_text: None,
+            rx: RegexAst::Regex(rx.to_string()),
+            compiled_rx: ExprRef::INVALID,
             ends_at_eos_only: false,
             contextual,
         };
@@ -122,8 +126,8 @@ impl LexemeSpec {
 
     /// Check if the lexeme always matches bytes, and has at least one more byte to spare.
     pub fn has_forced_bytes(&self, bytes: &[u8]) -> bool {
-        match &self.simple_text {
-            Some(s) if s.len() > bytes.len() => &s.as_bytes()[0..bytes.len()] == bytes,
+        match &self.rx {
+            RegexAst::Literal(s) if s.len() > bytes.len() => &s.as_bytes()[0..bytes.len()] == bytes,
             _ => false,
         }
     }
@@ -131,11 +135,7 @@ impl LexemeSpec {
 
 impl Debug for LexemeSpec {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "[{}] {} ", self.idx.0, self.name)?;
-        match self.simple_text {
-            Some(ref s) => write!(f, "{:?}", limit_str(s, 32))?,
-            None => write!(f, "rx:{:?}", limit_str(&self.rx, 32))?,
-        }
+        write!(f, "[{}] {} {:?}", self.idx.0, self.name, self.rx)?;
         if self.ends_at_eos_only {
             write!(f, " eos-only")?;
         }
@@ -193,7 +193,7 @@ impl LexerSpec {
     pub fn dbg_lexeme(&self, lex: &Lexeme) -> String {
         let str = String::from_utf8_lossy(&lex.bytes).to_string();
         let info = &self.lexemes[lex.idx.0];
-        if str == info.rx && lex.hidden_len == 0 {
+        if matches!(info.rx, RegexAst::Literal(_)) && lex.hidden_len == 0 {
             format!("[{}]", info.name)
         } else {
             format!(
@@ -241,7 +241,7 @@ impl Lexer {
         let mut builder = RegexBuilder::new();
         let refs = patterns
             .iter()
-            .map(|p| builder.mk_regex(&p.rx))
+            .map(|p| builder.mk(&p.rx))
             .collect::<Result<Vec<_>>>()?;
         let dfa = builder.to_regex_vec(&refs);
 

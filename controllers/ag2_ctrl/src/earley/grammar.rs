@@ -2,6 +2,7 @@ use std::fmt::Debug;
 
 use aici_abi::toktree::SpecialToken;
 use anyhow::{bail, ensure, Result};
+use derivre::RegexBuilder;
 
 use crate::api::GenGrammarOptions;
 
@@ -120,6 +121,7 @@ pub struct Grammar {
     model_variables: FxHashMap<String, SymIdx>,
     symbol_by_rx: FxHashMap<String, SymIdx>,
     lexer_spec: LexerSpec,
+    regex_builder: RegexBuilder,
 }
 
 impl Grammar {
@@ -130,6 +132,7 @@ impl Grammar {
             model_variables: FxHashMap::default(),
             symbol_by_rx: FxHashMap::default(),
             lexer_spec,
+            regex_builder: RegexBuilder::new(),
         }
     }
 
@@ -166,6 +169,7 @@ impl Grammar {
 
     pub fn make_terminal(&mut self, lhs: SymIdx, mut info: LexemeSpec) -> Result<()> {
         self.check_empty_symbol(lhs)?;
+        info.compile_rx(&mut self.regex_builder)?;
         let key = info.key();
         if let Some(sym) = self.symbol_by_rx.get(&key) {
             // TODO: check that the lexeme is the same
@@ -668,7 +672,7 @@ impl CGrammar {
         assert!(outp.symbols.len() == outp.num_terminals() + 1);
 
         for sym in &grammar.symbols {
-            if sym.is_lexeme_terminal()  {
+            if sym.is_lexeme_terminal() {
                 continue;
             }
             let cidx = CSymIdx::new_checked(outp.symbols.len());

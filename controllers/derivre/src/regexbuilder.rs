@@ -1,3 +1,5 @@
+use std::fmt::Debug;
+
 use anyhow::{ensure, Result};
 use regex_syntax::ParserBuilder;
 
@@ -8,6 +10,7 @@ pub struct RegexBuilder {
     exprset: ExprSet,
 }
 
+#[derive(Clone)]
 pub enum RegexAst {
     And(Vec<RegexAst>),
     Or(Vec<RegexAst>),
@@ -17,16 +20,77 @@ pub enum RegexAst {
     EmptyString,
     NoMatch,
     Regex(String),
+    Literal(String),
     ExprRef(ExprRef),
 }
 
 impl RegexAst {
-    fn get_args(&self) -> &[RegexAst] {
+    pub fn get_args(&self) -> &[RegexAst] {
         match self {
             RegexAst::And(asts) | RegexAst::Or(asts) | RegexAst::Concat(asts) => asts,
             RegexAst::LookAhead(ast) | RegexAst::Not(ast) => std::slice::from_ref(ast),
             _ => &[],
         }
+    }
+
+    pub fn tag(&self) -> &'static str {
+        match self {
+            RegexAst::And(_) => "And",
+            RegexAst::Or(_) => "Or",
+            RegexAst::Concat(_) => "Concat",
+            RegexAst::LookAhead(_) => "LookAhead",
+            RegexAst::Not(_) => "Not",
+            RegexAst::EmptyString => "EmptyString",
+            RegexAst::NoMatch => "NoMatch",
+            RegexAst::Regex(_) => "Regex",
+            RegexAst::Literal(_) => "Literal",
+            RegexAst::ExprRef(_) => "ExprRef",
+        }
+    }
+
+    pub fn write_to_str(&self, dst: &mut String, max_len: usize) {
+        let mut todo = vec![Some(self)];
+        while let Some(ast) = todo.pop() {
+            if dst.len() >= max_len {
+                dst.push_str("...");
+                break;
+            }
+            if ast.is_none() {
+                dst.push_str(")");
+                continue;
+            }
+            let ast = ast.unwrap();
+            dst.push_str(" (");
+            dst.push_str(ast.tag());
+            todo.push(None);
+            match ast {
+                RegexAst::And(_)
+                | RegexAst::Or(_)
+                | RegexAst::Concat(_)
+                | RegexAst::LookAhead(_)
+                | RegexAst::Not(_) => {}
+                RegexAst::Regex(s) | RegexAst::Literal(s) => {
+                    dst.push_str(" ");
+                    dst.push_str(&format!("{:?}", s));
+                }
+                RegexAst::ExprRef(r) => {
+                    dst.push_str(" ");
+                    dst.push_str(&format!("{:?}", r));
+                }
+                RegexAst::EmptyString | RegexAst::NoMatch => {}
+            }
+            for c in ast.get_args().iter().rev() {
+                todo.push(Some(c));
+            }
+        }
+    }
+}
+
+impl Debug for RegexAst {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let mut s = String::new();
+        self.write_to_str(&mut s, 100);
+        write!(f, "{}", s)
     }
 }
 
@@ -61,6 +125,7 @@ impl RegexBuilder {
                     RegexAst::LookAhead(_) => self.exprset.mk_lookahead(new_args[0], 0),
                     RegexAst::EmptyString => ExprRef::EMPTY_STRING,
                     RegexAst::NoMatch => ExprRef::NO_MATCH,
+                    RegexAst::Literal(s) => self.exprset.mk_literal(s),
                 };
                 Ok(r)
             },
