@@ -2,7 +2,7 @@ use anyhow::{ensure, Result};
 use regex_syntax::ParserBuilder;
 use serde::{Deserialize, Serialize};
 
-use crate::{ast::ExprSet, ExprRef, RegexVec};
+use crate::{ast::ExprSet, mapper::map_ast, ExprRef, RegexVec};
 
 pub struct RegexBuilder {
     parser_builder: ParserBuilder,
@@ -33,11 +33,6 @@ impl RegexAst {
         }
     }
 }
-struct MkStackNode<'a> {
-    ast: &'a RegexAst,
-    trg: usize,
-    args: Vec<ExprRef>,
-}
 
 impl RegexBuilder {
     pub fn new() -> Self {
@@ -53,27 +48,10 @@ impl RegexBuilder {
     }
 
     pub fn mk(&mut self, ast: &RegexAst) -> Result<ExprRef> {
-        let mut todo = vec![MkStackNode {
+        map_ast(
             ast,
-            trg: 0,
-            args: Vec::new(),
-        }];
-
-        while let Some(entry) = todo.pop() {
-            let args = entry.ast.get_args();
-            if args.len() > 0 && entry.args.len() == 0 {
-                let trg = todo.len();
-                todo.push(entry);
-                for ast in args {
-                    todo.push(MkStackNode {
-                        ast,
-                        trg,
-                        args: Vec::new(),
-                    });
-                }
-            } else {
-                assert!(entry.args.len() == args.len());
-                let new_args = entry.args;
+            |ast| ast.get_args(),
+            |ast, new_args| {
                 let r = match ast {
                     RegexAst::Regex(s) => self.mk_regex(s)?,
                     RegexAst::ExprRef(r) => {
@@ -87,14 +65,9 @@ impl RegexBuilder {
                     RegexAst::EmptyString => ExprRef::EMPTY_STRING,
                     RegexAst::NoMatch => ExprRef::NO_MATCH,
                 };
-                if todo.len() == 0 {
-                    return Ok(r);
-                }
-                todo[entry.trg].args.push(r);
-            }
-        }
-
-        unreachable!()
+                Ok(r)
+            },
+        )
     }
 
     pub fn to_regex_vec(self, rx_list: &[ExprRef]) -> RegexVec {
