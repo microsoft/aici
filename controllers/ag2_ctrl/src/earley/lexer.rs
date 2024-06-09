@@ -236,7 +236,6 @@ impl LexerSpec {
 
 impl Lexer {
     pub fn from(spec: LexerSpec) -> Result<Self> {
-        // TIME: 4ms
         let patterns = &spec.lexemes;
         let vobset = VobSet::new(patterns.len());
         let parser = regex_syntax::ParserBuilder::new()

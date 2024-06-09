@@ -1,3 +1,5 @@
+use std::rc::Rc;
+
 use aici_abi::toktree::{self, Recognizer};
 use serde::{Deserialize, Serialize};
 
@@ -22,7 +24,7 @@ pub fn earley_test(trie: toktree::TokTrie) {
     let toks = trie.greedy_tokenize(input);
     println!("tokens: {:?}", toks.len());
 
-    let grm = cfg.compile();
+    let grm = Rc::new(cfg.compile());
 
     let mut parser = Parser::new(grm.clone()).unwrap();
     for b in input {

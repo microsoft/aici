@@ -1,6 +1,8 @@
+use std::rc::Rc;
+
 use crate::{
     api::TopLevelGrammar,
-    earley::{grammars_from_json, lexer::LexemeSpec, ModelVariable, Parser},
+    earley::{grammars_from_json, lexer::LexemeSpec, CGrammar, ModelVariable, Parser},
 };
 use aici_abi::{MidProcessArg, MidProcessResult, TokenId, TokenizerEnv};
 use anyhow::Result;
@@ -18,12 +20,20 @@ macro_rules! infoln {
 pub struct TokenParser {
     pub token_env: Box<dyn TokenizerEnv>,
     pub parser: Parser,
+    parser_stack: Vec<Parser>,
+    parser_llm_tokens_offset: usize,
+    // this is empty for top-level parser,
+    // and the previous grm_bytes for sub-parsers
+    previous_grm_bytes: Vec<u8>,
+
     first_token_of_eos_marker: TokenId,
+    max_tokens: usize,
+    compiled_grammars: Vec<Rc<CGrammar>>,
+
     // tokens currently in KV cache
     llm_tokens: Vec<TokenId>,
     llm_bytes: Vec<u8>,
     grm_prefix: Vec<u8>,
-    max_tokens: usize,
 }
 
 impl TokenParser {
@@ -33,11 +43,19 @@ impl TokenParser {
     ) -> Result<Self> {
         let max_tokens = buf.max_tokens.unwrap_or(usize::MAX);
         let grm = grammars_from_json(buf)?;
-        infoln!("original: {:?}", grm);
-        let grm = grm[0].optimize();
-        infoln!("optimized: {:?}", grm);
-        let cgrm = grm.compile();
-        let parser = Parser::new(cgrm)?;
+
+        let compiled_grammars = grm
+            .iter()
+            .enumerate()
+            .map(|(idx, g)| {
+                infoln!("grammar #{}:\n{:?}", idx, g);
+                let g = g.optimize();
+                infoln!("optimized #{}:\n{:?}", idx, g);
+                Rc::new(g.compile())
+            })
+            .collect::<Vec<_>>();
+
+        let parser = Parser::new(Rc::clone(&compiled_grammars[0]))?;
 
         let first_token_of_eos_marker = token_env
             .tok_trie()
@@ -46,6 +64,10 @@ impl TokenParser {
         Ok(TokenParser {
             token_env,
             parser,
+            parser_llm_tokens_offset: 0,
+            parser_stack: Vec::new(),
+            previous_grm_bytes: Vec::new(),
+            compiled_grammars,
             first_token_of_eos_marker,
             llm_tokens: Vec::new(),
             llm_bytes: Vec::new(),
@@ -64,7 +86,10 @@ impl TokenParser {
 
     pub fn bytes_since(&mut self, mut idx: usize) -> &[u8] {
         idx += self.grm_prefix.len();
-        let endp = std::cmp::min(self.llm_bytes.len(), self.parser.hidden_start());
+        let endp = std::cmp::min(
+            self.llm_bytes.len(),
+            self.previous_grm_bytes.len() + self.parser.hidden_start(),
+        );
         if idx >= self.llm_bytes.len() || idx >= endp {
             return &[];
         }
@@ -107,8 +132,13 @@ impl TokenParser {
 
     fn grm_bytes(&mut self) -> Vec<u8> {
         let mut grm_bytes = self.grm_prefix.clone();
+        grm_bytes.extend_from_slice(&self.previous_grm_bytes);
         grm_bytes.extend_from_slice(&self.parser.get_bytes());
         grm_bytes
+    }
+
+    fn is_top_level_parser(&self) -> bool {
+        self.parser_stack.is_empty()
     }
 
     pub fn mid_process(&mut self, mut arg: MidProcessArg) -> MidProcessResult {
@@ -151,10 +181,15 @@ impl TokenParser {
             );
         }
 
-        match self
-            .parser
-            .apply_tokens(trie, &self.llm_tokens, self.grm_prefix.len())
-        {
+        match self.parser.apply_tokens(
+            trie,
+            &self.llm_tokens[self.parser_llm_tokens_offset..],
+            if self.is_top_level_parser() {
+                self.grm_prefix.len()
+            } else {
+                0
+            },
+        ) {
             Ok("") => {}
             Ok(msg) => infoln!("parser: {}", msg),
             Err(e) => {
