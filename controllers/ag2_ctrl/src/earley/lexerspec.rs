@@ -86,6 +86,12 @@ impl LexerSpec {
     }
 
     pub fn to_regex_vec(&self) -> RegexVec {
+        // TODO
+        // Find all non-contextual lexemes that are literals (we call them 'keywords')
+        // This assumes that this is the only possible conflict in the lexer that we want to catch.
+        // For every non literals lexeme, find all keywords that match it.
+        // Replace the regex R for the lexeme with (R & ~(K1|K2|...)) where K1...
+        // are the conflicting keywords.
         let rx_list: Vec<_> = self.lexemes.iter().map(|lex| lex.compiled_rx).collect();
         self.regex_builder.to_regex_vec(&rx_list)
     }
