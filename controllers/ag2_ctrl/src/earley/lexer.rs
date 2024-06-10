@@ -1,12 +1,9 @@
 use aici_abi::svob::SimpleVob;
 use anyhow::Result;
 use derivre::{RegexBuilder, RegexVec, StateDesc};
-use std::{fmt::Debug, rc::Rc};
+use std::fmt::Debug;
 
-use super::{
-    lexerspec::{LexemeIdx, LexerSpec, EOS_MARKER},
-    vobset::VobSet,
-};
+use super::lexerspec::{LexemeIdx, LexerSpec, EOS_MARKER};
 
 const DEBUG: bool = true;
 
@@ -21,7 +18,6 @@ macro_rules! debug {
 pub struct Lexer {
     dfa: RegexVec,
     spec: LexerSpec,
-    vobset: Rc<VobSet>,
 }
 
 pub type StateID = derivre::StateID;
@@ -43,7 +39,6 @@ pub enum LexerResult {
 impl Lexer {
     pub fn from(spec: LexerSpec) -> Result<Self> {
         let patterns = &spec.lexemes;
-        let vobset = VobSet::new(patterns.len());
         let mut builder = RegexBuilder::new();
         let refs = patterns
             .iter()
@@ -56,17 +51,9 @@ impl Lexer {
             debug!("  pattern: {:?}", p)
         }
 
-        let lex = Lexer {
-            dfa,
-            vobset: Rc::new(vobset),
-            spec,
-        };
+        let lex = Lexer { dfa, spec };
 
         Ok(lex)
-    }
-
-    pub fn vobset(&self) -> &VobSet {
-        &self.vobset
     }
 
     pub fn start_state(&mut self, allowed_lexemes: &SimpleVob, first_byte: Option<u8>) -> StateID {
