@@ -142,24 +142,6 @@ impl Lexer {
     }
 }
 
-fn is_regex_special(b: char) -> bool {
-    match b {
-        '\\' | '+' | '*' | '?' | '^' | '$' | '(' | ')' | '[' | ']' | '{' | '}' | '.' | '|' => true,
-        _ => false,
-    }
-}
-
-pub fn quote_regex(s: &str) -> String {
-    let mut out = String::new();
-    for c in s.chars() {
-        if is_regex_special(c) {
-            out.push('\\');
-        }
-        out.push(c);
-    }
-    out
-}
-
 impl LexemeIdx {
     fn from_state_desc(desc: &StateDesc) -> Self {
         assert!(desc.lowest_accepting >= 0);
