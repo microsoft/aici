@@ -18,7 +18,7 @@ use crate::{api::GenGrammarOptions, earley::lexer::Lexer};
 use super::{
     grammar::{CGrammar, CSymIdx, CSymbol, ModelVariable, RuleIdx},
     lexer::{LexerResult, PreLexeme, StateID},
-    lexerspec::{Lexeme, LexerSpec},
+    lexerspec::{Lexeme, LexemeIdx, LexerSpec},
 };
 
 const TRACE: bool = true;
@@ -195,6 +195,7 @@ pub struct Parser {
     last_collapse: usize,
     token_idx: usize,
     byte_idx: usize,
+    options: GenGrammarOptions,
 }
 
 impl Scratch {
@@ -314,7 +315,7 @@ macro_rules! ensure_internal {
 }
 
 impl Parser {
-    pub fn new(grammar: Rc<CGrammar>) -> Result<Self> {
+    pub fn new(grammar: Rc<CGrammar>, options: GenGrammarOptions) -> Result<Self> {
         let start = grammar.start();
         let lexer = Lexer::from(grammar.lexer_spec())?;
         let scratch = Scratch::new(Rc::clone(&grammar));
@@ -331,6 +332,7 @@ impl Parser {
             last_collapse: 0,
             token_idx: 0,
             byte_idx: 0,
+            options,
             lexer_stack: vec![LexerState {
                 row_idx: 0,
                 lexer_state,
@@ -349,6 +351,9 @@ impl Parser {
         );
         assert!(r.lexer_stack.len() == 1);
         // set the correct initial lexer state
+        if r.options.no_initial_skip {
+            r.rows[0].allowed_lexemes.set(0, false);
+        }
         r.lexer_stack[0].lexer_state = r.lexer.start_state(&r.rows[0].allowed_lexemes, None);
         r.assert_definitive();
 
@@ -866,6 +871,33 @@ impl Parser {
         }
     }
 
+    // this just copies current row
+    fn scan_skip_lexeme(&mut self, lexeme: &Lexeme) -> bool {
+        let src = self.curr_row().item_indices();
+        let allowed_lexemes = self.curr_row().allowed_lexemes.clone();
+        let n = src.len();
+        if n == 0 {
+            return false;
+        }
+        self.scratch.ensure_items(src.end + n + 100);
+        self.scratch.new_row(src.end);
+
+        for i in src {
+            self.scratch
+                .just_add(self.scratch.items[i], i, "skip_lexeme");
+        }
+
+        // note that we pass 'row_end' not 'row_start' as the agenda pointer
+        // this will skip processing any items, and only push the row
+        let push_res = self.push_row(self.num_rows(), self.scratch.row_end, lexeme);
+        assert!(push_res);
+        let added_row_idx = self.num_rows();
+        // the allowed_lexemes were not computed correctly due to us messing
+        // with agenda pointer above
+        self.rows[added_row_idx].allowed_lexemes = allowed_lexemes;
+        true
+    }
+
     // lexeme body only used for captures (in definitive mode)
     // and debugging (lexeme.idx used always)
     fn scan(&mut self, lexeme: &Lexeme) -> bool {
@@ -962,7 +994,7 @@ impl Parser {
             } else {
                 let sym_data = self.grammar.sym_data(after_dot);
                 if let Some(lx) = self.grammar.lexeme_idx_of(after_dot) {
-                    allowed_lexemes.set(lx.0, true);
+                    allowed_lexemes.set(lx.as_usize(), true);
                     max_tokens = max_tokens.max(sym_data.props.max_tokens);
                 }
                 if sym_data.is_nullable {
@@ -988,6 +1020,8 @@ impl Parser {
             false
         } else {
             self.stats.all_items += row_len;
+
+            allowed_lexemes.set(LexemeIdx::SKIP.as_usize(), true);
 
             if self.scratch.definitive {
                 debug!(
@@ -1086,7 +1120,13 @@ impl Parser {
             Lexeme::just_idx(lexeme_idx)
         };
 
-        if self.scan(&lexeme) {
+        let scan_res = if lexeme.idx == LexemeIdx::SKIP {
+            self.scan_skip_lexeme(&lexeme)
+        } else {
+            self.scan(&lexeme)
+        };
+
+        if scan_res {
             // note, that while self.rows[] is updated, the lexer stack is not
             // so the last added row is at self.num_rows(), and not self.num_rows() - 1
             let added_row = self.num_rows();

@@ -21,7 +21,23 @@ pub struct LexemeSpec {
 }
 
 #[derive(Debug, Clone, Copy, Hash, PartialEq, Eq)]
-pub struct LexemeIdx(pub usize);
+pub struct LexemeIdx(usize);
+
+impl LexemeIdx {
+    pub const SKIP: LexemeIdx = LexemeIdx(0);
+
+    pub fn new(idx: usize) -> Self {
+        LexemeIdx(idx)
+    }
+
+    pub fn as_usize(&self) -> usize {
+        self.0
+    }
+
+    pub fn as_u16(&self) -> u16 {
+        self.0 as u16
+    }
+}
 
 // The first byte of EOS_MARKER should not occur in any token,
 // other than the token representing this byte itself.
@@ -60,11 +76,12 @@ impl LexerSpec {
             lexemes: Vec::new(),
             regex_builder: RegexBuilder::new(),
         };
-        let _ = r.add_lexeme_spec(LexemeSpec {
+        let skip = r.add_lexeme_spec(LexemeSpec {
             name: "SKIP".to_string(),
             rx: skip,
             ..r.empty_spec()
         })?;
+        assert!(skip == LexemeIdx::SKIP);
         Ok(r)
     }
 
@@ -74,9 +91,17 @@ impl LexerSpec {
     }
 
     fn add_lexeme_spec(&mut self, mut spec: LexemeSpec) -> Result<LexemeIdx> {
+        let compiled = self.regex_builder.mk(&spec.rx)?;
+        if let Some(idx) = self
+            .lexemes
+            .iter()
+            .position(|lex| lex.compiled_rx == compiled)
+        {
+            return Ok(LexemeIdx(idx));
+        }
         let idx = LexemeIdx(self.lexemes.len());
         spec.idx = idx;
-        spec.compiled_rx = self.regex_builder.mk(&spec.rx)?;
+        spec.compiled_rx = compiled;
         self.lexemes.push(spec);
         Ok(idx)
     }

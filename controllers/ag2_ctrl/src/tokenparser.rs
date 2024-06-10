@@ -1,7 +1,7 @@
 use std::rc::Rc;
 
 use crate::{
-    api::TopLevelGrammar,
+    api::{GenGrammarOptions, TopLevelGrammar},
     earley::{grammars_from_json, CGrammar, CSymIdx, ModelVariable, Parser, EOS_MARKER},
 };
 use aici_abi::{MidProcessArg, MidProcessResult, TokenId, TokenizerEnv};
@@ -57,7 +57,10 @@ impl TokenParser {
     ) -> Result<Self> {
         let max_tokens = buf.max_tokens.unwrap_or(usize::MAX);
         let compiled_grammars = grammars_from_json(buf, INFO)?;
-        let parser = Parser::new(Rc::clone(&compiled_grammars[0]))?;
+        let parser = Parser::new(
+            Rc::clone(&compiled_grammars[0]),
+            GenGrammarOptions::default(),
+        )?;
 
         let first_token_of_eos_marker =
             token_env.tok_trie().greedy_tokenize(EOS_MARKER.as_bytes())[0];
@@ -328,7 +331,8 @@ impl TokenParser {
             if msg.len() > 0 {
                 warn!("{}", msg);
             }
-            let parser = Parser::new(Rc::clone(&self.compiled_grammars[gen_grammar.grammar.0]))?;
+            let grm = Rc::clone(&self.compiled_grammars[gen_grammar.grammar.0]);
+            let parser = Parser::new(grm, gen_grammar)?;
             let old_parser = std::mem::replace(&mut self.parser, parser);
             let mut entry = ParserStackEntry {
                 parser: old_parser,

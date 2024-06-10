@@ -2,7 +2,10 @@ use aici_abi::toktree::{self, Recognizer};
 use serde::{Deserialize, Serialize};
 
 use super::Parser;
-use crate::{api::TopLevelGrammar, earley::from_guidance::grammars_from_json};
+use crate::{
+    api::{GenGrammarOptions, TopLevelGrammar},
+    earley::from_guidance::grammars_from_json,
+};
 
 #[derive(Serialize, Deserialize)]
 struct RunnerArg {
@@ -21,7 +24,7 @@ pub fn earley_test(trie: toktree::TokTrie) {
 
     let grm = cfg[0].clone();
 
-    let mut parser = Parser::new(grm.clone()).unwrap();
+    let mut parser = Parser::new(grm.clone(), GenGrammarOptions::default()).unwrap();
 
     if false {
         parser.trie_started();
@@ -69,7 +72,7 @@ pub fn earley_test(trie: toktree::TokTrie) {
         let mut line = 1;
         let mut vob = trie.alloc_token_set();
 
-        parser = Parser::new(grm.clone()).unwrap();
+        parser = Parser::new(grm.clone(), GenGrammarOptions::default()).unwrap();
         let mut times = vec![];
 
         #[cfg(not(target_arch = "wasm32"))]

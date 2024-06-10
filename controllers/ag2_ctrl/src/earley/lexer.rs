@@ -86,7 +86,7 @@ impl Lexer {
         let info = self.state_info(prev);
         let idx = info.possible.first_bit_set().expect("no allowed lexemes");
         LexerResult::Lexeme(PreLexeme {
-            idx: LexemeIdx(idx),
+            idx: LexemeIdx::new(idx),
             byte: None,
             hidden_len: 0,
         })
@@ -139,7 +139,7 @@ impl Lexer {
 impl LexemeIdx {
     fn from_state_desc(desc: &StateDesc) -> Self {
         assert!(desc.lowest_accepting >= 0);
-        LexemeIdx(desc.lowest_accepting as usize)
+        LexemeIdx::new(desc.lowest_accepting as usize)
     }
 }
 

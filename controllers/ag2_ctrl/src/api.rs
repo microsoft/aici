@@ -147,3 +147,14 @@ impl Node {
         }
     }
 }
+
+impl Default for GenGrammarOptions {
+    fn default() -> Self {
+        GenGrammarOptions {
+            grammar: GrammarId(0),
+            stop_rx: None,
+            no_initial_skip: false,
+            temperature: None,
+        }
+    }
+}
