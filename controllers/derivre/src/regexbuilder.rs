@@ -5,6 +5,7 @@ use regex_syntax::ParserBuilder;
 
 use crate::{ast::ExprSet, mapper::map_ast, ExprRef, RegexVec};
 
+#[derive(Clone)]
 pub struct RegexBuilder {
     parser_builder: ParserBuilder,
     exprset: ExprSet,
@@ -132,8 +133,8 @@ impl RegexBuilder {
         )
     }
 
-    pub fn to_regex_vec(self, rx_list: &[ExprRef]) -> RegexVec {
-        RegexVec::new_with_exprset(self.exprset, rx_list)
+    pub fn to_regex_vec(&self, rx_list: &[ExprRef]) -> RegexVec {
+        RegexVec::new_with_exprset(&self.exprset, rx_list)
     }
 }
 

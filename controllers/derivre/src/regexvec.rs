@@ -113,7 +113,7 @@ impl RegexVec {
             let ast = exprset.parse_expr(parser.clone(), rx)?;
             acc.push(ast);
         }
-        Ok(Self::new_with_exprset(exprset, &acc))
+        Ok(Self::new_with_exprset(&exprset, &acc))
     }
 
     pub fn initial_state_all(&mut self) -> StateID {
@@ -326,7 +326,7 @@ impl RegexVec {
 
 // private implementation
 impl RegexVec {
-    pub(crate) fn new_with_exprset(exprset: ExprSet, rx_list: &[ExprRef]) -> Self {
+    pub(crate) fn new_with_exprset(exprset: &ExprSet, rx_list: &[ExprRef]) -> Self {
         assert!(exprset.alphabet_size() == 256);
         let compress = true;
 
@@ -349,7 +349,7 @@ impl RegexVec {
         } else {
             let alphabet_size = exprset.alphabet_size();
             (
-                (exprset, rx_list.to_vec()),
+                (exprset.clone(), rx_list.to_vec()),
                 (0..=255).collect(),
                 alphabet_size,
             )

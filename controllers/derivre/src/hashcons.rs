@@ -18,6 +18,7 @@ impl Element {
 /// A hashconsing data structure for vectors of u32.
 /// Given a vector, it stores it only once and returns a unique id.
 /// The ids are consecutive and start at 0.
+#[derive(Clone)]
 pub struct VecHashCons {
     hasher: RandomState,
     backing: Vec<u32>,

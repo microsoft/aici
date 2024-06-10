@@ -2,11 +2,10 @@ use std::fmt::Debug;
 
 use aici_abi::toktree::SpecialToken;
 use anyhow::{bail, ensure, Result};
-use derivre::RegexBuilder;
 
 use crate::api::GenGrammarOptions;
 
-use super::lexerspec::{LexemeIdx, LexemeSpec, LexerSpec};
+use super::lexerspec::{LexemeIdx, LexerSpec};
 use rustc_hash::FxHashMap;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -119,20 +118,16 @@ pub struct Grammar {
     symbols: Vec<Symbol>,
     symbol_by_name: FxHashMap<String, SymIdx>,
     model_variables: FxHashMap<String, SymIdx>,
-    symbol_by_rx: FxHashMap<String, SymIdx>,
-    lexer_spec: LexerSpec,
-    regex_builder: RegexBuilder,
+    symbol_by_rx: FxHashMap<LexemeIdx, SymIdx>,
 }
 
 impl Grammar {
-    pub fn new(lexer_spec: LexerSpec) -> Self {
+    pub fn new() -> Self {
         Grammar {
             symbols: vec![],
             symbol_by_name: FxHashMap::default(),
             model_variables: FxHashMap::default(),
             symbol_by_rx: FxHashMap::default(),
-            lexer_spec,
-            regex_builder: RegexBuilder::new(),
         }
     }
 
@@ -167,21 +162,15 @@ impl Grammar {
         Ok(())
     }
 
-    pub fn make_terminal(&mut self, lhs: SymIdx, mut info: LexemeSpec) -> Result<()> {
+    pub fn make_terminal(&mut self, lhs: SymIdx, lex: LexemeIdx) -> Result<()> {
         self.check_empty_symbol(lhs)?;
-        info.compile_rx(&mut self.regex_builder)?;
-        let key = info.key();
-        if let Some(sym) = self.symbol_by_rx.get(&key) {
-            // TODO: check that the lexeme is the same
+        if let Some(sym) = self.symbol_by_rx.get(&lex) {
             self.add_rule(lhs, vec![*sym])?;
             return Ok(());
         }
-        let idx = LexemeIdx(self.lexer_spec.lexemes.len());
         let sym = self.sym_data_mut(lhs);
-        sym.lexeme = Some(idx);
-        self.symbol_by_rx.insert(key, lhs);
-        info.idx = idx;
-        self.lexer_spec.lexemes.push(info);
+        sym.lexeme = Some(lex);
+        self.symbol_by_rx.insert(lex, lhs);
         Ok(())
     }
 
@@ -310,7 +299,7 @@ impl Grammar {
             }
         }
 
-        let mut outp = Grammar::new(self.lexer_spec.clone());
+        let mut outp = Grammar::new();
         for sym in &self.symbols {
             if repl.contains_key(&sym.idx) {
                 continue;
@@ -336,11 +325,11 @@ impl Grammar {
         r
     }
 
-    pub fn compile(&self) -> CGrammar {
-        CGrammar::from_grammar(self)
+    pub fn compile(&self, lexer_spec: LexerSpec) -> CGrammar {
+        CGrammar::from_grammar(self, lexer_spec)
     }
 
-    pub fn validate_grammar_refs(&self, grammars: &[Grammar]) -> Result<()> {
+    pub fn validate_grammar_refs(&self, grammars: &[(LexerSpec, Grammar)]) -> Result<()> {
         for sym in &self.symbols {
             match sym.gen_grammar {
                 Some(ref opts) => {
@@ -398,13 +387,6 @@ impl Debug for Grammar {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         writeln!(f, "Grammar:")?;
         for sym in &self.symbols {
-            match sym.lexeme {
-                Some(lx) => {
-                    let sp = &self.lexer_spec.lexemes[lx.0];
-                    writeln!(f, "{:?}", sp)?
-                }
-                _ => {}
-            }
             match sym.gen_grammar {
                 Some(ref opts) => {
                     writeln!(f, "{} ==> {:?}", sym.name, opts.grammar)?;
@@ -627,10 +609,10 @@ impl CGrammar {
         &self.sym_data(sym).rules
     }
 
-    fn from_grammar(grammar: &Grammar) -> Self {
+    fn from_grammar(grammar: &Grammar, lexer_spec: LexerSpec) -> Self {
         let mut outp = CGrammar {
             start_symbol: CSymIdx::NULL, // replaced
-            lexer_spec: grammar.lexer_spec.clone(),
+            lexer_spec,
             symbols: vec![CSymbol {
                 idx: CSymIdx::NULL,
                 name: "NULL".to_string(),
@@ -648,7 +630,7 @@ impl CGrammar {
 
         let mut sym_map = FxHashMap::default();
 
-        let mut term_sym = vec![None; grammar.lexer_spec.lexemes.len()];
+        let mut term_sym = vec![None; outp.lexer_spec.lexemes.len()];
         assert!(grammar.symbols.len() < u16::MAX as usize - 10);
         for sym in grammar.symbols.iter() {
             if let Some(lx) = sym.lexeme {

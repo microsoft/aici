@@ -56,19 +56,7 @@ impl TokenParser {
         buf: TopLevelGrammar,
     ) -> Result<Self> {
         let max_tokens = buf.max_tokens.unwrap_or(usize::MAX);
-        let grm = grammars_from_json(buf)?;
-
-        let compiled_grammars = grm
-            .iter()
-            .enumerate()
-            .map(|(idx, g)| {
-                infoln!("grammar #{}:\n{:?}", idx, g);
-                let g = g.optimize();
-                infoln!("optimized #{}:\n{:?}", idx, g);
-                Rc::new(g.compile())
-            })
-            .collect::<Vec<_>>();
-
+        let compiled_grammars = grammars_from_json(buf, INFO)?;
         let parser = Parser::new(Rc::clone(&compiled_grammars[0]))?;
 
         let first_token_of_eos_marker =

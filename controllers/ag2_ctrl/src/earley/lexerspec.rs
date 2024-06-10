@@ -1,12 +1,13 @@
 use aici_abi::{bytes::limit_str, svob::SimpleVob};
 use anyhow::Result;
-use derivre::{ExprRef, RegexAst, RegexBuilder};
+use derivre::{ExprRef, RegexAst, RegexBuilder, RegexVec};
 use std::{fmt::Debug, hash::Hash};
 
 #[derive(Clone)]
 pub struct LexerSpec {
     pub greedy: bool,
     pub lexemes: Vec<LexemeSpec>,
+    regex_builder: RegexBuilder,
 }
 
 #[derive(Clone)]
@@ -30,60 +31,6 @@ pub struct LexemeIdx(pub usize);
 pub const EOS_MARKER: &'static str = "\u{02}-EoS";
 
 impl LexemeSpec {
-    pub fn key(&self) -> String {
-        format!("{}:{:?}", self.contextual, self.compiled_rx)
-    }
-
-    pub fn compile_rx(&mut self, builder: &mut RegexBuilder) -> Result<()> {
-        self.compiled_rx = builder.mk(&self.rx)?;
-        Ok(())
-    }
-
-    pub fn from_rx_and_stop(name: String, body_rx: &str, stop_rx: &str) -> Result<Self> {
-        let ends_at_eos_only = stop_rx.is_empty();
-        let rx = RegexAst::Concat(vec![
-            RegexAst::Regex(body_rx.to_string()),
-            RegexAst::LookAhead(Box::new(RegexAst::Regex(if ends_at_eos_only {
-                EOS_MARKER.to_string()
-            } else {
-                stop_rx.to_string()
-            }))),
-        ]);
-        let info = LexemeSpec {
-            idx: LexemeIdx(0),
-            name,
-            rx,
-            compiled_rx: ExprRef::INVALID,
-            ends_at_eos_only,
-            contextual: false,
-        };
-        Ok(info)
-    }
-
-    pub fn from_simple_literal(name: String, literal: &str) -> Self {
-        let info = LexemeSpec {
-            idx: LexemeIdx(0),
-            name,
-            rx: RegexAst::Literal(literal.to_string()),
-            compiled_rx: ExprRef::INVALID,
-            ends_at_eos_only: false,
-            contextual: false,
-        };
-        info
-    }
-
-    pub fn from_greedy_lexeme(name: String, rx: &str, contextual: bool) -> Self {
-        let info = LexemeSpec {
-            idx: LexemeIdx(0),
-            name,
-            rx: RegexAst::Regex(rx.to_string()),
-            compiled_rx: ExprRef::INVALID,
-            ends_at_eos_only: false,
-            contextual,
-        };
-        info
-    }
-
     /// Check if the lexeme always matches bytes, and has at least one more byte to spare.
     pub fn has_forced_bytes(&self, bytes: &[u8]) -> bool {
         match &self.rx {
@@ -107,6 +54,83 @@ impl Debug for LexemeSpec {
 }
 
 impl LexerSpec {
+    pub fn new(greedy: bool) -> Self {
+        LexerSpec {
+            greedy,
+            lexemes: Vec::new(),
+            regex_builder: RegexBuilder::new(),
+        }
+    }
+
+    pub fn to_regex_vec(&self) -> RegexVec {
+        let rx_list: Vec<_> = self.lexemes.iter().map(|lex| lex.compiled_rx).collect();
+        self.regex_builder.to_regex_vec(&rx_list)
+    }
+
+    fn add_lexeme_spec(&mut self, mut spec: LexemeSpec) -> Result<LexemeIdx> {
+        let idx = LexemeIdx(self.lexemes.len());
+        spec.idx = idx;
+        spec.compiled_rx = self.regex_builder.mk(&spec.rx)?;
+        self.lexemes.push(spec);
+        Ok(idx)
+    }
+
+    fn empty_spec(&self) -> LexemeSpec {
+        LexemeSpec {
+            idx: LexemeIdx(0),
+            name: "".to_string(),
+            rx: RegexAst::NoMatch,
+            compiled_rx: ExprRef::INVALID,
+            ends_at_eos_only: false,
+            contextual: false,
+        }
+    }
+
+    pub fn add_rx_and_stop(
+        &mut self,
+        name: String,
+        body_rx: &str,
+        stop_rx: &str,
+    ) -> Result<LexemeIdx> {
+        let ends_at_eos_only = stop_rx.is_empty();
+        let rx = RegexAst::Concat(vec![
+            RegexAst::Regex(body_rx.to_string()),
+            RegexAst::LookAhead(Box::new(RegexAst::Regex(if ends_at_eos_only {
+                EOS_MARKER.to_string()
+            } else {
+                stop_rx.to_string()
+            }))),
+        ]);
+        self.add_lexeme_spec(LexemeSpec {
+            name,
+            rx,
+            ends_at_eos_only,
+            ..self.empty_spec()
+        })
+    }
+
+    pub fn add_simple_literal(&mut self, name: String, literal: &str) -> Result<LexemeIdx> {
+        self.add_lexeme_spec(LexemeSpec {
+            name,
+            rx: RegexAst::Literal(literal.to_string()),
+            ..self.empty_spec()
+        })
+    }
+
+    pub fn add_greedy_lexeme(
+        &mut self,
+        name: String,
+        rx: &str,
+        contextual: bool,
+    ) -> Result<LexemeIdx> {
+        self.add_lexeme_spec(LexemeSpec {
+            name,
+            rx: RegexAst::Regex(rx.to_string()),
+            contextual,
+            ..self.empty_spec()
+        })
+    }
+
     pub fn dbg_lexeme(&self, lex: &Lexeme) -> String {
         let str = String::from_utf8_lossy(&lex.bytes).to_string();
         let info = &self.lexemes[lex.idx.0];
@@ -148,6 +172,16 @@ impl LexerSpec {
             }
         }
         v
+    }
+}
+
+impl Debug for LexerSpec {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        writeln!(f, "LexerSpec {{ greedy: {}, lexemes: [", self.greedy)?;
+        for lex in &self.lexemes {
+            writeln!(f, "  {:?}", lex)?;
+        }
+        write!(f, "] }}")
     }
 }
 

@@ -1,5 +1,3 @@
-use std::rc::Rc;
-
 use aici_abi::toktree::{self, Recognizer};
 use serde::{Deserialize, Serialize};
 
@@ -14,17 +12,14 @@ struct RunnerArg {
 pub fn earley_test(trie: toktree::TokTrie) {
     let g_bytes = include_bytes!("../../grammars/json.json");
     let data: RunnerArg = serde_json::from_slice(g_bytes).unwrap();
-    let cfg = grammars_from_json(data.grammar).unwrap();
-    // println!("cfg0: {:?}", cfg);
-    let cfg = cfg[0].optimize();
-    println!("cfg: {:?}", cfg);
+    let cfg = grammars_from_json(data.grammar, true).unwrap();
 
     let input = "{\n    \"name\": \"John Doe\",\n    \"age\": 30,\n    \"armor\": \"leather\",\n    \"weapon\": \"sword\",\n    \"class\": \"warrior\",\n    \"mantra\": \"I am the master of my fate, I am the captain of my soul.\",\n    \"strength\": 18,\n    \"items\": [\"health potion\", \"mana potion\", \"bandages\"]".as_bytes();
 
     let toks = trie.greedy_tokenize(input);
     println!("tokens: {:?}", toks.len());
 
-    let grm = Rc::new(cfg.compile());
+    let grm = cfg[0].clone();
 
     let mut parser = Parser::new(grm.clone()).unwrap();
 

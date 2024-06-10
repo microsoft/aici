@@ -316,7 +316,7 @@ macro_rules! ensure_internal {
 impl Parser {
     pub fn new(grammar: Rc<CGrammar>) -> Result<Self> {
         let start = grammar.start();
-        let lexer = Lexer::from(grammar.lexer_spec().clone())?;
+        let lexer = Lexer::from(grammar.lexer_spec())?;
         let scratch = Scratch::new(Rc::clone(&grammar));
         let lexer_state = lexer.a_dead_state(); // placeholder
         let mut r = Parser {

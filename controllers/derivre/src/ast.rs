@@ -202,6 +202,7 @@ impl<'a> Expr<'a> {
     }
 }
 
+#[derive(Clone)]
 pub struct ExprSet {
     exprs: VecHashCons,
     pub(crate) alphabet_size: usize,

@@ -1,6 +1,6 @@
 use aici_abi::svob::SimpleVob;
 use anyhow::Result;
-use derivre::{RegexBuilder, RegexVec, StateDesc};
+use derivre::{RegexVec, StateDesc};
 use std::fmt::Debug;
 
 use super::lexerspec::{LexemeIdx, LexerSpec, EOS_MARKER};
@@ -37,21 +37,15 @@ pub enum LexerResult {
 }
 
 impl Lexer {
-    pub fn from(spec: LexerSpec) -> Result<Self> {
-        let patterns = &spec.lexemes;
-        let mut builder = RegexBuilder::new();
-        let refs = patterns
-            .iter()
-            .map(|p| builder.mk(&p.rx))
-            .collect::<Result<Vec<_>>>()?;
-        let dfa = builder.to_regex_vec(&refs);
+    pub fn from(spec: &LexerSpec) -> Result<Self> {
+        let dfa = spec.to_regex_vec();
 
-        println!("dfa: {:?}", dfa);
-        for p in patterns {
-            debug!("  pattern: {:?}", p)
-        }
+        debug!("lexer: {:?}\n  ==> dfa: {:?}", spec, dfa);
 
-        let lex = Lexer { dfa, spec };
+        let lex = Lexer {
+            dfa,
+            spec: spec.clone(), // TODO check perf of Rc<> ?
+        };
 
         Ok(lex)
     }

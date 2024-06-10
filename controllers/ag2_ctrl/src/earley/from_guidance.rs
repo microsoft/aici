@@ -1,4 +1,6 @@
-use super::{grammar::SymbolProps, lexerspec::{LexemeSpec, LexerSpec}, Grammar};
+use std::{rc::Rc, vec};
+
+use super::{grammar::SymbolProps, lexerspec::LexerSpec, CGrammar, Grammar};
 use crate::api::{GrammarWithLexer, Node, TopLevelGrammar};
 use anyhow::{ensure, Result};
 
@@ -35,14 +37,12 @@ impl NodeProps {
     }
 }
 
-fn grammar_from_json(input: GrammarWithLexer) -> Result<Grammar> {
+fn grammar_from_json(input: GrammarWithLexer) -> Result<(LexerSpec, Grammar)> {
     let is_greedy = input.greedy_lexer;
     let is_lazy = !is_greedy;
 
-    let mut grm = Grammar::new(LexerSpec {
-        greedy: is_greedy,
-        lexemes: vec![],
-    });
+    let mut lexer_spec = LexerSpec::new(is_greedy);
+    let mut grm = Grammar::new();
     let node_map = input
         .nodes
         .iter()
@@ -90,12 +90,12 @@ fn grammar_from_json(input: GrammarWithLexer) -> Result<Grammar> {
                 } else {
                     &data.body_rx
                 };
-                let info = LexemeSpec::from_rx_and_stop(
+                let idx = lexer_spec.add_rx_and_stop(
                     format!("gen_{}", grm.sym_name(lhs)),
                     body_rx,
                     &data.stop_rx,
                 )?;
-                grm.make_terminal(lhs, info)?;
+                grm.make_terminal(lhs, idx)?;
                 let symprops = grm.sym_props_mut(lhs);
                 if let Some(t) = data.temperature {
                     symprops.temperature = t;
@@ -103,34 +103,52 @@ fn grammar_from_json(input: GrammarWithLexer) -> Result<Grammar> {
             }
             Node::Lexeme { rx, contextual, .. } => {
                 ensure!(is_greedy, "lexeme() only allowed in greedy grammars");
-                let info = LexemeSpec::from_greedy_lexeme(
+                let idx = lexer_spec.add_greedy_lexeme(
                     format!("lex_{}", grm.sym_name(lhs)),
                     rx,
                     *contextual,
-                );
-                grm.make_terminal(lhs, info)?;
+                )?;
+                grm.make_terminal(lhs, idx)?;
             }
             Node::String { literal, .. } => {
-                let info =
-                    LexemeSpec::from_simple_literal(format!("str_{}", grm.sym_name(lhs)), &literal);
-                grm.make_terminal(lhs, info)?;
+                let idx = lexer_spec
+                    .add_simple_literal(format!("str_{}", grm.sym_name(lhs)), &literal)?;
+                grm.make_terminal(lhs, idx)?;
             }
             Node::GenGrammar { data, .. } => {
                 grm.make_gen_grammar(lhs, data.clone())?;
             }
         }
     }
-    Ok(grm)
+    Ok((lexer_spec, grm))
 }
 
-pub fn grammars_from_json(input: TopLevelGrammar) -> Result<Vec<Grammar>> {
+pub fn grammars_from_json(input: TopLevelGrammar, print_out: bool) -> Result<Vec<Rc<CGrammar>>> {
     let grammars = input
         .grammars
         .into_iter()
         .map(grammar_from_json)
         .collect::<Result<Vec<_>>>()?;
-    for g in &grammars {
+
+    for (_, g) in &grammars {
         g.validate_grammar_refs(&grammars)?;
     }
-    Ok(grammars)
+
+    Ok(grammars
+        .into_iter()
+        .enumerate()
+        .map(|(idx, (lex, mut grm))| {
+            if print_out {
+                println!("\nGrammar #{}:\n{:?}\n{:?}", idx, lex, grm);
+            }
+
+            grm = grm.optimize();
+
+            if print_out {
+                println!("  == Optimize ==>\n{:?}", grm);
+            }
+
+            Rc::new(grm.compile(lex))
+        })
+        .collect::<Vec<_>>())
 }

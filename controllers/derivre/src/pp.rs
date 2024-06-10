@@ -6,6 +6,7 @@ use crate::{
     ExprRef,
 };
 
+#[derive(Clone)]
 pub struct PrettyPrinter {
     alphabet_mapping: Vec<u8>,
     alphabet_size: usize,
