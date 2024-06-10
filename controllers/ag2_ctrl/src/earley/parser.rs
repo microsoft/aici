@@ -895,6 +895,9 @@ impl Parser {
         // the allowed_lexemes were not computed correctly due to us messing
         // with agenda pointer above
         self.rows[added_row_idx].allowed_lexemes = allowed_lexemes;
+        if self.scratch.definitive {
+            self.row_infos[added_row_idx].max_tokens = self.row_infos[added_row_idx - 1].max_tokens;
+        }
         true
     }
 
