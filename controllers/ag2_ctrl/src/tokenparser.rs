@@ -34,7 +34,8 @@ pub struct TokenParser {
     previous_grm_bytes: Vec<u8>,
 
     first_token_of_eos_marker: TokenId,
-    max_tokens: usize,
+    max_tokens_total: usize,
+    max_tokens_parser: usize,
     compiled_grammars: Vec<Rc<CGrammar>>,
 
     // tokens currently in KV cache
@@ -48,6 +49,7 @@ struct ParserStackEntry {
     parser_llm_tokens_offset: usize,
     previous_grm_bytes_len: usize,
     symidx: CSymIdx,
+    max_tokens_offset: usize,
 }
 
 impl TokenParser {
@@ -76,7 +78,8 @@ impl TokenParser {
             llm_tokens: Vec::new(),
             llm_bytes: Vec::new(),
             grm_prefix: Vec::new(),
-            max_tokens,
+            max_tokens_total: max_tokens,
+            max_tokens_parser: max_tokens,
         })
     }
 
@@ -145,13 +148,17 @@ impl TokenParser {
         self.parser_stack.is_empty()
     }
 
-    pub fn mid_process(&mut self, mut arg: MidProcessArg) -> MidProcessResult {
-        if self.max_tokens == 0 {
+    pub fn mid_process(&mut self, arg: MidProcessArg) -> MidProcessResult {
+        if self.max_tokens_total == 0 {
             infoln!("max_tokens=0, stopping");
             return MidProcessResult::stop();
         }
-        self.max_tokens -= 1;
+        self.max_tokens_total -= 1;
+        self.max_tokens_parser = self.max_tokens_parser.saturating_sub(1);
+        self.mid_process_inner(arg)
+    }
 
+    fn mid_process_inner(&mut self, mut arg: MidProcessArg) -> MidProcessResult {
         let start_time = std::time::Instant::now();
 
         infoln!("\n");
@@ -296,15 +303,15 @@ impl TokenParser {
             set.disallow_token(self.first_token_of_eos_marker);
         }
 
-        if set.num_set() == 1 && set.is_allowed(trie.eos_token()) {
+        if self.max_tokens_parser == 0 || (set.num_set() == 1 && set.is_allowed(trie.eos_token())) {
             if self.parser_stack.is_empty() {
                 infoln!("only eos token allowed, stopping");
                 return MidProcessResult::stop();
             } else {
-                infoln!("pop_parser");
+                infoln!("pop_parser; tokens left {}", self.max_tokens_parser);
                 self.pop_parser();
-                // re-start the whole process with nice tail-recursion
-                return self.mid_process(MidProcessArg {
+                // re-start the whole process with a nice tail-recursion
+                return self.mid_process_inner(MidProcessArg {
                     backtrack: 0,
                     tokens: Vec::new(),
                     fork_group: Vec::new(),
@@ -332,6 +339,7 @@ impl TokenParser {
                 warn!("{}", msg);
             }
             let grm = Rc::clone(&self.compiled_grammars[gen_grammar.grammar.0]);
+            let max_tokens = self.parser.grammar().sym_data(symidx).props.max_tokens;
             let parser = Parser::new(grm, gen_grammar)?;
             let old_parser = std::mem::replace(&mut self.parser, parser);
             let mut entry = ParserStackEntry {
@@ -339,7 +347,9 @@ impl TokenParser {
                 parser_llm_tokens_offset: self.parser_llm_tokens_offset,
                 previous_grm_bytes_len: self.previous_grm_bytes.len(),
                 symidx,
+                max_tokens_offset: self.max_tokens_total.saturating_sub(self.max_tokens_parser),
             };
+            self.max_tokens_parser = std::cmp::min(self.max_tokens_parser, max_tokens);
             self.parser_llm_tokens_offset = self.llm_tokens.len();
             self.previous_grm_bytes
                 .extend_from_slice(&entry.parser.get_bytes());
@@ -354,6 +364,9 @@ impl TokenParser {
         self.parser_llm_tokens_offset = entry.parser_llm_tokens_offset;
         self.previous_grm_bytes
             .truncate(entry.previous_grm_bytes_len);
+        self.max_tokens_parser = self
+            .max_tokens_total
+            .saturating_sub(entry.max_tokens_offset);
         self.parser.scan_gen_grammar(entry.symidx);
     }
 }

@@ -360,6 +360,10 @@ impl Parser {
         Ok(r)
     }
 
+    pub fn grammar(&self) -> &CGrammar {
+        &self.grammar
+    }
+
     pub fn is_accepting(&self) -> bool {
         for idx in self.curr_row().item_indices() {
             let item = self.scratch.items[idx];

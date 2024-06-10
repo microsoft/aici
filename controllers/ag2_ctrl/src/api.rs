@@ -122,6 +122,9 @@ pub struct GenGrammarOptions {
 
     /// Override sampling temperature.
     pub temperature: Option<f32>,
+
+    #[serde(skip)]
+    pub max_tokens_grm: usize,
 }
 
 macro_rules! id_type {
@@ -155,6 +158,7 @@ impl Default for GenGrammarOptions {
             stop_rx: None,
             no_initial_skip: false,
             temperature: None,
+            max_tokens_grm: usize::MAX,
         }
     }
 }

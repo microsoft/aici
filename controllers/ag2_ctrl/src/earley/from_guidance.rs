@@ -119,8 +119,10 @@ fn grammar_from_json(input: GrammarWithLexer) -> Result<(LexerSpec, Grammar)> {
                     .add_simple_literal(format!("str_{}", grm.sym_name(lhs)), &literal)?;
                 grm.make_terminal(lhs, idx)?;
             }
-            Node::GenGrammar { data, .. } => {
-                grm.make_gen_grammar(lhs, data.clone())?;
+            Node::GenGrammar { data, props } => {
+                let mut data = data.clone();
+                data.max_tokens_grm = props.max_tokens.unwrap_or(usize::MAX);
+                grm.make_gen_grammar(lhs, data)?;
             }
         }
     }
