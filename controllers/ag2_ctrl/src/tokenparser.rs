@@ -2,7 +2,7 @@ use std::rc::Rc;
 
 use crate::{
     api::TopLevelGrammar,
-    earley::{grammars_from_json, lexer::LexemeSpec, CGrammar, CSymIdx, ModelVariable, Parser},
+    earley::{grammars_from_json, CGrammar, CSymIdx, ModelVariable, Parser, EOS_MARKER},
 };
 use aici_abi::{MidProcessArg, MidProcessResult, TokenId, TokenizerEnv};
 use anyhow::Result;
@@ -71,9 +71,8 @@ impl TokenParser {
 
         let parser = Parser::new(Rc::clone(&compiled_grammars[0]))?;
 
-        let first_token_of_eos_marker = token_env
-            .tok_trie()
-            .greedy_tokenize(&LexemeSpec::EOS_MARKER.as_bytes())[0];
+        let first_token_of_eos_marker =
+            token_env.tok_trie().greedy_tokenize(EOS_MARKER.as_bytes())[0];
 
         Ok(TokenParser {
             token_env,

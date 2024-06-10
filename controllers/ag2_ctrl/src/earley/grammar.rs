@@ -6,7 +6,7 @@ use derivre::RegexBuilder;
 
 use crate::api::GenGrammarOptions;
 
-use super::lexer::{LexemeIdx, LexemeSpec, LexerSpec};
+use super::lexerspec::{LexemeIdx, LexemeSpec, LexerSpec};
 use rustc_hash::FxHashMap;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]

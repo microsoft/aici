@@ -1,8 +1,5 @@
-use super::{lexer::LexerSpec, Grammar};
-use crate::{
-    api::{GrammarWithLexer, Node, TopLevelGrammar},
-    earley::{grammar::SymbolProps, lexer::LexemeSpec},
-};
+use super::{grammar::SymbolProps, lexerspec::{LexemeSpec, LexerSpec}, Grammar};
+use crate::api::{GrammarWithLexer, Node, TopLevelGrammar};
 use anyhow::{ensure, Result};
 
 #[derive(Debug)]

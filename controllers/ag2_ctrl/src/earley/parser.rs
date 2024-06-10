@@ -17,7 +17,8 @@ use crate::{api::GenGrammarOptions, earley::lexer::Lexer};
 
 use super::{
     grammar::{CGrammar, CSymIdx, CSymbol, ModelVariable, RuleIdx},
-    lexer::{Lexeme, LexerResult, LexerSpec, PreLexeme, StateID},
+    lexer::{LexerResult, PreLexeme, StateID},
+    lexerspec::{Lexeme, LexerSpec},
 };
 
 const TRACE: bool = true;
