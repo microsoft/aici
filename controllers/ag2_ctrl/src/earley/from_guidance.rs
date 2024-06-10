@@ -3,6 +3,7 @@ use std::{rc::Rc, vec};
 use super::{grammar::SymbolProps, lexerspec::LexerSpec, CGrammar, Grammar};
 use crate::api::{GrammarWithLexer, Node, TopLevelGrammar};
 use anyhow::{ensure, Result};
+use derivre::RegexAst;
 
 #[derive(Debug)]
 pub struct NodeProps {
@@ -40,8 +41,11 @@ impl NodeProps {
 fn grammar_from_json(input: GrammarWithLexer) -> Result<(LexerSpec, Grammar)> {
     let is_greedy = input.greedy_lexer;
     let is_lazy = !is_greedy;
-
-    let mut lexer_spec = LexerSpec::new(is_greedy);
+    let skip = match input.greedy_skip_rx {
+        Some(rx) if is_greedy => RegexAst::Regex(rx),
+        _ => RegexAst::NoMatch,
+    };
+    let mut lexer_spec = LexerSpec::new(is_greedy, skip)?;
     let mut grm = Grammar::new();
     let node_map = input
         .nodes

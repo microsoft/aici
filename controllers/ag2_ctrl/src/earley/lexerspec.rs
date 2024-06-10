@@ -54,12 +54,18 @@ impl Debug for LexemeSpec {
 }
 
 impl LexerSpec {
-    pub fn new(greedy: bool) -> Self {
-        LexerSpec {
+    pub fn new(greedy: bool, skip: RegexAst) -> Result<Self> {
+        let mut r = LexerSpec {
             greedy,
             lexemes: Vec::new(),
             regex_builder: RegexBuilder::new(),
-        }
+        };
+        let _ = r.add_lexeme_spec(LexemeSpec {
+            name: "SKIP".to_string(),
+            rx: skip,
+            ..r.empty_spec()
+        })?;
+        Ok(r)
     }
 
     pub fn to_regex_vec(&self) -> RegexVec {

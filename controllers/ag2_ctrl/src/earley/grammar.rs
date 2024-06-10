@@ -632,6 +632,20 @@ impl CGrammar {
 
         let mut term_sym = vec![None; outp.lexer_spec.lexemes.len()];
         assert!(grammar.symbols.len() < u16::MAX as usize - 10);
+
+        let skip_idx = 0;
+        let csym = CSymbol {
+            idx: CSymIdx::new_checked(skip_idx + 1),
+            name: "<SKIP>".to_string(),
+            is_terminal: true,
+            is_nullable: false,
+            rules: vec![],
+            props: SymbolProps::default(),
+            sym_flags: SymFlags(0),
+            gen_grammar: None,
+        };
+        term_sym[skip_idx] = Some(csym);
+
         for sym in grammar.symbols.iter() {
             if let Some(lx) = sym.lexeme {
                 assert!(term_sym[lx.0].is_none());
