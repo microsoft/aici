@@ -63,7 +63,7 @@ impl Debug for LexemeSpec {
             write!(f, " eos-only")?;
         }
         if self.contextual {
-            write!(f, " allow-others")?;
+            write!(f, " contextual")?;
         }
         Ok(())
     }

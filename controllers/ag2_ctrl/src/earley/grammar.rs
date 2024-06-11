@@ -300,6 +300,13 @@ impl Grammar {
         }
 
         let mut outp = Grammar::new();
+
+        let start_data = self.sym_data(self.start());
+        if start_data.is_terminal() {
+            let new_start = outp.fresh_symbol("_start_repl");
+            outp.add_rule(new_start, vec![SymIdx(1)]).unwrap();
+        }
+
         for sym in &self.symbols {
             if repl.contains_key(&sym.idx) {
                 continue;
