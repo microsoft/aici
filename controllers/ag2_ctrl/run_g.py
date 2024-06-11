@@ -152,15 +152,16 @@ def main():
     prompt = "Count to 10: 1, 2, 3, 4, 5, 6, 7, "
     grm = gen("text", stop=",")
 
-    prompt = "How much is 2 + 2? "
-    grm = gen(name="test", max_tokens=30, regex=r"\d+")
-
     prompt = '<color>red</color>\n<color>'
     grm = gen(stop="</color>") + ' and test2'
 
     prompt = ""
     grm = string("this is a test")
 
+    prompt = "How much is 2 + 2? "
+    grm = gen(name="test", max_tokens=30, regex=r"\d+")
+
+    
 
     # grm = "Q: 7 * 8\nA: " + gen("text", regex="[0-9]+", max_tokens=20) + "\n"
 
