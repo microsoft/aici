@@ -61,9 +61,11 @@ ENTRYPOINT ["python3", "-m", "vllm.entrypoints.openai.api_server", "--enforce-ea
 FROM vllm-base AS vllm-guidance
 
 RUN aicirt --module wasm/aici_guidance_ctrl.wasm --tag guidance --tag guidance_ctrl-latest
+RUN aicirt --module wasm/aici_ag2_ctrl.wasm --tag ag2
 
 FROM vllm-base as vllm-general
 
 RUN aicirt --module wasm/aici_guidance_ctrl.wasm --tag guidance --tag guidance_ctrl-latest
+RUN aicirt --module wasm/aici_ag2_ctrl.wasm --tag ag2
 RUN aicirt --module wasm/aici_pyctrl.wasm --tag pyctrl --gh-module gh:microsoft/aici/pyctrl
 RUN aicirt --module wasm/aici_jsctrl.wasm --tag jsctrl --gh-module gh:microsoft/aici/jsctrl

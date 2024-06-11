@@ -214,23 +214,11 @@ dependencies = [
 ]
 
 [[package]]
-name = "ag2_ctrl"
-version = "0.1.0"
-dependencies = [
- "aici_abi",
- "anyhow",
- "derivre",
- "rustc-hash",
- "serde",
- "serde_json",
-]
-
-[[package]]
 name = "ag2_tester"
 version = "0.1.0"
 dependencies = [
- "ag2_ctrl",
  "aici_abi",
+ "aici_ag2_ctrl",
  "aici_native",
  "anyhow",
  "rustc-hash",
@@ -274,6 +262,18 @@ dependencies = [
  "serde",
  "serde_json",
  "vob",
+]
+
+[[package]]
+name = "aici_ag2_ctrl"
+version = "0.1.0"
+dependencies = [
+ "aici_abi",
+ "anyhow",
+ "derivre",
+ "rustc-hash",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]

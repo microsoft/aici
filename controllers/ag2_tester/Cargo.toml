@@ -5,7 +5,7 @@ edition = "2021"
 
 [dependencies]
 aici_abi = { path = "../aici_abi" }
-ag2_ctrl = { path = "../ag2_ctrl" }
+aici_ag2_ctrl = { path = "../ag2_ctrl" }
 aici_native = { path = "../aici_native" }
 anyhow = "1.0.75"
 serde = { version = "1.0.192", features = ["derive"] }

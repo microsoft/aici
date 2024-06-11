@@ -4,7 +4,7 @@ use aici_abi::{
 };
 use serde::{Deserialize, Serialize};
 
-use ag2_ctrl::{api::TopLevelGrammar, TokenParser};
+use aici_ag2_ctrl::{api::TopLevelGrammar, TokenParser};
 
 const INFO: bool = true;
 

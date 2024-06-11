@@ -16,7 +16,7 @@ members = [
     "rllm/rllm-cuda",
     "rllm/rllm-llamacpp",
     "rllm/tch-cuda",
-    "rllm/llama-cpp-low"
+    "rllm/llama-cpp-low",
 ]
 resolver = "2"
 
