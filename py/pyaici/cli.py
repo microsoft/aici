@@ -15,7 +15,7 @@ def cli_error(msg: str):
     sys.exit(1)
 
 
-def build_rust(folder: str):
+def build_rust(folder: str, features: List[str] = []):
     bin_file = ""
     spl = folder.split("::")
     if len(spl) > 1:
@@ -70,7 +70,7 @@ def build_rust(folder: str):
             "--release",
             "--target",
             triple,
-        ],
+        ] + (["--features", ",".join(features)] if features else []),
         cwd=folder,
     )
     if r.returncode != 0:

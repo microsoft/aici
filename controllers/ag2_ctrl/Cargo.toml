@@ -14,3 +14,7 @@ rustc-hash = "1.1.0"
 [[bin]]
 name = "aici_ag2_ctrl"
 path = "src/gctrl.rs"
+
+[features]
+default = []
+logging = []

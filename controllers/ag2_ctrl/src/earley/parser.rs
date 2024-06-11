@@ -24,11 +24,12 @@ use super::{
 const TRACE: bool = true;
 const DEBUG: bool = true;
 const INFO: bool = true;
+
 const MAX_ROW: usize = 100;
 
 macro_rules! trace {
     ($($arg:tt)*) => {
-        if TRACE {
+        if cfg!(logging) && TRACE {
             println!($($arg)*);
         }
     }
@@ -36,7 +37,7 @@ macro_rules! trace {
 
 macro_rules! debug {
     ($($arg:tt)*) => {
-        if DEBUG {
+        if cfg!(logging) && DEBUG {
             println!($($arg)*);
         }
     }

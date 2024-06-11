@@ -181,7 +181,7 @@ def main():
     #     script = f.read()
     # grm = "```python\n" + substring(script[0:1400])
     
-    mod_id = pyaici.cli.build_rust(".")
+    mod_id = pyaici.cli.build_rust(".", features=["logging"])
     if "127.0.0.1" in pyaici.rest.base_url:
         pyaici.rest.tag_module(mod_id, ["ag2_ctrl-latest", "ag2"])
     pyaici.rest.log_level = 2
