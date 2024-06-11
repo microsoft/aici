@@ -21,7 +21,7 @@ use super::{
     lexerspec::{Lexeme, LexemeIdx, LexerSpec},
 };
 
-const TRACE: bool = true;
+const TRACE: bool = false;
 const DEBUG: bool = true;
 const INFO: bool = true;
 
@@ -365,13 +365,34 @@ impl Parser {
         &self.grammar
     }
 
+    fn after_dots(&self) -> impl Iterator<Item = RuleIdx> + '_ {
+        self.curr_row()
+            .item_indices()
+            .map(|i| self.scratch.items[i].rule_idx())
+    }
+
+    fn after_dots_symdata(&self) -> impl Iterator<Item = &CSymbol> + '_ {
+        self.after_dots().map(|pos| self.grammar.sym_data_at(pos))
+    }
+
+    pub fn can_advance(&self) -> bool {
+        let skip = self.grammar.lexeme_to_sym_idx(LexemeIdx::SKIP);
+        for data in self.after_dots_symdata() {
+            if data.idx == skip || data.idx == CSymIdx::NULL {
+                continue;
+            }
+            if data.is_terminal || data.gen_grammar.is_some() {
+                return true;
+            }
+        }
+        false
+    }
+
     pub fn is_accepting(&self) -> bool {
-        for idx in self.curr_row().item_indices() {
-            let item = self.scratch.items[idx];
-            let rule = item.rule_idx();
-            let after_dot = self.grammar.sym_idx_at(rule);
+        for pos in self.after_dots() {
+            let after_dot = self.grammar.sym_idx_at(pos);
             if after_dot == CSymIdx::NULL {
-                let lhs = self.grammar.sym_idx_of(item.rule_idx());
+                let lhs = self.grammar.sym_idx_of(pos);
                 if lhs == self.grammar.start() {
                     return true;
                 }
@@ -498,9 +519,7 @@ impl Parser {
 
     pub fn temperature(&self) -> f32 {
         let mut temp = 0.0f32;
-        for i in self.curr_row().item_indices() {
-            let item = self.scratch.items[i];
-            let data = self.grammar.sym_data_at(item.rule_idx());
+        for data in self.after_dots_symdata() {
             if data.is_terminal {
                 temp = temp.max(data.props.temperature);
             }
@@ -727,9 +746,7 @@ impl Parser {
 
     pub fn model_variables(&self) -> Vec<ModelVariable> {
         let mut vars = vec![];
-        for i in self.curr_row().item_indices() {
-            let item = self.scratch.items[i];
-            let sym_data = self.grammar.sym_data_at(item.rule_idx());
+        for sym_data in self.after_dots_symdata() {
             if let Some(ref mv) = sym_data.props.model_variable {
                 if !vars.contains(mv) {
                     vars.push(mv.clone());
@@ -777,10 +794,9 @@ impl Parser {
         let mut res: Option<GenGrammarOptions> = None;
         let mut res_idx = None;
         let mut gen_grm = vec![];
-        for i in self.curr_row().item_indices() {
-            let item = self.scratch.items[i];
-            let idx = self.grammar.sym_idx_at(item.rule_idx());
-            let sym_data = self.grammar.sym_data_at(item.rule_idx());
+        for pos in self.after_dots() {
+            let idx = self.grammar.sym_idx_at(pos);
+            let sym_data = self.grammar.sym_data_at(pos);
             if let Some(ref gg) = sym_data.gen_grammar {
                 // break ties by preferring the one with the lowest grammar number
                 if res.is_none() || res.as_ref().unwrap().grammar.0 > gg.grammar.0 {

@@ -293,6 +293,14 @@ impl TokenParser {
             }
         }
 
+        let inner_done = {
+            let is_accepting = self.parser.is_accepting();
+            let can_advance = self.parser.can_advance();
+            let inner_done = is_accepting && !can_advance;
+            infoln!("inner_done: {inner_done}; can_advance: {can_advance}; accept: {is_accepting}");
+            inner_done
+        };
+
         let trie = self.token_env.tok_trie();
         let mut set = trie.alloc_token_set();
         // self.parser.print_row(self.parser.num_rows() - 1);
@@ -303,7 +311,10 @@ impl TokenParser {
             set.disallow_token(self.first_token_of_eos_marker);
         }
 
-        if self.max_tokens_parser == 0 || (set.num_set() == 1 && set.is_allowed(trie.eos_token())) {
+        if inner_done
+            || self.max_tokens_parser == 0
+            || (set.num_set() == 1 && set.is_allowed(trie.eos_token()))
+        {
             if self.parser_stack.is_empty() {
                 infoln!("only eos token allowed, stopping");
                 return MidProcessResult::stop();
