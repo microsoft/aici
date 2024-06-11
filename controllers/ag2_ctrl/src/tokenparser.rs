@@ -359,14 +359,23 @@ impl TokenParser {
     }
 
     fn pop_parser(&mut self) {
+        let inner_bytes = self.parser.get_bytes();
         let entry = self.parser_stack.pop().unwrap();
         self.parser = entry.parser;
         self.parser_llm_tokens_offset = entry.parser_llm_tokens_offset;
         self.previous_grm_bytes
             .truncate(entry.previous_grm_bytes_len);
+        infoln!(
+            "pop_parser: {} tokens left; new {} - {} = {}",
+            self.max_tokens_parser,
+            self.max_tokens_total,
+            entry.max_tokens_offset,
+            self.max_tokens_total
+                .saturating_sub(entry.max_tokens_offset)
+        );
         self.max_tokens_parser = self
             .max_tokens_total
             .saturating_sub(entry.max_tokens_offset);
-        self.parser.scan_gen_grammar(entry.symidx);
+        self.parser.scan_gen_grammar(entry.symidx, inner_bytes);
     }
 }

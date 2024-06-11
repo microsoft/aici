@@ -193,10 +193,6 @@ impl LexerSpec {
         )
     }
 
-    pub fn new_lexeme(&self, idx: LexemeIdx, bytes: Vec<u8>, hidden_len: usize) -> Result<Lexeme> {
-        Lexeme::new(&self.lexemes[idx.0], bytes, hidden_len)
-    }
-
     pub fn lexeme_spec(&self, idx: LexemeIdx) -> &LexemeSpec {
         &self.lexemes[idx.0]
     }
@@ -230,12 +226,12 @@ pub struct Lexeme {
 }
 
 impl Lexeme {
-    fn new(spec: &LexemeSpec, bytes: Vec<u8>, hidden_len: usize) -> Result<Self> {
-        Ok(Lexeme {
-            idx: spec.idx,
+    pub fn new(idx: LexemeIdx, bytes: Vec<u8>, hidden_len: usize) -> Self {
+        Lexeme {
+            idx,
             bytes,
             hidden_len,
-        })
+        }
     }
 
     pub fn just_idx(idx: LexemeIdx) -> Self {

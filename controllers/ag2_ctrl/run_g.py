@@ -16,6 +16,10 @@ from guidance import (
     substring,
     optional,
     string,
+    lexeme,
+    greedy_grammar,
+    gen_grammar,
+    lazy_grammar,
 )
 
 
@@ -67,6 +71,52 @@ def expression(lm):
     )
 
 
+@guidance(stateless=True)
+def json_string(lm):
+    return lm + lexeme(r'"(\\(["\\\/bfnrt]|u[a-fA-F0-9]{4})|[^"\\\x00-\x1F\x7F]+)*"')
+
+
+@guidance(stateless=True)
+def json_number(lm):
+    return lm + lexeme(r"-?(?:0|[1-9][0-9]*)(?:\.[0-9]+)?(?:[eE][+-]?[0-9]+)?")
+
+
+@guidance(stateless=True)
+def json_value(lm):
+    return lm + select(
+        [
+            json_string(),
+            json_number(),
+            json_object(),
+            json_array(),
+            "true",
+            "false",
+            "null",
+        ]
+    )
+
+
+@guidance(stateless=True)
+def json_member(lm):
+    return lm + json_string() + ":" + json_value()
+
+
+@guidance(stateless=True)
+def json_object(lm):
+    return lm + "{" + optional(json_member() + one_or_more("," + json_member())) + "}"
+
+
+@guidance(stateless=True)
+def json_array(lm):
+    return lm + "[" + optional(json_value() + one_or_more("," + json_value())) + "]"
+
+
+@guidance(stateless=True)
+def gen_json_object(lm, name: str, max_tokens=100000000):
+    grm = greedy_grammar(json_object(), skip_regex=r"[\x20\x0A\x0D\x09]+")
+    return lm + gen_grammar(name, grm, no_initial_skip=True, max_tokens=max_tokens)
+
+
 def main():
     grm = (
         "Here's a sample arithmetic expression: "
@@ -114,7 +164,6 @@ def main():
         }}```"""
         return lm
 
-
     @guidance(stateless=True, dedent=True)
     def character_maker2(lm, id, description, valid_weapons):
         lm += f"""\
@@ -130,7 +179,6 @@ def main():
         }}"""
         return lm
 
-
     grm = character_maker2(1, "A nimble fighter", ["axe", "sword", "bow"])
     prompt = ""
 
@@ -141,19 +189,28 @@ def main():
     grm = "Count to 10: 1, 2, 3, 4, 5, 6, 7, " + gen("text", stop=",")
 
     grm = "this is a test" + gen("test", max_tokens=1)
-    grm = "How much is 2 + 2? " + gen(name="test", max_tokens=4) + gen(name="test2", max_tokens=4) + "\n"
-    grm = "one, two, three, " + gen(name="a", max_tokens=2) + gen(name="b", max_tokens=2)
-    grm = "one, two, three, " + gen(name="a", max_tokens=1) + gen(name="b", max_tokens=1)
+    grm = (
+        "How much is 2 + 2? "
+        + gen(name="test", max_tokens=4)
+        + gen(name="test2", max_tokens=4)
+        + "\n"
+    )
+    grm = (
+        "one, two, three, " + gen(name="a", max_tokens=2) + gen(name="b", max_tokens=2)
+    )
+    grm = (
+        "one, two, three, " + gen(name="a", max_tokens=1) + gen(name="b", max_tokens=1)
+    )
     grm = "one, two, three, " + gen(name="a", max_tokens=100)
 
     prompt = "1. Here is a sentence "
-    grm =  gen(name="bla", list_append=True, suffix="\n")
+    grm = gen(name="bla", list_append=True, suffix="\n")
 
     prompt = "Count to 10: 1, 2, 3, 4, 5, 6, 7, "
     grm = gen("text", stop=",")
 
-    prompt = '<color>red</color>\n<color>'
-    grm = gen(stop="</color>") + ' and test2'
+    prompt = "<color>red</color>\n<color>"
+    grm = gen(stop="</color>") + " and test2"
 
     prompt = ""
     grm = string("this is a test")
@@ -161,11 +218,12 @@ def main():
     prompt = "How much is 2 + 2? "
     grm = gen(name="test", max_tokens=30, regex=r"\d+")
 
-    
+    prompt = "About J. Random Hacker:\n"
+    grm = gen_json_object("hacker", max_tokens=50) + "\nScore (0-9): " + gen("score", regex=r"[0-9]")
 
     # grm = "Q: 7 * 8\nA: " + gen("text", regex="[0-9]+", max_tokens=20) + "\n"
 
-    max_tokens = 50
+    max_tokens = 250
 
     serialized = grm.ag2_serialize()
     serialized["max_tokens"] = max_tokens
@@ -181,7 +239,7 @@ def main():
     # with open(__file__) as f:
     #     script = f.read()
     # grm = "```python\n" + substring(script[0:1400])
-    
+
     mod_id = pyaici.cli.build_rust(".", features=["logging"])
     if "127.0.0.1" in pyaici.rest.base_url:
         pyaici.rest.tag_module(mod_id, ["ag2_ctrl-latest", "ag2"])
