@@ -1,4 +1,4 @@
-use std::rc::Rc;
+use std::sync::Arc;
 
 use crate::{
     api::{GenGrammarOptions, TopLevelGrammar},
@@ -36,7 +36,7 @@ pub struct TokenParser {
     first_token_of_eos_marker: TokenId,
     max_tokens_total: usize,
     max_tokens_parser: usize,
-    compiled_grammars: Vec<Rc<CGrammar>>,
+    compiled_grammars: Vec<Arc<CGrammar>>,
 
     // tokens currently in KV cache
     llm_tokens: Vec<TokenId>,
@@ -60,7 +60,7 @@ impl TokenParser {
         let max_tokens = buf.max_tokens.unwrap_or(usize::MAX);
         let compiled_grammars = grammars_from_json(buf, INFO)?;
         let parser = Parser::new(
-            Rc::clone(&compiled_grammars[0]),
+            Arc::clone(&compiled_grammars[0]),
             GenGrammarOptions::default(),
         )?;
 
@@ -349,7 +349,7 @@ impl TokenParser {
             if msg.len() > 0 {
                 warn!("{}", msg);
             }
-            let grm = Rc::clone(&self.compiled_grammars[gen_grammar.grammar.0]);
+            let grm = Arc::clone(&self.compiled_grammars[gen_grammar.grammar.0]);
             let max_tokens = self.parser.grammar().sym_data(symidx).props.max_tokens;
             let parser = Parser::new(grm, gen_grammar)?;
             let old_parser = std::mem::replace(&mut self.parser, parser);

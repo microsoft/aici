@@ -1,4 +1,4 @@
-use std::{rc::Rc, vec};
+use std::{sync::Arc, vec};
 
 use super::{grammar::SymbolProps, lexerspec::LexerSpec, CGrammar, Grammar};
 use crate::api::{
@@ -197,7 +197,7 @@ fn grammar_from_json(input: GrammarWithLexer) -> Result<(LexerSpec, Grammar)> {
     Ok((lexer_spec, grm))
 }
 
-pub fn grammars_from_json(input: TopLevelGrammar, print_out: bool) -> Result<Vec<Rc<CGrammar>>> {
+pub fn grammars_from_json(input: TopLevelGrammar, print_out: bool) -> Result<Vec<Arc<CGrammar>>> {
     let grammars = input
         .grammars
         .into_iter()
@@ -222,7 +222,7 @@ pub fn grammars_from_json(input: TopLevelGrammar, print_out: bool) -> Result<Vec
                 println!("  == Optimize ==>\n{:?}", grm);
             }
 
-            Rc::new(grm.compile(lex))
+            Arc::new(grm.compile(lex))
         })
         .collect::<Vec<_>>())
 }

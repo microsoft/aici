@@ -2,7 +2,7 @@ use std::{
     fmt::{Debug, Display},
     hash::Hash,
     ops::Range,
-    rc::Rc,
+    sync::Arc,
     vec,
 };
 
@@ -134,7 +134,7 @@ impl Item {
 }
 
 struct Scratch {
-    grammar: Rc<CGrammar>,
+    grammar: Arc<CGrammar>,
     row_start: usize,
     row_end: usize,
     items: Vec<Item>,
@@ -185,7 +185,7 @@ struct LexerState {
 
 pub struct Parser {
     lexer: Lexer,
-    grammar: Rc<CGrammar>,
+    grammar: Arc<CGrammar>,
     scratch: Scratch,
     trie_lexer_stack: usize,
     captures: Vec<(String, Vec<u8>)>,
@@ -200,7 +200,7 @@ pub struct Parser {
 }
 
 impl Scratch {
-    fn new(grammar: Rc<CGrammar>) -> Self {
+    fn new(grammar: Arc<CGrammar>) -> Self {
         Scratch {
             grammar,
             row_start: 0,
@@ -316,10 +316,10 @@ macro_rules! ensure_internal {
 }
 
 impl Parser {
-    pub fn new(grammar: Rc<CGrammar>, options: GenGrammarOptions) -> Result<Self> {
+    pub fn new(grammar: Arc<CGrammar>, options: GenGrammarOptions) -> Result<Self> {
         let start = grammar.start();
         let lexer = Lexer::from(grammar.lexer_spec())?;
-        let scratch = Scratch::new(Rc::clone(&grammar));
+        let scratch = Scratch::new(Arc::clone(&grammar));
         let lexer_state = lexer.a_dead_state(); // placeholder
         let mut r = Parser {
             grammar,
@@ -353,7 +353,9 @@ impl Parser {
         assert!(r.lexer_stack.len() == 1);
         // set the correct initial lexer state
         // the initial state, shall not allow the SKIP lexeme
-        r.rows[0].allowed_lexemes.set(LexemeIdx::SKIP.as_usize(), false);
+        r.rows[0]
+            .allowed_lexemes
+            .set(LexemeIdx::SKIP.as_usize(), false);
         r.lexer_stack[0].lexer_state = r.lexer.start_state(&r.rows[0].allowed_lexemes, None);
         r.assert_definitive();
 
