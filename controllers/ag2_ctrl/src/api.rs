@@ -28,6 +28,10 @@ pub struct GrammarWithLexer {
 
     /// The default value for 'contextual' in Lexeme nodes.
     pub contextual: Option<bool>,
+
+    /// When set, the regexps can be referenced by their id (position in this list).
+    #[serde(default)]
+    pub rx_nodes: Vec<RegexNode>,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -97,8 +101,6 @@ pub struct NodeProps {
     pub capture_name: Option<String>,
 }
 
-pub type RegexSpec = String;
-
 #[derive(Serialize, Deserialize)]
 pub struct GenOptions {
     /// Regular expression matching the body of generation.
@@ -124,6 +126,53 @@ pub struct GenGrammarOptions {
     pub max_tokens_grm: usize,
 }
 
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub enum RegexNode {
+    /// Intersection of the regexes
+    And(Vec<RegexId>),
+    /// Union of the regexes
+    Or(Vec<RegexId>),
+    /// Concatenation of the regexes
+    Concat(Vec<RegexId>),
+    /// Matches the regex; should be at the end of the main regex.
+    /// The length of the lookahead can be recovered from the engine.
+    LookAhead(RegexId),
+    /// Matches everything the regex doesn't match.
+    /// Can lead to invalid utf8.
+    Not(RegexId),
+    /// Repeat the regex at least min times, at most max times
+    Repeat(RegexId, u32, Option<u32>),
+    /// Matches the empty string. Same as Concat([]).
+    EmptyString,
+    /// Matches nothing. Same as Or([]).
+    NoMatch,
+    /// Compile the regex using the regex_syntax crate
+    Regex(String),
+    /// Matches this string only
+    Literal(String),
+    /// Matches this byte only. If byte is not in 0..127, it may lead to invalid utf8
+    Byte(u8),
+    /// Matches any byte in the set, expressed as bitset.
+    /// Can lead to invalid utf8 if the set is not a subset of 0..127
+    ByteSet(Vec<u32>),
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug)]
+#[serde(untagged)]
+pub enum RegexSpec {
+    RegexId(RegexId),
+    Regex(String),
+}
+
+impl RegexSpec {
+    pub fn is_missing(&self) -> bool {
+        match self {
+            RegexSpec::RegexId(_) => false,
+            RegexSpec::Regex(s) => s.is_empty(),
+        }
+    }
+}
+
 macro_rules! id_type {
     ($name:ident) => {
         #[derive(Serialize, Deserialize, Hash, PartialEq, Eq, Clone, Copy, Debug)]
@@ -134,6 +183,7 @@ macro_rules! id_type {
 
 id_type!(GrammarId);
 id_type!(NodeId);
+id_type!(RegexId);
 
 impl Node {
     pub fn node_props(&self) -> &NodeProps {

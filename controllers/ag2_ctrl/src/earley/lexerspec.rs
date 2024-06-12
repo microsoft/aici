@@ -7,7 +7,7 @@ use std::{fmt::Debug, hash::Hash};
 pub struct LexerSpec {
     pub greedy: bool,
     pub lexemes: Vec<LexemeSpec>,
-    regex_builder: RegexBuilder,
+    pub regex_builder: RegexBuilder,
 }
 
 #[derive(Clone)]
@@ -70,11 +70,11 @@ impl Debug for LexemeSpec {
 }
 
 impl LexerSpec {
-    pub fn new(greedy: bool, skip: RegexAst) -> Result<Self> {
+    pub fn new(greedy: bool, regex_builder: RegexBuilder, skip: RegexAst) -> Result<Self> {
         let mut r = LexerSpec {
             greedy,
             lexemes: Vec::new(),
-            regex_builder: RegexBuilder::new(),
+            regex_builder,
         };
         let skip = r.add_lexeme_spec(LexemeSpec {
             name: "SKIP".to_string(),
@@ -126,17 +126,17 @@ impl LexerSpec {
     pub fn add_rx_and_stop(
         &mut self,
         name: String,
-        body_rx: &str,
-        stop_rx: &str,
+        body_rx: RegexAst,
+        stop_rx: RegexAst,
     ) -> Result<LexemeIdx> {
-        let ends_at_eos_only = stop_rx.is_empty();
+        let ends_at_eos_only = matches!(stop_rx, RegexAst::NoMatch);
         let rx = RegexAst::Concat(vec![
-            RegexAst::Regex(body_rx.to_string()),
-            RegexAst::LookAhead(Box::new(RegexAst::Regex(if ends_at_eos_only {
-                EOS_MARKER.to_string()
+            body_rx,
+            RegexAst::LookAhead(Box::new(if ends_at_eos_only {
+                RegexAst::Regex(EOS_MARKER.to_string())
             } else {
-                stop_rx.to_string()
-            }))),
+                stop_rx
+            })),
         ]);
         self.add_lexeme_spec(LexemeSpec {
             name,
@@ -146,7 +146,12 @@ impl LexerSpec {
         })
     }
 
-    pub fn add_simple_literal(&mut self, name: String, literal: &str, contextual: bool) -> Result<LexemeIdx> {
+    pub fn add_simple_literal(
+        &mut self,
+        name: String,
+        literal: &str,
+        contextual: bool,
+    ) -> Result<LexemeIdx> {
         self.add_lexeme_spec(LexemeSpec {
             name,
             rx: RegexAst::Literal(literal.to_string()),
@@ -158,12 +163,12 @@ impl LexerSpec {
     pub fn add_greedy_lexeme(
         &mut self,
         name: String,
-        rx: &str,
+        rx: RegexAst,
         contextual: bool,
     ) -> Result<LexemeIdx> {
         self.add_lexeme_spec(LexemeSpec {
             name,
-            rx: RegexAst::Regex(rx.to_string()),
+            rx,
             contextual,
             ..self.empty_spec()
         })

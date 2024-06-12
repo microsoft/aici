@@ -3,7 +3,12 @@ use std::fmt::Debug;
 use anyhow::{ensure, Result};
 use regex_syntax::ParserBuilder;
 
-use crate::{ast::ExprSet, mapper::map_ast, ExprRef, RegexVec};
+use crate::{
+    ast::ExprSet,
+    mapper::map_ast,
+    pp::{byte_to_string, byteset_to_string},
+    ExprRef, RegexVec,
+};
 
 #[derive(Clone)]
 pub struct RegexBuilder {
@@ -13,16 +18,35 @@ pub struct RegexBuilder {
 
 #[derive(Clone)]
 pub enum RegexAst {
+    /// Intersection of the regexes
     And(Vec<RegexAst>),
+    /// Union of the regexes
     Or(Vec<RegexAst>),
+    /// Concatenation of the regexes
     Concat(Vec<RegexAst>),
+    /// Matches the regex; should be at the end of the main regex.
+    /// The length of the lookahead can be recovered from the engine.
     LookAhead(Box<RegexAst>),
+    /// Matches everything the regex doesn't match.
+    /// Can lead to invalid utf8.
     Not(Box<RegexAst>),
+    /// Repeat the regex at least min times, at most max times
+    /// u32::MAX means infinity
     Repeat(Box<RegexAst>, u32, u32),
+    /// Matches the empty string. Same as Concat([]).
     EmptyString,
+    /// Matches nothing. Same as Or([]).
     NoMatch,
+    /// Compile the regex using the regex_syntax crate
     Regex(String),
+    /// Matches this string only
     Literal(String),
+    /// Matches this byte only. If byte is not in 0..127, it may lead to invalid utf8
+    Byte(u8),
+    /// Matches any byte in the set, expressed as bitset.
+    /// Can lead to invalid utf8 if the set is not a subset of 0..127
+    ByteSet(Vec<u32>),
+    /// Reference previously built regex
     ExprRef(ExprRef),
 }
 
@@ -37,7 +61,9 @@ impl RegexAst {
             | RegexAst::NoMatch
             | RegexAst::Regex(_)
             | RegexAst::Literal(_)
-            | RegexAst::ExprRef(_) => &[],
+            | RegexAst::ExprRef(_)
+            | RegexAst::Byte(_)
+            | RegexAst::ByteSet(_) => &[],
         }
     }
 
@@ -54,6 +80,8 @@ impl RegexAst {
             RegexAst::Literal(_) => "Literal",
             RegexAst::ExprRef(_) => "ExprRef",
             RegexAst::Repeat(_, _, _) => "Repeat",
+            RegexAst::Byte(_) => "Byte",
+            RegexAst::ByteSet(_) => "ByteSet",
         }
     }
 
@@ -78,6 +106,18 @@ impl RegexAst {
                 | RegexAst::Concat(_)
                 | RegexAst::LookAhead(_)
                 | RegexAst::Not(_) => {}
+                RegexAst::Byte(b) => {
+                    dst.push_str(" ");
+                    dst.push_str(&byte_to_string(*b));
+                }
+                RegexAst::ByteSet(bs) => {
+                    dst.push_str(" ");
+                    if bs.len() == 256 / 32 {
+                        dst.push_str(&byteset_to_string(&bs));
+                    } else {
+                        dst.push_str(&format!("invalid byteset len: {}", bs.len()))
+                    }
+                }
                 RegexAst::Regex(s) | RegexAst::Literal(s) => {
                     dst.push_str(" ");
                     dst.push_str(&format!("{:?}", s));
@@ -141,6 +181,14 @@ impl RegexBuilder {
                     RegexAst::Literal(s) => self.exprset.mk_literal(s),
                     RegexAst::Repeat(_, min, max) => {
                         self.exprset.mk_repeat(new_args[0], *min, *max)
+                    }
+                    RegexAst::Byte(b) => self.exprset.mk_byte(*b),
+                    RegexAst::ByteSet(bs) => {
+                        ensure!(
+                            bs.len() == self.exprset.alphabet_words(),
+                            "invalid byteset len"
+                        );
+                        self.exprset.mk_byte_set(bs)
                     }
                 };
                 Ok(r)

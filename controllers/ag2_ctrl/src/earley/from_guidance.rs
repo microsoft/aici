@@ -1,9 +1,11 @@
 use std::{rc::Rc, vec};
 
 use super::{grammar::SymbolProps, lexerspec::LexerSpec, CGrammar, Grammar};
-use crate::api::{GrammarWithLexer, Node, TopLevelGrammar, DEFAULT_CONTEXTUAL};
-use anyhow::{ensure, Result};
-use derivre::RegexAst;
+use crate::api::{
+    GrammarWithLexer, Node, RegexId, RegexNode, RegexSpec, TopLevelGrammar, DEFAULT_CONTEXTUAL,
+};
+use anyhow::{bail, ensure, Result};
+use derivre::{ExprRef, RegexAst, RegexBuilder};
 
 #[derive(Debug)]
 pub struct NodeProps {
@@ -38,14 +40,72 @@ impl NodeProps {
     }
 }
 
+fn resolve_rx(rx_refs: &[ExprRef], node: &RegexSpec) -> Result<RegexAst> {
+    match node {
+        RegexSpec::Regex(rx) => Ok(RegexAst::Regex(rx.clone())),
+        RegexSpec::RegexId(id) => {
+            if id.0 >= rx_refs.len() {
+                bail!("invalid regex id: {}", id.0)
+            } else {
+                Ok(RegexAst::ExprRef(rx_refs[id.0]))
+            }
+        }
+    }
+}
+
+fn map_rx_ref(rx_refs: &[ExprRef], id: RegexId) -> Result<RegexAst> {
+    if id.0 >= rx_refs.len() {
+        bail!("invalid regex id when building nodes: {}", id.0)
+    } else {
+        Ok(RegexAst::ExprRef(rx_refs[id.0]))
+    }
+}
+
+fn map_rx_refs(rx_refs: &[ExprRef], ids: Vec<RegexId>) -> Result<Vec<RegexAst>> {
+    ids.into_iter().map(|id| map_rx_ref(rx_refs, id)).collect()
+}
+
+fn map_rx_nodes(rx_nodes: Vec<RegexNode>) -> Result<(RegexBuilder, Vec<ExprRef>)> {
+    let mut builder = RegexBuilder::new();
+    let mut rx_refs = vec![];
+    for node in rx_nodes {
+        rx_refs.push(builder.mk(&map_node(&rx_refs, node)?)?);
+    }
+    return Ok((builder, rx_refs));
+
+    fn map_node(rx_refs: &[ExprRef], node: RegexNode) -> Result<RegexAst> {
+        match node {
+            RegexNode::Not(id) => Ok(RegexAst::Not(Box::new(map_rx_ref(rx_refs, id)?))),
+            RegexNode::Repeat(id, min, max) => Ok(RegexAst::Repeat(
+                Box::new(map_rx_ref(rx_refs, id)?),
+                min,
+                max.unwrap_or(u32::MAX),
+            )),
+            RegexNode::EmptyString => Ok(RegexAst::EmptyString),
+            RegexNode::NoMatch => Ok(RegexAst::NoMatch),
+            RegexNode::Regex(rx) => Ok(RegexAst::Regex(rx)),
+            RegexNode::Literal(lit) => Ok(RegexAst::Literal(lit)),
+            RegexNode::Byte(b) => Ok(RegexAst::Byte(b)),
+            RegexNode::ByteSet(bs) => Ok(RegexAst::ByteSet(bs)),
+            RegexNode::And(lst) => Ok(RegexAst::And(map_rx_refs(rx_refs, lst)?)),
+            RegexNode::Concat(lst) => Ok(RegexAst::Concat(map_rx_refs(rx_refs, lst)?)),
+            RegexNode::Or(lst) => Ok(RegexAst::Or(map_rx_refs(rx_refs, lst)?)),
+            RegexNode::LookAhead(id) => Ok(RegexAst::LookAhead(Box::new(map_rx_ref(rx_refs, id)?))),
+        }
+    }
+}
+
 fn grammar_from_json(input: GrammarWithLexer) -> Result<(LexerSpec, Grammar)> {
     let is_greedy = input.greedy_lexer;
     let is_lazy = !is_greedy;
+
+    let (builder, rx_nodes) = map_rx_nodes(input.rx_nodes)?;
+
     let skip = match input.greedy_skip_rx {
-        Some(rx) if is_greedy => RegexAst::Regex(rx),
+        Some(rx) if is_greedy => resolve_rx(&rx_nodes, &rx)?,
         _ => RegexAst::NoMatch,
     };
-    let mut lexer_spec = LexerSpec::new(is_greedy, skip)?;
+    let mut lexer_spec = LexerSpec::new(is_greedy, builder, skip)?;
     let mut grm = Grammar::new();
     let node_map = input
         .nodes
@@ -89,15 +149,20 @@ fn grammar_from_json(input: GrammarWithLexer) -> Result<(LexerSpec, Grammar)> {
             Node::Gen { data, .. } => {
                 // parser backtracking relies on only lazy lexers having hidden lexemes
                 ensure!(is_lazy, "gen() only allowed in lazy grammars");
-                let body_rx = if data.body_rx.is_empty() {
-                    ".*"
+                let body_rx = if data.body_rx.is_missing() {
+                    RegexAst::Regex(".*".to_string())
                 } else {
-                    &data.body_rx
+                    resolve_rx(&rx_nodes, &data.body_rx)?
+                };
+                let stop_rx = if data.stop_rx.is_missing() {
+                    RegexAst::NoMatch
+                } else {
+                    resolve_rx(&rx_nodes, &data.stop_rx)?
                 };
                 let idx = lexer_spec.add_rx_and_stop(
                     format!("gen_{}", grm.sym_name(lhs)),
                     body_rx,
-                    &data.stop_rx,
+                    stop_rx,
                 )?;
                 grm.make_terminal(lhs, idx)?;
                 let symprops = grm.sym_props_mut(lhs);
@@ -109,7 +174,7 @@ fn grammar_from_json(input: GrammarWithLexer) -> Result<(LexerSpec, Grammar)> {
                 ensure!(is_greedy, "lexeme() only allowed in greedy grammars");
                 let idx = lexer_spec.add_greedy_lexeme(
                     format!("lex_{}", grm.sym_name(lhs)),
-                    rx,
+                    resolve_rx(&rx_nodes, rx)?,
                     contextual.unwrap_or(input.contextual.unwrap_or(DEFAULT_CONTEXTUAL)),
                 )?;
                 grm.make_terminal(lhs, idx)?;
