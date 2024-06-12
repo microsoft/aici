@@ -352,9 +352,8 @@ impl Parser {
         );
         assert!(r.lexer_stack.len() == 1);
         // set the correct initial lexer state
-        if r.options.no_initial_skip {
-            r.rows[0].allowed_lexemes.set(0, false);
-        }
+        // the initial state, shall not allow the SKIP lexeme
+        r.rows[0].allowed_lexemes.set(LexemeIdx::SKIP.as_usize(), false);
         r.lexer_stack[0].lexer_state = r.lexer.start_state(&r.rows[0].allowed_lexemes, None);
         r.assert_definitive();
 
@@ -523,6 +522,9 @@ impl Parser {
             if data.is_terminal {
                 temp = temp.max(data.props.temperature);
             }
+        }
+        if self.options.temperature.is_some() {
+            temp = temp.max(self.options.temperature.unwrap());
         }
         temp
     }

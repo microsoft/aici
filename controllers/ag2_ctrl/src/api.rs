@@ -112,14 +112,6 @@ pub struct GenOptions {
 pub struct GenGrammarOptions {
     pub grammar: GrammarId,
 
-    /// Add a lexeme that causes the generation to stop.
-    pub stop_rx: Option<RegexSpec>,
-
-    /// When set to true, the greedy_skip_rx of the grammar is ignored
-    /// at the beginning of generation.
-    #[serde(default)]
-    pub no_initial_skip: bool,
-
     /// Override sampling temperature.
     pub temperature: Option<f32>,
 
@@ -155,8 +147,6 @@ impl Default for GenGrammarOptions {
     fn default() -> Self {
         GenGrammarOptions {
             grammar: GrammarId(0),
-            stop_rx: None,
-            no_initial_skip: false,
             temperature: None,
             max_tokens_grm: usize::MAX,
         }
