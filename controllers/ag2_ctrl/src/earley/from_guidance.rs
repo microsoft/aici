@@ -1,7 +1,7 @@
 use std::{rc::Rc, vec};
 
 use super::{grammar::SymbolProps, lexerspec::LexerSpec, CGrammar, Grammar};
-use crate::api::{GrammarWithLexer, Node, TopLevelGrammar};
+use crate::api::{GrammarWithLexer, Node, TopLevelGrammar, DEFAULT_CONTEXTUAL};
 use anyhow::{ensure, Result};
 use derivre::RegexAst;
 
@@ -110,13 +110,16 @@ fn grammar_from_json(input: GrammarWithLexer) -> Result<(LexerSpec, Grammar)> {
                 let idx = lexer_spec.add_greedy_lexeme(
                     format!("lex_{}", grm.sym_name(lhs)),
                     rx,
-                    *contextual,
+                    contextual.unwrap_or(input.contextual.unwrap_or(DEFAULT_CONTEXTUAL)),
                 )?;
                 grm.make_terminal(lhs, idx)?;
             }
             Node::String { literal, .. } => {
-                let idx = lexer_spec
-                    .add_simple_literal(format!("str_{}", grm.sym_name(lhs)), &literal)?;
+                let idx = lexer_spec.add_simple_literal(
+                    format!("str_{}", grm.sym_name(lhs)),
+                    &literal,
+                    input.contextual.unwrap_or(DEFAULT_CONTEXTUAL),
+                )?;
                 grm.make_terminal(lhs, idx)?;
             }
             Node::GenGrammar { data, props } => {

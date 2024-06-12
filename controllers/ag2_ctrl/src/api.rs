@@ -9,6 +9,8 @@ pub struct TopLevelGrammar {
     pub max_tokens: Option<usize>,
 }
 
+pub const DEFAULT_CONTEXTUAL: bool = true;
+
 #[derive(Serialize, Deserialize)]
 pub struct GrammarWithLexer {
     /// The start symbol is at nodes[0]
@@ -23,6 +25,9 @@ pub struct GrammarWithLexer {
     /// Only applies to greedy_lexer grammars.
     /// This adds a new lexeme that will be ignored when parsing.
     pub greedy_skip_rx: Option<RegexSpec>,
+
+    /// The default value for 'contextual' in Lexeme nodes.
+    pub contextual: Option<bool>,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -48,12 +53,12 @@ pub enum Node {
         /// The regular expression that will greedily match the input.
         rx: RegexSpec,
 
-        /// When false, when this lexeme is recognized, all other lexemes are excluded.
+        /// If false, all other lexemes are excluded when this lexeme is recognized.
         /// This is normal behavior for keywords in programming languages.
         /// Set to true for eg. a JSON schema with both `/"type"/` and `/"[^"]*"/` as lexemes,
         /// or for "get"/"set" contextual keywords in C#.
-        #[serde(default)]
-        contextual: bool,
+        /// Default value set in GrammarWithLexer.
+        contextual: Option<bool>,
 
         #[serde(flatten)]
         props: NodeProps,

@@ -146,10 +146,11 @@ impl LexerSpec {
         })
     }
 
-    pub fn add_simple_literal(&mut self, name: String, literal: &str) -> Result<LexemeIdx> {
+    pub fn add_simple_literal(&mut self, name: String, literal: &str, contextual: bool) -> Result<LexemeIdx> {
         self.add_lexeme_spec(LexemeSpec {
             name,
             rx: RegexAst::Literal(literal.to_string()),
+            contextual,
             ..self.empty_spec()
         })
     }
