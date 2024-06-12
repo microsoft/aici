@@ -17,6 +17,7 @@ members = [
     "rllm/rllm-llamacpp",
     "rllm/tch-cuda",
     "rllm/llama-cpp-low",
+    "py/pyag2",
 ]
 resolver = "2"
 

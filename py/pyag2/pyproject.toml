@@ -1,0 +1,20 @@
+[build-system]
+requires = ["setuptools==68", "setuptools-rust"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "pyag2"
+version = "0.1.0"
+dependencies = []
+
+[project.optional-dependencies]
+dev = ["pytest", "mypy"]
+
+[tool.setuptools.packages]
+find = { where = ["."] }
+
+[[tool.setuptools-rust.ext-modules]]
+target = "pyag2._lib"
+binding = "PyO3"
+debug = false
+# See reference for RustExtension in https://setuptools-rust.readthedocs.io/en/latest/reference.html
