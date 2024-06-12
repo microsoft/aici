@@ -18,6 +18,7 @@ pub enum RegexAst {
     Concat(Vec<RegexAst>),
     LookAhead(Box<RegexAst>),
     Not(Box<RegexAst>),
+    Repeat(Box<RegexAst>, u32, u32),
     EmptyString,
     NoMatch,
     Regex(String),
@@ -29,8 +30,14 @@ impl RegexAst {
     pub fn get_args(&self) -> &[RegexAst] {
         match self {
             RegexAst::And(asts) | RegexAst::Or(asts) | RegexAst::Concat(asts) => asts,
-            RegexAst::LookAhead(ast) | RegexAst::Not(ast) => std::slice::from_ref(ast),
-            _ => &[],
+            RegexAst::LookAhead(ast) | RegexAst::Not(ast) | RegexAst::Repeat(ast, _, _) => {
+                std::slice::from_ref(ast)
+            }
+            RegexAst::EmptyString
+            | RegexAst::NoMatch
+            | RegexAst::Regex(_)
+            | RegexAst::Literal(_)
+            | RegexAst::ExprRef(_) => &[],
         }
     }
 
@@ -46,6 +53,7 @@ impl RegexAst {
             RegexAst::Regex(_) => "Regex",
             RegexAst::Literal(_) => "Literal",
             RegexAst::ExprRef(_) => "ExprRef",
+            RegexAst::Repeat(_, _, _) => "Repeat",
         }
     }
 
@@ -77,6 +85,10 @@ impl RegexAst {
                 RegexAst::ExprRef(r) => {
                     dst.push_str(" ");
                     dst.push_str(&format!("{:?}", r));
+                }
+                RegexAst::Repeat(_, min, max) => {
+                    dst.push_str(&format!("{{{},{}}}", min, max));
+                    dst.push_str(" ");
                 }
                 RegexAst::EmptyString | RegexAst::NoMatch => {}
             }
@@ -127,6 +139,9 @@ impl RegexBuilder {
                     RegexAst::EmptyString => ExprRef::EMPTY_STRING,
                     RegexAst::NoMatch => ExprRef::NO_MATCH,
                     RegexAst::Literal(s) => self.exprset.mk_literal(s),
+                    RegexAst::Repeat(_, min, max) => {
+                        self.exprset.mk_repeat(new_args[0], *min, *max)
+                    }
                 };
                 Ok(r)
             },
