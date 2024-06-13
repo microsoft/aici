@@ -38,7 +38,7 @@ def run_constraint(tok: pyag2.Ag2Tokenizer, e: LlamaCppEngine, grm: guidance.Gra
     tokens = interp.process_prompt(tokens)
     backtrack = 0
     step_tokens = []
-    for _ in range(1):
+    for _ in range(max_tokens):
         mask, resp = interp.mid_process(backtrack, step_tokens)
         r = json.loads(resp)
         progress: List[dict] = r["progress"]
@@ -49,7 +49,6 @@ def run_constraint(tok: pyag2.Ag2Tokenizer, e: LlamaCppEngine, grm: guidance.Gra
         backtrack: int = r["backtrack"]
         step_tokens: List[int] = r["ff_tokens"]
         if mask is not None:
-            print("mask", len(mask))
             assert backtrack == 0
             assert len(step_tokens) == 0
             logits = e.get_logits(tokens, None, None)
@@ -70,7 +69,7 @@ def main():
     m = guidance.models.LlamaCpp(model="../../tmp/Phi-3-mini-4k-instruct-q4.gguf")
     t: Tokenizer = m.engine.tokenizer
     tok = pyag2.Ag2Tokenizer(t.eos_token_id, t.tokens)
-    run_constraint(tok, m.engine, "2 + 2 = " + guidance.gen(regex="[0-9]+"))
+    run_constraint(tok, m.engine, "Here's a joke: " + guidance.gen(regex="[a-z ]+", stop="\n"))
 
 
 if __name__ == "__main__":

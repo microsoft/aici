@@ -79,6 +79,7 @@ impl Ag2Interpreter {
             let mask = b.sample_mask.as_ref().map(|m| {
                 let mut res = vec![0u8; m.len()];
                 m.iter_set_entries(|i| res[i] = 200);
+                res.pop();
                 Cow::Owned(res)
             });
             (mask, serde_json::to_string(&res).unwrap())
