@@ -18,7 +18,6 @@ from guidance import (
     string,
     lexeme,
     greedy_grammar,
-    gen_grammar,
     lazy_grammar,
 )
 
@@ -113,8 +112,8 @@ def json_array(lm):
 
 @guidance(stateless=True)
 def gen_json_object(lm, name: str, max_tokens=100000000):
-    grm = greedy_grammar(json_object(), skip_regex=r"[\x20\x0A\x0D\x09]+")
-    return lm + gen_grammar(name, grm, no_initial_skip=True, max_tokens=max_tokens)
+    grm = greedy_grammar(body=json_object(), skip_regex=r"[\x20\x0A\x0D\x09]+")
+    return lm + grm
 
 
 def main():
@@ -225,8 +224,6 @@ def main():
         + gen("score", regex=r"[0-9]")
     )
 
-    prompt = "A number: "
-    grm = gen_grammar("", greedy_grammar(lexeme(r"[0-9]{3}")))
 
     # grm = "Q: 7 * 8\nA: " + gen("text", regex="[0-9]+", max_tokens=20) + "\n"
 
