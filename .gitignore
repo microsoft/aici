@@ -22,3 +22,4 @@ dist/
 .vscode/c_cpp_properties.json
 logs
 controllers/RustPython/
+*.cpython*.so

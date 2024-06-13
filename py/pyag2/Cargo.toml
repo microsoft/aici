@@ -8,6 +8,8 @@ aici_abi = { path = "../../controllers/aici_abi" }
 aici_ag2_ctrl = { path = "../../controllers/ag2_ctrl" }
 bytemuck = "1.16.0"
 pyo3 = "0.21.2"
+serde = { version = "1.0.192", features = ["derive"] }
+serde_json = "1.0.108"
 
 [lib]
 # See https://github.com/PyO3/pyo3 for details
