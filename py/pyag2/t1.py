@@ -1,17 +1,76 @@
 import pyag2
 import guidance
-import pyag2._lib
+import json
 
-import guidance.models._tokenizer
+import numpy as np
+
+from guidance.models._tokenizer import Tokenizer
+from guidance.models.llama_cpp._llama_cpp import LlamaCppEngine
+
+from typing import List
+
+
+def softmax(logits: np.ndarray, temperature=1.0) -> np.ndarray:
+    # Adjust logits by temperature
+    adjusted_logits = logits / temperature
+    # Compute softmax
+    exp_logits = np.exp(adjusted_logits - np.max(adjusted_logits))
+    probabilities = exp_logits / np.sum(exp_logits)
+    return probabilities
+
+def sample_with_temperature(logits: np.ndarray, temperature=1.0):
+    if temperature < 0.0001:
+        return int(np.argmax(logits))
+    # Get probabilities from softmax
+    probabilities = softmax(logits, temperature)
+    # Sample an index based on the probabilities
+    sampled_index = np.random.choice(len(logits), p=probabilities)
+    return sampled_index
+
+def run_constraint(tok: pyag2.Ag2Tokenizer, e: LlamaCppEngine, grm: guidance.GrammarFunction):
+    max_tokens = 100
+    serialized = grm.ag2_serialize()
+    serialized["max_tokens"] = max_tokens
+    interp = pyag2.Ag2Interpreter(tok, json.dumps(serialized))
+    tokens = []
+    if e.tokenizer.bos_token_id is not None:
+        tokens.append(e.tokenizer.bos_token_id)
+    tokens = interp.process_prompt(tokens)
+    backtrack = 0
+    step_tokens = []
+    for _ in range(1):
+        mask, resp = interp.mid_process(backtrack, step_tokens)
+        r = json.loads(resp)
+        progress: List[dict] = r["progress"]
+        for p in progress:
+            print(p)
+        if r["stop"]:
+            break
+        backtrack: int = r["backtrack"]
+        step_tokens: List[int] = r["ff_tokens"]
+        if mask is not None:
+            print("mask", len(mask))
+            assert backtrack == 0
+            assert len(step_tokens) == 0
+            logits = e.get_logits(tokens, None, None)
+            logits += np.frombuffer(mask, dtype=np.uint8)
+            tok_idx = sample_with_temperature(logits, r["temperature"])
+            tokens.append(tok_idx)
+            step_tokens = [tok_idx]
+        else:
+            if backtrack:
+                del tokens[-backtrack:]
+            tokens += step_tokens
+
+
 
 
 def main():
     # m = guidance.models.Transformers(model="../../tmp/Phi-3-mini-128k-instruct/", trust_remote_code=True)
     m = guidance.models.LlamaCpp(model="../../tmp/Phi-3-mini-4k-instruct-q4.gguf")
-    t: guidance.models._tokenizer.Tokenizer = m.engine.tokenizer 
-    tok = pyag2._lib.Ag2Tokenizer(t.eos_token_id, t.tokens)
-    toks = tok.greedy_tokenize("Hello, world!")
-    print(toks, tok.dbg_tokens(toks))
+    t: Tokenizer = m.engine.tokenizer
+    tok = pyag2.Ag2Tokenizer(t.eos_token_id, t.tokens)
+    run_constraint(tok, m.engine, "2 + 2 = " + guidance.gen(regex="[0-9]+"))
 
 
 if __name__ == "__main__":
