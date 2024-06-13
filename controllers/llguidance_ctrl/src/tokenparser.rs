@@ -7,20 +7,20 @@ use crate::{
 use aici_abi::{MidProcessArg, MidProcessResult, TokenId, TokenizerEnv};
 use anyhow::Result;
 
-const INFO: bool = true;
-
 macro_rules! infoln {
     ($s:expr, $($arg:tt)*) => {
-        if $s.log_level >= 2 && INFO {
-            println!($($arg)*);
+        if $s.log_level >= 2 {
+            eprintln!($($arg)*);
         }
     };
 }
 
 macro_rules! warn {
-    ($($arg:tt)*) => {
-        print!("Warning: ");
-        println!($($arg)*);
+    ($s:expr, $($arg:tt)*) => {
+        if $s.log_level >= 1 {
+            eprint!("Warning: ");
+            eprintln!($($arg)*);
+        }
     };
 }
 
@@ -60,7 +60,7 @@ impl TokenParser {
         log_level: isize,
     ) -> Result<Self> {
         let max_tokens = buf.max_tokens.unwrap_or(usize::MAX);
-        let compiled_grammars = grammars_from_json(buf, INFO && log_level >= 2)?;
+        let compiled_grammars = grammars_from_json(buf, log_level >= 2)?;
         let parser = Parser::new(
             Arc::clone(&compiled_grammars[0]),
             GenGrammarOptions::default(),
@@ -154,7 +154,7 @@ impl TokenParser {
 
     pub fn mid_process(&mut self, arg: MidProcessArg) -> MidProcessResult {
         if self.max_tokens_total == 0 {
-            infoln!(self, "max_tokens=0, stopping");
+            warn!(self, "max_tokens_total reached, stopping");
             return MidProcessResult::stop();
         }
         self.max_tokens_total -= 1;
@@ -296,7 +296,7 @@ impl TokenParser {
 
         if token_prefix.is_empty() {
             if let Err(e) = self.maybe_gen_grammar() {
-                warn!("Error creating parser: {}", e);
+                warn!(self, "Error creating nested parser: {}", e);
                 return MidProcessResult::stop();
             }
         }
@@ -359,7 +359,7 @@ impl TokenParser {
     fn maybe_gen_grammar(&mut self) -> Result<()> {
         if let Some((msg, symidx, gen_grammar)) = self.parser.maybe_gen_grammar() {
             if msg.len() > 0 {
-                warn!("{}", msg);
+                warn!(self, "{}", msg);
             }
             let grm = Arc::clone(&self.compiled_grammars[gen_grammar.grammar.0]);
             let max_tokens = self.parser.grammar().sym_data(symidx).props.max_tokens;
