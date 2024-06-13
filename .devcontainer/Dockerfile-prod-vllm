@@ -10,6 +10,7 @@ COPY controllers controllers
 COPY aicirt aicirt
 COPY scripts scripts
 COPY py/pyaici py/pyaici
+COPY py/llguidance py/llguidance
 COPY Cargo.toml Cargo.lock /workspace/
 
 RUN grep -v rllm Cargo.toml > Cargo.toml.tmp && mv Cargo.toml.tmp Cargo.toml
