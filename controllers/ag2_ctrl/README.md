@@ -1,4 +1,4 @@
-# Accelerated Guidance Grammars (AG2)
+# Low-level Guidance (llguidance)
 
 This controller implements a context-free grammar parser with Earley's algorithm
 on top of a lexer which uses [derivatives of regular expressions](../derivre/README.md).
@@ -6,12 +6,12 @@ on top of a lexer which uses [derivatives of regular expressions](../derivre/REA
 It's to be used by next-generation [Guidance](https://github.com/guidance-ai/guidance) grammars.
 See how it works in [plan.md](./plan.md).
 
-Guidance branch: https://github.com/paulbkoch/guidance/tree/lazy_grammars
+Guidance branch: https://github.com/hudson-ai/guidance/tree/lazy_grammars
 
 ## Guidance implementation notes
 
 - `gen()` now generates a new node, `Gen`
-- grammar is serialized to JSON, see `llguidance_serialize()`
+- grammar is serialized to JSON, see `ll_serialize()`
 
 ## Status in Guidance
 

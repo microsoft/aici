@@ -232,7 +232,7 @@ def main():
 
     max_tokens = 250
 
-    serialized = grm.llguidance_serialize()
+    serialized = grm.ll_serialize()
     serialized["max_tokens"] = max_tokens
     llguidance_json = {"grammar": serialized}
     llguidance_arg = json.dumps(llguidance_json, indent=1)

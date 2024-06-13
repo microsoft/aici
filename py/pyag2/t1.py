@@ -27,11 +27,11 @@ def sample_with_temperature(logits: np.ndarray, temperature=1.0):
     sampled_index = np.random.choice(len(logits), p=probabilities)
     return sampled_index
 
-def run_constraint(tok: llguidance.Ag2Tokenizer, e: LlamaCppEngine, grm: guidance.GrammarFunction):
+def run_constraint(tok: llguidance.LLTokenizer, e: LlamaCppEngine, grm: guidance.GrammarFunction):
     max_tokens = 100
-    serialized = grm.llguidance_serialize()
+    serialized = grm.ll_serialize()
     serialized["max_tokens"] = max_tokens
-    interp = llguidance.Ag2Interpreter(tok, json.dumps(serialized))
+    interp = llguidance.LLInterpreter(tok, json.dumps(serialized))
     tokens = []
     if e.tokenizer.bos_token_id is not None:
         tokens.append(e.tokenizer.bos_token_id)
@@ -68,7 +68,7 @@ def main():
     # m = guidance.models.Transformers(model="../../tmp/Phi-3-mini-128k-instruct/", trust_remote_code=True)
     m = guidance.models.LlamaCpp(model="../../tmp/Phi-3-mini-4k-instruct-q4.gguf")
     t: Tokenizer = m.engine.tokenizer
-    tok = llguidance.Ag2Tokenizer(t.eos_token_id, t.tokens)
+    tok = llguidance.LLTokenizer(t.eos_token_id, t.tokens)
     run_constraint(tok, m.engine, "Here's a joke: " + guidance.gen(regex="[a-z ]+", stop="\n"))
 
 
