@@ -11,7 +11,7 @@ dependencies = []
 dev = ["pytest", "mypy"]
 
 [tool.setuptools.packages]
-find = { where = ["."] }
+find = { where = ["python"] }
 
 [[tool.setuptools-rust.ext-modules]]
 target = "pyag2._lib"

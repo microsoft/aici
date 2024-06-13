@@ -1,4 +1,4 @@
-graft pyag2
+graft python
 graft rust
 graft tests
 include Cargo.toml
