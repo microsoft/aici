@@ -32,6 +32,7 @@ impl Runner {
         let tok_parser = TokenParser::from_llguidance_json(
             Box::new(aici_abi::WasmTokenizerEnv::default()),
             arg.grammar,
+            2,
         )
         .expect("invalid guidance protobuf");
 

@@ -26,20 +26,25 @@ struct LLTokenizer {
 #[pymethods]
 impl LLInterpreter {
     #[new]
-    fn py_new(tokenizer: &LLTokenizer, llguidance_json: &str) -> PyResult<Self> {
+    fn py_new(
+        tokenizer: &LLTokenizer,
+        llguidance_json: &str,
+        log_level: Option<isize>,
+    ) -> PyResult<Self> {
         let env = PyTokenizer {
             inner: tokenizer.tok_trie.clone(),
         };
-        let arg: TopLevelGrammar =
-            serde_json::from_str(llguidance_json).map_err(|e| PyValueError::new_err(e.to_string()))?;
-        let inner = TokenParser::from_llguidance_json(Box::new(env), arg)
+        let arg: TopLevelGrammar = serde_json::from_str(llguidance_json)
+            .map_err(|e| PyValueError::new_err(e.to_string()))?;
+        let log_level = log_level.unwrap_or(1);
+        let inner = TokenParser::from_llguidance_json(Box::new(env), arg, log_level)
             .map_err(|e| PyValueError::new_err(e.to_string()))?;
         let reporter = Reporter::new(&inner);
         Ok(LLInterpreter {
             inner,
             reporter,
             temperature: 0.0,
-            log_level: 1,
+            log_level,
         })
     }
 

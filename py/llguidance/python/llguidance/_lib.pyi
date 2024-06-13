@@ -45,13 +45,16 @@ class LLInterpreter:
     def __new__(
         cls,
         tokenizer: LLTokenizer,
-        llguidance_json: str
+        llguidance_json: str,
+        log_level: int = 1,
     ) -> "LLInterpreter":
         """
         Create a new interpreter.
         Args:
             tokenizer: LLTokenizer - the tokenizer to use
             llguidance_json: str - the JSON representation of the AG2 grammar/constraint
+            log_level: int - the verbosity level of the interpreter
+                0 is silent, 1 is warnings, 2 is verbose
         """
 
     def process_prompt(self, prompt: List[TokenId]) -> List[TokenId]:

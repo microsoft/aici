@@ -10,8 +10,8 @@ use anyhow::Result;
 const INFO: bool = true;
 
 macro_rules! infoln {
-    ($($arg:tt)*) => {
-        if INFO {
+    ($s:expr, $($arg:tt)*) => {
+        if $s.log_level >= 2 && INFO {
             println!($($arg)*);
         }
     };
@@ -27,6 +27,7 @@ macro_rules! warn {
 pub struct TokenParser {
     pub token_env: Box<dyn TokenizerEnv>,
     pub parser: Parser,
+    pub log_level: isize,
     parser_stack: Vec<ParserStackEntry>,
     parser_llm_tokens_offset: usize,
     // this is empty for top-level parser,
@@ -56,9 +57,10 @@ impl TokenParser {
     pub fn from_llguidance_json(
         token_env: Box<dyn TokenizerEnv>,
         buf: TopLevelGrammar,
+        log_level: isize,
     ) -> Result<Self> {
         let max_tokens = buf.max_tokens.unwrap_or(usize::MAX);
-        let compiled_grammars = grammars_from_json(buf, INFO)?;
+        let compiled_grammars = grammars_from_json(buf, INFO && log_level >= 2)?;
         let parser = Parser::new(
             Arc::clone(&compiled_grammars[0]),
             GenGrammarOptions::default(),
@@ -68,6 +70,7 @@ impl TokenParser {
             token_env.tok_trie().greedy_tokenize(EOS_MARKER.as_bytes())[0];
 
         Ok(TokenParser {
+            log_level,
             token_env,
             parser,
             parser_llm_tokens_offset: 0,
@@ -107,13 +110,13 @@ impl TokenParser {
         assert!(self.llm_tokens.is_empty());
 
         let trie = self.token_env.tok_trie();
-        infoln!("prompt: {}", trie.tokens_dbg(&prompt));
+        infoln!(self, "prompt: {}", trie.tokens_dbg(&prompt));
         let mut prompt_bytes = trie.decode(&prompt);
         self.parser.force_bytes();
         let grm_bytes = self.parser.get_bytes();
         prompt_bytes.extend_from_slice(&grm_bytes);
         let tokens = self.token_env.tokenize_bytes(&prompt_bytes);
-        infoln!("prompt+grm: {}", trie.tokens_dbg(&tokens));
+        infoln!(self, "prompt+grm: {}", trie.tokens_dbg(&tokens));
         let (chop_tokens, chop_bytes) = trie.chop_tokens(&mut self.parser, &tokens);
         let res_prompt = tokens[..tokens.len() - chop_tokens].to_vec();
 
@@ -121,19 +124,20 @@ impl TokenParser {
         if chop_bytes <= grm_bytes.len() {
             self.llm_bytes = grm_bytes[0..grm_bytes.len() - chop_bytes].to_vec();
             self.llm_tokens = self.token_env.tokenize_bytes(&self.llm_bytes);
-            infoln!("ini_tokens: {}", trie.tokens_dbg(&self.llm_tokens));
+            infoln!(self, "ini_tokens: {}", trie.tokens_dbg(&self.llm_tokens));
         } else {
             // pretend the final bit of prompt was the prefix of the grammar
             self.grm_prefix = prompt_bytes
                 [prompt_bytes.len() - chop_bytes..prompt_bytes.len() - grm_bytes.len()]
                 .to_vec();
             infoln!(
+                self,
                 "force_prefix: {:?}",
                 String::from_utf8_lossy(&self.grm_prefix)
             );
         }
 
-        infoln!("res_prompt: {}", trie.tokens_dbg(&res_prompt));
+        infoln!(self, "res_prompt: {}", trie.tokens_dbg(&res_prompt));
         res_prompt
     }
 
@@ -150,7 +154,7 @@ impl TokenParser {
 
     pub fn mid_process(&mut self, arg: MidProcessArg) -> MidProcessResult {
         if self.max_tokens_total == 0 {
-            infoln!("max_tokens=0, stopping");
+            infoln!(self, "max_tokens=0, stopping");
             return MidProcessResult::stop();
         }
         self.max_tokens_total -= 1;
@@ -161,10 +165,11 @@ impl TokenParser {
     fn mid_process_inner(&mut self, mut arg: MidProcessArg) -> MidProcessResult {
         let start_time = std::time::Instant::now();
 
-        infoln!("\n");
+        infoln!(self, "\n");
         let trie = self.token_env.tok_trie();
 
         infoln!(
+            self,
             "post tokens: bt={} {}",
             arg.backtrack,
             trie.tokens_dbg(&arg.tokens)
@@ -202,9 +207,9 @@ impl TokenParser {
             },
         ) {
             Ok("") => {}
-            Ok(msg) => infoln!("parser: {}", msg),
+            Ok(msg) => infoln!(self, "parser: {}", msg),
             Err(e) => {
-                infoln!("Parser Error: {}", e);
+                infoln!(self, "Parser Error: {}", e);
                 self.token_env.stop();
             }
         };
@@ -235,6 +240,7 @@ impl TokenParser {
                 if pend > grm_bytes.len() || b != &grm_bytes[ptr..pend] {
                     backtrack = self.llm_tokens.len() - idx;
                     infoln!(
+                        self,
                         "backtrack: {} (deletes: {:?})",
                         backtrack,
                         String::from_utf8_lossy(&self.llm_bytes[ptr..])
@@ -264,6 +270,7 @@ impl TokenParser {
         if new_forced.len() > 0 || backtrack > 0 {
             let mut grm_tokens = self.token_env.tokenize_bytes(&new_forced);
             infoln!(
+                self,
                 "forced: {} {:?} {:?}",
                 trie.tokens_dbg(&grm_tokens),
                 new_forced,
@@ -276,13 +283,14 @@ impl TokenParser {
 
             if grm_tokens.len() > 0 || backtrack > 0 {
                 infoln!(
+                    self,
                     "fixed_tokens: {} bt={}",
                     trie.tokens_dbg(&grm_tokens),
                     backtrack
                 );
                 return MidProcessResult::splice(backtrack as u32, grm_tokens);
             } else {
-                infoln!("no fixed tokens");
+                infoln!(self, "no fixed tokens");
             }
         }
 
@@ -297,7 +305,10 @@ impl TokenParser {
             let is_accepting = self.parser.is_accepting();
             let can_advance = self.parser.can_advance();
             let inner_done = is_accepting && !can_advance;
-            infoln!("inner_done: {inner_done}; can_advance: {can_advance}; accept: {is_accepting}");
+            infoln!(
+                self,
+                "inner_done: {inner_done}; can_advance: {can_advance}; accept: {is_accepting}"
+            );
             inner_done
         };
 
@@ -316,10 +327,10 @@ impl TokenParser {
             || (set.num_set() == 1 && set.is_allowed(trie.eos_token()))
         {
             if self.parser_stack.is_empty() {
-                infoln!("only eos token allowed, stopping");
+                infoln!(self, "only eos token allowed, stopping");
                 return MidProcessResult::stop();
             } else {
-                infoln!("pop_parser; tokens left {}", self.max_tokens_parser);
+                infoln!(self, "pop_parser; tokens left {}", self.max_tokens_parser);
                 self.pop_parser();
                 // re-start the whole process with a nice tail-recursion
                 return self.mid_process_inner(MidProcessArg {
@@ -331,6 +342,7 @@ impl TokenParser {
         }
 
         infoln!(
+            self,
             "bias: (pref: {:?}) {:?} {}",
             String::from_utf8_lossy(&token_prefix),
             start_time.elapsed(),
@@ -377,6 +389,7 @@ impl TokenParser {
         self.previous_grm_bytes
             .truncate(entry.previous_grm_bytes_len);
         infoln!(
+            self,
             "pop_parser: {} tokens left; new {} - {} = {}",
             self.max_tokens_parser,
             self.max_tokens_total,

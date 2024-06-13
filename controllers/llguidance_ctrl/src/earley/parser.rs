@@ -23,7 +23,6 @@ use super::{
 
 const TRACE: bool = false;
 const DEBUG: bool = true;
-const INFO: bool = true;
 
 const MAX_ROW: usize = 100;
 
@@ -38,14 +37,6 @@ macro_rules! trace {
 macro_rules! debug {
     ($($arg:tt)*) => {
         if cfg!(feature = "logging") && DEBUG {
-            println!($($arg)*);
-        }
-    }
-}
-
-macro_rules! info {
-    ($($arg:tt)*) => {
-        if INFO {
             println!($($arg)*);
         }
     }
@@ -340,7 +331,6 @@ impl Parser {
                 byte: None,
             }],
         };
-        info!("new parser");
         for rule in r.grammar.rules_of(start).to_vec() {
             r.scratch.add_unique(Item::new(rule, 0), 0, "init");
         }
@@ -684,7 +674,7 @@ impl Parser {
             debug!("  forced: {:?} 0x{:x}", b as char, b);
             if !self.try_push_byte_definitive(Some(b)) {
                 // shouldn't happen?
-                info!("  force_bytes reject {}", b as char);
+                debug!("  force_bytes reject {}", b as char);
                 break;
             }
             bytes.push(b);
