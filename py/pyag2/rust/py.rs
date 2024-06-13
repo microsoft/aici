@@ -12,6 +12,7 @@ use serde::{Deserialize, Serialize};
 #[pyclass]
 struct Ag2Interpreter {
     inner: TokenParser,
+    temperature: f32,
     reporter: Reporter,
     #[pyo3(get, set)]
     log_level: isize,
@@ -37,6 +38,7 @@ impl Ag2Interpreter {
         Ok(Ag2Interpreter {
             inner,
             reporter,
+            temperature: 0.0,
             log_level: 1,
         })
     }
@@ -56,6 +58,7 @@ impl Ag2Interpreter {
             progress: self.reporter.get_progress(&mut self.inner, is_final),
             stop: is_final,
             backtrack: 0,
+            temperature: self.temperature,
             ff_tokens: vec![],
         };
         if is_final {
@@ -63,6 +66,10 @@ impl Ag2Interpreter {
         } else {
             assert!(r.branches.len() == 1);
             let b = &r.branches[0];
+            if b.temperature.is_some() {
+                self.temperature = b.temperature.unwrap();
+                res.temperature = self.temperature;
+            }
             if b.splices.len() > 0 {
                 assert!(b.splices.len() == 1);
                 assert!(b.splices[0].when_sampled.is_empty());
@@ -70,8 +77,9 @@ impl Ag2Interpreter {
                 res.ff_tokens = b.splices[0].ff_tokens.clone();
             }
             let mask = b.sample_mask.as_ref().map(|m| {
-                let v: Vec<u8> = bytemuck::cast_slice(m.as_slice()).to_vec();
-                Cow::Owned(v)
+                let mut res = vec![0u8; m.len()];
+                m.iter_set_entries(|i| res[i] = 200);
+                Cow::Owned(res)
             });
             (mask, serde_json::to_string(&res).unwrap())
         }
@@ -84,6 +92,7 @@ struct PyMidProcessResult {
     stop: bool,
     backtrack: u32,
     ff_tokens: Vec<TokenId>,
+    temperature: f32,
 }
 
 #[pymethods]
