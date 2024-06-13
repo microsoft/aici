@@ -214,19 +214,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "ag2_tester"
-version = "0.1.0"
-dependencies = [
- "aici_abi",
- "aici_ag2_ctrl",
- "aici_native",
- "anyhow",
- "rustc-hash",
- "serde",
- "serde_json",
-]
-
-[[package]]
 name = "ahash"
 version = "0.8.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -265,18 +252,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "aici_ag2_ctrl"
-version = "0.1.0"
-dependencies = [
- "aici_abi",
- "anyhow",
- "derivre",
- "rustc-hash",
- "serde",
- "serde_json",
-]
-
-[[package]]
 name = "aici_declctrl"
 version = "0.1.0"
 dependencies = [
@@ -309,6 +284,18 @@ dependencies = [
  "glob",
  "lazy_static",
  "rquickjs",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "aici_llguidance_ctrl"
+version = "0.1.0"
+dependencies = [
+ "aici_abi",
+ "anyhow",
+ "derivre",
+ "rustc-hash",
  "serde",
  "serde_json",
 ]
@@ -2020,6 +2007,31 @@ dependencies = [
 ]
 
 [[package]]
+name = "llguidance"
+version = "0.1.0"
+dependencies = [
+ "aici_abi",
+ "aici_llguidance_ctrl",
+ "bytemuck",
+ "pyo3",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "llguidance_tester"
+version = "0.1.0"
+dependencies = [
+ "aici_abi",
+ "aici_llguidance_ctrl",
+ "aici_native",
+ "anyhow",
+ "rustc-hash",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "local-channel"
 version = "0.1.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2729,18 +2741,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "5787f7cda34e3033a72192c018bc5883100330f362ef279a8cbccfce8bb4e874"
 dependencies = [
  "cc",
-]
-
-[[package]]
-name = "pyag2"
-version = "0.1.0"
-dependencies = [
- "aici_abi",
- "aici_ag2_ctrl",
- "bytemuck",
- "pyo3",
- "serde",
- "serde_json",
 ]
 
 [[package]]
