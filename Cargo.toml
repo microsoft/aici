@@ -8,8 +8,8 @@ members = [
     "controllers/pyctrl",
     "controllers/jsctrl",
     "controllers/guidance_ctrl",
-    "controllers/ag2_ctrl",
-    "controllers/ag2_tester",
+    "controllers/llguidance_ctrl",
+    "controllers/llguidance_tester",
     "controllers/uppercase",
     "controllers/derivre",
     "rllm/rllm-base",
@@ -17,7 +17,7 @@ members = [
     "rllm/rllm-llamacpp",
     "rllm/tch-cuda",
     "rllm/llama-cpp-low",
-    "py/pyag2",
+    "py/llguidance",
 ]
 resolver = "2"
 

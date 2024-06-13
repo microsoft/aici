@@ -1,7 +1,7 @@
 from typing import List, Tuple, Mapping, Optional, Sequence, Union
 from ._util import TokenId
 
-class Ag2Tokenizer:
+class LLTokenizer:
     vocab_size: int
     eos_token: TokenId
 
@@ -9,7 +9,7 @@ class Ag2Tokenizer:
         cls,
         eos_token: TokenId,
         tokens: Sequence[bytes],
-    ) -> "Ag2Tokenizer":
+    ) -> "LLTokenizer":
         """
         Create a new tokenizer.
         Args:
@@ -41,17 +41,17 @@ class Ag2Tokenizer:
         Decode the tokens into a bytes object.
         """
 
-class Ag2Interpreter:
+class LLInterpreter:
     def __new__(
         cls,
-        tokenizer: Ag2Tokenizer,
-        ag2_json: str
-    ) -> "Ag2Interpreter":
+        tokenizer: LLTokenizer,
+        llguidance_json: str
+    ) -> "LLInterpreter":
         """
         Create a new interpreter.
         Args:
-            tokenizer: Ag2Tokenizer - the tokenizer to use
-            ag2_json: str - the JSON representation of the AG2 grammar/constraint
+            tokenizer: LLTokenizer - the tokenizer to use
+            llguidance_json: str - the JSON representation of the AG2 grammar/constraint
         """
 
     def process_prompt(self, prompt: List[TokenId]) -> List[TokenId]:

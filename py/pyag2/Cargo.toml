@@ -1,11 +1,11 @@
 [package]
-name = "pyag2"
+name = "llguidance"
 version = "0.1.0"
 edition = "2021"
 
 [dependencies]
 aici_abi = { path = "../../controllers/aici_abi" }
-aici_ag2_ctrl = { path = "../../controllers/ag2_ctrl" }
+aici_llguidance_ctrl = { path = "../../controllers/llguidance_ctrl" }
 bytemuck = "1.16.0"
 pyo3 = "0.21.2"
 serde = { version = "1.0.192", features = ["derive"] }

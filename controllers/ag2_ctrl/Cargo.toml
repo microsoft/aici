@@ -1,5 +1,5 @@
 [package]
-name = "aici_ag2_ctrl"
+name = "aici_llguidance_ctrl"
 version = "0.1.0"
 edition = "2021"
 
@@ -12,7 +12,7 @@ anyhow = "1.0.75"
 rustc-hash = "1.1.0"
 
 [[bin]]
-name = "aici_ag2_ctrl"
+name = "aici_llguidance_ctrl"
 path = "src/gctrl.rs"
 
 [features]

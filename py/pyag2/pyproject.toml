@@ -3,7 +3,7 @@ requires = ["setuptools==68", "setuptools-rust"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "pyag2"
+name = "llguidance"
 version = "0.1.0"
 dependencies = []
 
@@ -14,7 +14,7 @@ dev = ["pytest", "mypy"]
 find = { where = ["python"] }
 
 [[tool.setuptools-rust.ext-modules]]
-target = "pyag2._lib"
+target = "llguidance._lib"
 binding = "PyO3"
 debug = false
 # See reference for RustExtension in https://setuptools-rust.readthedocs.io/en/latest/reference.html

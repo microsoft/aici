@@ -1,4 +1,4 @@
-use aici_ag2_ctrl::earley::bench::earley_test;
+use aici_llguidance_ctrl::earley::bench::earley_test;
 use aici_native::bintokens::{find_tokenizer, guess_tokenizer, ByteTokenizerEnv};
 
 fn main() {

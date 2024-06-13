@@ -11,7 +11,7 @@ Guidance branch: https://github.com/paulbkoch/guidance/tree/lazy_grammars
 ## Guidance implementation notes
 
 - `gen()` now generates a new node, `Gen`
-- grammar is serialized to JSON, see `ag2_serialize()`
+- grammar is serialized to JSON, see `llguidance_serialize()`
 
 ## Status in Guidance
 

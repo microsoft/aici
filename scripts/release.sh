@@ -10,7 +10,7 @@ controllers/jsctrl
 controllers/pyctrl
 controllers/uppercase
 controllers/guidance_ctrl
-controllers/ag2_ctrl
+controllers/llguidance_ctrl
 aicirt
 "
 

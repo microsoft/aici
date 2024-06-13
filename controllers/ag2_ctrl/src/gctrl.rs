@@ -3,7 +3,7 @@ use aici_abi::{
 };
 use serde::{Deserialize, Serialize};
 
-use aici_ag2_ctrl::{api::TopLevelGrammar, output::Reporter, TokenParser};
+use aici_llguidance_ctrl::{api::TopLevelGrammar, output::Reporter, TokenParser};
 
 const INFO: bool = true;
 
@@ -29,7 +29,7 @@ impl Runner {
     pub fn new() -> Self {
         infoln!("building runner...");
         let arg: RunnerArg = serde_json::from_slice(&arg_bytes()).expect("invalid JSON arg");
-        let tok_parser = TokenParser::from_ag2_json(
+        let tok_parser = TokenParser::from_llguidance_json(
             Box::new(aici_abi::WasmTokenizerEnv::default()),
             arg.grammar,
         )

@@ -5,12 +5,12 @@ use aici_abi::{
     toktree::{self, TokTrie},
     MidProcessArg, TokenId, TokenizerEnv,
 };
-use aici_ag2_ctrl::{api::TopLevelGrammar, output::Reporter, TokenParser};
+use aici_llguidance_ctrl::{api::TopLevelGrammar, output::Reporter, TokenParser};
 use pyo3::{exceptions::PyValueError, prelude::*};
 use serde::{Deserialize, Serialize};
 
 #[pyclass]
-struct Ag2Interpreter {
+struct LLInterpreter {
     inner: TokenParser,
     temperature: f32,
     reporter: Reporter,
@@ -19,23 +19,23 @@ struct Ag2Interpreter {
 }
 
 #[pyclass]
-struct Ag2Tokenizer {
+struct LLTokenizer {
     tok_trie: Arc<toktree::TokTrie>,
 }
 
 #[pymethods]
-impl Ag2Interpreter {
+impl LLInterpreter {
     #[new]
-    fn py_new(tokenizer: &Ag2Tokenizer, ag2_json: &str) -> PyResult<Self> {
+    fn py_new(tokenizer: &LLTokenizer, llguidance_json: &str) -> PyResult<Self> {
         let env = PyTokenizer {
             inner: tokenizer.tok_trie.clone(),
         };
         let arg: TopLevelGrammar =
-            serde_json::from_str(ag2_json).map_err(|e| PyValueError::new_err(e.to_string()))?;
-        let inner = TokenParser::from_ag2_json(Box::new(env), arg)
+            serde_json::from_str(llguidance_json).map_err(|e| PyValueError::new_err(e.to_string()))?;
+        let inner = TokenParser::from_llguidance_json(Box::new(env), arg)
             .map_err(|e| PyValueError::new_err(e.to_string()))?;
         let reporter = Reporter::new(&inner);
-        Ok(Ag2Interpreter {
+        Ok(LLInterpreter {
             inner,
             reporter,
             temperature: 0.0,
@@ -97,7 +97,7 @@ struct PyMidProcessResult {
 }
 
 #[pymethods]
-impl Ag2Tokenizer {
+impl LLTokenizer {
     #[new]
     fn py_new(eos_token: u32, tokens: Vec<Vec<u8>>) -> PyResult<Self> {
         let info = TokRxInfo {
@@ -106,7 +106,7 @@ impl Ag2Tokenizer {
         };
 
         let tok_trie = TokTrie::from(&info, &tokens);
-        Ok(Ag2Tokenizer {
+        Ok(LLTokenizer {
             tok_trie: Arc::new(tok_trie),
         })
     }
@@ -159,7 +159,7 @@ impl TokenizerEnv for PyTokenizer {
 }
 
 pub(crate) fn init(m: &Bound<'_, PyModule>) -> PyResult<()> {
-    m.add_class::<Ag2Tokenizer>()?;
-    m.add_class::<Ag2Interpreter>()?;
+    m.add_class::<LLTokenizer>()?;
+    m.add_class::<LLInterpreter>()?;
     Ok(())
 }

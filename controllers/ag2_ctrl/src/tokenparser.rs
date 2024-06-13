@@ -53,7 +53,7 @@ struct ParserStackEntry {
 }
 
 impl TokenParser {
-    pub fn from_ag2_json(
+    pub fn from_llguidance_json(
         token_env: Box<dyn TokenizerEnv>,
         buf: TopLevelGrammar,
     ) -> Result<Self> {

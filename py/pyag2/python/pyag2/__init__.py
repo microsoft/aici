@@ -1,6 +1,6 @@
-from ._lib import Ag2Tokenizer, Ag2Interpreter
+from ._lib import LLTokenizer, LLInterpreter
 
 __all__ = [
-    "Ag2Tokenizer",
-    "Ag2Interpreter",
+    "LLTokenizer",
+    "LLInterpreter",
 ]

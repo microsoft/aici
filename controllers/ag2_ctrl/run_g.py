@@ -232,15 +232,15 @@ def main():
 
     max_tokens = 250
 
-    serialized = grm.ag2_serialize()
+    serialized = grm.llguidance_serialize()
     serialized["max_tokens"] = max_tokens
-    ag2_json = {"grammar": serialized}
-    ag2_arg = json.dumps(ag2_json, indent=1)
-    # save ag2_arg to file
-    with open("tmp/ag2_arg.json", "w") as f:
-        f.write(ag2_arg)
-    print("JSON size:", len(ag2_arg), "saved to tmp/ag2_arg.json")
-    # print(json.dumps(ag2_json, indent=2))
+    llguidance_json = {"grammar": serialized}
+    llguidance_arg = json.dumps(llguidance_json, indent=1)
+    # save llguidance_arg to file
+    with open("tmp/llguidance_arg.json", "w") as f:
+        f.write(llguidance_arg)
+    print("JSON size:", len(llguidance_arg), "saved to tmp/llguidance_arg.json")
+    # print(json.dumps(llguidance_json, indent=2))
 
     # read current script file
     # with open(__file__) as f:
@@ -249,12 +249,12 @@ def main():
 
     mod_id = pyaici.cli.build_rust(".", features=["logging"])
     if "127.0.0.1" in pyaici.rest.base_url:
-        pyaici.rest.tag_module(mod_id, ["ag2_ctrl-latest", "ag2"])
+        pyaici.rest.tag_module(mod_id, ["llguidance_ctrl-latest", "llguidance"])
     pyaici.rest.log_level = 2
     res = pyaici.rest.run_controller(
         prompt=prompt,
         controller=mod_id,
-        controller_arg=ag2_arg,
+        controller_arg=llguidance_arg,
         temperature=0.0,
         max_tokens=max_tokens,
     )
