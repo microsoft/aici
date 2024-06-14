@@ -28,6 +28,7 @@ pub struct TokenParser {
     pub token_env: Box<dyn TokenizerEnv>,
     pub parser: Parser,
     pub log_level: isize,
+    pub mid_process_start_time: std::time::Instant,
     parser_stack: Vec<ParserStackEntry>,
     parser_llm_tokens_offset: usize,
     // this is empty for top-level parser,
@@ -59,6 +60,7 @@ impl TokenParser {
         buf: TopLevelGrammar,
         log_level: isize,
     ) -> Result<Self> {
+        let mid_process_start_time = std::time::Instant::now();
         let max_tokens = buf.max_tokens.unwrap_or(usize::MAX);
         let compiled_grammars = grammars_from_json(buf, log_level >= 2)?;
         let parser = Parser::new(
@@ -71,6 +73,7 @@ impl TokenParser {
         Ok(TokenParser {
             log_level,
             token_env,
+            mid_process_start_time,
             parser,
             parser_llm_tokens_offset: 0,
             parser_stack: Vec::new(),
@@ -158,6 +161,7 @@ impl TokenParser {
     }
 
     pub fn mid_process(&mut self, arg: MidProcessArg) -> MidProcessResult {
+        self.mid_process_start_time = std::time::Instant::now();
         if self.max_tokens_total == 0 {
             warn!(self, "max_tokens_total reached, stopping");
             return MidProcessResult::stop();

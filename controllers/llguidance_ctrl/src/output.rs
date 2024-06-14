@@ -23,6 +23,7 @@ pub enum ParserOutput {
         num_tokens: usize,
     },
     Stats {
+        runtime_us: u64,
         #[serde(flatten)]
         stats: earley::ParserStats,
     },
@@ -108,7 +109,11 @@ impl Reporter {
 
         let delta = tok_parser.parser.stats().delta(&self.prev_stats);
         self.prev_stats = tok_parser.parser.stats().clone();
-        res.push(ParserOutput::Stats { stats: delta });
+        let runtime_us = tok_parser.mid_process_start_time.elapsed().as_micros() as u64;
+        res.push(ParserOutput::Stats {
+            stats: delta,
+            runtime_us,
+        });
 
         res
     }
