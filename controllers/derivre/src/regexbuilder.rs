@@ -41,6 +41,8 @@ pub enum RegexAst {
     Regex(String),
     /// Matches this string only
     Literal(String),
+    /// Matches this string of bytes only. Can lead to invalid utf8.
+    ByteLiteral(Vec<u8>),
     /// Matches this byte only. If byte is not in 0..127, it may lead to invalid utf8
     Byte(u8),
     /// Matches any byte in the set, expressed as bitset.
@@ -61,6 +63,7 @@ impl RegexAst {
             | RegexAst::NoMatch
             | RegexAst::Regex(_)
             | RegexAst::Literal(_)
+            | RegexAst::ByteLiteral(_)
             | RegexAst::ExprRef(_)
             | RegexAst::Byte(_)
             | RegexAst::ByteSet(_) => &[],
@@ -78,6 +81,7 @@ impl RegexAst {
             RegexAst::NoMatch => "NoMatch",
             RegexAst::Regex(_) => "Regex",
             RegexAst::Literal(_) => "Literal",
+            RegexAst::ByteLiteral(_) => "ByteLiteral",
             RegexAst::ExprRef(_) => "ExprRef",
             RegexAst::Repeat(_, _, _) => "Repeat",
             RegexAst::Byte(_) => "Byte",
@@ -119,16 +123,16 @@ impl RegexAst {
                     }
                 }
                 RegexAst::Regex(s) | RegexAst::Literal(s) => {
-                    dst.push_str(" ");
-                    dst.push_str(&format!("{:?}", s));
+                    dst.push_str(&format!(" {:?}", s));
+                }
+                RegexAst::ByteLiteral(s) => {
+                    dst.push_str(&format!(" {:?}", String::from_utf8_lossy(&s)));
                 }
                 RegexAst::ExprRef(r) => {
-                    dst.push_str(" ");
-                    dst.push_str(&format!("{:?}", r));
+                    dst.push_str(&format!(" {:?}", r));
                 }
                 RegexAst::Repeat(_, min, max) => {
-                    dst.push_str(&format!("{{{},{}}}", min, max));
-                    dst.push_str(" ");
+                    dst.push_str(&format!("{{{},{}}} ", min, max));
                 }
                 RegexAst::EmptyString | RegexAst::NoMatch => {}
             }
@@ -179,6 +183,7 @@ impl RegexBuilder {
                     RegexAst::EmptyString => ExprRef::EMPTY_STRING,
                     RegexAst::NoMatch => ExprRef::NO_MATCH,
                     RegexAst::Literal(s) => self.exprset.mk_literal(s),
+                    RegexAst::ByteLiteral(s) => self.exprset.mk_byte_literal(s),
                     RegexAst::Repeat(_, min, max) => {
                         self.exprset.mk_repeat(new_args[0], *min, *max)
                     }

@@ -28,6 +28,6 @@ Guidance branch: https://github.com/hudson-ai/guidance/tree/lazy_grammars
 
 - [ ] `to_regex_vec()` in lexerspec.rs - non-contextual keywords
 - [x] handle stop tokens in `gen_grammar()` - stop tokens removed
-- [ ] use `RegexAst::Byte(0xff)` for `EOS_MARKER`
+- [x] use `RegexAst::Byte(0xff)` for `EOS_MARKER`
 - [ ] fix derivative computation to be non-recursive (critical for `substring()`)
 - [ ] add stats about how many parser transitions are made in a token trie traversal

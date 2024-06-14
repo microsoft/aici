@@ -72,7 +72,7 @@ impl Lexer {
             return false;
         }
 
-        let state = self.dfa.transition_bytes(state, EOS_MARKER.as_bytes());
+        let state = self.dfa.transition_bytes(state, EOS_MARKER);
 
         let accepting = &self.dfa.state_desc(state).accepting;
         if accepting.and_is_zero(allowed_eos_lexemes) {

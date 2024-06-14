@@ -150,6 +150,8 @@ pub enum RegexNode {
     Regex(String),
     /// Matches this string only
     Literal(String),
+    /// Matches this string of bytes only. Can lead to invalid utf8.
+    ByteLiteral(Vec<u8>),
     /// Matches this byte only. If byte is not in 0..127, it may lead to invalid utf8
     Byte(u8),
     /// Matches any byte in the set, expressed as bitset.

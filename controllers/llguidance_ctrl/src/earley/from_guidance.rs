@@ -87,6 +87,7 @@ fn map_rx_nodes(rx_nodes: Vec<RegexNode>) -> Result<(RegexBuilder, Vec<ExprRef>)
             RegexNode::Literal(lit) => Ok(RegexAst::Literal(lit)),
             RegexNode::Byte(b) => Ok(RegexAst::Byte(b)),
             RegexNode::ByteSet(bs) => Ok(RegexAst::ByteSet(bs)),
+            RegexNode::ByteLiteral(bs) => Ok(RegexAst::ByteLiteral(bs)),
             RegexNode::And(lst) => Ok(RegexAst::And(map_rx_refs(rx_refs, lst)?)),
             RegexNode::Concat(lst) => Ok(RegexAst::Concat(map_rx_refs(rx_refs, lst)?)),
             RegexNode::Or(lst) => Ok(RegexAst::Or(map_rx_refs(rx_refs, lst)?)),

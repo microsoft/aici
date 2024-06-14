@@ -41,10 +41,9 @@ impl LexemeIdx {
 
 // The first byte of EOS_MARKER should not occur in any token,
 // other than the token representing this byte itself.
-// Once we switch regex engines, we can also use 0xFF,
-// as it is not a valid UTF-8 byte, but for now we stick to 0x02,
-// which is OK for all tokenizers we use.
-pub const EOS_MARKER: &'static str = "\u{02}-EoS";
+// We use 0xFF as it is not a valid UTF-8 byte.
+// Before we used 0x02 which was OK for all tokenizers we use.
+pub const EOS_MARKER: &'static [u8] = b"\xFF-EoS";
 
 impl LexemeSpec {
     /// Check if the lexeme always matches bytes, and has at least one more byte to spare.
@@ -133,7 +132,7 @@ impl LexerSpec {
         let rx = RegexAst::Concat(vec![
             body_rx,
             RegexAst::LookAhead(Box::new(if ends_at_eos_only {
-                RegexAst::Regex(EOS_MARKER.to_string())
+                RegexAst::ByteLiteral(EOS_MARKER.to_vec())
             } else {
                 stop_rx
             })),

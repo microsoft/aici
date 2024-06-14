@@ -66,8 +66,7 @@ impl TokenParser {
             GenGrammarOptions::default(),
         )?;
 
-        let first_token_of_eos_marker =
-            token_env.tok_trie().greedy_tokenize(EOS_MARKER.as_bytes())[0];
+        let first_token_of_eos_marker = token_env.tok_trie().greedy_tokenize(EOS_MARKER)[0];
 
         Ok(TokenParser {
             log_level,

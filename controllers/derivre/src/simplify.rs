@@ -323,13 +323,17 @@ impl ExprSet {
         }
     }
 
-    pub fn mk_literal(&mut self, s: &str) -> ExprRef {
+    pub fn mk_byte_literal(&mut self, s: &[u8]) -> ExprRef {
         self.pay(s.len());
         let mut args = vec![];
-        for b in s.bytes() {
-            args.push(self.mk_byte(b));
+        for b in s {
+            args.push(self.mk_byte(*b));
         }
         self.mk_concat(args)
+    }
+
+    pub fn mk_literal(&mut self, s: &str) -> ExprRef {
+        self.mk_byte_literal(s.as_bytes())
     }
 
     pub fn mk_not(&mut self, e: ExprRef) -> ExprRef {
