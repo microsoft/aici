@@ -4,21 +4,27 @@ use serde::{Deserialize, Serialize};
 use crate::{earley, TokenParser};
 
 #[derive(Serialize, Deserialize)]
+pub struct BytesOutput {
+    pub str: String,
+    pub hex: String,
+}
+
+#[derive(Serialize, Deserialize)]
 #[serde(tag = "object", rename_all = "snake_case")]
 pub enum ParserOutput {
     Capture {
         name: String,
-        str: String,
-        hex: String,
+        #[serde(flatten)]
+        bytes: BytesOutput,
         log_prob: f64,
     },
     FinalText {
-        str: String,
-        hex: String,
+        #[serde(flatten)]
+        bytes: BytesOutput,
     },
     Text {
-        str: String,
-        hex: String,
+        #[serde(flatten)]
+        bytes: BytesOutput,
         log_prob: f64,
         num_tokens: usize,
     },
@@ -29,18 +35,15 @@ pub enum ParserOutput {
     },
 }
 
-impl ParserOutput {
-    pub fn text_from_bytes(bytes: &[u8], log_prob: f64, num_tokens: usize) -> Self {
-        ParserOutput::Text {
-            str: String::from_utf8_lossy(bytes).to_string(),
-            hex: to_hex_string(bytes),
-            log_prob,
-            num_tokens,
-        }
+impl From<&[u8]> for BytesOutput {
+    fn from(bytes: &[u8]) -> Self {
+        BytesOutput::from_bytes(bytes)
     }
+}
 
-    pub fn final_text_from_bytes(bytes: &[u8]) -> Self {
-        ParserOutput::FinalText {
+impl BytesOutput {
+    pub fn from_bytes(bytes: &[u8]) -> Self {
+        BytesOutput {
             str: String::from_utf8_lossy(bytes).to_string(),
             hex: to_hex_string(bytes),
         }
@@ -74,9 +77,11 @@ impl Reporter {
         let num_tokens = tok_parser.num_tokens();
         let new_text = tok_parser.bytes_since(self.text_ptr);
         if new_text.len() > 0 {
-            // TODO log_prob
-            let text = ParserOutput::text_from_bytes(new_text, 0.0, num_tokens - self.token_ptr);
-            res.push(text);
+            res.push(ParserOutput::Text {
+                bytes: new_text.into(),
+                log_prob: 0.0, // TODO
+                num_tokens: num_tokens - self.token_ptr,
+            });
             self.text_ptr += new_text.len();
             self.token_ptr = num_tokens;
         }
@@ -93,18 +98,17 @@ impl Reporter {
             .filter(|(name, _)| seen.insert(name))
             .collect::<Vec<_>>();
         for (name, val) in captures.iter().rev() {
-            let cap = ParserOutput::Capture {
+            res.push(ParserOutput::Capture {
                 name: name.clone(),
-                str: String::from_utf8_lossy(val).to_string(),
-                hex: to_hex_string(val),
+                bytes: val.as_slice().into(),
                 log_prob: 0.0, // TODO
-            };
-            res.push(cap);
+            });
         }
 
         if is_final {
-            let final_text = ParserOutput::final_text_from_bytes(tok_parser.final_bytes());
-            res.push(final_text);
+            res.push(ParserOutput::FinalText {
+                bytes: tok_parser.final_bytes().into(),
+            });
         }
 
         let delta = tok_parser.parser_stats().delta(&self.prev_stats);
