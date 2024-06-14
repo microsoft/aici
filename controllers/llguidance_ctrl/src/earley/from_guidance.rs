@@ -7,39 +7,6 @@ use crate::api::{
 use anyhow::{bail, ensure, Result};
 use derivre::{ExprRef, RegexAst, RegexBuilder};
 
-#[derive(Debug)]
-pub struct NodeProps {
-    pub nullable: bool,
-    pub name: String,
-    pub hidden: bool,
-    pub commit_point: bool,
-    pub capture_name: String,
-    pub max_tokens: i32,
-    pub temperature: f32,
-}
-
-impl NodeProps {
-    #[allow(dead_code)]
-    pub fn to_symbol_props(&self) -> SymbolProps {
-        SymbolProps {
-            commit_point: self.commit_point,
-            hidden: self.hidden && self.commit_point,
-            max_tokens: if self.max_tokens == i32::MAX {
-                usize::MAX
-            } else {
-                self.max_tokens.try_into().unwrap()
-            },
-            model_variable: None,
-            capture_name: if self.capture_name.is_empty() {
-                None
-            } else {
-                Some(self.capture_name.clone())
-            },
-            temperature: self.temperature,
-        }
-    }
-}
-
 fn resolve_rx(rx_refs: &[ExprRef], node: &RegexSpec) -> Result<RegexAst> {
     match node {
         RegexSpec::Regex(rx) => Ok(RegexAst::Regex(rx.clone())),
@@ -128,6 +95,7 @@ fn grammar_from_json(input: GrammarWithLexer) -> Result<(LexerSpec, Grammar)> {
                 model_variable: None,
                 capture_name: props.capture_name.clone(),
                 temperature: 0.0,
+                stop_capture_name: None,
             };
             grm.fresh_symbol_ext(&name, symprops)
         })
@@ -165,10 +133,20 @@ fn grammar_from_json(input: GrammarWithLexer) -> Result<(LexerSpec, Grammar)> {
                     body_rx,
                     stop_rx,
                 )?;
-                grm.make_terminal(lhs, idx)?;
+
                 let symprops = grm.sym_props_mut(lhs);
                 if let Some(t) = data.temperature {
                     symprops.temperature = t;
+                }
+                if data.stop_capture_name.is_some() {
+                    symprops.stop_capture_name = data.stop_capture_name.clone();
+                    let wrap_props = symprops.for_wrapper();
+                    let wrap_name = format!("stop_wrap_{}", grm.sym_name(lhs));
+                    let wrap_sym = grm.fresh_symbol_ext(&wrap_name, wrap_props);
+                    grm.make_terminal(wrap_sym, idx)?;
+                    grm.add_rule(lhs, vec![wrap_sym])?;
+                } else {
+                    grm.make_terminal(lhs, idx)?;
                 }
             }
             Node::Lexeme { rx, contextual, .. } => {

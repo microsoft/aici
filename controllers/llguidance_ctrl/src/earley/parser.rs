@@ -984,6 +984,18 @@ impl Parser {
                 let flags = self.grammar.sym_flags_of(rule);
                 let lhs = self.grammar.sym_idx_of(rule);
 
+                if self.scratch.definitive && flags.stop_capture() {
+                    let var_name = self
+                        .grammar
+                        .sym_data(lhs)
+                        .props
+                        .stop_capture_name
+                        .as_ref()
+                        .unwrap();
+                    let bytes = lexeme.hidden_bytes();
+                    self.captures.push((var_name.clone(), bytes.to_vec()));
+                }
+
                 if self.scratch.definitive && flags.capture() {
                     let var_name = self
                         .grammar

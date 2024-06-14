@@ -66,6 +66,7 @@ pub struct SymbolProps {
     pub max_tokens: usize,
     pub commit_point: bool,
     pub capture_name: Option<String>,
+    pub stop_capture_name: Option<String>,
     pub hidden: bool,
     pub model_variable: Option<ModelVariable>,
     pub temperature: f32,
@@ -79,6 +80,7 @@ impl Default for SymbolProps {
             max_tokens: usize::MAX,
             model_variable: None,
             capture_name: None,
+            stop_capture_name: None,
             temperature: 0.0,
         }
     }
@@ -91,6 +93,51 @@ impl SymbolProps {
             || self.hidden
             || self.max_tokens < usize::MAX
             || self.capture_name.is_some()
+            || self.stop_capture_name.is_some()
+    }
+
+    pub fn for_wrapper(&self) -> Self {
+        SymbolProps {
+            commit_point: false,
+            hidden: self.hidden,
+            max_tokens: self.max_tokens,
+            model_variable: None,
+            capture_name: None,
+            stop_capture_name: None,
+            temperature: self.temperature,
+        }
+    }
+
+    pub fn to_string(&self) -> String {
+        let props = self;
+        let mut outp = String::new();
+
+        if props.commit_point {
+            if props.hidden {
+                outp.push_str(" HIDDEN-COMMIT");
+            } else {
+                outp.push_str(" COMMIT");
+            }
+        }
+        if props.capture_name.is_some() {
+            outp.push_str(" CAPTURE");
+        }
+
+        if props.stop_capture_name.is_some() {
+            outp.push_str(
+                format!(
+                    " STOP-CAPTURE={}",
+                    props.stop_capture_name.as_ref().unwrap()
+                )
+                .as_str(),
+            );
+        }
+
+        if props.max_tokens < 10000 {
+            outp.push_str(format!(" max_tokens={}", props.max_tokens).as_str());
+        }
+
+        outp
     }
 }
 
@@ -411,8 +458,20 @@ impl Debug for Grammar {
                 num_non_term += 1;
                 num_rules += sym.rules.len();
             }
-            for rule in &sym.rules {
-                writeln!(f, "{}", self.rule_to_string(rule, None))?;
+            if sym.rules.is_empty() {
+                if sym.props.is_special() {
+                    writeln!(
+                        f,
+                        "{:15} ⇦ {:?}  {}",
+                        sym.name,
+                        sym.lexeme,
+                        sym.props.to_string()
+                    )?;
+                }
+            } else {
+                for rule in &sym.rules {
+                    writeln!(f, "{}", self.rule_to_string(rule, None))?;
+                }
             }
         }
         writeln!(
@@ -495,6 +554,7 @@ impl SymFlags {
     const HIDDEN: u8 = 1 << 2;
     const CAPTURE: u8 = 1 << 3;
     const GEN_GRAMMAR: u8 = 1 << 4;
+    const STOP_CAPTURE: u8 = 1 << 5;
 
     fn from_csymbol(sym: &CSymbol) -> Self {
         let mut flags = 0;
@@ -509,6 +569,9 @@ impl SymFlags {
         }
         if sym.gen_grammar.is_some() {
             flags |= Self::GEN_GRAMMAR;
+        }
+        if sym.props.stop_capture_name.is_some() {
+            flags |= Self::STOP_CAPTURE;
         }
         SymFlags(flags)
     }
@@ -527,6 +590,11 @@ impl SymFlags {
     #[inline(always)]
     pub fn capture(&self) -> bool {
         self.0 & Self::CAPTURE != 0
+    }
+
+    #[inline(always)]
+    pub fn stop_capture(&self) -> bool {
+        self.0 & Self::STOP_CAPTURE != 0
     }
 
     #[inline(always)]
@@ -800,28 +868,5 @@ fn rule_to_string(
     } else if let Some(dot) = dot {
         rhs.insert(dot, "•");
     }
-    format!(
-        "{:15} ⇦ {}  {}{}{}",
-        lhs,
-        rhs.join(" "),
-        if props.commit_point {
-            if props.hidden {
-                " HIDDEN-COMMIT"
-            } else {
-                " COMMIT"
-            }
-        } else {
-            ""
-        },
-        if props.capture_name.is_some() {
-            " CAPTURE"
-        } else {
-            ""
-        },
-        if props.max_tokens < 10000 {
-            format!(" max_tokens={}", props.max_tokens)
-        } else {
-            "".to_string()
-        },
-    )
+    format!("{:15} ⇦ {}  {}", lhs, rhs.join(" "), props.to_string())
 }

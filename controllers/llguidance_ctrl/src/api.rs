@@ -111,6 +111,10 @@ pub struct GenOptions {
     /// If `stop_rx` is empty, it's assumed to be EOS.
     pub stop_rx: RegexSpec,
 
+    /// When set, the string matching `stop_rx` will be output as a capture
+    /// with the given name.
+    pub stop_capture_name: Option<String>,
+
     /// Override sampling temperature.
     pub temperature: Option<f32>,
 }

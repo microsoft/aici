@@ -15,9 +15,7 @@ Guidance branch: https://github.com/hudson-ai/guidance/tree/lazy_grammars
 
 ## Status in Guidance
 
-- [ ] `gen_mode` in `_gen.py` needs to become a flag on the model/engine
-- [ ] `gen_json()` needs to be re-implemented
-- [ ] `save_stop_text=` doesn't work on `gen()`
+- [x] `save_stop_text=` doesn't work on `gen()`
 - [ ] `substring()` needs to be re-implemented (translate to RegexAst)
 - [ ] translate `commit_point(grammar)` into a RegexAst if
       (the grammar is non-recursive; 
@@ -27,7 +25,5 @@ Guidance branch: https://github.com/hudson-ai/guidance/tree/lazy_grammars
 ## TODO
 
 - [ ] `to_regex_vec()` in lexerspec.rs - non-contextual keywords
-- [x] handle stop tokens in `gen_grammar()` - stop tokens removed
-- [x] use `RegexAst::Byte(0xff)` for `EOS_MARKER`
 - [ ] fix derivative computation to be non-recursive (critical for `substring()`)
 - [ ] add stats about how many parser transitions are made in a token trie traversal
