@@ -118,15 +118,22 @@ impl LLTokenizer {
             ));
         }
 
-        let tokens = tokenizer.getattr("tokens")?.extract::<Vec<Vec<u8>>>()?;
+        let mut tokens = tokenizer.getattr("tokens")?.extract::<Vec<Vec<u8>>>()?;
+
+        // no eos_token only applies to ByteTokenizer from Guidance, which we
+        // hopefully will not actually use
         let tok_eos = tokenizer
             .getattr("eos_token_id")?
             .extract::<Option<u32>>()?
-            .unwrap_or(tokens.len() as u32);
+            .unwrap_or_else(|| {
+                let r = tokens.len() as u32;
+                tokens.push(vec![]);
+                r
+            });
         let tok_bos = tokenizer
             .getattr("bos_token_id")?
-            .extract::<u32>()
-            .map_or(None, |v| Some(v));
+            .extract::<Option<u32>>()?;
+
         let info = TokRxInfo {
             vocab_size: tokens.len() as u32,
             tok_eos,
