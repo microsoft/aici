@@ -1,4 +1,4 @@
-use aici_abi::bytes::to_hex_string;
+use aici_abi::{bytes::to_hex_string, MidProcessResult};
 use serde::{Deserialize, Serialize};
 
 use crate::{earley, TokenParser};
@@ -27,6 +27,7 @@ pub enum ParserOutput {
         bytes: BytesOutput,
         log_prob: f64,
         num_tokens: usize,
+        is_generated: bool,
         stats: ParserStats,
     },
 }
@@ -58,6 +59,7 @@ pub struct Reporter {
     text_ptr: usize,
     token_ptr: usize,
     prev_stats: earley::ParserStats,
+    is_generated: bool,
 }
 
 impl Reporter {
@@ -67,13 +69,14 @@ impl Reporter {
             text_ptr: 0,
             token_ptr: tok_parser.num_tokens(),
             prev_stats: tok_parser.parser_stats().clone(),
+            is_generated: false,
         }
     }
 
     pub fn get_progress(
         &mut self,
         tok_parser: &mut TokenParser,
-        is_final: bool,
+        mid_res: &MidProcessResult,
     ) -> Vec<ParserOutput> {
         let mut res = vec![];
 
@@ -112,12 +115,15 @@ impl Reporter {
             bytes: new_text.into(),
             log_prob: 0.0, // TODO
             num_tokens: num_tokens - self.token_ptr,
+            is_generated: self.is_generated,
             stats,
         });
         self.text_ptr += new_text.len();
         self.token_ptr = num_tokens;
 
-        if is_final {
+        self.is_generated = mid_res.branches.len() >= 1 && mid_res.branches[0].splices.len() == 0;
+
+        if mid_res.is_stop() {
             res.push(ParserOutput::FinalText {
                 bytes: tok_parser.final_bytes().into(),
             });

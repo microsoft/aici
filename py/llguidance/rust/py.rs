@@ -62,7 +62,7 @@ impl LLInterpreter {
         });
         let is_final = r.is_stop();
         let mut res = PyMidProcessResult {
-            progress: self.reporter.get_progress(&mut self.inner, is_final),
+            progress: self.reporter.get_progress(&mut self.inner, &r),
             stop: is_final,
             backtrack: 0,
             temperature: self.temperature,

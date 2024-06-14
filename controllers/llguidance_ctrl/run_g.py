@@ -178,9 +178,6 @@ def main():
         }}"""
         return lm
 
-    grm = character_maker2(1, "A nimble fighter", ["axe", "sword", "bow"])
-    prompt = ""
-
     grm = "Write a number: " + gen("text", max_tokens=3)
     grm = "Q: 1000 + 3\nA: " + gen("text", regex="[0-9]+", max_tokens=20)
     grm = "Q: 1000 + 3\nA: " + gen("text", regex="[0-9]+", max_tokens=2)
@@ -229,6 +226,9 @@ def main():
         + "\nScore (0-9): "
         + gen("score", regex=r"[0-9]")
     )
+
+    grm = character_maker2(1, "A nimble fighter", ["axe", "sword", "bow"])
+    prompt = ""
 
 
     # grm = "Q: 7 * 8\nA: " + gen("text", regex="[0-9]+", max_tokens=20) + "\n"

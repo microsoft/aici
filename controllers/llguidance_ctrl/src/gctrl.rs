@@ -56,8 +56,7 @@ impl AiciCtrl for Runner {
     }
     fn mid_process(&mut self, arg: MidProcessArg) -> MidProcessResult {
         let r = self.tok_parser.mid_process(arg);
-        let is_final = r.is_stop();
-        for v in self.reporter.get_progress(&mut self.tok_parser, is_final) {
+        for v in self.reporter.get_progress(&mut self.tok_parser, &r) {
             json_out(&v);
         }
         r
