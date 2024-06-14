@@ -27,12 +27,15 @@ pub enum ParserOutput {
         bytes: BytesOutput,
         log_prob: f64,
         num_tokens: usize,
+        stats: ParserStats,
     },
-    Stats {
-        runtime_us: u64,
-        #[serde(flatten)]
-        stats: earley::ParserStats,
-    },
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct ParserStats {
+    runtime_us: u64,
+    #[serde(flatten)]
+    stats: earley::ParserStats,
 }
 
 impl From<&[u8]> for BytesOutput {
@@ -73,20 +76,8 @@ impl Reporter {
         is_final: bool,
     ) -> Vec<ParserOutput> {
         let mut res = vec![];
-        // first report newly generated text
-        let num_tokens = tok_parser.num_tokens();
-        let new_text = tok_parser.bytes_since(self.text_ptr);
-        if new_text.len() > 0 {
-            res.push(ParserOutput::Text {
-                bytes: new_text.into(),
-                log_prob: 0.0, // TODO
-                num_tokens: num_tokens - self.token_ptr,
-            });
-            self.text_ptr += new_text.len();
-            self.token_ptr = num_tokens;
-        }
 
-        // then the captures
+        // start with captures
         let captures = &tok_parser.parser.captures()[self.reported_captures..];
         self.reported_captures += captures.len();
 
@@ -105,19 +96,32 @@ impl Reporter {
             });
         }
 
+        // compute stats
+        let delta = tok_parser.parser_stats().delta(&self.prev_stats);
+        self.prev_stats = tok_parser.parser_stats().clone();
+        let runtime_us = tok_parser.mid_process_start_time.elapsed().as_micros() as u64;
+        let stats = ParserStats {
+            runtime_us,
+            stats: delta,
+        };
+
+        // report newly generated text
+        let num_tokens = tok_parser.num_tokens();
+        let new_text = tok_parser.bytes_since(self.text_ptr);
+        res.push(ParserOutput::Text {
+            bytes: new_text.into(),
+            log_prob: 0.0, // TODO
+            num_tokens: num_tokens - self.token_ptr,
+            stats,
+        });
+        self.text_ptr += new_text.len();
+        self.token_ptr = num_tokens;
+
         if is_final {
             res.push(ParserOutput::FinalText {
                 bytes: tok_parser.final_bytes().into(),
             });
         }
-
-        let delta = tok_parser.parser_stats().delta(&self.prev_stats);
-        self.prev_stats = tok_parser.parser_stats().clone();
-        let runtime_us = tok_parser.mid_process_start_time.elapsed().as_micros() as u64;
-        res.push(ParserOutput::Stats {
-            stats: delta,
-            runtime_us,
-        });
 
         res
     }
