@@ -12,6 +12,7 @@ use aici_abi::{
     TokenId,
 };
 use anyhow::{bail, ensure, Result};
+use serde::{Deserialize, Serialize};
 
 use crate::{api::GenGrammarOptions, earley::lexer::Lexer};
 
@@ -78,13 +79,25 @@ impl ItemProps {
     }
 }
 
-#[derive(Debug, Default)]
-pub struct Stats {
+#[derive(Debug, Default, Serialize, Deserialize, Clone)]
+pub struct ParserStats {
     pub rows: usize,
-    pub empty_rows: usize,
-    pub nontrivial_scans: usize,
-    pub scan_items: usize,
+    pub definitive_bytes: usize,
+    pub lexer_ops: usize,
     pub all_items: usize,
+    pub hidden_bytes: usize,
+}
+
+impl ParserStats {
+    pub fn delta(&self, previous: &ParserStats) -> ParserStats {
+        ParserStats {
+            rows: self.rows - previous.rows,
+            definitive_bytes: self.definitive_bytes - previous.definitive_bytes,
+            lexer_ops: self.lexer_ops - previous.lexer_ops,
+            all_items: self.all_items - previous.all_items,
+            hidden_bytes: self.hidden_bytes - previous.hidden_bytes,
+        }
+    }
 }
 
 struct Row {
@@ -183,7 +196,7 @@ pub struct Parser {
     lexer_stack: Vec<LexerState>,
     rows: Vec<Row>,
     row_infos: Vec<RowInfo>,
-    stats: Stats,
+    stats: ParserStats,
     last_collapse: usize,
     token_idx: usize,
     byte_idx: usize,
@@ -320,7 +333,7 @@ impl Parser {
             row_infos: vec![],
             captures: vec![],
             scratch,
-            stats: Stats::default(),
+            stats: ParserStats::default(),
             last_collapse: 0,
             token_idx: 0,
             byte_idx: 0,
@@ -350,6 +363,10 @@ impl Parser {
         r.assert_definitive();
 
         Ok(r)
+    }
+
+    pub fn stats(&self) -> &ParserStats {
+        &self.stats
     }
 
     pub fn grammar(&self) -> &CGrammar {
@@ -450,7 +467,7 @@ impl Parser {
     #[allow(dead_code)]
     pub fn print_stats(&mut self) {
         println!("stats: {:?}", self.stats);
-        self.stats = Stats::default();
+        self.stats = ParserStats::default();
     }
 
     fn assert_definitive(&self) {
@@ -720,6 +737,7 @@ impl Parser {
             }
             lexeme
         } else {
+            self.stats.definitive_bytes += 1;
             self.lexer
                 .advance(curr.lexer_state, byte.unwrap(), self.scratch.definitive)
         };
@@ -967,8 +985,6 @@ impl Parser {
         let mut allowed_lexemes = SimpleVob::alloc(self.grammar.num_terminals());
         let mut max_tokens = 0;
 
-        self.stats.rows += 1;
-
         while agenda_ptr < self.scratch.row_end {
             let item_idx = agenda_ptr;
             let item = self.scratch.items[agenda_ptr];
@@ -1054,6 +1070,8 @@ impl Parser {
         }
 
         let row_len = self.scratch.row_len();
+
+        self.stats.rows += 1;
 
         if row_len == 0 {
             false
@@ -1200,6 +1218,7 @@ impl Parser {
             // if the bytes are forced, we just advance the lexer
             // by replacing the top lexer states
             self.pop_lexer_states(hidden_bytes.len() - 1);
+            self.stats.hidden_bytes += hidden_bytes.len();
             for b in hidden_bytes {
                 match self.lexer.advance(lexer_state, *b, self.scratch.definitive) {
                     LexerResult::State(next_state, _) => {
@@ -1343,6 +1362,7 @@ impl Recognizer for Parser {
     fn try_push_byte(&mut self, byte: u8) -> bool {
         assert!(!self.scratch.definitive);
         let lexer_logging = false;
+        self.stats.lexer_ops += 1;
         let curr = self.lexer_state();
         let res = self.lexer.advance(curr.lexer_state, byte, lexer_logging);
         self.advance_lexer_or_parser(res, curr)

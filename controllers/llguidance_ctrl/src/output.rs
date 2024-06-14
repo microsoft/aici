@@ -1,7 +1,7 @@
 use aici_abi::bytes::to_hex_string;
 use serde::{Deserialize, Serialize};
 
-use crate::TokenParser;
+use crate::{earley, TokenParser};
 
 #[derive(Serialize, Deserialize)]
 pub struct Capture {
@@ -26,6 +26,13 @@ pub struct Text {
     hex: String,
     log_prob: f64,
     num_tokens: usize,
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct Stats {
+    object: &'static str, // "stats"
+    #[serde(flatten)]
+    stats: earley::ParserStats,
 }
 
 impl Text {
@@ -54,6 +61,7 @@ pub struct Reporter {
     reported_captures: usize,
     text_ptr: usize,
     token_ptr: usize,
+    prev_stats: earley::ParserStats,
 }
 
 impl Reporter {
@@ -62,6 +70,7 @@ impl Reporter {
             reported_captures: 0,
             text_ptr: 0,
             token_ptr: tok_parser.num_tokens(),
+            prev_stats: tok_parser.parser.stats().clone(),
         }
     }
 
@@ -108,6 +117,16 @@ impl Reporter {
             let final_text = FinalText::from_bytes(tok_parser.final_bytes());
             res.push(serde_json::to_value(&final_text).unwrap());
         }
+
+        let delta = tok_parser.parser.stats().delta(&self.prev_stats);
+        self.prev_stats = tok_parser.parser.stats().clone();
+        res.push(
+            serde_json::to_value(&Stats {
+                object: "stats",
+                stats: delta,
+            })
+            .unwrap(),
+        );
 
         res
     }
