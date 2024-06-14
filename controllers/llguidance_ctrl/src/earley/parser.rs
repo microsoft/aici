@@ -100,6 +100,7 @@ impl ParserStats {
     }
 }
 
+#[derive(Clone)]
 struct Row {
     first_item: usize,
     last_item: usize,
@@ -137,6 +138,7 @@ impl Item {
     }
 }
 
+#[derive(Clone)]
 struct Scratch {
     grammar: Arc<CGrammar>,
     row_start: usize,
@@ -146,6 +148,7 @@ struct Scratch {
     definitive: bool,
 }
 
+#[derive(Clone)]
 struct RowInfo {
     start_byte_idx: usize,
     lexeme: Lexeme,
@@ -187,6 +190,7 @@ struct LexerState {
     byte: Option<u8>,
 }
 
+#[derive(Clone)]
 pub struct Parser {
     lexer: Lexer,
     grammar: Arc<CGrammar>,

@@ -60,6 +60,7 @@ impl Debug for StateID {
     }
 }
 
+#[derive(Clone)]
 pub struct RegexVec {
     cache: DerivCache,
     alphabet_mapping: Vec<u8>,

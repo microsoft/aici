@@ -12,6 +12,7 @@ macro_rules! debug {
     };
 }
 
+#[derive(Clone)]
 pub struct DerivCache {
     pub exprs: ExprSet,
     pub num_deriv: usize,

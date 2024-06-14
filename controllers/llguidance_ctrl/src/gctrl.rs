@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use aici_abi::{
     arg_bytes, AiciCtrl, InitPromptArg, InitPromptResult, MidProcessArg, MidProcessResult,
 };
@@ -30,7 +32,7 @@ impl Runner {
         infoln!("building runner...");
         let arg: RunnerArg = serde_json::from_slice(&arg_bytes()).expect("invalid JSON arg");
         let tok_parser = TokenParser::from_llguidance_json(
-            Box::new(aici_abi::WasmTokenizerEnv::default()),
+            Arc::new(aici_abi::WasmTokenizerEnv::default()),
             arg.grammar,
             2,
         )

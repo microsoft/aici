@@ -26,4 +26,4 @@ Guidance branch: https://github.com/hudson-ai/guidance/tree/lazy_grammars
 
 - [ ] `to_regex_vec()` in lexerspec.rs - non-contextual keywords
 - [ ] fix derivative computation to be non-recursive (critical for `substring()`)
-- [ ] add stats about how many parser transitions are made in a token trie traversal
+- [x] add stats about how many parser transitions are made in a token trie traversal

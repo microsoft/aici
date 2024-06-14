@@ -26,8 +26,9 @@ macro_rules! warn {
     };
 }
 
+#[derive(Clone)]
 pub struct TokenParser {
-    pub token_env: Box<dyn TokenizerEnv>,
+    pub token_env: Arc<dyn TokenizerEnv + Sync>,
     pub parser: Parser,
     pub log_level: isize,
     pub mid_process_start_time: std::time::Instant,
@@ -48,6 +49,7 @@ pub struct TokenParser {
     grm_prefix: Vec<u8>,
 }
 
+#[derive(Clone)]
 struct ParserStackEntry {
     parser: Parser,
     parser_llm_tokens_offset: usize,
@@ -58,7 +60,7 @@ struct ParserStackEntry {
 
 impl TokenParser {
     pub fn from_llguidance_json(
-        token_env: Box<dyn TokenizerEnv>,
+        token_env: Arc<dyn TokenizerEnv + Sync>,
         buf: TopLevelGrammar,
         log_level: isize,
     ) -> Result<Self> {
