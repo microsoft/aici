@@ -18,9 +18,13 @@ struct LLInterpreter {
     log_level: isize,
 }
 
+#[derive(Clone)]
 #[pyclass]
 struct LLTokenizer {
     tok_trie: Arc<toktree::TokTrie>,
+    tokenizer_fun: Py<PyAny>,
+    #[allow(dead_code)]
+    tok_bos: Option<u32>,
 }
 
 #[pymethods]
@@ -31,9 +35,7 @@ impl LLInterpreter {
         llguidance_json: &str,
         log_level: Option<isize>,
     ) -> PyResult<Self> {
-        let env = PyTokenizer {
-            inner: tokenizer.tok_trie.clone(),
-        };
+        let env = tokenizer.clone();
         let arg: TopLevelGrammar = serde_json::from_str(llguidance_json)
             .map_err(|e| PyValueError::new_err(e.to_string()))?;
         let log_level = log_level.unwrap_or(1);
@@ -104,16 +106,37 @@ struct PyMidProcessResult {
 #[pymethods]
 impl LLTokenizer {
     #[new]
-    fn py_new(eos_token: u32, tokens: Vec<Vec<u8>>) -> PyResult<Self> {
+    fn py_new(gtokenizer: Bound<'_, PyAny>) -> PyResult<Self> {
+        let tok_eos = gtokenizer.getattr("eos_token_id")?.extract::<u32>()?;
+        let tok_bos = gtokenizer
+            .getattr("bos_token_id")?
+            .extract::<u32>()
+            .map_or(None, |v| Some(v));
+        let tokens = gtokenizer.getattr("tokens")?.extract::<Vec<Vec<u8>>>()?;
         let info = TokRxInfo {
             vocab_size: tokens.len() as u32,
-            tok_eos: eos_token,
+            tok_eos,
         };
 
         let tok_trie = TokTrie::from(&info, &tokens);
         Ok(LLTokenizer {
             tok_trie: Arc::new(tok_trie),
+            tokenizer_fun: gtokenizer.into(),
+            tok_bos,
         })
+    }
+
+    fn tokenize_bytes(&self, utf8bytes: &[u8]) -> Vec<TokenId> {
+        self.tok_trie.tokenize_with_greedy_fallback(utf8bytes, |s| {
+            Python::with_gil(|py| {
+                let r = self.tokenizer_fun.call1(py, (s,)).unwrap();
+                r.extract::<Vec<TokenId>>(py).unwrap()
+            })
+        })
+    }
+
+    fn tokenize_str(&self, text: &str) -> Vec<TokenId> {
+        self.tokenize_bytes(text.as_bytes())
     }
 
     fn greedy_tokenize(&self, text: &str) -> Vec<u32> {
@@ -144,22 +167,17 @@ impl LLTokenizer {
     }
 }
 
-struct PyTokenizer {
-    inner: Arc<toktree::TokTrie>,
-}
-
-impl TokenizerEnv for PyTokenizer {
+impl TokenizerEnv for LLTokenizer {
     fn stop(&self) -> ! {
-        panic!("STOP"); // TODO
+        panic!("STOP"); // TODO?
     }
 
     fn tok_trie(&self) -> &toktree::TokTrie {
-        &self.inner
+        &self.tok_trie
     }
 
     fn tokenize_bytes(&self, s: &[u8]) -> Vec<TokenId> {
-        // TODO this should call out to the Python tokenizer
-        self.inner.greedy_tokenize(s)
+        self.tokenize_bytes(s)
     }
 }
 

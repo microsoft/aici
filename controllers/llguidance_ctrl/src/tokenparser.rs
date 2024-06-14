@@ -124,6 +124,12 @@ impl TokenParser {
         if chop_bytes <= grm_bytes.len() {
             self.llm_bytes = grm_bytes[0..grm_bytes.len() - chop_bytes].to_vec();
             self.llm_tokens = self.token_env.tokenize_bytes(&self.llm_bytes);
+            let decoded = self.token_env.tok_trie().decode(&self.llm_tokens);
+            if self.llm_bytes.len() > 0 && &decoded[1..] == &self.llm_bytes && decoded[0] == b' ' {
+                infoln!(self, "applying <s>space hack");
+                self.grm_prefix = decoded[0..1].to_vec();
+                self.llm_bytes = decoded;
+            }
             infoln!(self, "ini_tokens: {}", trie.tokens_dbg(&self.llm_tokens));
         } else {
             // pretend the final bit of prompt was the prefix of the grammar
@@ -191,7 +197,7 @@ impl TokenParser {
         // TODO maybe remove in future
         if self.llm_bytes != trie.decode(&self.llm_tokens) {
             panic!(
-                "llm_bytes mismatch: {:?} {:?}",
+                "llm_bytes mismatch:\n    {:?}\n    {:?}",
                 String::from_utf8_lossy(&self.llm_bytes),
                 String::from_utf8_lossy(&trie.decode(&self.llm_tokens))
             );
@@ -271,12 +277,13 @@ impl TokenParser {
             let mut grm_tokens = self.token_env.tokenize_bytes(&new_forced);
             infoln!(
                 self,
-                "forced: {} {:?} {:?}",
+                "forced: {} bytes:{:?} tokens:{:?}",
                 trie.tokens_dbg(&grm_tokens),
                 new_forced,
                 grm_tokens
             );
             let (chop_tokens, chop_bytes) = trie.chop_tokens(&mut self.parser, &grm_tokens);
+            infoln!(self, "chop: {} tokens, {} bytes", chop_tokens, chop_bytes);
             token_prefix = new_forced[new_forced.len() - chop_bytes..].to_vec();
             // here we remove a suffix from grm_tokens that could be possibly tokenized differently
             grm_tokens.truncate(grm_tokens.len() - chop_tokens);

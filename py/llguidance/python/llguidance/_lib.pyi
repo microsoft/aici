@@ -1,5 +1,6 @@
 from typing import List, Tuple, Mapping, Optional, Sequence, Union
 from ._util import TokenId
+from ._tokenizer import TokenizerWrapper
 
 class LLTokenizer:
     vocab_size: int
@@ -7,21 +8,29 @@ class LLTokenizer:
 
     def __new__(
         cls,
-        eos_token: TokenId,
-        tokens: Sequence[bytes],
+        tokenizer: TokenizerWrapper,
     ) -> "LLTokenizer":
         """
         Create a new tokenizer.
-        Args:
-            eos_token: TokenId - the identifier of the end-of-sequence/end-of-text token
-            tokens: Sequence[bytes] - maps regular tokens to their byte-string representation
-                special tokens need to map to empty bytes
         """
 
     def greedy_tokenize(self, text: str) -> List[int]:
         """
         Tokenize the text using a greedy algorithm.
         This will not necesserily match BPE.
+        """
+
+    def tokenize_bytes(self, utf8bytes: bytes) -> List[int]:
+        """
+        Tokenize the text as bytes.
+        This will use the underlaying Python tokenizer to tokenize valid UTF8
+        prefix of the text, and then fallback to greedy_tokenize() for the last
+        few bytes.
+        """
+    
+    def tokenize_str(self, text: str) -> List[int]:
+        """
+        Same as tokenize_bytes, but for strings.
         """
 
     def dbg_tokens(self, tokens: List[int]) -> str:
@@ -63,7 +72,9 @@ class LLInterpreter:
         Returns the adjusted prompt.
         """
 
-    def mid_process(self, backtrack: int, tokens: List[TokenId]) -> Tuple[Optional[bytes], str]:
+    def mid_process(
+        self, backtrack: int, tokens: List[TokenId]
+    ) -> Tuple[Optional[bytes], str]:
         """
         Perform next parsing step.
         Returns: optional token mask and a JSON string.

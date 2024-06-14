@@ -9,6 +9,7 @@ from guidance.models.llama_cpp._llama_cpp import LlamaCppEngine
 
 from typing import List
 
+log_level = 2
 
 def softmax(logits: np.ndarray, temperature=1.0) -> np.ndarray:
     # Adjust logits by temperature
@@ -31,7 +32,7 @@ def run_constraint(tok: llguidance.LLTokenizer, e: LlamaCppEngine, grm: guidance
     max_tokens = 100
     serialized = grm.ll_serialize()
     serialized["max_tokens"] = max_tokens
-    interp = llguidance.LLInterpreter(tok, json.dumps(serialized))
+    interp = llguidance.LLInterpreter(tok, json.dumps(serialized), log_level=log_level)
     tokens = []
     if e.tokenizer.bos_token_id is not None:
         tokens.append(e.tokenizer.bos_token_id)
@@ -65,11 +66,20 @@ def run_constraint(tok: llguidance.LLTokenizer, e: LlamaCppEngine, grm: guidance
 
 
 def main():
-    # m = guidance.models.Transformers(model="../../tmp/Phi-3-mini-128k-instruct/", trust_remote_code=True)
+    #m = guidance.models.Transformers(model="../../tmp/Phi-3-mini-128k-instruct/", trust_remote_code=True)
     m = guidance.models.LlamaCpp(model="../../tmp/Phi-3-mini-4k-instruct-q4.gguf")
-    t: Tokenizer = m.engine.tokenizer
-    tok = llguidance.LLTokenizer(t.eos_token_id, t.tokens)
-    run_constraint(tok, m.engine, "Here's a joke: " + guidance.gen(regex="[a-z ]+", stop="\n"))
+    t = llguidance.TokenizerWrapper(m.engine.tokenizer)
+    t = llguidance.LLTokenizer(t)
+    assert t.tokenize_str("") == []
+    assert t.tokenize_str(" ") == [29871]
+    assert t.tokenize_str("x") == [29916]
+    assert t.tokenize_str("Hello world") == [10994, 3186]
+
+    assert t.tokenize_bytes(b"Hello world") == [10994, 3186]
+    assert t.tokenize_bytes(b"Hello world\xff") == [10994, 3186, 258]
+    assert t.tokenize_bytes(b"Hello world\xc0\xff") == [10994, 3186, 195, 258]
+
+    run_constraint(t, m.engine, "Here's a joke: " + guidance.gen(regex="[a-z ]+", stop="\n"))
 
 
 if __name__ == "__main__":
