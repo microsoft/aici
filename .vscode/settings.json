@@ -118,6 +118,7 @@
         "pylib",
         "pytest",
         "quickjs",
+        "regexes",
         "rllm",
         "rquickjs",
         "rstrip",

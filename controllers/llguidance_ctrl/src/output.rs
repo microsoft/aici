@@ -4,53 +4,42 @@ use serde::{Deserialize, Serialize};
 use crate::{earley, TokenParser};
 
 #[derive(Serialize, Deserialize)]
-pub struct Capture {
-    object: &'static str, // "capture"
-    name: String,
-    str: String,
-    hex: String,
-    log_prob: f64,
+#[serde(tag = "object", rename_all = "snake_case")]
+pub enum ParserOutput {
+    Capture {
+        name: String,
+        str: String,
+        hex: String,
+        log_prob: f64,
+    },
+    FinalText {
+        str: String,
+        hex: String,
+    },
+    Text {
+        str: String,
+        hex: String,
+        log_prob: f64,
+        num_tokens: usize,
+    },
+    Stats {
+        #[serde(flatten)]
+        stats: earley::ParserStats,
+    },
 }
 
-#[derive(Serialize, Deserialize)]
-pub struct FinalText {
-    object: &'static str, // "final_text"
-    str: String,
-    hex: String,
-}
-
-#[derive(Serialize, Deserialize)]
-pub struct Text {
-    object: &'static str, // "text"
-    str: String,
-    hex: String,
-    log_prob: f64,
-    num_tokens: usize,
-}
-
-#[derive(Serialize, Deserialize)]
-pub struct Stats {
-    object: &'static str, // "stats"
-    #[serde(flatten)]
-    stats: earley::ParserStats,
-}
-
-impl Text {
-    pub fn from_bytes(bytes: &[u8], log_prob: f64, num_tokens: usize) -> Self {
-        Text {
-            object: "text",
+impl ParserOutput {
+    pub fn text_from_bytes(bytes: &[u8], log_prob: f64, num_tokens: usize) -> Self {
+        ParserOutput::Text {
             str: String::from_utf8_lossy(bytes).to_string(),
             hex: to_hex_string(bytes),
             log_prob,
             num_tokens,
         }
     }
-}
 
-impl FinalText {
-    pub fn from_bytes(bytes: &[u8]) -> Self {
-        FinalText {
-            object: "final_text",
+    pub fn final_text_from_bytes(bytes: &[u8]) -> Self {
+        ParserOutput::FinalText {
             str: String::from_utf8_lossy(bytes).to_string(),
             hex: to_hex_string(bytes),
         }
@@ -78,15 +67,15 @@ impl Reporter {
         &mut self,
         tok_parser: &mut TokenParser,
         is_final: bool,
-    ) -> Vec<serde_json::Value> {
+    ) -> Vec<ParserOutput> {
         let mut res = vec![];
         // first report newly generated text
         let num_tokens = tok_parser.num_tokens();
         let new_text = tok_parser.bytes_since(self.text_ptr);
         if new_text.len() > 0 {
             // TODO log_prob
-            let text = Text::from_bytes(new_text, 0.0, num_tokens - self.token_ptr);
-            res.push(serde_json::to_value(&text).unwrap());
+            let text = ParserOutput::text_from_bytes(new_text, 0.0, num_tokens - self.token_ptr);
+            res.push(text);
             self.text_ptr += new_text.len();
             self.token_ptr = num_tokens;
         }
@@ -103,30 +92,23 @@ impl Reporter {
             .filter(|(name, _)| seen.insert(name))
             .collect::<Vec<_>>();
         for (name, val) in captures.iter().rev() {
-            let cap = Capture {
-                object: "capture",
+            let cap = ParserOutput::Capture {
                 name: name.clone(),
                 str: String::from_utf8_lossy(val).to_string(),
                 hex: to_hex_string(val),
                 log_prob: 0.0, // TODO
             };
-            res.push(serde_json::to_value(&cap).unwrap());
+            res.push(cap);
         }
 
         if is_final {
-            let final_text = FinalText::from_bytes(tok_parser.final_bytes());
-            res.push(serde_json::to_value(&final_text).unwrap());
+            let final_text = ParserOutput::final_text_from_bytes(tok_parser.final_bytes());
+            res.push(final_text);
         }
 
         let delta = tok_parser.parser.stats().delta(&self.prev_stats);
         self.prev_stats = tok_parser.parser.stats().clone();
-        res.push(
-            serde_json::to_value(&Stats {
-                object: "stats",
-                stats: delta,
-            })
-            .unwrap(),
-        );
+        res.push(ParserOutput::Stats { stats: delta });
 
         res
     }

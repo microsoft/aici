@@ -5,7 +5,7 @@ use aici_abi::{
     toktree::{self, TokTrie},
     MidProcessArg, TokenId, TokenizerEnv,
 };
-use aici_llguidance_ctrl::{api::TopLevelGrammar, output::Reporter, TokenParser};
+use aici_llguidance_ctrl::{api::TopLevelGrammar, output::{ParserOutput, Reporter}, TokenParser};
 use pyo3::{exceptions::PyValueError, prelude::*};
 use serde::{Deserialize, Serialize};
 
@@ -96,7 +96,7 @@ impl LLInterpreter {
 
 #[derive(Serialize, Deserialize)]
 struct PyMidProcessResult {
-    progress: Vec<serde_json::Value>,
+    progress: Vec<ParserOutput>,
     stop: bool,
     backtrack: u32,
     ff_tokens: Vec<TokenId>,
