@@ -60,7 +60,7 @@ impl Reporter {
             reported_captures: 0,
             text_ptr: 0,
             token_ptr: tok_parser.num_tokens(),
-            prev_stats: tok_parser.parser.stats().clone(),
+            prev_stats: tok_parser.parser_stats().clone(),
         }
     }
 
@@ -107,8 +107,8 @@ impl Reporter {
             res.push(final_text);
         }
 
-        let delta = tok_parser.parser.stats().delta(&self.prev_stats);
-        self.prev_stats = tok_parser.parser.stats().clone();
+        let delta = tok_parser.parser_stats().delta(&self.prev_stats);
+        self.prev_stats = tok_parser.parser_stats().clone();
         let runtime_us = tok_parser.mid_process_start_time.elapsed().as_micros() as u64;
         res.push(ParserOutput::Stats {
             stats: delta,

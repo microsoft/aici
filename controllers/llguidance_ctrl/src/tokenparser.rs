@@ -2,7 +2,9 @@ use std::sync::Arc;
 
 use crate::{
     api::{GenGrammarOptions, TopLevelGrammar},
-    earley::{grammars_from_json, CGrammar, CSymIdx, ModelVariable, Parser, EOS_MARKER},
+    earley::{
+        grammars_from_json, CGrammar, CSymIdx, ModelVariable, Parser, ParserStats, EOS_MARKER,
+    },
 };
 use aici_abi::{MidProcessArg, MidProcessResult, TokenId, TokenizerEnv};
 use anyhow::Result;
@@ -86,6 +88,10 @@ impl TokenParser {
             max_tokens_total: max_tokens,
             max_tokens_parser: max_tokens,
         })
+    }
+
+    pub fn parser_stats(&self) -> &ParserStats {
+        &self.parser.stats
     }
 
     pub fn num_tokens(&self) -> usize {
@@ -375,6 +381,7 @@ impl TokenParser {
             let max_tokens = self.parser.grammar().sym_data(symidx).props.max_tokens;
             let parser = Parser::new(grm, gen_grammar)?;
             let old_parser = std::mem::replace(&mut self.parser, parser);
+            self.parser.stats = old_parser.stats.clone();
             let mut entry = ParserStackEntry {
                 parser: old_parser,
                 parser_llm_tokens_offset: self.parser_llm_tokens_offset,
@@ -394,7 +401,9 @@ impl TokenParser {
     fn pop_parser(&mut self) {
         let inner_bytes = self.parser.get_bytes();
         let entry = self.parser_stack.pop().unwrap();
+        let stats = self.parser.stats.clone();
         self.parser = entry.parser;
+        self.parser.stats = stats;
         self.parser_llm_tokens_offset = entry.parser_llm_tokens_offset;
         self.previous_grm_bytes
             .truncate(entry.previous_grm_bytes_len);

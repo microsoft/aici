@@ -196,7 +196,7 @@ pub struct Parser {
     lexer_stack: Vec<LexerState>,
     rows: Vec<Row>,
     row_infos: Vec<RowInfo>,
-    stats: ParserStats,
+    pub(crate) stats: ParserStats,
     last_collapse: usize,
     token_idx: usize,
     byte_idx: usize,
@@ -363,10 +363,6 @@ impl Parser {
         r.assert_definitive();
 
         Ok(r)
-    }
-
-    pub fn stats(&self) -> &ParserStats {
-        &self.stats
     }
 
     pub fn grammar(&self) -> &CGrammar {

@@ -217,18 +217,18 @@ def main():
     prompt = "How much is 2 + 2? "
     grm = gen(name="test", max_tokens=30, regex=r"[0-9]+", stop=".")
 
+    prompt = ""
+    grm = "Name: " + \
+        gen('name', regex="E[a-z]+", stop_regex=["[a-b]", "[x-z]"], save_stop_text="saved_name_stop") + \
+        "\nName: " + \
+        gen('name2', regex="E[a-z]+", stop_regex=["[a-b]", "[x-z]"], save_stop_text="saved_name_stop2")
+
     prompt = "Three things about J. Random Hacker:\n"
     grm = (
         gen_json_object("hacker", max_tokens=150)
         + "\nScore (0-9): "
         + gen("score", regex=r"[0-9]")
     )
-
-    prompt = ""
-    grm = "Name: " + \
-        gen('name', regex="E[a-z]+", stop_regex=["[a-b]", "[x-z]"], save_stop_text="saved_name_stop") + \
-        "\nName: " + \
-        gen('name2', regex="E[a-z]+", stop_regex=["[a-b]", "[x-z]"], save_stop_text="saved_name_stop2")
 
 
     # grm = "Q: 7 * 8\nA: " + gen("text", regex="[0-9]+", max_tokens=20) + "\n"
