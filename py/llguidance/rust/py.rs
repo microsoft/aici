@@ -9,6 +9,7 @@ use aici_llguidance_ctrl::{api::TopLevelGrammar, output::{ParserOutput, Reporter
 use pyo3::{exceptions::PyValueError, prelude::*};
 use serde::{Deserialize, Serialize};
 
+#[derive(Clone)]
 #[pyclass]
 struct LLInterpreter {
     inner: TokenParser,
@@ -48,6 +49,10 @@ impl LLInterpreter {
             temperature: 0.0,
             log_level,
         })
+    }
+
+    fn deep_copy(&self) -> Self {
+        self.clone()
     }
 
     fn process_prompt(&mut self, prompt: Vec<TokenId>) -> Vec<TokenId> {

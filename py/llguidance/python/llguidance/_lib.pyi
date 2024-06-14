@@ -66,6 +66,11 @@ class LLInterpreter:
                 0 is silent, 1 is warnings, 2 is verbose
         """
 
+    def deep_copy(self) -> "LLInterpreter":
+        """
+        Create a deep copy of the interpreter.
+        """
+
     def process_prompt(self, prompt: List[TokenId]) -> List[TokenId]:
         """
         Perform any adjustments to the prompt before completion.

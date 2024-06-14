@@ -54,6 +54,7 @@ impl BytesOutput {
     }
 }
 
+#[derive(Clone)]
 pub struct Reporter {
     reported_captures: usize,
     text_ptr: usize,
