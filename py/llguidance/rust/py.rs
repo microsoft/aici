@@ -106,13 +106,24 @@ struct PyMidProcessResult {
 #[pymethods]
 impl LLTokenizer {
     #[new]
-    fn py_new(gtokenizer: Bound<'_, PyAny>) -> PyResult<Self> {
-        let tok_eos = gtokenizer.getattr("eos_token_id")?.extract::<u32>()?;
-        let tok_bos = gtokenizer
+    fn py_new(tokenizer: Bound<'_, PyAny>) -> PyResult<Self> {
+        let is_tokenizer = tokenizer
+            .getattr("is_tokenizer_wrapper")
+            .map(|v| v.extract::<bool>())
+            .unwrap_or(Ok(false))
+            .unwrap_or(false);
+        if !is_tokenizer {
+            return Err(PyValueError::new_err(
+                "Expecting a TokenizerWrapper() class",
+            ));
+        }
+
+        let tok_eos = tokenizer.getattr("eos_token_id")?.extract::<u32>()?;
+        let tok_bos = tokenizer
             .getattr("bos_token_id")?
             .extract::<u32>()
             .map_or(None, |v| Some(v));
-        let tokens = gtokenizer.getattr("tokens")?.extract::<Vec<Vec<u8>>>()?;
+        let tokens = tokenizer.getattr("tokens")?.extract::<Vec<Vec<u8>>>()?;
         let info = TokRxInfo {
             vocab_size: tokens.len() as u32,
             tok_eos,
@@ -121,7 +132,7 @@ impl LLTokenizer {
         let tok_trie = TokTrie::from(&info, &tokens);
         Ok(LLTokenizer {
             tok_trie: Arc::new(tok_trie),
-            tokenizer_fun: gtokenizer.into(),
+            tokenizer_fun: tokenizer.into(),
             tok_bos,
         })
     }

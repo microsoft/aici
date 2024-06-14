@@ -68,7 +68,8 @@ def run_constraint(tok: llguidance.LLTokenizer, e: LlamaCppEngine, grm: guidance
 def main():
     #m = guidance.models.Transformers(model="../../tmp/Phi-3-mini-128k-instruct/", trust_remote_code=True)
     m = guidance.models.LlamaCpp(model="../../tmp/Phi-3-mini-4k-instruct-q4.gguf")
-    t = llguidance.TokenizerWrapper(m.engine.tokenizer)
+    t = m.engine.tokenizer
+    t = llguidance.TokenizerWrapper(t)
     t = llguidance.LLTokenizer(t)
     assert t.tokenize_str("") == []
     assert t.tokenize_str(" ") == [29871]
