@@ -11,6 +11,7 @@ from guidance import (
     select,
     zero_or_more,
     byte_range,
+    char_set,
     capture,
     gen,
     substring,
@@ -19,6 +20,7 @@ from guidance import (
     lexeme,
     greedy_grammar,
     lazy_grammar,
+    commit_point,
 )
 
 
@@ -215,10 +217,22 @@ def main():
     grm = gen(name="test", max_tokens=30, regex=r"[0-9]+", stop=".")
 
     prompt = ""
-    grm = "Name: " + \
-        gen('name', regex="E[a-z]+", stop_regex=["[a-b]", "[x-z]"], save_stop_text="saved_name_stop") + \
-        "\nName: " + \
-        gen('name2', regex="E[a-z]+", stop_regex=["[a-b]", "[x-z]"], save_stop_text="saved_name_stop2")
+    grm = (
+        "Name: "
+        + gen(
+            "name",
+            regex="E[a-z]+",
+            stop_regex=["[a-b]", "[x-z]"],
+            save_stop_text="saved_name_stop",
+        )
+        + "\nName: "
+        + gen(
+            "name2",
+            regex="E[a-z]+",
+            stop_regex=["[a-b]", "[x-z]"],
+            save_stop_text="saved_name_stop2",
+        )
+    )
 
     prompt = "Three things about J. Random Hacker:\n"
     grm = (
@@ -230,6 +244,10 @@ def main():
     grm = character_maker2(1, "A nimble fighter", ["axe", "sword", "bow"])
     prompt = ""
 
+    prompt = "Three things about J. Random Hacker:\n"
+    grm = commit_point(
+        '"' + byte_range(b"A", b"Z") + one_or_more(byte_range(b"a", b"z")) + '"'
+    )
 
     # grm = "Q: 7 * 8\nA: " + gen("text", regex="[0-9]+", max_tokens=20) + "\n"
 
