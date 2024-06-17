@@ -1055,11 +1055,18 @@ impl Parser {
                 if sym_data.is_nullable {
                     self.scratch
                         .add_unique(item.advance_dot(), item_idx, "null");
+                    if self.scratch.definitive && sym_data.props.capture_name.is_some() {
+                        // nullable capture
+                        let var_name = sym_data.props.capture_name.as_ref().unwrap();
+                        debug!("      capture: {} NULL", var_name);
+                        self.captures.push((var_name.clone(), vec![]));
+                    }
                 }
                 for rule in &sym_data.rules {
                     let new_item = Item::new(*rule, curr_idx);
                     self.scratch.add_unique(new_item, item_idx, "predict");
                 }
+                // TODO the hidden stuff is no longer used
                 if self.scratch.definitive && sym_data.props.hidden {
                     for rule in &sym_data.rules {
                         let new_item = Item::new(*rule, curr_idx);
