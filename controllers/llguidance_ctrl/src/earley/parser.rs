@@ -1021,8 +1021,9 @@ impl Parser {
                         .as_ref()
                         .unwrap();
                     let mut bytes = Vec::new();
-                    if item.start_pos() + 1 < curr_idx {
-                        bytes = self.row_infos[item.start_pos() + 1..curr_idx]
+                    let capture_start = item.start_pos() ;
+                    if capture_start < curr_idx {
+                        bytes = self.row_infos[capture_start..curr_idx]
                             .iter()
                             .map(|ri| ri.lexeme.visible_bytes())
                             .collect::<Vec<_>>()
