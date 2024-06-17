@@ -196,7 +196,10 @@ impl TokenParser {
             assert!(arg.tokens.len() == 1);
             if self.parser.scan_model_variable(ModelVariable::eos_token()) {
                 // it got scanned correctly, so we remove it
+                infoln!(self, "scanned eos_token");
                 arg.tokens.clear();
+            } else {
+                arg.save_tokens(&mut self.llm_tokens);
             }
         } else {
             arg.save_tokens(&mut self.llm_tokens);
@@ -204,6 +207,13 @@ impl TokenParser {
 
         let new_bytes = trie.decode(&arg.tokens);
         self.llm_bytes.extend_from_slice(&new_bytes);
+
+        // eprintln!(
+        //     "llm_bytes: {:?}\nllm_tokens: {}\n{:?}",
+        //     String::from_utf8_lossy(&self.llm_bytes),
+        //     trie.tokens_dbg(&self.llm_tokens),
+        //     self.llm_tokens
+        // );
 
         // TODO maybe remove in future
         if self.llm_bytes != trie.decode(&self.llm_tokens) {

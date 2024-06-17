@@ -249,6 +249,9 @@ def main():
         '"' + byte_range(b"A", b"Z") + one_or_more(byte_range(b"a", b"z")) + '"'
     )
 
+    prompt = ""
+    grm = "This is a" + select(name="text", options=["", "nope"])
+
     # grm = "Q: 7 * 8\nA: " + gen("text", regex="[0-9]+", max_tokens=20) + "\n"
 
     max_tokens = 250

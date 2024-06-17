@@ -159,12 +159,16 @@ fn grammar_from_json(input: GrammarWithLexer) -> Result<(LexerSpec, Grammar)> {
                 grm.make_terminal(lhs, idx)?;
             }
             Node::String { literal, .. } => {
-                let idx = lexer_spec.add_simple_literal(
-                    format!("str_{}", grm.sym_name(lhs)),
-                    &literal,
-                    input.contextual.unwrap_or(DEFAULT_CONTEXTUAL),
-                )?;
-                grm.make_terminal(lhs, idx)?;
+                if literal.is_empty() {
+                    grm.add_rule(lhs, vec![])?;
+                } else {
+                    let idx = lexer_spec.add_simple_literal(
+                        format!("str_{}", grm.sym_name(lhs)),
+                        &literal,
+                        input.contextual.unwrap_or(DEFAULT_CONTEXTUAL),
+                    )?;
+                    grm.make_terminal(lhs, idx)?;
+                }
             }
             Node::GenGrammar { data, props } => {
                 let mut data = data.clone();
