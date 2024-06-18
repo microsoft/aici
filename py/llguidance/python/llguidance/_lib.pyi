@@ -27,7 +27,7 @@ class LLTokenizer:
         prefix of the text, and then fallback to greedy_tokenize() for the last
         few bytes.
         """
-    
+
     def tokenize_str(self, text: str) -> List[int]:
         """
         Same as tokenize_bytes, but for strings.
@@ -69,6 +69,12 @@ class LLInterpreter:
     def deep_copy(self) -> "LLInterpreter":
         """
         Create a deep copy of the interpreter.
+        """
+
+    def is_accepting(self) -> bool:
+        """
+        Check if the last mid_process() call resulted in overall accepting state
+        of the parser.
         """
 
     def process_prompt(self, prompt: List[TokenId]) -> List[TokenId]:

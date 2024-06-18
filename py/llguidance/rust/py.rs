@@ -5,7 +5,11 @@ use aici_abi::{
     toktree::{self, TokTrie},
     MidProcessArg, TokenId, TokenizerEnv,
 };
-use aici_llguidance_ctrl::{api::TopLevelGrammar, output::{ParserOutput, Reporter}, TokenParser};
+use aici_llguidance_ctrl::{
+    api::TopLevelGrammar,
+    output::{ParserOutput, Reporter},
+    TokenParser,
+};
 use pyo3::{exceptions::PyValueError, prelude::*};
 use serde::{Deserialize, Serialize};
 
@@ -53,6 +57,10 @@ impl LLInterpreter {
 
     fn deep_copy(&self) -> Self {
         self.clone()
+    }
+
+    fn is_accepting(&self) -> bool {
+        self.inner.mid_process_was_accepting()
     }
 
     fn process_prompt(&mut self, prompt: Vec<TokenId>) -> Vec<TokenId> {

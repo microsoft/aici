@@ -37,6 +37,7 @@ pub struct TokenParser {
     // this is empty for top-level parser,
     // and the previous grm_bytes for sub-parsers
     previous_grm_bytes: Vec<u8>,
+    mid_process_was_accepting: bool,
 
     first_token_of_eos_marker: TokenId,
     max_tokens_total: usize,
@@ -78,6 +79,7 @@ impl TokenParser {
             log_level,
             token_env,
             mid_process_start_time,
+            mid_process_was_accepting: false,
             parser,
             parser_llm_tokens_offset: 0,
             parser_stack: Vec::new(),
@@ -102,6 +104,10 @@ impl TokenParser {
 
     pub fn final_bytes(&self) -> &[u8] {
         &self.llm_bytes[self.grm_prefix.len()..]
+    }
+
+    pub fn mid_process_was_accepting(&self) -> bool {
+        self.mid_process_was_accepting
     }
 
     pub fn bytes_since(&mut self, mut idx: usize) -> &[u8] {
@@ -181,6 +187,8 @@ impl TokenParser {
 
     fn mid_process_inner(&mut self, mut arg: MidProcessArg) -> MidProcessResult {
         let start_time = std::time::Instant::now();
+
+        self.mid_process_was_accepting = false;
 
         infoln!(self, "\n");
         let trie = self.token_env.tok_trie();
@@ -287,9 +295,9 @@ impl TokenParser {
             }
         }
 
-        if arg.tokens.contains(&trie.eos_token()) {
-            return MidProcessResult::stop();
-        }
+        // if arg.tokens.contains(&trie.eos_token()) {
+        //     return MidProcessResult::stop();
+        // }
 
         let new_forced = grm_bytes[self.llm_bytes.len()..].to_vec();
         let mut token_prefix = Vec::new();
@@ -330,13 +338,16 @@ impl TokenParser {
         }
 
         let inner_done = {
+            let empty_token_prefix = token_prefix.is_empty();
             let is_accepting = self.parser.is_accepting();
             let can_advance = self.parser.can_advance();
-            let inner_done = is_accepting && !can_advance;
+            let inner_done = empty_token_prefix && is_accepting && !can_advance;
             infoln!(
                 self,
-                "inner_done: {inner_done}; can_advance: {can_advance}; accept: {is_accepting}"
+                "inner_done: {inner_done}; can_advance: {can_advance}; accept: {is_accepting}; empty_token_prefix: {empty_token_prefix}"
             );
+            self.mid_process_was_accepting =
+                is_accepting && empty_token_prefix && self.parser_stack.is_empty();
             inner_done
         };
 
@@ -378,6 +389,7 @@ impl TokenParser {
         );
 
         if set.num_set() == 0 {
+            infoln!(self, "no tokens allowed, stopping");
             return MidProcessResult::stop();
         }
 
