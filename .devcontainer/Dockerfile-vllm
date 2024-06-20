@@ -11,6 +11,10 @@ ENV NVTE_FRAMEWORK=pytorch
 COPY vllm-requirements.txt /tmp/requirements.txt
 RUN pip install -r /tmp/requirements.txt
 
+# Uninstall the transformer engine that comes with the base image.
+# Otherwise it will cause error when importing vLLM (LLAVA models).
+RUN pip uninstall -y transformer_engine 
+
 # crashes docker?
 # RUN pip install -v -U git+https://github.com/facebookresearch/xformers.git@main#egg=xformers
 
