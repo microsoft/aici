@@ -133,6 +133,18 @@ function stats(fn) {
   const ones = byteCounts.map((c, i) => c == 1 ? i : undefined).filter(x => x !== undefined)
   const zeros = byteCounts.map((c, i) => c == 0 ? i : undefined).filter(x => x !== undefined)
   console.log("Byte counts:", { ones, zeros })
+
+  const merged = {}
+  for (const merge of tokenizer.model.merges) {
+    const words = merge.split(' ');
+    if (words.length != 2) {
+      console.log("Bad merge: ", merge)
+    }
+    merged[words[0]] = true
+    merged[words[1]] = true
+  }
+  console.log("Num merges:", tokenizer.model.merges.length)
+  console.log("Num merged tokens:", Object.keys(merged).length)
 }
 
 function permute(arr) {

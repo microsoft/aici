@@ -13,10 +13,12 @@ use crate::{
 };
 use aici_abi::{
     bytes::limit_str, toktree::TokTrie, Branch, MidProcessArg, ProcessResultOffset, SeqId,
+    TokenizerEnv,
 };
 use aicirt::{bintokens::find_tokenizer, futexshm::ServerChannel, shm::ShmAllocator, *};
 use anyhow::{anyhow, ensure, Result};
 use base64::{self, Engine as _};
+use bintokens::ByteTokenizerEnv;
 use clap::Parser;
 use hex;
 use hostimpl::GlobalInfo;
@@ -1099,15 +1101,17 @@ fn bench_hashmap() {
 
 fn save_tokenizer(cli: &Cli) {
     let filename = cli.save_tokenizer.as_deref().unwrap();
-    let tokenizer = find_tokenizer(&cli.tokenizer).unwrap();
-    let tokens = tokenizer.token_bytes();
 
+    let tokenizer = find_tokenizer(&cli.tokenizer).unwrap();
+    let env = ByteTokenizerEnv::new(tokenizer);
+
+    let tokens = env.tokenizer.token_bytes();
     log::info!(
         "TokTrie building: {:?} wl={}",
-        tokenizer.tokrx_info(),
+        env.tokenizer.tokrx_info(),
         tokens.len()
     );
-    let trie = TokTrie::from(&tokenizer.tokrx_info(), &tokens);
+    let trie = &env.tok_trie;
     trie.check_against(&tokens);
 
     let bytes = trie.serialize();
@@ -1119,6 +1123,27 @@ fn save_tokenizer(cli: &Cli) {
 
     std::fs::write(filename, &bytes).unwrap();
     println!("wrote {}, {} bytes", filename, bytes.len());
+
+    if false {
+        for (a, abytes) in tokens.iter().enumerate() {
+            let mut ts = trie.alloc_token_set();
+            let a = a as u32;
+            for (b, bbytes) in tokens.iter().enumerate() {
+                let b = b as u32;
+                let mut bytes = abytes.to_vec();
+                bytes.extend_from_slice(bbytes);
+                let r = env.tokenize_bytes(&bytes);
+                if r.len() == 2 && r[0] == a && r[1] == b {
+                    ts.allow_token(b);
+                }
+            }
+
+            let neg = ts.num_set() > 15000;
+            let ts = if neg { ts.negated() } else { ts };
+            let elts = ts.iter().collect::<Vec<_>>();
+            println!("{a} ==> {neg} {elts:?}");
+        }
+    }
 }
 
 fn install_from_cmdline(cli: &Cli, wasm_ctx: WasmContext, shm: Rc<ShmAllocator>) {
