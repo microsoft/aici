@@ -8,7 +8,7 @@ if [ "X$AZURE_GUIDANCE_URL" = "X" ] ; then
 fi
 export AZURE_GUIDANCE_URL
 
-FILES="tests/models/test_azure_guidance.py tests/models/test_greedy.py"
+FILES="tests/need_credentials/test_azure_guidance.py tests/model_integration/test_greedy.py"
 
 if [ "X$1" != "X" ] ; then
     if [ "X${1:0:2}" = "X::" ] ; then
