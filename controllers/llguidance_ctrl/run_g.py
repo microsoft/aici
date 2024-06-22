@@ -254,6 +254,12 @@ def main():
 
     # grm = "Q: 7 * 8\nA: " + gen("text", regex="[0-9]+", max_tokens=20) + "\n"
 
+    prompt = "a,b,c,"
+    grm = one_or_more(byte_range(b"a", b"g")+",")
+    
+    prompt = ""
+    grm = one_or_more(byte_range(b"b", b"f"))
+
     max_tokens = 250
 
     serialized = grm.ll_serialize()

@@ -397,6 +397,9 @@ impl Parser {
     }
 
     pub fn is_accepting(&self) -> bool {
+        if self.curr_row_bytes().len() > 0 {
+            return false;
+        }
         for pos in self.after_dots() {
             let after_dot = self.grammar.sym_idx_at(pos);
             if after_dot == CSymIdx::NULL {
@@ -1021,7 +1024,7 @@ impl Parser {
                         .as_ref()
                         .unwrap();
                     let mut bytes = Vec::new();
-                    let capture_start = item.start_pos() ;
+                    let capture_start = item.start_pos();
                     if capture_start < curr_idx {
                         bytes = self.row_infos[capture_start..curr_idx]
                             .iter()
