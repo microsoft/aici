@@ -59,19 +59,10 @@ The rest:
 
 ## TODO
 
-- [x] look-aheads, locations
-- [x] simplification of Byte/ByteSet in Or
-- [x] place limit on number of states, ast nodes, etc.
-- [x] alphabet size == 0 => invalid state loop
-
-### Future improvements
-
-- [x] build trie from alternative over many strings in re parser
-- [x] check on surrogate handling (use UTF8Sequences from regex-syntax?)
-- [x] use hashbrown raw table for VecHashMap
-- [x] tests
 - [ ] more simplification rules from sbre
 - [ ] benchmarks
 - [ ] extend regex-syntax for `&` and `~` operators
 - [ ] add `& valid-utf8` if there is negation somewhere 
-- [ ] either make `derivative()` non-recursive (`mk_*()` already are?) or limit the regex depth
+- [x] either make `derivative()` non-recursive (`mk_*()` already are?) or limit the regex depth
+- [ ] implement relevance check for `&` and `~` operators; see [symbolic derivatives](https://easychair.org/publications/open/cgnn)
+- [ ] add `.forced_byte()` method on state descriptor

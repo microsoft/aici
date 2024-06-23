@@ -137,6 +137,16 @@ impl<'a> Expr<'a> {
         }
     }
 
+    pub fn args(&self) -> &[ExprRef] {
+        match self {
+            Expr::Concat(_, es) | Expr::Or(_, es) | Expr::And(_, es) => es,
+            Expr::Lookahead(_, e, _) | Expr::Not(_, e) | Expr::Repeat(_, e, _, _) => {
+                std::slice::from_ref(e)
+            }
+            Expr::EmptyString | Expr::NoMatch | Expr::Byte(_) | Expr::ByteSet(_) => &[],
+        }
+    }
+
     fn get_flags(&self) -> ExprFlags {
         match self {
             Expr::EmptyString => ExprFlags::NULLABLE,
