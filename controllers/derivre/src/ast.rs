@@ -305,7 +305,7 @@ impl ExprSet {
         self.exprs.len()
     }
 
-    pub fn bytes(&self) -> usize {
+    pub fn num_bytes(&self) -> usize {
         self.exprs.num_bytes()
     }
 
@@ -387,16 +387,26 @@ impl ExprSet {
         self.get_flags(id).is_nullable()
     }
 
+    #[inline(always)]
     pub fn map<K: Eq + PartialEq + Hash, V: Clone>(
         &mut self,
         r: ExprRef,
         cache: &mut std::collections::HashMap<K, V>,
         mk_key: impl Fn(ExprRef) -> K,
         mut process: impl FnMut(&mut ExprSet, Vec<V>, ExprRef) -> V,
-    ) {
+    ) -> V {
+        if let Some(d) = cache.get(&mk_key(r)) {
+            return d.clone();
+        }
+
         let mut todo = vec![r];
         while let Some(r) = todo.last() {
             let r = *r;
+            let idx = mk_key(r);
+            if cache.contains_key(&idx) {
+                todo.pop();
+                continue;
+            }
             let e = self.get(r);
             let is_concat = matches!(e, Expr::Concat(_, _));
             let todo_len = todo.len();
@@ -422,8 +432,9 @@ impl ExprSet {
             todo.pop(); // pop r
 
             let v = process(self, mapped, r);
-            cache.insert(mk_key(r), v);
+            cache.insert(idx, v);
         }
+        cache[&mk_key(r)].clone()
     }
 }
 

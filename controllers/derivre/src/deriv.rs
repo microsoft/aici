@@ -14,54 +14,27 @@ macro_rules! debug {
 
 #[derive(Clone)]
 pub struct DerivCache {
-    pub exprs: ExprSet,
     pub num_deriv: usize,
     state_table: HashMap<(ExprRef, u8), ExprRef>,
-    next_byte_cache: HashMap<ExprRef, NextByte>,
 }
 
 impl DerivCache {
-    pub fn new(exprs: ExprSet) -> Self {
+    pub fn new() -> Self {
         DerivCache {
-            exprs,
             num_deriv: 0,
             state_table: HashMap::default(),
-            next_byte_cache: HashMap::default(),
         }
     }
 
-    pub fn derivative(&mut self, e: ExprRef, b: u8) -> ExprRef {
-        let idx = (e, b);
-        if let Some(&d) = self.state_table.get(&idx) {
-            return d;
-        }
-
-        self.derivative_inner(e, b);
-        let d = self.state_table[&idx];
-        debug!(
-            "deriv({}) via {} = {}",
-            self.exprs.expr_to_string(e),
-            self.exprs.pp().byte_to_string(b),
-            self.exprs.expr_to_string(d)
-        );
-
-        d
-    }
-
-    /// Estimate the size of the regex tables in bytes.
-    pub fn num_bytes(&self) -> usize {
-        self.exprs.bytes() + self.state_table.len() * 8 * std::mem::size_of::<isize>()
-    }
-
-    fn derivative_inner(&mut self, r: ExprRef, b: u8) {
-        self.exprs.map(
+    pub fn derivative(&mut self, exprs: &mut ExprSet, r: ExprRef, b: u8) -> ExprRef {
+        exprs.map(
             r,
             &mut self.state_table,
             |r| (r, b),
             |exprs, deriv, r| {
                 let e = exprs.get(r);
                 self.num_deriv += 1;
-                match e {
+                let d = match e {
                     Expr::EmptyString | Expr::NoMatch | Expr::ByteSet(_) | Expr::Byte(_) => {
                         if e.matches_byte(b) {
                             ExprRef::EMPTY_STRING
@@ -101,62 +74,20 @@ impl DerivCache {
                             exprs.mk_lookahead(deriv[0], offset + 1)
                         }
                     }
-                }
+                };
+                debug!(
+                    "deriv({}) via {} = {}",
+                    exprs.expr_to_string(r),
+                    exprs.pp().byte_to_string(b),
+                    exprs.expr_to_string(d)
+                );
+                d
             },
         )
     }
 
-    pub fn next_byte(&mut self, e: ExprRef) -> NextByte {
-        if let Some(&nb) = self.next_byte_cache.get(&e) {
-            return nb;
-        }
-        self.next_byte_inner(e);
-        self.next_byte_cache[&e]
-    }
-
-    fn next_byte_inner(&mut self, r: ExprRef) {
-        self.exprs.map(
-            r,
-            &mut self.next_byte_cache,
-            |r| r,
-            |exprs, next_byte, r| {
-                let e = exprs.get(r);
-                match e {
-                    Expr::EmptyString => NextByte::ForcedEOI,
-                    Expr::NoMatch => NextByte::Dead,
-                    Expr::ByteSet(_) => NextByte::SomeBytes,
-                    Expr::Byte(b) => NextByte::ForcedByte(b),
-                    Expr::And(_, args) => {
-                        let mut found = next_byte[0];
-                        for child in next_byte.iter().skip(1) {
-                            found = found & *child;
-                            if found == NextByte::Dead {
-                                break;
-                            }
-                        }
-                        match found {
-                            NextByte::ForcedByte(b) => {
-                                for a in args {
-                                    if !exprs.get(*a).matches_byte(b) {
-                                        return NextByte::Dead;
-                                    }
-                                }
-                            }
-                            NextByte::ForcedEOI => {
-                                for a in args {
-                                    if !exprs.is_nullable(*a) {
-                                        return NextByte::Dead;
-                                    }
-                                }
-                            }
-                            NextByte::Dead => {}
-                            NextByte::SomeBytes => {}
-                        }
-                        found
-                    }
-                    _ => todo!(),
-                }
-            },
-        )
+    /// Estimate the size of the regex tables in bytes.
+    pub fn num_bytes(&self) -> usize {
+        self.state_table.len() * 8 * std::mem::size_of::<isize>()
     }
 }

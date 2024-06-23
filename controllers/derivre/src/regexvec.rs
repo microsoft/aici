@@ -62,6 +62,7 @@ impl Debug for StateID {
 
 #[derive(Clone)]
 pub struct RegexVec {
+    exprs: ExprSet,
     cache: DerivCache,
     alphabet_mapping: Vec<u8>,
     alphabet_size: usize,
@@ -139,7 +140,7 @@ impl RegexVec {
             return len;
         }
         let mut max_len = 0;
-        let exprs = &self.cache.exprs;
+        let exprs = &self.exprs;
         Self::iter_state(&self.rx_sets, state, |(_, e)| {
             max_len = max_len.max(exprs.possible_lookahead_len(e));
         });
@@ -157,7 +158,7 @@ impl RegexVec {
             return len;
         }
         let mut res = None;
-        let exprs = &self.cache.exprs;
+        let exprs = &self.exprs;
         Self::iter_state(&self.rx_sets, state, |(idx2, e)| {
             if res.is_none() && exprs.is_nullable(e) {
                 assert!(idx == idx2 as isize);
@@ -219,14 +220,15 @@ impl RegexVec {
 
     /// Estimate the size of the regex tables in bytes.
     pub fn num_bytes(&self) -> usize {
-        self.cache.num_bytes()
+        self.exprs.num_bytes()
+            + self.cache.num_bytes()
             + self.state_descs.len() * 100
             + self.state_table.len() * std::mem::size_of::<StateID>()
             + self.rx_sets.num_bytes()
     }
 
     pub fn total_fuel_spent(&self) -> usize {
-        self.cache.exprs.cost
+        self.exprs.cost
     }
 
     pub fn set_max_states(&mut self, max_states: usize) {
@@ -270,7 +272,7 @@ impl RegexVec {
             "regexps: {} with {} nodes (+ {} derived via {} derivatives with total fuel {}), states: {}; transitions: {}; bytes: {}; alphabet size: {} {}",
             self.rx_list.len(),
             self.num_ast_nodes,
-            self.cache.exprs.len() - self.num_ast_nodes,
+            self.exprs.len() - self.num_ast_nodes,
             self.cache.num_deriv,
             self.total_fuel_spent(),
             self.state_descs.len(),
@@ -370,7 +372,8 @@ impl RegexVec {
         assert!(id == StateID::MISSING.as_u32());
 
         let mut r = RegexVec {
-            cache: DerivCache::new(exprset),
+            cache: DerivCache::new(),
+            exprs: exprset,
             alphabet_mapping: mapping,
             rx_list,
             rx_sets,
@@ -384,7 +387,7 @@ impl RegexVec {
         };
 
         // disable expensive optimizations after initial construction
-        r.cache.exprs.optimize = false;
+        r.exprs.optimize = false;
 
         r.insert_state(vec![]);
         // also append state for the "MISSING"
@@ -425,7 +428,7 @@ impl RegexVec {
     }
 
     fn exprs(&self) -> &ExprSet {
-        &self.cache.exprs
+        &self.exprs
     }
 
     fn compute_state_desc(&self, state: StateID) -> StateDesc {
@@ -464,18 +467,18 @@ impl RegexVec {
         let mut vec_desc = vec![];
 
         let d0 = self.cache.num_deriv;
-        let c0 = self.cache.exprs.cost;
+        let c0 = self.exprs.cost;
         let t0 = std::time::Instant::now();
 
         Self::iter_state(&self.rx_sets, state, |(idx, e)| {
-            let d = self.cache.derivative(e, b);
+            let d = self.cache.derivative(&mut self.exprs, e, b);
             if d != ExprRef::NO_MATCH {
                 Self::push_rx(&mut vec_desc, idx, d);
             }
         });
 
         let num_deriv = self.cache.num_deriv - d0;
-        let cost = self.cache.exprs.cost - c0;
+        let cost = self.exprs.cost - c0;
         self.fuel = self.fuel.saturating_sub(cost);
         if self.fuel == 0 {
             self.enter_error_state();

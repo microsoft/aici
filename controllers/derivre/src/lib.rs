@@ -1,4 +1,5 @@
 mod deriv;
+mod nextbyte;
 mod hashcons;
 
 mod ast;
