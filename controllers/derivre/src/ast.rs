@@ -1,4 +1,7 @@
-use std::ops::RangeInclusive;
+use std::{
+    hash::Hash,
+    ops::{BitAnd, BitOr, RangeInclusive},
+};
 
 use crate::{hashcons::VecHashCons, pp::PrettyPrinter};
 use bytemuck_derive::{Pod, Zeroable};
@@ -382,5 +385,86 @@ impl ExprSet {
 
     pub fn is_nullable(&self, id: ExprRef) -> bool {
         self.get_flags(id).is_nullable()
+    }
+
+    pub fn map<K: Eq + PartialEq + Hash, V: Clone>(
+        &mut self,
+        r: ExprRef,
+        cache: &mut std::collections::HashMap<K, V>,
+        mk_key: impl Fn(ExprRef) -> K,
+        mut process: impl FnMut(&mut ExprSet, Vec<V>, ExprRef) -> V,
+    ) {
+        let mut todo = vec![r];
+        while let Some(r) = todo.last() {
+            let r = *r;
+            let e = self.get(r);
+            let is_concat = matches!(e, Expr::Concat(_, _));
+            let todo_len = todo.len();
+            let eargs = e.args();
+            let mut mapped = Vec::with_capacity(eargs.len());
+            for a in eargs {
+                let a = *a;
+                let brk = is_concat && !self.is_nullable(a);
+                if let Some(v) = cache.get(&mk_key(a)) {
+                    mapped.push(v.clone());
+                } else {
+                    todo.push(a);
+                }
+                if brk {
+                    break;
+                }
+            }
+
+            if todo.len() != todo_len {
+                continue; // retry children first
+            }
+
+            todo.pop(); // pop r
+
+            let v = process(self, mapped, r);
+            cache.insert(mk_key(r), v);
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum NextByte {
+    ForcedByte(u8),
+    ForcedEOI,
+    SomeBytes,
+    Dead,
+}
+
+impl BitAnd for NextByte {
+    type Output = Self;
+    fn bitand(self, other: Self) -> Self {
+        if self == other {
+            self
+        } else {
+            if self == NextByte::SomeBytes {
+                other
+            } else if other == NextByte::SomeBytes {
+                self
+            } else {
+                NextByte::Dead
+            }
+        }
+    }
+}
+
+impl BitOr for NextByte {
+    type Output = Self;
+    fn bitor(self, other: Self) -> Self {
+        if self == other {
+            self
+        } else {
+            if self == NextByte::Dead {
+                other
+            } else if other == NextByte::Dead {
+                self
+            } else {
+                NextByte::SomeBytes
+            }
+        }
     }
 }

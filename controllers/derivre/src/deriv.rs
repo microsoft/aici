@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use crate::ast::{Expr, ExprRef, ExprSet};
+use crate::ast::{Expr, ExprRef, ExprSet, NextByte};
 
 const DEBUG: bool = false;
 macro_rules! debug {
@@ -17,6 +17,7 @@ pub struct DerivCache {
     pub exprs: ExprSet,
     pub num_deriv: usize,
     state_table: HashMap<(ExprRef, u8), ExprRef>,
+    next_byte_cache: HashMap<ExprRef, NextByte>,
 }
 
 impl DerivCache {
@@ -25,6 +26,7 @@ impl DerivCache {
             exprs,
             num_deriv: 0,
             state_table: HashMap::default(),
+            next_byte_cache: HashMap::default(),
         }
     }
 
@@ -52,93 +54,109 @@ impl DerivCache {
     }
 
     fn derivative_inner(&mut self, r: ExprRef, b: u8) {
-        let mut todo = vec![r];
-        while let Some(r) = todo.last() {
-            let idx = (*r, b);
-            if self.state_table.contains_key(&idx) {
-                todo.pop();
-                continue;
-            }
-            let e = self.exprs.get(*r);
-            let is_concat = matches!(e, Expr::Concat(_, _));
-            let todo_len = todo.len();
-            for a in e.args() {
-                let brk = is_concat && !self.exprs.is_nullable(*a);
-                if self.state_table.contains_key(&(*a, b)) {
-                    continue;
-                }
-                todo.push(*a);
-                if brk {
-                    break;
-                }
-            }
-
-            if todo.len() != todo_len {
-                continue; // retry children first
-            }
-
-            todo.pop(); // pop r
-
-            self.num_deriv += 1;
-            let res = match e {
-                Expr::EmptyString | Expr::NoMatch | Expr::ByteSet(_) | Expr::Byte(_) => {
-                    if e.matches_byte(b) {
-                        ExprRef::EMPTY_STRING
-                    } else {
-                        ExprRef::NO_MATCH
-                    }
-                }
-                Expr::And(_, args) => {
-                    let mut args = args.to_vec();
-                    for i in 0..args.len() {
-                        args[i] = self.state_table[&(args[i], b)];
-                    }
-                    self.exprs.mk_and(args)
-                }
-                Expr::Or(_, args) => {
-                    let mut args = args.to_vec();
-                    for i in 0..args.len() {
-                        args[i] = self.state_table[&(args[i], b)];
-                    }
-                    self.exprs.mk_or(args)
-                }
-                Expr::Not(_, e) => {
-                    let inner = self.state_table[&(e, b)];
-                    self.exprs.mk_not(inner)
-                }
-                Expr::Repeat(_, e, min, max) => {
-                    let head = self.state_table[&(e, b)];
-                    let max = if max == u32::MAX {
-                        u32::MAX
-                    } else {
-                        max.saturating_sub(1)
-                    };
-                    let tail = self.exprs.mk_repeat(e, min.saturating_sub(1), max);
-                    self.exprs.mk_concat(vec![head, tail])
-                }
-                Expr::Concat(_, args) => {
-                    let mut args = args.to_vec();
-                    let mut or_branches = vec![];
-                    for i in 0..args.len() {
-                        let nullable = self.exprs.is_nullable(args[i]);
-                        args[i] = self.state_table[&(args[i], b)];
-                        or_branches.push(self.exprs.mk_concat(args[i..].to_vec()));
-                        if !nullable {
-                            break;
+        self.exprs.map(
+            r,
+            &mut self.state_table,
+            |r| (r, b),
+            |exprs, deriv, r| {
+                let e = exprs.get(r);
+                self.num_deriv += 1;
+                match e {
+                    Expr::EmptyString | Expr::NoMatch | Expr::ByteSet(_) | Expr::Byte(_) => {
+                        if e.matches_byte(b) {
+                            ExprRef::EMPTY_STRING
+                        } else {
+                            ExprRef::NO_MATCH
                         }
                     }
-                    self.exprs.mk_or(or_branches)
-                }
-                Expr::Lookahead(_, e, offset) => {
-                    if e == ExprRef::EMPTY_STRING {
-                        ExprRef::NO_MATCH
-                    } else {
-                        let inner = self.state_table[&(e, b)];
-                        self.exprs.mk_lookahead(inner, offset + 1)
+                    Expr::And(_, _) => exprs.mk_and(deriv),
+                    Expr::Or(_, _) => exprs.mk_or(deriv),
+                    Expr::Not(_, _) => exprs.mk_not(deriv[0]),
+                    Expr::Repeat(_, _, min, max) => {
+                        let max = if max == u32::MAX {
+                            u32::MAX
+                        } else {
+                            max.saturating_sub(1)
+                        };
+                        let tail = exprs.mk_repeat(deriv[0], min.saturating_sub(1), max);
+                        exprs.mk_concat(vec![deriv[0], tail])
+                    }
+                    Expr::Concat(_, args) => {
+                        let mut or_branches = vec![];
+                        let mut args = args.to_vec();
+                        for i in 0..args.len() {
+                            let nullable = exprs.is_nullable(args[i]);
+                            args[i] = deriv[i];
+                            or_branches.push(exprs.mk_concat(args[i..].to_vec()));
+                            if !nullable {
+                                break;
+                            }
+                        }
+                        exprs.mk_or(or_branches)
+                    }
+                    Expr::Lookahead(_, e, offset) => {
+                        if e == ExprRef::EMPTY_STRING {
+                            ExprRef::NO_MATCH
+                        } else {
+                            exprs.mk_lookahead(deriv[0], offset + 1)
+                        }
                     }
                 }
-            };
-            self.state_table.insert(idx, res);
+            },
+        )
+    }
+
+    pub fn next_byte(&mut self, e: ExprRef) -> NextByte {
+        if let Some(&nb) = self.next_byte_cache.get(&e) {
+            return nb;
         }
+        self.next_byte_inner(e);
+        self.next_byte_cache[&e]
+    }
+
+    fn next_byte_inner(&mut self, r: ExprRef) {
+        self.exprs.map(
+            r,
+            &mut self.next_byte_cache,
+            |r| r,
+            |exprs, next_byte, r| {
+                let e = exprs.get(r);
+                match e {
+                    Expr::EmptyString => NextByte::ForcedEOI,
+                    Expr::NoMatch => NextByte::Dead,
+                    Expr::ByteSet(_) => NextByte::SomeBytes,
+                    Expr::Byte(b) => NextByte::ForcedByte(b),
+                    Expr::And(_, args) => {
+                        let mut found = next_byte[0];
+                        for child in next_byte.iter().skip(1) {
+                            found = found & *child;
+                            if found == NextByte::Dead {
+                                break;
+                            }
+                        }
+                        match found {
+                            NextByte::ForcedByte(b) => {
+                                for a in args {
+                                    if !exprs.get(*a).matches_byte(b) {
+                                        return NextByte::Dead;
+                                    }
+                                }
+                            }
+                            NextByte::ForcedEOI => {
+                                for a in args {
+                                    if !exprs.is_nullable(*a) {
+                                        return NextByte::Dead;
+                                    }
+                                }
+                            }
+                            NextByte::Dead => {}
+                            NextByte::SomeBytes => {}
+                        }
+                        found
+                    }
+                    _ => todo!(),
+                }
+            },
+        )
     }
 }
