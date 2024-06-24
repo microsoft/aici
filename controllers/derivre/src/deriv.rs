@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use crate::ast::{Expr, ExprRef, ExprSet, NextByte};
+use crate::ast::{Expr, ExprRef, ExprSet};
 
 const DEBUG: bool = false;
 macro_rules! debug {

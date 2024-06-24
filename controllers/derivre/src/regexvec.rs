@@ -3,7 +3,13 @@ use std::{collections::HashSet, fmt::Debug};
 use anyhow::Result;
 
 use crate::{
-    ast::{ExprRef, ExprSet}, bytecompress::ByteCompressor, deriv::DerivCache, hashcons::VecHashCons, nextbyte::NextByteCache, pp::PrettyPrinter, SimpleVob
+    ast::{ExprRef, ExprSet, NextByte},
+    bytecompress::ByteCompressor,
+    deriv::DerivCache,
+    hashcons::VecHashCons,
+    nextbyte::NextByteCache,
+    pp::PrettyPrinter,
+    SimpleVob,
 };
 
 const DEBUG: bool = false;
@@ -81,6 +87,7 @@ pub struct StateDesc {
 
     possible_lookahead_len: Option<usize>,
     lookahead_len: Option<Option<usize>>,
+    next_byte: Option<NextByte>,
 }
 
 impl StateDesc {
@@ -218,9 +225,28 @@ impl RegexVec {
     pub fn num_bytes(&self) -> usize {
         self.exprs.num_bytes()
             + self.deriv.num_bytes()
+            + self.next_byte.num_bytes()
             + self.state_descs.len() * 100
             + self.state_table.len() * std::mem::size_of::<StateID>()
             + self.rx_sets.num_bytes()
+    }
+
+    /// Check if the there is only one transition out of state.
+    /// This is an approximation - see docs for NextByte.
+    pub fn next_byte(&mut self, state: StateID) -> NextByte {
+        let desc = &mut self.state_descs[state.as_usize()];
+        if let Some(next_byte) = desc.next_byte {
+            return next_byte;
+        }
+
+        let mut next_byte = NextByte::Dead;
+        Self::iter_state(&self.rx_sets, state, |(_, e)| {
+            if next_byte != NextByte::SomeBytes {
+                next_byte = next_byte | self.next_byte.next_byte(&self.exprs, e);
+            }
+        });
+        desc.next_byte = Some(next_byte);
+        next_byte
     }
 
     pub fn total_fuel_spent(&self) -> usize {
@@ -436,6 +462,7 @@ impl RegexVec {
             possible: SimpleVob::alloc(self.rx_list.len()),
             possible_lookahead_len: None,
             lookahead_len: None,
+            next_byte: None,
         };
         Self::iter_state(&self.rx_sets, state, |(idx, e)| {
             res.possible.set(idx, true);

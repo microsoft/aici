@@ -440,9 +440,14 @@ impl ExprSet {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum NextByte {
+    /// Transition via any other byte, or EOI leads to a dead state.
     ForcedByte(u8),
+    /// Transition via any byte leads to a dead state but EOI is possible.
     ForcedEOI,
+    /// Transition via some bytes *may be* possible.
     SomeBytes,
+    /// The current state is dead.
+    /// Should be only true for NO_MATCH.
     Dead,
 }
 

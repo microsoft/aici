@@ -1,6 +1,6 @@
 mod deriv;
-mod nextbyte;
 mod hashcons;
+mod nextbyte;
 
 mod ast;
 mod bytecompress;
@@ -11,7 +11,7 @@ mod regexvec;
 mod simplify;
 mod syntax;
 
-pub use ast::ExprRef;
+pub use ast::{ExprRef, NextByte};
 pub use regexvec::{RegexVec, StateDesc, StateID};
 
 use aici_abi::svob;

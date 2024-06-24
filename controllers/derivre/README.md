@@ -65,4 +65,4 @@ The rest:
 - [ ] add `& valid-utf8` if there is negation somewhere 
 - [x] either make `derivative()` non-recursive (`mk_*()` already are?) or limit the regex depth
 - [ ] implement relevance check for `&` and `~` operators; see [symbolic derivatives](https://easychair.org/publications/open/cgnn)
-- [ ] add `.forced_byte()` method on state descriptor
+- [x] add `.forced_byte()` method on state descriptor
