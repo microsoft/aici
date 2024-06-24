@@ -41,6 +41,8 @@ impl ExprSet {
             } else {
                 ExprRef::NO_MATCH
             }
+        } else if e == ExprRef::EMPTY_STRING {
+            ExprRef::EMPTY_STRING
         } else if min > max {
             panic!();
             // ExprRef::NO_MATCH

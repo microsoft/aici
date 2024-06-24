@@ -67,6 +67,7 @@ pub struct RegexVec {
     deriv: DerivCache,
     next_byte: NextByteCache,
     alphabet_mapping: Vec<u8>,
+    inv_alphabet_mapping: Vec<Option<u8>>,
     alphabet_size: usize,
     rx_list: Vec<ExprRef>,
     rx_sets: VecHashCons,
@@ -245,6 +246,16 @@ impl RegexVec {
                 next_byte = next_byte | self.next_byte.next_byte(&self.exprs, e);
             }
         });
+        let next_byte = match next_byte {
+            NextByte::ForcedByte(b) => {
+                if let Some(b) = self.inv_alphabet_mapping[b as usize] {
+                    NextByte::ForcedByte(b)
+                } else {
+                    NextByte::SomeBytes
+                }
+            }
+            _ => next_byte,
+        };
         desc.next_byte = Some(next_byte);
         next_byte
     }
@@ -380,6 +391,18 @@ impl RegexVec {
             )
         };
 
+        let mut inv_alphabet_mapping = vec![None; alphabet_size];
+        let mut num_mappings = vec![0; alphabet_size];
+        for (i, &b) in mapping.iter().enumerate() {
+            inv_alphabet_mapping[b as usize] = Some(i as u8);
+            num_mappings[b as usize] += 1;
+        }
+        for i in 0..alphabet_size {
+            if num_mappings[i] != 1 {
+                inv_alphabet_mapping[i] = None;
+            }
+        }
+
         debug!(
             "compressed: {}",
             exprset.expr_to_string_with_info(rx_list[0])
@@ -398,6 +421,7 @@ impl RegexVec {
             next_byte: NextByteCache::new(),
             exprs: exprset,
             alphabet_mapping: mapping,
+            inv_alphabet_mapping,
             rx_list,
             rx_sets,
             alphabet_size,
