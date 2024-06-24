@@ -339,12 +339,16 @@ impl TokenParser {
 
         let inner_done = {
             let empty_token_prefix = token_prefix.is_empty();
-            let is_accepting = self.parser.is_accepting();
+            let row_accepting = self.parser.row_is_accepting();
+            let no_pending_bytes = !self.parser.has_pending_lexeme_bytes();
+            let is_accepting = no_pending_bytes && row_accepting;
             let can_advance = self.parser.can_advance();
             let inner_done = empty_token_prefix && is_accepting && !can_advance;
             infoln!(
                 self,
-                "inner_done: {inner_done}; can_advance: {can_advance}; accept: {is_accepting}; empty_token_prefix: {empty_token_prefix}"
+                "inner_done: {inner_done}; can_advance: {can_advance}; \
+                accept: {is_accepting} (row:{row_accepting} & lexer:{no_pending_bytes}); \
+                empty_token_prefix: {empty_token_prefix}"
             );
             self.mid_process_was_accepting =
                 is_accepting && empty_token_prefix && self.parser_stack.is_empty();

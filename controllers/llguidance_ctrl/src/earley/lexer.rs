@@ -1,6 +1,6 @@
 use aici_abi::svob::SimpleVob;
 use anyhow::Result;
-use derivre::{RegexVec, StateDesc};
+use derivre::{NextByte, RegexVec, StateDesc};
 use std::fmt::Debug;
 
 use super::lexerspec::{LexemeIdx, LexerSpec, EOS_MARKER};
@@ -27,6 +27,7 @@ pub type StateID = derivre::StateID;
 pub struct PreLexeme {
     pub idx: LexemeIdx,
     pub byte: Option<u8>,
+    pub byte_next_row: bool,
     pub hidden_len: usize,
 }
 
@@ -89,6 +90,7 @@ impl Lexer {
         LexerResult::Lexeme(PreLexeme {
             idx: LexemeIdx::new(idx),
             byte: None,
+            byte_next_row: false,
             hidden_len: 0,
         })
     }
@@ -117,17 +119,20 @@ impl Lexer {
                 LexerResult::Lexeme(PreLexeme {
                     idx: LexemeIdx::from_state_desc(info),
                     byte: Some(byte),
+                    byte_next_row: true,
                     hidden_len: self.dfa.possible_lookahead_len(prev),
                 })
             } else {
                 LexerResult::Error
             }
         } else {
+            let can_stop_now = !self.spec.greedy || self.dfa.next_byte(state) == NextByte::ForcedEOI;
             let info = self.state_info(state);
-            if !self.spec.greedy && info.is_accepting() {
+            if can_stop_now && info.is_accepting() {
                 LexerResult::Lexeme(PreLexeme {
                     idx: LexemeIdx::from_state_desc(info),
                     byte: Some(byte),
+                    byte_next_row: false,
                     hidden_len: self.dfa.possible_lookahead_len(state),
                 })
             } else {

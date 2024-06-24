@@ -396,10 +396,11 @@ impl Parser {
         false
     }
 
-    pub fn is_accepting(&self) -> bool {
-        if self.curr_row_bytes().len() > 0 {
-            return false;
-        }
+    pub fn has_pending_lexeme_bytes(&self) -> bool {
+        self.curr_row_bytes().len() > 0
+    }
+
+    pub fn row_is_accepting(&self) -> bool {
         for pos in self.after_dots() {
             let after_dot = self.grammar.sym_idx_at(pos);
             if after_dot == CSymIdx::NULL {
@@ -410,6 +411,10 @@ impl Parser {
             }
         }
         false
+    }
+
+    pub fn is_accepting(&self) -> bool {
+        !self.has_pending_lexeme_bytes() && self.row_is_accepting()
     }
 
     pub fn lexer_allows_eos(&mut self) -> bool {
@@ -1273,9 +1278,16 @@ impl Parser {
     /// lexer_byte is the byte that led to producing the lexeme.
     #[inline(always)]
     fn advance_parser(&mut self, pre_lexeme: PreLexeme) -> bool {
-        let byte_next_row = self.lexer_spec().greedy;
-        let transition_byte = if byte_next_row { pre_lexeme.byte } else { None };
-        let lexeme_byte = if byte_next_row { None } else { pre_lexeme.byte };
+        let transition_byte = if pre_lexeme.byte_next_row {
+            pre_lexeme.byte
+        } else {
+            None
+        };
+        let lexeme_byte = if pre_lexeme.byte_next_row {
+            None
+        } else {
+            pre_lexeme.byte
+        };
         let lexeme_idx = pre_lexeme.idx;
 
         let lexeme = if self.scratch.definitive {
@@ -1296,7 +1308,7 @@ impl Parser {
             if pre_lexeme.hidden_len > 0 {
                 self.handle_hidden_bytes(no_hidden, lexeme_byte, pre_lexeme);
             } else {
-                if byte_next_row && no_hidden.lexer_state.is_dead() {
+                if pre_lexeme.byte_next_row && no_hidden.lexer_state.is_dead() {
                     return false;
                 }
                 self.lexer_stack.push(no_hidden);
