@@ -5,16 +5,6 @@ use crate::{
     deriv::DerivCache,
 };
 
-const DEBUG: bool = false;
-macro_rules! debug {
-    ($($arg:tt)*) => {
-        if DEBUG {
-            eprint!("  ");
-            eprintln!($($arg)*);
-        }
-    };
-}
-
 #[derive(Clone)]
 pub struct NextByteCache {
     next_byte_cache: HashMap<ExprRef, NextByte>,
@@ -48,7 +38,7 @@ impl NextByteCache {
                     Expr::NoMatch => NextByte::Dead,
                     Expr::ByteSet(_) => NextByte::SomeBytes,
                     Expr::Byte(b) => NextByte::ForcedByte(b),
-                    Expr::And(_, args) => {
+                    Expr::And(_, _) => {
                         let mut found = next_byte[0];
                         for child in next_byte.iter().skip(1) {
                             found = found & *child;
@@ -56,27 +46,31 @@ impl NextByteCache {
                                 break;
                             }
                         }
-                        match found {
-                            NextByte::ForcedByte(b) => {
-                                for a in args.to_vec() {
-                                    if deriv.derivative(exprs, a, b) == ExprRef::NO_MATCH {
-                                        return NextByte::Dead;
-                                    }
-                                }
+                        // if any branch forces a byte or EOI, the other branches
+                        // have to allow it, otherwise the whole thing would
+                        // be NO_MATCH
+                        found
+                    }
+                    Expr::Or(_, _) => {
+                        let mut found = next_byte[0];
+                        for child in next_byte.iter().skip(1) {
+                            found = found | *child;
+                            if found == NextByte::SomeBytes {
+                                break;
                             }
-                            NextByte::ForcedEOI => {
-                                for a in args {
-                                    if !exprs.is_nullable(*a) {
-                                        return NextByte::Dead;
-                                    }
-                                }
-                            }
-                            NextByte::Dead => {}
-                            NextByte::SomeBytes => {}
                         }
                         found
                     }
-                    _ => todo!(),
+                    Expr::Not(_, _) => NextByte::SomeBytes,
+                    Expr::Repeat(_, _, min, _) => {
+                        if min == 0 {
+                            NextByte::SomeBytes
+                        } else {
+                            next_byte[0]
+                        }
+                    }
+                    Expr::Concat(_, _) => next_byte[0],
+                    Expr::Lookahead(_, _, _) => next_byte[0],
                 }
             },
         )

@@ -3,12 +3,7 @@ use std::{collections::HashSet, fmt::Debug};
 use anyhow::Result;
 
 use crate::{
-    ast::{ExprRef, ExprSet},
-    bytecompress::ByteCompressor,
-    deriv::DerivCache,
-    hashcons::VecHashCons,
-    pp::PrettyPrinter,
-    SimpleVob,
+    ast::{ExprRef, ExprSet}, bytecompress::ByteCompressor, deriv::DerivCache, hashcons::VecHashCons, nextbyte::NextByteCache, pp::PrettyPrinter, SimpleVob
 };
 
 const DEBUG: bool = false;
@@ -63,7 +58,8 @@ impl Debug for StateID {
 #[derive(Clone)]
 pub struct RegexVec {
     exprs: ExprSet,
-    cache: DerivCache,
+    deriv: DerivCache,
+    next_byte: NextByteCache,
     alphabet_mapping: Vec<u8>,
     alphabet_size: usize,
     rx_list: Vec<ExprRef>,
@@ -221,7 +217,7 @@ impl RegexVec {
     /// Estimate the size of the regex tables in bytes.
     pub fn num_bytes(&self) -> usize {
         self.exprs.num_bytes()
-            + self.cache.num_bytes()
+            + self.deriv.num_bytes()
             + self.state_descs.len() * 100
             + self.state_table.len() * std::mem::size_of::<StateID>()
             + self.rx_sets.num_bytes()
@@ -273,7 +269,7 @@ impl RegexVec {
             self.rx_list.len(),
             self.num_ast_nodes,
             self.exprs.len() - self.num_ast_nodes,
-            self.cache.num_deriv,
+            self.deriv.num_deriv,
             self.total_fuel_spent(),
             self.state_descs.len(),
             self.num_transitions,
@@ -372,7 +368,8 @@ impl RegexVec {
         assert!(id == StateID::MISSING.as_u32());
 
         let mut r = RegexVec {
-            cache: DerivCache::new(),
+            deriv: DerivCache::new(),
+            next_byte: NextByteCache::new(),
             exprs: exprset,
             alphabet_mapping: mapping,
             rx_list,
@@ -466,18 +463,18 @@ impl RegexVec {
 
         let mut vec_desc = vec![];
 
-        let d0 = self.cache.num_deriv;
+        let d0 = self.deriv.num_deriv;
         let c0 = self.exprs.cost;
         let t0 = std::time::Instant::now();
 
         Self::iter_state(&self.rx_sets, state, |(idx, e)| {
-            let d = self.cache.derivative(&mut self.exprs, e, b);
+            let d = self.deriv.derivative(&mut self.exprs, e, b);
             if d != ExprRef::NO_MATCH {
                 Self::push_rx(&mut vec_desc, idx, d);
             }
         });
 
-        let num_deriv = self.cache.num_deriv - d0;
+        let num_deriv = self.deriv.num_deriv - d0;
         let cost = self.exprs.cost - c0;
         self.fuel = self.fuel.saturating_sub(cost);
         if self.fuel == 0 {
