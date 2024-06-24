@@ -45,13 +45,13 @@ impl DerivCache {
                     Expr::And(_, _) => exprs.mk_and(deriv),
                     Expr::Or(_, _) => exprs.mk_or(deriv),
                     Expr::Not(_, _) => exprs.mk_not(deriv[0]),
-                    Expr::Repeat(_, _, min, max) => {
+                    Expr::Repeat(_, e, min, max) => {
                         let max = if max == u32::MAX {
                             u32::MAX
                         } else {
                             max.saturating_sub(1)
                         };
-                        let tail = exprs.mk_repeat(deriv[0], min.saturating_sub(1), max);
+                        let tail = exprs.mk_repeat(e, min.saturating_sub(1), max);
                         exprs.mk_concat(vec![deriv[0], tail])
                     }
                     Expr::Concat(_, args) => {
