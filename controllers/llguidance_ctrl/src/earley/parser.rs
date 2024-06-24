@@ -894,8 +894,15 @@ impl Parser {
 
         debug!("  flush_lexer() OK");
 
-        if lexer_eos {
-            return true;
+        if mv == ModelVariable::eos_token() {
+            if lexer_eos {
+                return true;
+            }
+            // This is really for EOS tokens in the middle of the grammar
+            // that need to be eaten; so don't check for accepting state here
+            // if self.is_accepting() {
+            //     return true;
+            // }
         }
 
         self.scratch.new_row(self.curr_row().last_item);

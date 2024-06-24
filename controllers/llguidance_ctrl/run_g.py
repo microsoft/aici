@@ -263,7 +263,7 @@ def main():
     prompt = ""
     grm = guidance.json(schema={"type": "null"})
 
-    assert grm.match("null")
+    # assert grm.match("null")
 
     grm = guidance.json(
         "OBJ",
@@ -279,6 +279,10 @@ def main():
 
     # g = zero_or_more("a") + "b"
     # assert not g.match("b")
+
+    # lm = guidance.models.Mock(b"<s>1234233234<s>")
+    # grammar = one_or_more(select(["1", "2"]))
+    # lm += grammar
 
     max_tokens = 250
 

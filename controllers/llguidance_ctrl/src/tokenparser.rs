@@ -202,6 +202,8 @@ impl TokenParser {
             trie.tokens_dbg(&arg.tokens)
         );
 
+        let mut has_eos = false;
+
         if arg.tokens.contains(&trie.eos_token()) {
             assert!(arg.tokens.len() == 1);
             if self.parser.scan_model_variable(ModelVariable::eos_token()) {
@@ -209,7 +211,9 @@ impl TokenParser {
                 infoln!(self, "scanned eos_token");
                 arg.tokens.clear();
             } else {
+                infoln!(self, "didn't scan eos_token; saving");
                 arg.save_tokens(&mut self.llm_tokens);
+                has_eos = true;
             }
         } else {
             arg.save_tokens(&mut self.llm_tokens);
@@ -345,10 +349,10 @@ impl TokenParser {
             let no_pending_bytes = !self.parser.has_pending_lexeme_bytes();
             let is_accepting = no_pending_bytes && row_accepting;
             let can_advance = self.parser.can_advance();
-            let inner_done = empty_token_prefix && is_accepting && !can_advance;
+            let inner_done = empty_token_prefix && is_accepting && (!can_advance || has_eos);
             infoln!(
                 self,
-                "inner_done: {inner_done}; can_advance: {can_advance}; \
+                "inner_done: {inner_done}; can_advance: {can_advance} (eos:{has_eos}); \
                 accept: {is_accepting} (row:{row_accepting} & lexer:{no_pending_bytes}); \
                 empty_token_prefix: {empty_token_prefix}"
             );
