@@ -1,4 +1,4 @@
-use derivre::RegexVec;
+use derivre::{NextByte, RegexVec};
 
 fn check_is_match(rx: &mut RegexVec, s: &str, exp: bool) {
     if rx.is_match(s) == exp {
@@ -255,4 +255,81 @@ fn unicode_case() {
     let mut rx = RegexVec::new_single("Żółw").unwrap();
     match_(&mut rx, "Żółw");
     no_match_many(&mut rx, &["żółw", "ŻÓŁW", "żóŁw"]);
+}
+
+fn validate_next_byte(rx: &mut RegexVec, data: Vec<(NextByte, u8)>) {
+    let mut s = rx.initial_state_all();
+    for (exp, b) in data {
+        let nb = rx.next_byte(s);
+        if nb != exp {
+            panic!("expected {:?}, got {:?}", exp, nb);
+        }
+        if nb == NextByte::ForcedEOI {
+            assert!(rx.state_desc(s).is_accepting());
+        } else if nb == NextByte::Dead {
+            assert!(s.is_dead());
+        }
+        s = rx.transition(s, b);
+        if nb == NextByte::ForcedEOI {
+            assert!(s.is_dead());
+            assert!(rx.next_byte(s) == NextByte::Dead);
+        }
+    }
+}
+
+#[test]
+fn next_byte() {
+    let mut rx = RegexVec::new_single("a[bc]*dx").unwrap();
+    validate_next_byte(
+        &mut rx,
+        vec![
+            (NextByte::ForcedByte(b'a'), b'a'),
+            (NextByte::SomeBytes, b'b'),
+            (NextByte::SomeBytes, b'd'),
+            (NextByte::ForcedByte(b'x'), b'x'),
+            (NextByte::ForcedEOI, b'x'),
+        ],
+    );
+
+    rx = RegexVec::new_vec(&["abdx", "aBDy"]).unwrap();
+    validate_next_byte(
+        &mut rx,
+        vec![
+            (NextByte::ForcedByte(b'a'), b'a'),
+            (NextByte::SomeBytes, b'B'),
+            (NextByte::ForcedByte(b'D'), b'D'),
+        ],
+    );
+
+    rx = RegexVec::new_vec(&["abdx|aBDy"]).unwrap();
+    validate_next_byte(
+        &mut rx,
+        vec![
+            (NextByte::ForcedByte(b'a'), b'a'),
+            (NextByte::SomeBytes, b'B'),
+            (NextByte::ForcedByte(b'D'), b'D'),
+        ],
+    );
+
+    rx = RegexVec::new_vec(&["foo", "bar"]).unwrap();
+    validate_next_byte(
+        &mut rx,
+        vec![
+            (NextByte::SomeBytes, b'f'),
+            (NextByte::ForcedByte(b'o'), b'o'),
+            (NextByte::ForcedByte(b'o'), b'o'),
+            (NextByte::ForcedEOI, b'X'),
+        ],
+    );
+
+    rx = RegexVec::new_vec(&["foo|bar"]).unwrap();
+    validate_next_byte(
+        &mut rx,
+        vec![
+            (NextByte::SomeBytes, b'f'),
+            (NextByte::ForcedByte(b'o'), b'o'),
+            (NextByte::ForcedByte(b'o'), b'o'),
+            (NextByte::ForcedEOI, b'X'),
+        ],
+    );
 }
