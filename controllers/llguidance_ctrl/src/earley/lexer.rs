@@ -95,6 +95,21 @@ impl Lexer {
         })
     }
 
+    pub fn check_for_single_byte_lexeme(&mut self, state: StateID, b: u8) -> Option<PreLexeme> {
+        if self.dfa.next_byte(state) == NextByte::ForcedEOI {
+            let info = self.state_info(state);
+            let idx = info.possible.first_bit_set().expect("no allowed lexemes");
+            Some(PreLexeme {
+                idx: LexemeIdx::new(idx),
+                byte: Some(b),
+                byte_next_row: false,
+                hidden_len: 0,
+            })
+        } else {
+            None
+        }
+    }
+
     #[inline(always)]
     pub fn advance(&mut self, prev: StateID, byte: u8, enable_logging: bool) -> LexerResult {
         let state = self.dfa.transition(prev, byte);
@@ -126,7 +141,8 @@ impl Lexer {
                 LexerResult::Error
             }
         } else {
-            let can_stop_now = !self.spec.greedy || self.dfa.next_byte(state) == NextByte::ForcedEOI;
+            let can_stop_now =
+                !self.spec.greedy || self.dfa.next_byte(state) == NextByte::ForcedEOI;
             let info = self.state_info(state);
             if can_stop_now && info.is_accepting() {
                 LexerResult::Lexeme(PreLexeme {

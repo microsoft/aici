@@ -268,7 +268,7 @@ def main():
     grm = guidance.json(
         schema={"type": "object", "properties": {"a": {"type": "integer"}}}
     )
-    assert grm.match('{"a": 1} ')
+    assert grm.match('{"a": 1}')
 
     max_tokens = 250
 

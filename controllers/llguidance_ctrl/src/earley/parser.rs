@@ -1192,9 +1192,10 @@ impl Parser {
             // save lexeme at the last row, before we mess with the stack
             self.row_infos[added_row - 1].lexeme = lexeme;
             debug!(
-                "lex: re-start {:?} (via {:?})",
+                "lex: re-start {:?} (via {:?}); allowed: {}",
                 no_hidden.lexer_state,
-                transition_byte.map(|b| b as char)
+                transition_byte.map(|b| b as char),
+                self.lexer_spec().dbg_lexeme_set(added_row_lexemes)
             );
         }
         no_hidden
@@ -1303,13 +1304,39 @@ impl Parser {
         };
 
         if scan_res {
-            let no_hidden = self.lexer_state_for_added_row(lexeme, transition_byte);
+            let mut no_hidden = self.lexer_state_for_added_row(lexeme, transition_byte);
 
             if pre_lexeme.hidden_len > 0 {
                 self.handle_hidden_bytes(no_hidden, lexeme_byte, pre_lexeme);
             } else {
                 if pre_lexeme.byte_next_row && no_hidden.lexer_state.is_dead() {
                     return false;
+                }
+                if let Some(b) = transition_byte {
+                    if let Some(second_lexeme) = self
+                        .lexer
+                        .check_for_single_byte_lexeme(no_hidden.lexer_state, b)
+                    {
+                        if self.scratch.definitive {
+                            debug!("single byte lexeme: {:?}", second_lexeme);
+                        }
+                        no_hidden.byte = None;
+                        self.lexer_stack.push(no_hidden);
+
+                        // disallow recursion depth > 2
+                        assert!(pre_lexeme.byte_next_row);
+                        assert!(!second_lexeme.byte_next_row);
+
+                        let r = self.advance_parser(second_lexeme);
+                        if r {
+                            let new_top = self.lexer_stack.pop().unwrap();
+                            *self.lexer_stack.last_mut().unwrap() = new_top;
+                            return true;
+                        } else {
+                            self.lexer_stack.pop();
+                            return false;
+                        }
+                    }
                 }
                 self.lexer_stack.push(no_hidden);
             }
