@@ -114,7 +114,9 @@ impl TokenParser {
         idx += self.grm_prefix.len();
         let endp = std::cmp::min(
             self.llm_bytes.len(),
-            self.previous_grm_bytes.len() + self.parser.hidden_start(),
+            self.previous_grm_bytes
+                .len()
+                .saturating_add(self.parser.hidden_start()),
         );
         if idx >= self.llm_bytes.len() || idx >= endp {
             return &[];

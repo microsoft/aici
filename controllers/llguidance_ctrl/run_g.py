@@ -266,9 +266,19 @@ def main():
     assert grm.match("null")
 
     grm = guidance.json(
-        schema={"type": "object", "properties": {"a": {"type": "integer"}}}
+        "OBJ",
+        schema={
+            "type": "object",
+            "additionalProperties": False,
+            "properties": {"age": {"type": "integer"}},
+        }
     )
-    assert grm.match('{"a": 1}')
+    # assert grm.match('{"a": 1}')
+    prompt = ""
+    grm = "Here's some JSON:\n" + grm  # + "\nAnd some more:\n" + grm
+
+    # g = zero_or_more("a") + "b"
+    # assert not g.match("b")
 
     max_tokens = 250
 
@@ -281,6 +291,9 @@ def main():
         f.write(llguidance_arg)
     print("JSON size:", len(llguidance_arg), "saved to tmp/llguidance_arg.json")
     # print(json.dumps(llguidance_json, indent=2))
+
+    # with open("tmp/long_json_grammar_req.json", "r") as f:
+    #     llguidance_arg = f.read()
 
     # read current script file
     # with open(__file__) as f:
