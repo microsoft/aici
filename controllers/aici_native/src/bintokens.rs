@@ -260,7 +260,7 @@ impl ByteTokenizer {
         for (id, info) in added.iter() {
             if info.special {
                 match info.content.as_str() {
-                    "</s>" | "<|endoftext|>" => res.eos_token = *id,
+                    "</s>" | "<|endoftext|>" | "<|end_of_text|>" => res.eos_token = *id,
                     _ => {}
                 }
                 res.special.insert(info.content.clone(), *id);
