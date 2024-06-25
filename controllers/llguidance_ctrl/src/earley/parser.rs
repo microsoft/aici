@@ -1106,13 +1106,13 @@ impl Parser {
             if self.scratch.definitive {
                 debug!(
                     "  push row: {}",
-                    self.lexer_spec().dbg_lexeme_set(&allowed_lexemes)
+                    self.lexer_spec().dbg_lexeme_set(&allowed_lexemes),
                 );
             }
 
             let idx = self.num_rows();
             let row = self.scratch.work_row(allowed_lexemes);
-            if self.lexer_stack.len() == 1 || self.rows.len() == idx {
+            if self.rows.len() == 0 || self.rows.len() == idx {
                 self.rows.push(row);
             } else {
                 self.rows[idx] = row;
