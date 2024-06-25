@@ -74,21 +74,21 @@ class Req:
         # print(f"send #{self.req_no}; {len(self.prompt)}B + {self.tokens} toks")
         if bench_py:
             self.r = pyaici.rest.run_controller(
-                self.prompt,
+                prompt=self.prompt,
                 max_tokens=self.tokens,
                 controller="pyctrl-latest",
                 controller_arg=bench_py,
             )
         elif bench_js:
             self.r = pyaici.rest.run_controller(
-                self.prompt,
+                prompt=self.prompt,
                 max_tokens=self.tokens,
                 controller="jsctrl-latest",
                 controller_arg=bench_js,
             )
         else:
             self.r = pyaici.rest.run_controller(
-                self.prompt, ignore_eos=True, max_tokens=self.tokens
+                prompt=self.prompt, ignore_eos=True, max_tokens=self.tokens
             )
         self.tps = self.tokens / (time.monotonic() - t0)
         print(":", end="", flush=True)
