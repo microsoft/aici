@@ -349,7 +349,7 @@ impl Grammar {
         let mut outp = Grammar::new();
 
         let start_data = self.sym_data(self.start());
-        if start_data.is_terminal() {
+        if start_data.is_terminal() || start_data.rules.iter().any(|r| r.rhs.is_empty()) {
             let new_start = outp.fresh_symbol("_start_repl");
             outp.add_rule(new_start, vec![SymIdx(1)]).unwrap();
         }
