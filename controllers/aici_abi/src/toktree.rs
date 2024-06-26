@@ -213,8 +213,12 @@ impl TokTrie {
         let num_set = ts1.num_set();
         let max_tok = std::cmp::min(max_examples, num_set);
         let mut token_names = Vec::new();
+        // make sure we include EOS first if it's allowed
+        if ts1.is_allowed(self.info.tok_eos) {
+            token_names.push("EOS".to_string());
+        }
         for idx in 0..self.vocab_size() {
-            if ts1.is_allowed(idx as TokenId) {
+            if idx as TokenId != self.info.tok_eos && ts1.is_allowed(idx as TokenId) {
                 token_names.push(self.token_dbg(idx as TokenId));
                 if token_names.len() >= max_tok {
                     break;
