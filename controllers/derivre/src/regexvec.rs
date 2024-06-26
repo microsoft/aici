@@ -83,19 +83,19 @@ pub struct RegexVec {
 #[derive(Clone, Debug)]
 pub struct StateDesc {
     pub state: StateID,
-    pub lowest_accepting: isize, // -1 if no accepting state
+    pub lowest_accepting: Option<usize>,
     pub accepting: SimpleVob,
     pub possible: SimpleVob,
 
     possible_lookahead_len: Option<usize>,
     lookahead_len: Option<Option<usize>>,
     next_byte: Option<NextByte>,
-    lowest_match: Option<Option<usize>>,
+    lowest_match: Option<Option<(usize, usize)>>,
 }
 
 impl StateDesc {
     pub fn is_accepting(&self) -> bool {
-        self.lowest_accepting != -1
+        self.lowest_accepting.is_some()
     }
 
     pub fn is_dead(&self) -> bool {
@@ -122,6 +122,10 @@ impl RegexVec {
             acc.push(ast);
         }
         Ok(Self::new_with_exprset(&exprset, &acc, None))
+    }
+
+    pub fn lazy_regexes(&self) -> &SimpleVob {
+        &self.lazy
     }
 
     pub fn initial_state_all(&mut self) -> StateID {
@@ -155,10 +159,10 @@ impl RegexVec {
 
     pub fn lookahead_len_for_state(&mut self, state: StateID) -> Option<usize> {
         let desc = &mut self.state_descs[state.as_usize()];
-        let idx = desc.lowest_accepting;
-        if idx < 0 {
+        if desc.lowest_accepting.is_none() {
             return None;
         }
+        let idx = desc.lowest_accepting.unwrap();
         if let Some(len) = desc.lookahead_len {
             return len;
         }
@@ -166,7 +170,7 @@ impl RegexVec {
         let exprs = &self.exprs;
         for (idx2, e) in iter_state(&self.rx_sets, state) {
             if res.is_none() && exprs.is_nullable(e) {
-                assert!(idx == idx2 as isize);
+                assert!(idx == idx2);
                 res = Some(exprs.lookahead_len(e).unwrap_or(0));
             }
         }
@@ -236,7 +240,7 @@ impl RegexVec {
     /// Return index of lowest matching regex if any.
     /// Lazy regexes match as soon as they accept, while greedy only
     /// if they accept and force EOI.
-    pub fn lowest_match(&mut self, state: StateID) -> Option<usize> {
+    pub fn lowest_match(&mut self, state: StateID) -> Option<(usize, usize)> {
         let desc = &mut self.state_descs[state.as_usize()];
         if let Some(lowest_match) = desc.lowest_match {
             return lowest_match;
@@ -247,7 +251,8 @@ impl RegexVec {
                 continue;
             }
             if self.lazy[idx] || self.next_byte.next_byte(&self.exprs, e) == NextByte::ForcedEOI {
-                res = Some(idx);
+                let len = self.exprs.possible_lookahead_len(e);
+                res = Some((idx, len));
                 break;
             }
         }
@@ -503,7 +508,7 @@ impl RegexVec {
     fn compute_state_desc(&self, state: StateID) -> StateDesc {
         let mut res = StateDesc {
             state,
-            lowest_accepting: -1,
+            lowest_accepting: None,
             accepting: SimpleVob::alloc(self.rx_list.len()),
             possible: SimpleVob::alloc(self.rx_list.len()),
             possible_lookahead_len: None,
@@ -515,8 +520,8 @@ impl RegexVec {
             res.possible.set(idx, true);
             if self.exprs().is_nullable(e) {
                 res.accepting.set(idx, true);
-                if res.lowest_accepting == -1 {
-                    res.lowest_accepting = idx as isize;
+                if res.lowest_accepting.is_none() {
+                    res.lowest_accepting = Some(idx);
                 }
             }
         }

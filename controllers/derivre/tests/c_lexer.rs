@@ -80,14 +80,14 @@ fn c_lexer() {
         if new_state == StateID::DEAD {
             let desc = rx.state_desc(state);
             if desc.is_accepting() {
-                let lexeme = &patterns[desc.lowest_accepting as usize];
+                let lexeme = &patterns[desc.lowest_accepting.unwrap()];
                 println!(
                     "matched: {:?} {:?}",
                     // desc,
                     lexeme,
                     &C_SAMPLE[start_idx..idx]
                 );
-                if patterns[desc.lowest_accepting as usize] == "if" {
+                if patterns[desc.lowest_accepting.unwrap()] == "if" {
                     num_if += 1;
                 }
                 start_idx = idx;

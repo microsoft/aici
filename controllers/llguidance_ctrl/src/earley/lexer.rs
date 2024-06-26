@@ -3,7 +3,7 @@ use anyhow::Result;
 use derivre::{NextByte, RegexVec, StateDesc};
 use std::fmt::Debug;
 
-use super::lexerspec::{LexemeIdx, LexerSpec, EOS_MARKER};
+use super::lexerspec::{LexemeIdx, LexerSpec};
 
 const DEBUG: bool = true;
 
@@ -18,6 +18,7 @@ macro_rules! debug {
 #[derive(Clone)]
 pub struct Lexer {
     dfa: RegexVec,
+    #[allow(dead_code)]
     spec: LexerSpec,
 }
 
@@ -69,19 +70,8 @@ impl Lexer {
         self.dfa.state_desc(state)
     }
 
-    pub fn allows_eos(&mut self, state: StateID, allowed_eos_lexemes: &SimpleVob) -> bool {
-        if allowed_eos_lexemes.is_zero() {
-            return false;
-        }
-
-        let state = self.dfa.transition_bytes(state, EOS_MARKER);
-
-        let accepting = &self.dfa.state_desc(state).accepting;
-        if accepting.and_is_zero(allowed_eos_lexemes) {
-            false
-        } else {
-            true
-        }
+    pub fn allows_eos(&mut self, state: StateID) -> bool {
+        self.state_info(state).is_accepting()
     }
 
     pub fn force_lexeme_end(&self, prev: StateID) -> LexerResult {
@@ -98,23 +88,16 @@ impl Lexer {
     }
 
     pub fn try_lexeme_end(&mut self, prev: StateID) -> LexerResult {
-        let prev_accepting = self.state_info(prev).accepting.first_bit_set();
-        let eos_state = self.dfa.transition_bytes(prev, EOS_MARKER);
-        let eos_accepting = self.state_info(eos_state).accepting.first_bit_set();
-
-        let idx = match (prev_accepting, eos_accepting) {
-            (Some(p), Some(e)) if p < e => p,
-            (_, Some(e)) => e,
-            (Some(p), None) => p,
-            (None, None) => return LexerResult::Error,
-        };
-
-        LexerResult::Lexeme(PreLexeme {
-            idx: LexemeIdx::new(idx),
-            byte: None,
-            byte_next_row: false,
-            hidden_len: 0,
-        })
+        if let Some(idx) = self.state_info(prev).lowest_accepting {
+            LexerResult::Lexeme(PreLexeme {
+                idx: LexemeIdx::new(idx),
+                byte: None,
+                byte_next_row: false,
+                hidden_len: 0,
+            })
+        } else {
+            LexerResult::Error
+        }
     }
 
     pub fn check_for_single_byte_lexeme(&mut self, state: StateID, b: u8) -> Option<PreLexeme> {
@@ -139,51 +122,37 @@ impl Lexer {
         if enable_logging {
             let info = self.state_info(state);
             debug!(
-                "lex: {:?} -{:?}-> {:?}, acpt={}",
+                "lex: {:?} -{:?}-> {:?}, acpt={:?}",
                 prev, byte as char, state, info.lowest_accepting
             );
         }
 
         if state.is_dead() {
-            if !self.spec.greedy {
-                return LexerResult::Error;
-            }
-
             let info = self.dfa.state_desc(prev);
             // we take the first token that matched
             // (eg., "while" will match both keyword and identifier, but keyword is first)
-            if info.is_accepting() {
+            if let Some(idx) = info.lowest_accepting {
                 LexerResult::Lexeme(PreLexeme {
-                    idx: LexemeIdx::from_state_desc(info),
+                    idx: LexemeIdx::new(idx),
                     byte: Some(byte),
                     byte_next_row: true,
-                    hidden_len: self.dfa.possible_lookahead_len(prev),
+                    hidden_len: 0,
                 })
             } else {
                 LexerResult::Error
             }
         } else {
-            let can_stop_now =
-                !self.spec.greedy || self.dfa.next_byte(state) == NextByte::ForcedEOI;
-            let info = self.state_info(state);
-            if can_stop_now && info.is_accepting() {
+            if let Some((idx, hidden_len)) = self.dfa.lowest_match(state) {
                 LexerResult::Lexeme(PreLexeme {
-                    idx: LexemeIdx::from_state_desc(info),
+                    idx: LexemeIdx::new(idx),
                     byte: Some(byte),
                     byte_next_row: false,
-                    hidden_len: self.dfa.possible_lookahead_len(state),
+                    hidden_len,
                 })
             } else {
                 LexerResult::State(state, byte)
             }
         }
-    }
-}
-
-impl LexemeIdx {
-    fn from_state_desc(desc: &StateDesc) -> Self {
-        assert!(desc.lowest_accepting >= 0);
-        LexemeIdx::new(desc.lowest_accepting as usize)
     }
 }
 

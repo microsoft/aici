@@ -5,7 +5,7 @@ use std::{fmt::Debug, hash::Hash};
 
 #[derive(Clone)]
 pub struct LexerSpec {
-    pub greedy: bool,
+    pub greedy: bool, // no longer used
     pub lexemes: Vec<LexemeSpec>,
     pub regex_builder: RegexBuilder,
 }
@@ -16,7 +16,7 @@ pub struct LexemeSpec {
     name: String,
     pub(crate) rx: RegexAst,
     compiled_rx: ExprRef,
-    ends_at_eos_only: bool,
+    lazy: bool,
     contextual: bool,
 }
 
@@ -39,12 +39,6 @@ impl LexemeIdx {
     }
 }
 
-// The first byte of EOS_MARKER should not occur in any token,
-// other than the token representing this byte itself.
-// We use 0xFF as it is not a valid UTF-8 byte.
-// Before we used 0x02 which was OK for all tokenizers we use.
-pub const EOS_MARKER: &'static [u8] = b"\xFF-EoS";
-
 impl LexemeSpec {
     /// Check if the lexeme always matches bytes, and has at least one more byte to spare.
     pub fn has_forced_bytes(&self, bytes: &[u8]) -> bool {
@@ -58,8 +52,8 @@ impl LexemeSpec {
 impl Debug for LexemeSpec {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "[{}] {} {:?}", self.idx.0, self.name, self.rx)?;
-        if self.ends_at_eos_only {
-            write!(f, " eos-only")?;
+        if self.lazy {
+            write!(f, " lazy")?;
         }
         if self.contextual {
             write!(f, " contextual")?;
@@ -84,6 +78,16 @@ impl LexerSpec {
         Ok(r)
     }
 
+    pub fn lazy_lexemes(&self) -> SimpleVob {
+        let mut v = SimpleVob::alloc(self.lexemes.len());
+        for (idx, lex) in self.lexemes.iter().enumerate() {
+            if lex.lazy {
+                v.set(idx, true);
+            }
+        }
+        v
+    }
+
     pub fn to_regex_vec(&self) -> RegexVec {
         // TODO
         // Find all non-contextual lexemes that are literals (we call them 'keywords')
@@ -92,7 +96,8 @@ impl LexerSpec {
         // Replace the regex R for the lexeme with (R & ~(K1|K2|...)) where K1...
         // are the conflicting keywords.
         let rx_list: Vec<_> = self.lexemes.iter().map(|lex| lex.compiled_rx).collect();
-        self.regex_builder.to_regex_vec(&rx_list)
+        self.regex_builder
+            .to_regex_vec(&rx_list, Some(self.lazy_lexemes()))
     }
 
     fn add_lexeme_spec(&mut self, mut spec: LexemeSpec) -> Result<LexemeIdx> {
@@ -117,7 +122,7 @@ impl LexerSpec {
             name: "".to_string(),
             rx: RegexAst::NoMatch,
             compiled_rx: ExprRef::INVALID,
-            ends_at_eos_only: false,
+            lazy: false,
             contextual: false,
         }
     }
@@ -128,19 +133,16 @@ impl LexerSpec {
         body_rx: RegexAst,
         stop_rx: RegexAst,
     ) -> Result<LexemeIdx> {
-        let ends_at_eos_only = matches!(stop_rx, RegexAst::NoMatch);
-        let rx = RegexAst::Concat(vec![
-            body_rx,
-            RegexAst::LookAhead(Box::new(if ends_at_eos_only {
-                RegexAst::ByteLiteral(EOS_MARKER.to_vec())
-            } else {
-                stop_rx
-            })),
-        ]);
+        let lazy = !matches!(stop_rx, RegexAst::NoMatch);
+        let rx = if lazy {
+            RegexAst::Concat(vec![body_rx, RegexAst::LookAhead(Box::new(stop_rx))])
+        } else {
+            body_rx
+        };
         self.add_lexeme_spec(LexemeSpec {
             name,
             rx,
-            ends_at_eos_only,
+            lazy,
             ..self.empty_spec()
         })
     }
@@ -200,16 +202,6 @@ impl LexerSpec {
 
     pub fn lexeme_spec(&self, idx: LexemeIdx) -> &LexemeSpec {
         &self.lexemes[idx.0]
-    }
-
-    pub fn eos_lexemes(&self) -> SimpleVob {
-        let mut v = SimpleVob::alloc(self.lexemes.len());
-        for (idx, lex) in self.lexemes.iter().enumerate() {
-            if lex.ends_at_eos_only {
-                v.set(idx, true);
-            }
-        }
-        v
     }
 }
 

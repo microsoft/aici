@@ -280,8 +280,14 @@ def main():
     prompt = ""
     grm = optional("A")
 
-    grm = "Q: Are dolphins fish?\nA: " + gen("dolphins", regex="Yes|No", max_tokens=10) + \
-        "\nQ: Are sharks fish?\nA: " + gen("sharks", regex="Yes|No", max_tokens=10)
+    grm = (
+        "Q: Are dolphins fish?\nA: "
+        + gen("dolphins", regex="Yes|No", max_tokens=10)
+        + "\nQ: Are sharks fish?\nA: "
+        + gen("sharks", regex="Yes|No", max_tokens=10)
+    )
+
+    grm = one_or_more(gen(regex="[a-z]"))
 
     # grm = "Q: 7 * 8\nA: " + gen("text", regex="[0-9]+", max_tokens=5)
 
@@ -296,6 +302,28 @@ def main():
     max_tokens = 250
 
     serialized = grm.ll_serialize()
+
+    # with open("tmp/long_json_grammar_req.json", "r") as f:
+    # with open("tmp/email_regex_grammar.json", "r") as f:
+    #     max_tokens = 2000
+    #     serialized = json.load(f)
+
+    x_serialized = {
+        "grammars": [
+            {
+                "greedy_lexer": False,
+                "nodes": [
+                    {"Join": {"sequence": [1]}},
+                    {"Join": {"sequence": [2, 3]}},
+                    {"Gen": {"body_rx": 0, "stop_rx": "", "temperature": None}},
+                    {"Select": {"among": [4, 5]}},
+                    {"Join": {"sequence": [3, 2]}},
+                    {"String": {"literal": ""}},
+                ],
+                "rx_nodes": [{"ByteSet": [0, 0, 0, 134217726, 0, 0, 0, 0]}],
+            }
+        ]
+    }
 
     x_serialized = {
         "grammars": [
@@ -318,7 +346,7 @@ def main():
                 "greedy_skip_rx": "[\\x20\\x0A\\x0D\\x09]+",
                 "nodes": [
                     {"Lexeme": {"rx": "-?(?:0|[1-9][0-9]*)", "contextual": False}}
-                    #{"Lexeme": {"rx": "[ab][ab]", "contextual": False}}
+                    # {"Lexeme": {"rx": "[ab][ab]", "contextual": False}}
                 ],
                 "rx_nodes": [],
             },

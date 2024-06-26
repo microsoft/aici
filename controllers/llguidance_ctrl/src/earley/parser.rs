@@ -20,7 +20,6 @@ use super::{
     grammar::{CGrammar, CSymIdx, CSymbol, ModelVariable, RuleIdx},
     lexer::{LexerResult, PreLexeme, StateID},
     lexerspec::{Lexeme, LexemeIdx, LexerSpec},
-    EOS_MARKER,
 };
 
 const TRACE: bool = false;
@@ -375,12 +374,6 @@ impl Parser {
 
         trie.compute_bias_ext(self, &mut set, start);
 
-        // clean damage from EOS_MARKER
-        if self.lexer_allows_eos() {
-            let first_token_of_eos_marker = trie.greedy_tokenize(EOS_MARKER)[0];
-            set.disallow_token(first_token_of_eos_marker);
-        }
-
         if set.num_set() == 1 && set.is_allowed(trie.eos_token()) {
             // we're going to be stopped outside - we better flush the lexer
             self.flush_lexer();
@@ -438,10 +431,8 @@ impl Parser {
     }
 
     pub fn lexer_allows_eos(&mut self) -> bool {
-        let mut allowed_eos = self.lexer_spec().eos_lexemes();
-        allowed_eos.and(&self.curr_row().allowed_lexemes);
         let curr = self.lexer_state();
-        self.lexer.allows_eos(curr.lexer_state, &allowed_eos)
+        self.lexer.allows_eos(curr.lexer_state)
     }
 
     fn item_to_string(&self, idx: usize) -> String {
