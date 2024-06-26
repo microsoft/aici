@@ -17,5 +17,5 @@ find = { where = ["python"] }
 target = "llguidance._lib"
 binding = "PyO3"
 debug = false
-# features = ["aici_llguidance_ctrl/logging"]
+features = ["aici_llguidance_ctrl/logging"]
 # See reference for RustExtension in https://setuptools-rust.readthedocs.io/en/latest/reference.html

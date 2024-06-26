@@ -271,14 +271,23 @@ def main():
             "type": "object",
             "additionalProperties": False,
             "properties": {"age": {"type": "integer"}},
-        }
+        },
     )
     # assert grm.match('{"a": 1}')
     prompt = ""
     grm = "Here's some JSON:\n" + grm  # + "\nAnd some more:\n" + grm
 
+    prompt = ""
+    grm = optional("A")
+
+    grm = "Q: Are dolphins fish?\nA: " + gen("dolphins", regex="Yes|No", max_tokens=10) + \
+        "\nQ: Are sharks fish?\nA: " + gen("sharks", regex="Yes|No", max_tokens=10)
+
+    # grm = "Q: 7 * 8\nA: " + gen("text", regex="[0-9]+", max_tokens=5)
+
     # g = zero_or_more("a") + "b"
-    # assert not g.match("b")
+    # assert g.match("b")
+    # assert g.match("ab")
 
     # lm = guidance.models.Mock(b"<s>1234233234<s>")
     # grammar = one_or_more(select(["1", "2"]))
@@ -287,8 +296,38 @@ def main():
     max_tokens = 250
 
     serialized = grm.ll_serialize()
+
+    x_serialized = {
+        "grammars": [
+            {
+                "greedy_lexer": False,
+                "nodes": [
+                    {
+                        "GenGrammar": {
+                            "grammar": 1,
+                            "stop_rx": "",
+                            "no_initial_skip": True,
+                            "temperature": 0.0,
+                        }
+                    }
+                ],
+                "rx_nodes": [],
+            },
+            {
+                "greedy_lexer": True,
+                "greedy_skip_rx": "[\\x20\\x0A\\x0D\\x09]+",
+                "nodes": [
+                    {"Lexeme": {"rx": "-?(?:0|[1-9][0-9]*)", "contextual": False}}
+                    #{"Lexeme": {"rx": "[ab][ab]", "contextual": False}}
+                ],
+                "rx_nodes": [],
+            },
+        ]
+    }
+
     serialized["max_tokens"] = max_tokens
     llguidance_json = {"grammar": serialized}
+
     llguidance_arg = json.dumps(llguidance_json, indent=1)
     # save llguidance_arg to file
     with open("tmp/llguidance_arg.json", "w") as f:

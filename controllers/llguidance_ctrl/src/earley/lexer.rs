@@ -86,7 +86,29 @@ impl Lexer {
 
     pub fn force_lexeme_end(&self, prev: StateID) -> LexerResult {
         let info = self.state_info(prev);
-        let idx = info.possible.first_bit_set().expect("no allowed lexemes");
+        match info.possible.first_bit_set() {
+            Some(idx) => LexerResult::Lexeme(PreLexeme {
+                idx: LexemeIdx::new(idx),
+                byte: None,
+                byte_next_row: false,
+                hidden_len: 0,
+            }),
+            None => LexerResult::Error,
+        }
+    }
+
+    pub fn try_lexeme_end(&mut self, prev: StateID) -> LexerResult {
+        let prev_accepting = self.state_info(prev).accepting.first_bit_set();
+        let eos_state = self.dfa.transition_bytes(prev, EOS_MARKER);
+        let eos_accepting = self.state_info(eos_state).accepting.first_bit_set();
+
+        let idx = match (prev_accepting, eos_accepting) {
+            (Some(p), Some(e)) if p < e => p,
+            (_, Some(e)) => e,
+            (Some(p), None) => p,
+            (None, None) => return LexerResult::Error,
+        };
+
         LexerResult::Lexeme(PreLexeme {
             idx: LexemeIdx::new(idx),
             byte: None,

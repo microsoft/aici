@@ -2,9 +2,7 @@ use std::sync::Arc;
 
 use crate::{
     api::{GenGrammarOptions, TopLevelGrammar},
-    earley::{
-        grammars_from_json, CGrammar, CSymIdx, ModelVariable, Parser, ParserStats, EOS_MARKER,
-    },
+    earley::{grammars_from_json, CGrammar, CSymIdx, ModelVariable, Parser, ParserStats},
 };
 use aici_abi::{MidProcessArg, MidProcessResult, TokenId, TokenizerEnv};
 use anyhow::Result;
@@ -39,7 +37,6 @@ pub struct TokenParser {
     previous_grm_bytes: Vec<u8>,
     mid_process_was_accepting: bool,
 
-    first_token_of_eos_marker: TokenId,
     max_tokens_total: usize,
     max_tokens_parser: usize,
     compiled_grammars: Vec<Arc<CGrammar>>,
@@ -73,8 +70,6 @@ impl TokenParser {
             GenGrammarOptions::default(),
         )?;
 
-        let first_token_of_eos_marker = token_env.tok_trie().greedy_tokenize(EOS_MARKER)[0];
-
         Ok(TokenParser {
             log_level,
             token_env,
@@ -85,7 +80,6 @@ impl TokenParser {
             parser_stack: Vec::new(),
             previous_grm_bytes: Vec::new(),
             compiled_grammars,
-            first_token_of_eos_marker,
             llm_tokens: Vec::new(),
             llm_bytes: Vec::new(),
             grm_prefix: Vec::new(),
@@ -345,15 +339,15 @@ impl TokenParser {
 
         let inner_done = {
             let empty_token_prefix = token_prefix.is_empty();
-            let row_accepting = self.parser.row_is_accepting();
-            let no_pending_bytes = !self.parser.has_pending_lexeme_bytes();
-            let is_accepting = no_pending_bytes && row_accepting;
+            let lexer_bytes = self.parser.has_pending_lexeme_bytes();
+            let is_accepting = self.parser.is_accepting();
             let can_advance = self.parser.can_advance();
             let inner_done = empty_token_prefix && is_accepting && (!can_advance || has_eos);
             infoln!(
                 self,
-                "inner_done: {inner_done}; can_advance: {can_advance} (eos:{has_eos}); \
-                accept: {is_accepting} (row:{row_accepting} & lexer:{no_pending_bytes}); \
+                "inner_done: {inner_done}; lexer_bytes: {lexer_bytes}; \
+                can_advance: {can_advance} (eos:{has_eos}); \
+                accept: {is_accepting}; \
                 empty_token_prefix: {empty_token_prefix}"
             );
             self.mid_process_was_accepting =
@@ -362,14 +356,8 @@ impl TokenParser {
         };
 
         let trie = self.token_env.tok_trie();
-        let mut set = trie.alloc_token_set();
         // self.parser.print_row(self.parser.num_rows() - 1);
-        trie.compute_bias_ext(&mut self.parser, &mut set, &token_prefix);
-
-        // clean damage from EOS_MARKER
-        if self.parser.lexer_allows_eos() {
-            set.disallow_token(self.first_token_of_eos_marker);
-        }
+        let set = self.parser.compute_bias(trie, &token_prefix);
 
         if inner_done
             || self.max_tokens_parser == 0

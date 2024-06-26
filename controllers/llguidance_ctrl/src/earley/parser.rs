@@ -20,6 +20,7 @@ use super::{
     grammar::{CGrammar, CSymIdx, CSymbol, ModelVariable, RuleIdx},
     lexer::{LexerResult, PreLexeme, StateID},
     lexerspec::{Lexeme, LexemeIdx, LexerSpec},
+    EOS_MARKER,
 };
 
 const TRACE: bool = false;
@@ -369,6 +370,25 @@ impl Parser {
         Ok(r)
     }
 
+    pub fn compute_bias(&mut self, trie: &TokTrie, start: &[u8]) -> SimpleVob {
+        let mut set = trie.alloc_token_set();
+
+        trie.compute_bias_ext(self, &mut set, start);
+
+        // clean damage from EOS_MARKER
+        if self.lexer_allows_eos() {
+            let first_token_of_eos_marker = trie.greedy_tokenize(EOS_MARKER)[0];
+            set.disallow_token(first_token_of_eos_marker);
+        }
+
+        if set.num_set() == 1 && set.is_allowed(trie.eos_token()) {
+            // we're going to be stopped outside - we better flush the lexer
+            self.flush_lexer();
+        }
+
+        set
+    }
+
     pub fn grammar(&self) -> &CGrammar {
         &self.grammar
     }
@@ -383,7 +403,7 @@ impl Parser {
         self.after_dots().map(|pos| self.grammar.sym_data_at(pos))
     }
 
-    pub fn can_advance(&self) -> bool {
+    fn can_advance_inner(&self) -> bool {
         let skip = self.grammar.lexeme_to_sym_idx(LexemeIdx::SKIP);
         for data in self.after_dots_symdata() {
             if data.idx == skip || data.idx == CSymIdx::NULL {
@@ -396,11 +416,15 @@ impl Parser {
         false
     }
 
+    pub fn can_advance(&self) -> bool {
+        self.has_pending_lexeme_bytes() || self.can_advance_inner()
+    }
+
     pub fn has_pending_lexeme_bytes(&self) -> bool {
         self.curr_row_bytes().len() > 0
     }
 
-    pub fn row_is_accepting(&self) -> bool {
+    fn row_is_accepting(&self) -> bool {
         for pos in self.after_dots() {
             let after_dot = self.grammar.sym_idx_at(pos);
             if after_dot == CSymIdx::NULL {
@@ -411,10 +435,6 @@ impl Parser {
             }
         }
         false
-    }
-
-    pub fn is_accepting(&self) -> bool {
-        !self.has_pending_lexeme_bytes() && self.row_is_accepting()
     }
 
     pub fn lexer_allows_eos(&mut self) -> bool {
@@ -729,6 +749,13 @@ impl Parser {
         }
     }
 
+    pub fn is_accepting(&mut self) -> bool {
+        self.trie_started();
+        let r = self.flush_lexer() && self.row_is_accepting();
+        self.trie_finished();
+        r
+    }
+
     pub fn try_push_byte_definitive(&mut self, byte: Option<u8>) -> bool {
         assert!(self.scratch.definitive);
 
@@ -764,15 +791,19 @@ impl Parser {
         &self.rows[self.lexer_state().row_idx as usize]
     }
 
-    pub fn model_variables(&self) -> Vec<ModelVariable> {
+    pub fn model_variables(&mut self) -> Vec<ModelVariable> {
+        self.trie_started();
         let mut vars = vec![];
-        for sym_data in self.after_dots_symdata() {
-            if let Some(ref mv) = sym_data.props.model_variable {
-                if !vars.contains(mv) {
-                    vars.push(mv.clone());
+        if self.flush_lexer() {
+            for sym_data in self.after_dots_symdata() {
+                if let Some(ref mv) = sym_data.props.model_variable {
+                    if !vars.contains(mv) {
+                        vars.push(mv.clone());
+                    }
                 }
             }
         }
+        self.trie_finished();
         vars
     }
 
@@ -804,8 +835,11 @@ impl Parser {
     }
 
     fn flush_lexer(&mut self) -> bool {
+        if !self.has_pending_lexeme_bytes() {
+            return true;
+        }
         let curr = self.lexer_state();
-        let lex_result = self.lexer.force_lexeme_end(curr.lexer_state);
+        let lex_result = self.lexer.try_lexeme_end(curr.lexer_state);
         self.advance_lexer_or_parser(lex_result, curr)
     }
 
