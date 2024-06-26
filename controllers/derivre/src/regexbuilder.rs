@@ -1,5 +1,6 @@
 use std::fmt::Debug;
 
+use aici_abi::svob::SimpleVob;
 use anyhow::{ensure, Result};
 use regex_syntax::ParserBuilder;
 
@@ -201,8 +202,8 @@ impl RegexBuilder {
         )
     }
 
-    pub fn to_regex_vec(&self, rx_list: &[ExprRef]) -> RegexVec {
-        RegexVec::new_with_exprset(&self.exprset, rx_list)
+    pub fn to_regex_vec(&self, rx_list: &[ExprRef], lazy: Option<SimpleVob>) -> RegexVec {
+        RegexVec::new_with_exprset(&self.exprset, rx_list, lazy)
     }
 }
 

@@ -66,6 +66,7 @@ pub struct RegexVec {
     exprs: ExprSet,
     deriv: DerivCache,
     next_byte: NextByteCache,
+    lazy: SimpleVob,
     alphabet_mapping: Vec<u8>,
     inv_alphabet_mapping: Vec<Option<u8>>,
     alphabet_size: usize,
@@ -89,6 +90,7 @@ pub struct StateDesc {
     possible_lookahead_len: Option<usize>,
     lookahead_len: Option<Option<usize>>,
     next_byte: Option<NextByte>,
+    lowest_match: Option<Option<usize>>,
 }
 
 impl StateDesc {
@@ -119,7 +121,7 @@ impl RegexVec {
             let ast = exprset.parse_expr(parser.clone(), rx)?;
             acc.push(ast);
         }
-        Ok(Self::new_with_exprset(&exprset, &acc))
+        Ok(Self::new_with_exprset(&exprset, &acc, None))
     }
 
     pub fn initial_state_all(&mut self) -> StateID {
@@ -144,10 +146,9 @@ impl RegexVec {
             return len;
         }
         let mut max_len = 0;
-        let exprs = &self.exprs;
-        Self::iter_state(&self.rx_sets, state, |(_, e)| {
-            max_len = max_len.max(exprs.possible_lookahead_len(e));
-        });
+        for (_, e) in iter_state(&self.rx_sets, state) {
+            max_len = max_len.max(self.exprs.possible_lookahead_len(e));
+        }
         desc.possible_lookahead_len = Some(max_len);
         max_len
     }
@@ -163,12 +164,12 @@ impl RegexVec {
         }
         let mut res = None;
         let exprs = &self.exprs;
-        Self::iter_state(&self.rx_sets, state, |(idx2, e)| {
+        for (idx2, e) in iter_state(&self.rx_sets, state) {
             if res.is_none() && exprs.is_nullable(e) {
                 assert!(idx == idx2 as isize);
                 res = Some(exprs.lookahead_len(e).unwrap_or(0));
             }
-        });
+        }
         desc.lookahead_len = Some(res);
         res
     }
@@ -232,6 +233,28 @@ impl RegexVec {
             + self.rx_sets.num_bytes()
     }
 
+    /// Return index of lowest matching regex if any.
+    /// Lazy regexes match as soon as they accept, while greedy only
+    /// if they accept and force EOI.
+    pub fn lowest_match(&mut self, state: StateID) -> Option<usize> {
+        let desc = &mut self.state_descs[state.as_usize()];
+        if let Some(lowest_match) = desc.lowest_match {
+            return lowest_match;
+        }
+        let mut res = None;
+        for (idx, e) in iter_state(&self.rx_sets, state) {
+            if !self.exprs.is_nullable(e) {
+                continue;
+            }
+            if self.lazy[idx] || self.next_byte.next_byte(&self.exprs, e) == NextByte::ForcedEOI {
+                res = Some(idx);
+                break;
+            }
+        }
+        desc.lowest_match = Some(res);
+        res
+    }
+
     /// Check if the there is only one transition out of state.
     /// This is an approximation - see docs for NextByte.
     pub fn next_byte(&mut self, state: StateID) -> NextByte {
@@ -241,11 +264,12 @@ impl RegexVec {
         }
 
         let mut next_byte = NextByte::Dead;
-        Self::iter_state(&self.rx_sets, state, |(_, e)| {
-            if next_byte != NextByte::SomeBytes {
-                next_byte = next_byte | self.next_byte.next_byte(&self.exprs, e);
+        for (_, e) in iter_state(&self.rx_sets, state) {
+            next_byte = next_byte | self.next_byte.next_byte(&self.exprs, e);
+            if next_byte == NextByte::SomeBytes {
+                break;
             }
-        });
+        }
         let next_byte = match next_byte {
             NextByte::ForcedByte(b) => {
                 if let Some(b) = self.inv_alphabet_mapping[b as usize] {
@@ -362,7 +386,11 @@ impl RegexVec {
 
 // private implementation
 impl RegexVec {
-    pub(crate) fn new_with_exprset(exprset: &ExprSet, rx_list: &[ExprRef]) -> Self {
+    pub(crate) fn new_with_exprset(
+        exprset: &ExprSet,
+        rx_list: &[ExprRef],
+        lazy: Option<SimpleVob>,
+    ) -> Self {
         assert!(exprset.alphabet_size() == 256);
         let compress = true;
 
@@ -419,6 +447,7 @@ impl RegexVec {
         let mut r = RegexVec {
             deriv: DerivCache::new(),
             next_byte: NextByteCache::new(),
+            lazy: lazy.unwrap_or_else(|| SimpleVob::alloc(rx_list.len())),
             exprs: exprset,
             alphabet_mapping: mapping,
             inv_alphabet_mapping,
@@ -467,13 +496,6 @@ impl RegexVec {
         id
     }
 
-    fn iter_state(rx_sets: &VecHashCons, state: StateID, mut f: impl FnMut((usize, ExprRef))) {
-        let lst = rx_sets.get(state.as_u32());
-        for idx in (0..lst.len()).step_by(2) {
-            f((lst[idx] as usize, ExprRef::new(lst[idx + 1])));
-        }
-    }
-
     fn exprs(&self) -> &ExprSet {
         &self.exprs
     }
@@ -487,8 +509,9 @@ impl RegexVec {
             possible_lookahead_len: None,
             lookahead_len: None,
             next_byte: None,
+            lowest_match: None,
         };
-        Self::iter_state(&self.rx_sets, state, |(idx, e)| {
+        for (idx, e) in iter_state(&self.rx_sets, state) {
             res.possible.set(idx, true);
             if self.exprs().is_nullable(e) {
                 res.accepting.set(idx, true);
@@ -496,7 +519,7 @@ impl RegexVec {
                     res.lowest_accepting = idx as isize;
                 }
             }
-        });
+        }
         if res.possible.is_zero() {
             assert!(state == StateID::DEAD);
         }
@@ -518,12 +541,12 @@ impl RegexVec {
         let c0 = self.exprs.cost;
         let t0 = std::time::Instant::now();
 
-        Self::iter_state(&self.rx_sets, state, |(idx, e)| {
+        for (idx, e) in iter_state(&self.rx_sets, state) {
             let d = self.deriv.derivative(&mut self.exprs, e, b);
             if d != ExprRef::NO_MATCH {
                 Self::push_rx(&mut vec_desc, idx, d);
             }
-        });
+        }
 
         let num_deriv = self.deriv.num_deriv - d0;
         let cost = self.exprs.cost - c0;
@@ -551,4 +574,14 @@ impl Debug for RegexVec {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "RegexVec({})", self.stats())
     }
+}
+
+fn iter_state<'a>(
+    rx_sets: &'a VecHashCons,
+    state: StateID,
+) -> impl Iterator<Item = (usize, ExprRef)> + 'a {
+    let lst = rx_sets.get(state.as_u32());
+    (0..lst.len())
+        .step_by(2)
+        .map(move |idx| (lst[idx] as usize, ExprRef::new(lst[idx + 1])))
 }
