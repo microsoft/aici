@@ -55,6 +55,27 @@ class App:
         u = await _send(self.y + self.z, "u")
         # Send a request with x + u + z + y -> v (output text store in var v)
         v = await _send(self.x + self.y + self.z + self.y, "v")
+    
+    def generate_aici_program(self):
+        x, y, z = self.x, self.y, self.z
+        return f"""
+import pyaici.server as aici
+
+async def app(x, y, z):
+    # aici.log_level = 3
+    await aici.FixedTokens(x)
+    await aici.gen_tokens(store_var="t", max_tokens=32)
+    # print("X", aici.get_tokens(), aici.detokenize(aici.get_tokens()))
+    t = aici.detokenize(aici.get_tokens())
+    return t
+
+aici.start(app(
+    x="{x}", 
+    y="{y}", 
+    z="{z}"
+))
+"""
+        pass
 
 
 def parse_args():
