@@ -81,7 +81,7 @@ async def main():
     # gather app, but for each that returns, print the output
     for app in asyncio.as_completed(apps):
         output = await app
-        # print(output)
+    
 
 
 if __name__ == "__main__":
