@@ -77,6 +77,7 @@ async def main():
         apps.append(app.run())
     apps = [asyncio.create_task(app) for app in apps]
 
+    # Add the apps to the event loop
     # await asyncio.gather(*apps)
     # gather app, but for each that returns, print the output
     for app in asyncio.as_completed(apps):
