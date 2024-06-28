@@ -24,8 +24,8 @@ python3 -m vllm.entrypoints.openai.api_server \
     -A--wasm-timer-resolution-us=10 \
     $MODEL_ARGS \
     --port 4242 --host 127.0.0.1 \
-    --enable_prefix_caching \
-    --preemption-mode "swap" \
+    --enable-prefix-caching \
+    --gpu-memory-utilization 0.5 \
     "$@"
 
 # preemption-mode: "swap" or "recompute"

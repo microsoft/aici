@@ -35,6 +35,7 @@ class App:
             async for b in it:
                 i += 1
                 print(i, b)
+                tokens.append(b)
                 if i >= max_tokens:
                     break
         return tokens
@@ -46,14 +47,14 @@ class App:
             ntok_to_gen = random.randint(2, 10)
             ntok_to_heal = random.randint(1, 3)
             toks0 = await self.post_http_request(prompt, ntok_to_gen + ntok_to_heal)
-            breakpoint()
+            
             # Backtrack some tokens in the prompt
+            prompt += "".join(toks0[: -ntok_to_heal]) # TODO: Determine what does the token returns
             # May need to tokenize the input back to tokens?
-            ntok_healed = 0
-            # Fix some of the tokens
-
-            # prompt += ...
+            n_tok_healed = random.randint(1, 3)
+            prompt += "".join([" a"] * n_tok_healed) # make the token healing happen
             pass
+        return prompt
         
 
 def parse_args():
@@ -70,7 +71,6 @@ async def main():
 
     app = App(app_id=1, api_url=api_url, n=n)   
     await app.run()
-    
     pass
 
 if __name__ == "__main__":

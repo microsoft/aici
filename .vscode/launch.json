@@ -1,6 +1,7 @@
 {
     "version": "0.2.0",
     "configurations": [
+
         {
             "type": "lldb",
             "request": "launch",
@@ -35,9 +36,11 @@
                 "--aici-rt",
                 "${workspaceFolder}/target/release/aicirt",
                 "-A--wasm-timer-resolution-us=10",
-                "--model", "microsoft/Orca-2-13b",
-                "--revision", "refs/pr/22",
-                "--aici-tokenizer", "orca",
+                "--model", "microsoft/phi-2",
+                "--aici-tokenizer", "phi",
+                // "--model", "microsoft/Orca-2-13b",
+                // "--revision", "refs/pr/22",
+                // "--aici-tokenizer", "orca",
                 "--port", "4242",
                 "--host", "127.0.0.1"
             ],
