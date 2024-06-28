@@ -1,4 +1,5 @@
 use std::{
+    collections::HashMap,
     fmt::{Debug, Display},
     hash::Hash,
     ops::Range,
@@ -154,7 +155,7 @@ struct RowInfo {
     lexeme: Lexeme,
     token_idx_start: usize,
     token_idx_stop: usize,
-    max_tokens: usize,
+    max_tokens: HashMap<LexemeIdx, usize>,
 }
 
 impl RowInfo {
@@ -169,10 +170,10 @@ impl RowInfo {
             self.token_idx_start,
             self.token_idx_stop,
             lexspec.dbg_lexeme(&self.lexeme),
-            if self.max_tokens == usize::MAX {
+            if self.max_tokens.is_empty() {
                 "".to_string()
             } else {
-                format!("max_tokens={}", self.max_tokens)
+                format!("max_tokens={:?}", self.max_tokens)
             }
         )
     }
@@ -614,10 +615,37 @@ impl Parser {
                             0,
                             self.token_idx as isize + 1 - info.token_idx_start as isize,
                         ) as usize;
-                        if info_tokens >= info.max_tokens {
-                            debug!("  max_tokens reached; {}", info.dbg(self.lexer_spec()));
-                            if !self.try_push_byte_definitive(None) {
-                                return Ok("parse reject on max_tokens");
+                        let lex_state = self.lexer_state().lexer_state;
+                        let mut limit = trie.alloc_token_set();
+                        let mut num_limit = 0;
+                        for idx in self.lexer.possible_lexemes(lex_state).iter() {
+                            let lex = LexemeIdx::new(idx as usize);
+                            let max_tokens = *info.max_tokens.get(&lex).unwrap_or(&usize::MAX);
+                            trace!(
+                                "  max_tokens: {} max={} info={}",
+                                self.lexer_spec().dbg_lexeme(&Lexeme::just_idx(lex)),
+                                max_tokens,
+                                info_tokens
+                            );
+                            if info_tokens < max_tokens {
+                                limit.allow_token(idx);
+                            } else {
+                                num_limit += 1;
+                            }
+                        }
+                        if num_limit > 0 {
+                            debug!(
+                                "  max_tokens limiting to: {}",
+                                self.lexer_spec().dbg_lexeme_set(&limit)
+                            );
+                            let new_state = self.lexer.limit_state_to(lex_state, &limit);
+                            if new_state.is_dead() {
+                                debug!("  limited everything; forcing EOI");
+                                if !self.try_push_byte_definitive(None) {
+                                    return Ok("parse reject on max_tokens");
+                                }
+                            } else {
+                                self.lexer_stack.last_mut().unwrap().lexer_state = new_state;
                             }
                         }
                     }
@@ -678,7 +706,7 @@ impl Parser {
             start_byte_idx: 0,
             token_idx_start: self.token_idx,
             token_idx_stop: self.token_idx,
-            max_tokens: usize::MAX,
+            max_tokens: HashMap::default(),
         });
 
         for idx in 0..self.num_rows() {
@@ -1016,7 +1044,8 @@ impl Parser {
         // with agenda pointer above
         self.rows[added_row_idx].allowed_lexemes = allowed_lexemes;
         if self.scratch.definitive {
-            self.row_infos[added_row_idx].max_tokens = self.row_infos[added_row_idx - 1].max_tokens;
+            self.row_infos[added_row_idx].max_tokens =
+                self.row_infos[added_row_idx - 1].max_tokens.clone();
         }
         true
     }
@@ -1061,7 +1090,7 @@ impl Parser {
     #[inline(always)]
     fn push_row(&mut self, curr_idx: usize, mut agenda_ptr: usize, lexeme: &Lexeme) -> bool {
         let mut allowed_lexemes = SimpleVob::alloc(self.grammar.num_terminals());
-        let mut max_tokens = 0;
+        let mut max_tokens = vec![];
 
         while agenda_ptr < self.scratch.row_end {
             let item_idx = agenda_ptr;
@@ -1129,7 +1158,9 @@ impl Parser {
                 let sym_data = self.grammar.sym_data(after_dot);
                 if let Some(lx) = self.grammar.lexeme_idx_of(after_dot) {
                     allowed_lexemes.set(lx.as_usize(), true);
-                    max_tokens = max_tokens.max(sym_data.props.max_tokens);
+                    if self.scratch.definitive {
+                        max_tokens.push((lx, sym_data.props.max_tokens));
+                    }
                 }
                 if sym_data.is_nullable {
                     self.scratch
@@ -1185,12 +1216,31 @@ impl Parser {
                 if self.row_infos.len() > idx {
                     self.row_infos.drain(idx..);
                 }
+                let mut max_tokens_map = HashMap::default();
+                for (lx, mx) in max_tokens {
+                    if let Some(ex) = max_tokens_map.get(&lx) {
+                        if *ex < mx {
+                            max_tokens_map.insert(lx, mx);
+                        }
+                    } else {
+                        max_tokens_map.insert(lx, mx);
+                    }
+                }
+                let mut to_remove = vec![];
+                for (lx, mx) in max_tokens_map.iter() {
+                    if *mx == usize::MAX {
+                        to_remove.push(*lx);
+                    }
+                }
+                for lx in to_remove {
+                    max_tokens_map.remove(&lx);
+                }
                 self.row_infos.push(RowInfo {
                     lexeme: Lexeme::bogus(),
                     token_idx_start: self.token_idx,
                     token_idx_stop: self.token_idx,
                     start_byte_idx: self.byte_idx,
-                    max_tokens,
+                    max_tokens: max_tokens_map,
                 });
                 // debug!("  push: {idx} {} {}", self.rows.len(), self.row_infos.len());
             }

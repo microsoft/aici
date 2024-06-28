@@ -455,26 +455,28 @@ impl TokenParser {
 
         if inner_accepting {
             let mut all_accepting = true;
-            let mut pop_tokens = trie.alloc_token_set();
-            for pentry in self.parser_stack.iter_mut() {
-                if pentry.mask.is_none() {
-                    assert!(token_prefix.is_empty());
-                    let mask = pentry
-                        .parser
-                        .compute_bias_after_gen_grammar(trie, pentry.symidx);
-                    infoln!(self, "bias for upper parser: {}", trie.token_set_dbg(&mask));
-                    pentry.mask = Some(mask);
+            if self.parser_stack.len() > 0 {
+                let mut pop_tokens = trie.alloc_token_set();
+                for pentry in self.parser_stack.iter_mut() {
+                    if pentry.mask.is_none() {
+                        assert!(token_prefix.is_empty());
+                        let mask = pentry
+                            .parser
+                            .compute_bias_after_gen_grammar(trie, pentry.symidx);
+                        infoln!(self, "bias for upper parser: {}", trie.token_set_dbg(&mask));
+                        pentry.mask = Some(mask);
+                    }
+                    let m = pentry.mask.as_ref().unwrap();
+                    pop_tokens.or_minus(m, &set);
+                    set.or(m);
+                    if !pentry.is_accepting {
+                        all_accepting = false;
+                        break;
+                    }
                 }
-                let m = pentry.mask.as_ref().unwrap();
-                pop_tokens.or_minus(m, &set);
-                set.or(m);
-                if !pentry.is_accepting {
-                    all_accepting = false;
-                    break;
-                }
+                infoln!(self, "pop_tokens: {}", trie.token_set_dbg(&pop_tokens));
+                self.pop_tokens = Some(pop_tokens);
             }
-            infoln!(self, "pop_tokens: {}", trie.token_set_dbg(&pop_tokens));
-            self.pop_tokens = Some(pop_tokens);
             self.mid_process_was_accepting = all_accepting;
         }
 

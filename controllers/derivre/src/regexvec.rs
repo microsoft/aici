@@ -289,6 +289,16 @@ impl RegexVec {
         next_byte
     }
 
+    pub fn limit_state_to(&mut self, state: StateID, allowed_lexemes: &SimpleVob) -> StateID {
+        let mut vec_desc = vec![];
+        for (idx, e) in iter_state(&self.rx_sets, state) {
+            if allowed_lexemes.get(idx) {
+                Self::push_rx(&mut vec_desc, idx, e);
+            }
+        }
+        self.insert_state(vec_desc)
+    }
+
     pub fn total_fuel_spent(&self) -> usize {
         self.exprs.cost
     }

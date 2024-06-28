@@ -74,6 +74,14 @@ impl Lexer {
         self.state_info(state).is_accepting()
     }
 
+    pub fn limit_state_to(&mut self, state: StateID, allowed_lexemes: &SimpleVob) -> StateID {
+        self.dfa.limit_state_to(state, allowed_lexemes)
+    }
+
+    pub fn possible_lexemes(&self, state: StateID) -> &SimpleVob {
+        &self.state_info(state).possible
+    }
+
     pub fn force_lexeme_end(&self, prev: StateID) -> LexerResult {
         let info = self.state_info(prev);
         match info.possible.first_bit_set() {

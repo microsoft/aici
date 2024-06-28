@@ -221,7 +221,10 @@ impl Grammar {
             return Ok(());
         }
         if lexer_spec.is_nullable(lex) {
-            let wrap = self.fresh_symbol(format!("rx_null_{}", self.sym_name(lhs)).as_str());
+            let wrap = self.fresh_symbol_ext(
+                format!("rx_null_{}", self.sym_name(lhs)).as_str(),
+                self.sym_data(lhs).props.for_wrapper(),
+            );
             self.sym_data_mut(wrap).lexeme = Some(lex);
             self.add_rule(lhs, vec![wrap])?;
             self.add_rule(lhs, vec![])?;
