@@ -39,6 +39,12 @@ class LLTokenizer:
         The result is double-quoted and tokens are separated by '‧'.
         """
 
+    def test_trace_tokens(self, tokens: List[int]) -> str:
+        """
+        Return a debug string representation of the tokens
+        for test traces.
+        """
+
     def decode_str(self, tokens: List[int]) -> str:
         """
         Decode the tokens into a string.

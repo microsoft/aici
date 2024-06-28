@@ -6,6 +6,7 @@ use crate::{
 };
 use aici_abi::{MidProcessArg, MidProcessResult, TokenId, TokenizerEnv};
 use anyhow::Result;
+use serde_json::json;
 
 macro_rules! infoln {
     ($s:expr, $($arg:tt)*) => {
@@ -30,6 +31,7 @@ pub struct TokenParser {
     pub parser: Parser,
     pub log_level: isize,
     pub mid_process_start_time: std::time::Instant,
+    test_trace: bool,
     parser_stack: Vec<ParserStackEntry>,
     parser_llm_tokens_offset: usize,
     // this is empty for top-level parser,
@@ -63,6 +65,7 @@ impl TokenParser {
         log_level: isize,
     ) -> Result<Self> {
         let mid_process_start_time = std::time::Instant::now();
+        let test_trace = buf.test_trace;
         let max_tokens = buf.max_tokens.unwrap_or(usize::MAX);
         let compiled_grammars = grammars_from_json(buf, log_level >= 2)?;
         let parser = Parser::new(
@@ -72,6 +75,7 @@ impl TokenParser {
 
         Ok(TokenParser {
             log_level,
+            test_trace,
             token_env,
             mid_process_start_time,
             mid_process_was_accepting: false,
@@ -156,6 +160,12 @@ impl TokenParser {
         }
 
         infoln!(self, "res_prompt: {}", trie.tokens_dbg(&res_prompt));
+        if self.test_trace {
+            self.test_trace_json(&json!({
+                "prompt": trie.test_trace_tokens(&prompt),
+                "res_prompt": trie.test_trace_tokens(&res_prompt),
+            }));
+        }
         res_prompt
     }
 
@@ -170,6 +180,12 @@ impl TokenParser {
         self.parser_stack.is_empty()
     }
 
+    fn test_trace_json(&self, j: &serde_json::Value) {
+        if self.test_trace {
+            infoln!(self, "TEST: {}", serde_json::to_string(j).unwrap());
+        }
+    }
+
     pub fn mid_process(&mut self, arg: MidProcessArg) -> MidProcessResult {
         self.mid_process_start_time = std::time::Instant::now();
         if self.max_tokens_total == 0 {
@@ -178,7 +194,43 @@ impl TokenParser {
         }
         self.max_tokens_total -= 1;
         self.max_tokens_parser = self.max_tokens_parser.saturating_sub(1);
-        self.mid_process_inner(arg)
+
+        let trace = if self.test_trace {
+            let tokens = self.token_env.tok_trie().test_trace_tokens(&arg.tokens);
+            Some(json!({
+                "backtrack": arg.backtrack,
+                "tokens": tokens,
+            }))
+        } else {
+            None
+        };
+
+        let r = self.mid_process_inner(arg);
+
+        if self.test_trace {
+            let res = if r.is_stop() {
+                json!("stop")
+            } else {
+                let b = &r.branches[0];
+                json!({
+                    "sample_mask": b.sample_mask.is_some(),
+                    "temperature": b.temperature,
+                    "splices": b.splices.iter().map(|s| {
+                        json!({
+                            "when_sampled": s.when_sampled,
+                            "backtrack": s.backtrack,
+                            "tokens": self.token_env.tok_trie().test_trace_tokens(&s.ff_tokens),
+                        })
+                    }).collect::<Vec<_>>(),
+                })
+            };
+            self.test_trace_json(&json!({
+                "arg": trace.unwrap(),
+                "res": res,
+            }));
+        }
+
+        r
     }
 
     fn mid_process_inner(&mut self, mut arg: MidProcessArg) -> MidProcessResult {

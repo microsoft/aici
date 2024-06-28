@@ -183,6 +183,10 @@ impl LLTokenizer {
         self.tok_trie.greedy_tokenize(text.as_bytes())
     }
 
+    fn test_trace_tokens(&self, tokens: Vec<u32>) -> String {
+        self.tok_trie.test_trace_tokens(&tokens)
+    }
+
     fn dbg_tokens(&self, tokens: Vec<u32>) -> String {
         self.tok_trie.tokens_dbg(&tokens)
     }

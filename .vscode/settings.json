@@ -154,5 +154,10 @@
     "files.readonlyInclude": {
         "**/dist/*": true,
         "**/aici-types.d.ts": true
-    }
+    },
+    "python.testing.pytestArgs": [
+        "py/guidance"
+    ],
+    "python.testing.unittestEnabled": false,
+    "python.testing.pytestEnabled": true
 }
