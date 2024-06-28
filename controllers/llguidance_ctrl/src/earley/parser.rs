@@ -30,7 +30,7 @@ const MAX_ROW: usize = 100;
 macro_rules! trace {
     ($($arg:tt)*) => {
         if cfg!(feature = "logging") && TRACE {
-            println!($($arg)*);
+            eprintln!($($arg)*);
         }
     }
 }
@@ -38,7 +38,7 @@ macro_rules! trace {
 macro_rules! debug {
     ($($arg:tt)*) => {
         if cfg!(feature = "logging") && DEBUG {
-            println!($($arg)*);
+            eprintln!($($arg)*);
         }
     }
 }

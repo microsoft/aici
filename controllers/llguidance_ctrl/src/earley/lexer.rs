@@ -10,7 +10,7 @@ const DEBUG: bool = true;
 macro_rules! debug {
     ($($arg:tt)*) => {
         if cfg!(feature = "logging") && DEBUG {
-            println!($($arg)*);
+            eprintln!($($arg)*);
         }
     }
 }
