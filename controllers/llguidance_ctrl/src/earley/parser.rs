@@ -205,6 +205,7 @@ pub struct Parser {
     token_idx: usize,
     byte_idx: usize,
     options: GenGrammarOptions,
+    trie_gen_grammar: Option<CSymIdx>,
 }
 
 impl Scratch {
@@ -342,6 +343,7 @@ impl Parser {
             token_idx: 0,
             byte_idx: 0,
             options,
+            trie_gen_grammar: None,
             lexer_stack: vec![LexerState {
                 row_idx: 0,
                 lexer_state,
@@ -367,6 +369,13 @@ impl Parser {
         r.assert_definitive();
 
         Ok(r)
+    }
+
+    pub fn compute_bias_after_gen_grammar(&mut self, trie: &TokTrie, symidx: CSymIdx) -> SimpleVob {
+        self.trie_gen_grammar = Some(symidx);
+        let r = self.compute_bias(trie, &[]);
+        assert!(self.trie_gen_grammar.is_none());
+        r
     }
 
     pub fn compute_bias(&mut self, trie: &TokTrie, start: &[u8]) -> SimpleVob {
@@ -740,11 +749,32 @@ impl Parser {
         }
     }
 
-    pub fn is_accepting(&mut self) -> bool {
-        self.trie_started();
-        let r = self.flush_lexer() && self.row_is_accepting();
-        self.trie_finished();
+    fn trie_started_inner(&mut self) {
+        // debug!("trie_started: rows={} lexer={}", self.num_rows(), self.lexer_stack.len());
+        self.assert_definitive();
+        self.trie_lexer_stack = self.lexer_stack.len();
+        self.scratch.definitive = false;
+    }
+
+    fn trie_finished_inner(&mut self) {
+        // debug!("trie_finished: rows={} lexer={}", self.num_rows(), self.lexer_stack.len());
+        assert!(self.scratch.definitive == false);
+        assert!(self.row_infos.len() <= self.num_rows());
+        // clean up stack
+        self.pop_lexer_states(self.lexer_stack.len() - self.trie_lexer_stack);
+        self.scratch.definitive = true;
+        self.assert_definitive();
+    }
+
+    fn run_speculative<T>(&mut self, f: impl FnOnce(&mut Self) -> T) -> T {
+        self.trie_started_inner();
+        let r = f(self);
+        self.trie_finished_inner();
         r
+    }
+
+    pub fn is_accepting(&mut self) -> bool {
+        self.run_speculative(|s| s.flush_lexer() && s.row_is_accepting())
     }
 
     pub fn try_push_byte_definitive(&mut self, byte: Option<u8>) -> bool {
@@ -783,19 +813,19 @@ impl Parser {
     }
 
     pub fn model_variables(&mut self) -> Vec<ModelVariable> {
-        self.trie_started();
-        let mut vars = vec![];
-        if self.flush_lexer() {
-            for sym_data in self.after_dots_symdata() {
-                if let Some(ref mv) = sym_data.props.model_variable {
-                    if !vars.contains(mv) {
-                        vars.push(mv.clone());
+        self.run_speculative(|s| {
+            let mut vars = vec![];
+            if s.flush_lexer() {
+                for sym_data in s.after_dots_symdata() {
+                    if let Some(ref mv) = sym_data.props.model_variable {
+                        if !vars.contains(mv) {
+                            vars.push(mv.clone());
+                        }
                     }
                 }
             }
-        }
-        self.trie_finished();
-        vars
+            vars
+        })
     }
 
     fn forced_byte(&mut self) -> Option<u8> {
@@ -806,23 +836,22 @@ impl Parser {
 
         // self.print_row(self.num_rows() - 1);
 
-        let mut byte_sym = None;
-        self.trie_started();
-        for b in 0..=255 {
-            if self.try_push_byte(b) {
-                self.pop_bytes(1);
-                // debug!("  forced: {:?}", b as char);
-                if byte_sym.is_some() {
-                    self.trie_finished();
-                    // debug!("  forced multiple");
-                    return None; // more than one option
-                } else {
-                    byte_sym = Some(b);
+        self.run_speculative(|s| {
+            let mut byte_sym = None;
+            for b in 0..=255 {
+                if s.try_push_byte(b) {
+                    s.pop_bytes(1);
+                    // debug!("  forced: {:?}", b as char);
+                    if byte_sym.is_some() {
+                        // debug!("  forced multiple");
+                        return None; // more than one option
+                    } else {
+                        byte_sym = Some(b);
+                    }
                 }
             }
-        }
-        self.trie_finished();
-        byte_sym
+            byte_sym
+        })
     }
 
     fn flush_lexer(&mut self) -> bool {
@@ -873,9 +902,18 @@ impl Parser {
         Some((msg, res_idx.unwrap(), res.unwrap()))
     }
 
+    fn flush_gen_grammar(&mut self) {
+        if let Some(idx) = self.trie_gen_grammar.take() {
+            self.scan_gen_grammar_inner(idx, vec![]);
+        }
+    }
+
     pub fn scan_gen_grammar(&mut self, symidx: CSymIdx, inner_bytes: Vec<u8>) -> bool {
         self.assert_definitive();
+        self.scan_gen_grammar_inner(symidx, inner_bytes)
+    }
 
+    fn scan_gen_grammar_inner(&mut self, symidx: CSymIdx, inner_bytes: Vec<u8>) -> bool {
         debug!("  scan gen_grammar: {}", self.grammar.sym_name(symidx));
 
         self.scratch.new_row(self.curr_row().last_item);
@@ -1424,20 +1462,12 @@ impl Recognizer for Parser {
     }
 
     fn trie_started(&mut self) {
-        // debug!("trie_started: rows={} lexer={}", self.num_rows(), self.lexer_stack.len());
-        self.assert_definitive();
-        self.trie_lexer_stack = self.lexer_stack.len();
-        self.scratch.definitive = false;
+        self.trie_started_inner();
+        self.flush_gen_grammar();
     }
 
     fn trie_finished(&mut self) {
-        // debug!("trie_finished: rows={} lexer={}", self.num_rows(), self.lexer_stack.len());
-        assert!(self.scratch.definitive == false);
-        assert!(self.row_infos.len() <= self.num_rows());
-        // clean up stack
-        self.pop_lexer_states(self.lexer_stack.len() - self.trie_lexer_stack);
-        self.scratch.definitive = true;
-        self.assert_definitive();
+        self.trie_finished_inner();
     }
 
     #[inline(always)]

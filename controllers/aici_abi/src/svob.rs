@@ -276,6 +276,15 @@ impl SimpleVob {
         }
     }
 
+    /// self |= other & !minus
+    pub fn or_minus(&mut self, other: &SimpleVob, minus: &SimpleVob) {
+        assert_eq!(self.size, other.size);
+        assert_eq!(self.size, minus.size);
+        for ((slf, oth), mn) in self.data.iter_mut().zip(other.data.iter()).zip(minus.data.iter()) {
+            *slf |= *oth & !*mn;
+        }
+    }
+
     pub fn and(&mut self, other: &SimpleVob) {
         assert_eq!(self.size, other.size);
         for (idx, v) in self.data.iter_mut().zip(other.data.iter()) {

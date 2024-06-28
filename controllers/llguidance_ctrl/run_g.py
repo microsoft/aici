@@ -185,6 +185,19 @@ def main():
         )
     )
 
+    grm = "6 * 7 = " + greedy_grammar(
+        body = lexeme("[0-9]{1,3}")
+    ) + "\n"
+    # assert grm.match("6 * 7 = 42\n")
+
+    grm = (
+        "Dolphin name: "
+        + commit_point(
+            '"' + byte_range(b"A", b"Z") + one_or_more(byte_range(b"a", b"z")) + '"'
+        )
+        + ","
+    )
+
 
     # g = zero_or_more("a") + "b"
     # assert g.match("b")

@@ -6,6 +6,7 @@ use crate::{
 };
 use aici_abi::{MidProcessArg, MidProcessResult, TokenId, TokenizerEnv};
 use anyhow::Result;
+use derivre::SimpleVob;
 use serde_json::json;
 
 macro_rules! infoln {
@@ -31,6 +32,8 @@ pub struct TokenParser {
     pub parser: Parser,
     pub log_level: isize,
     pub mid_process_start_time: std::time::Instant,
+    // sampling any of these will pop the parser stack:
+    pop_tokens: Option<SimpleVob>,
     test_trace: bool,
     parser_stack: Vec<ParserStackEntry>,
     parser_llm_tokens_offset: usize,
@@ -56,6 +59,8 @@ struct ParserStackEntry {
     previous_grm_bytes_len: usize,
     symidx: CSymIdx,
     max_tokens_offset: usize,
+    mask: Option<SimpleVob>,
+    is_accepting: bool,
 }
 
 impl TokenParser {
@@ -79,6 +84,7 @@ impl TokenParser {
             token_env,
             mid_process_start_time,
             mid_process_was_accepting: false,
+            pop_tokens: None,
             parser,
             parser_llm_tokens_offset: 0,
             parser_stack: Vec::new(),
@@ -248,6 +254,23 @@ impl TokenParser {
             trie.tokens_dbg(&arg.tokens)
         );
 
+        if arg.tokens.len() == 1 {
+            if let Some(pop) = &self.pop_tokens {
+                if pop.is_allowed(arg.tokens[0]) {
+                    infoln!(self, "pop_tokens hit: {}", trie.token_set_dbg(pop));
+                    let pentry = self.parser_stack.last().unwrap();
+                    // if the top of parse stack allows this token, we should stop
+                    // popping parsers in the next iteration - clear pop_tokens
+                    if pentry.mask.as_ref().unwrap().is_allowed(arg.tokens[0]) {
+                        self.pop_tokens = None;
+                    }
+                    self.pop_parser();
+                    return self.mid_process_inner(arg);
+                }
+            }
+        }
+        self.pop_tokens = None;
+
         let mut has_eos = false;
 
         if arg.tokens.contains(&trie.eos_token()) {
@@ -389,7 +412,7 @@ impl TokenParser {
             }
         }
 
-        let inner_done = {
+        let (inner_done, inner_accepting) = {
             let empty_token_prefix = token_prefix.is_empty();
             let lexer_bytes = self.parser.has_pending_lexeme_bytes();
             let is_accepting = self.parser.is_accepting();
@@ -402,20 +425,20 @@ impl TokenParser {
                 accept: {is_accepting}; \
                 empty_token_prefix: {empty_token_prefix}"
             );
-            self.mid_process_was_accepting =
-                is_accepting && empty_token_prefix && self.parser_stack.is_empty();
-            inner_done
+            let inner_accepting = is_accepting && empty_token_prefix;
+            (inner_done, inner_accepting)
         };
 
         let trie = self.token_env.tok_trie();
         // self.parser.print_row(self.parser.num_rows() - 1);
-        let set = self.parser.compute_bias(trie, &token_prefix);
+        let mut set = self.parser.compute_bias(trie, &token_prefix);
 
         if inner_done
             || self.max_tokens_parser == 0
             || (set.num_set() == 1 && set.is_allowed(trie.eos_token()))
         {
             if self.parser_stack.is_empty() {
+                self.mid_process_was_accepting = inner_accepting;
                 infoln!(self, "only eos token allowed, stopping");
                 return MidProcessResult::stop();
             } else {
@@ -428,6 +451,31 @@ impl TokenParser {
                     fork_group: Vec::new(),
                 });
             }
+        }
+
+        if inner_accepting {
+            let mut all_accepting = true;
+            let mut pop_tokens = trie.alloc_token_set();
+            for pentry in self.parser_stack.iter_mut() {
+                if pentry.mask.is_none() {
+                    assert!(token_prefix.is_empty());
+                    let mask = pentry
+                        .parser
+                        .compute_bias_after_gen_grammar(trie, pentry.symidx);
+                    infoln!(self, "bias for upper parser: {}", trie.token_set_dbg(&mask));
+                    pentry.mask = Some(mask);
+                }
+                let m = pentry.mask.as_ref().unwrap();
+                pop_tokens.or_minus(m, &set);
+                set.or(m);
+                if !pentry.is_accepting {
+                    all_accepting = false;
+                    break;
+                }
+            }
+            infoln!(self, "pop_tokens: {}", trie.token_set_dbg(&pop_tokens));
+            self.pop_tokens = Some(pop_tokens);
+            self.mid_process_was_accepting = all_accepting;
         }
 
         infoln!(
@@ -454,14 +502,17 @@ impl TokenParser {
             let grm = Arc::clone(&self.compiled_grammars[gen_grammar.grammar.0]);
             let max_tokens = self.parser.grammar().sym_data(symidx).props.max_tokens;
             let parser = Parser::new(grm, gen_grammar)?;
-            let old_parser = std::mem::replace(&mut self.parser, parser);
+            let mut old_parser = std::mem::replace(&mut self.parser, parser);
             self.parser.stats = old_parser.stats.clone();
+            let is_accepting = old_parser.is_accepting();
             let mut entry = ParserStackEntry {
                 parser: old_parser,
                 parser_llm_tokens_offset: self.parser_llm_tokens_offset,
                 previous_grm_bytes_len: self.previous_grm_bytes.len(),
                 symidx,
                 max_tokens_offset: self.max_tokens_total.saturating_sub(self.max_tokens_parser),
+                mask: None,
+                is_accepting,
             };
             self.max_tokens_parser = std::cmp::min(self.max_tokens_parser, max_tokens);
             self.parser_llm_tokens_offset = self.llm_tokens.len();
