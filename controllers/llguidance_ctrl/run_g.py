@@ -37,7 +37,7 @@ def main():
             "class": "{gen('class', stop='"')}",
             "mantra": "{gen('mantra', stop='"')}",
             "strength": {gen('strength', regex='[0-9]+', stop=',')},
-            "items_with_colors": ["{gen('item', list_append=True, stop='"')}", "{gen('item', list_append=True, stop='"')}", "{gen('item', list_append=True, stop='"')}"]
+            "items": ["{gen('item', list_append=True, stop='"')}", "{gen('item', list_append=True, stop='"')}", "{gen('item', list_append=True, stop='"')}"]
         }}"""
         return lm
 
@@ -139,7 +139,6 @@ def main():
         "number", regex="[0-9]+", max_tokens=5, temperature=0
     )
 
-
     grm = (
         "Q: Are dolphins fish?\nA: "
         + gen("dolphins", regex="Yes|No", max_tokens=10)
@@ -157,9 +156,34 @@ def main():
 
     grm = "Q: 7 * 8\nA: " + gen("text", regex="[0-9]+", max_tokens=5)
 
-    grm = "Dolphin name: " + commit_point(
-        '"' + byte_range(b"A", b"Z") + one_or_more(byte_range(b"a", b"z")) + '"'
-    ) + ","
+    grm = character_maker2(1, "A nimble fighter", ["axe", "sword", "bow"])
+
+    grm = (
+        "Dolphin name: "
+        + commit_point(
+            '"' + byte_range(b"A", b"Z") + one_or_more(byte_range(b"a", b"z")) + '"'
+        )
+        + ","
+    )
+
+    grm = "Count to 10: 1, 2, 3, 4, 5, 6, 7, " + gen("text", stop=",") + "\nNot quite."
+
+    grm = (
+        "Name: "
+        + gen(
+            "name",
+            regex="E[a-z]+",
+            stop_regex=["[a-b]", "[x-z]"],
+            save_stop_text="saved_name_stop",
+        )
+        + "\nName: "
+        + gen(
+            "name2",
+            regex="E[a-z]+",
+            stop_regex=["[a-b]", "[x-z]"],
+            save_stop_text="saved_name_stop2",
+        )
+    )
 
 
     # g = zero_or_more("a") + "b"
@@ -269,8 +293,7 @@ def testcase_from_logs(logs: str):
             if prev_res:
                 pairs.append((prev_res, obj["arg"]))
             prev_res = obj["res"]
-            print(obj)
-    assert prev_res == "stop"
+    # assert prev_res == "stop"
     testcase = [prompt]
     gen_tokens = []
 
@@ -279,12 +302,16 @@ def testcase_from_logs(logs: str):
         gen_tokens.clear()
 
     for res, arg in pairs:
+        print(res, arg)
         if res["sample_mask"]:
             gen_tokens.append(arg["tokens"])
         else:
-            t0 = res["splices"][0]["tokens"]
+            splice = res["splices"][0]
+            t0 = splice["tokens"]
             assert t0 == arg["tokens"]
             flush_gen_tokens()
+            if splice["backtrack"]:
+                t0 = str(splice["backtrack"]) + "↶" + t0
             testcase.append(t0)
     if gen_tokens:
         flush_gen_tokens()
