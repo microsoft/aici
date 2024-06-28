@@ -209,14 +209,25 @@ impl Grammar {
         Ok(())
     }
 
-    pub fn make_terminal(&mut self, lhs: SymIdx, lex: LexemeIdx) -> Result<()> {
+    pub fn make_terminal(
+        &mut self,
+        lhs: SymIdx,
+        lex: LexemeIdx,
+        lexer_spec: &LexerSpec,
+    ) -> Result<()> {
         self.check_empty_symbol(lhs)?;
         if let Some(sym) = self.symbol_by_rx.get(&lex) {
             self.add_rule(lhs, vec![*sym])?;
             return Ok(());
         }
-        let sym = self.sym_data_mut(lhs);
-        sym.lexeme = Some(lex);
+        if lexer_spec.is_nullable(lex) {
+            let wrap = self.fresh_symbol(format!("rx_null_{}", self.sym_name(lhs)).as_str());
+            self.sym_data_mut(wrap).lexeme = Some(lex);
+            self.add_rule(lhs, vec![wrap])?;
+            self.add_rule(lhs, vec![])?;
+        } else {
+            self.sym_data_mut(lhs).lexeme = Some(lex);
+        }
         self.symbol_by_rx.insert(lex, lhs);
         Ok(())
     }

@@ -205,6 +205,10 @@ impl RegexBuilder {
     pub fn to_regex_vec(&self, rx_list: &[ExprRef], lazy: Option<SimpleVob>) -> RegexVec {
         RegexVec::new_with_exprset(&self.exprset, rx_list, lazy)
     }
+
+    pub fn is_nullable(&self, r: ExprRef) -> bool {
+        self.exprset.is_nullable(r)
+    }
 }
 
 // regex flags; docs copied from regex_syntax crate

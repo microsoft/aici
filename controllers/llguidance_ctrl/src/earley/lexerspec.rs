@@ -88,6 +88,11 @@ impl LexerSpec {
         v
     }
 
+    pub fn is_nullable(&self, idx: LexemeIdx) -> bool {
+        self.regex_builder
+            .is_nullable(self.lexemes[idx.0].compiled_rx)
+    }
+
     pub fn to_regex_vec(&self) -> RegexVec {
         // TODO
         // Find all non-contextual lexemes that are literals (we call them 'keywords')

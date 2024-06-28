@@ -198,6 +198,9 @@ def main():
         + ","
     )
 
+    grm = gen(regex="a*")
+    grm = "6 * 7 = " + gen(regex="5*") + gen(regex="[1-4][0-9]") + "\n"
+
 
     # g = zero_or_more("a") + "b"
     # assert g.match("b")

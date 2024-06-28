@@ -143,10 +143,10 @@ fn grammar_from_json(input: GrammarWithLexer) -> Result<(LexerSpec, Grammar)> {
                     let wrap_props = symprops.for_wrapper();
                     let wrap_name = format!("stop_wrap_{}", grm.sym_name(lhs));
                     let wrap_sym = grm.fresh_symbol_ext(&wrap_name, wrap_props);
-                    grm.make_terminal(wrap_sym, idx)?;
+                    grm.make_terminal(wrap_sym, idx, &lexer_spec)?;
                     grm.add_rule(lhs, vec![wrap_sym])?;
                 } else {
-                    grm.make_terminal(lhs, idx)?;
+                    grm.make_terminal(lhs, idx, &lexer_spec)?;
                 }
             }
             Node::Lexeme { rx, contextual, .. } => {
@@ -156,7 +156,7 @@ fn grammar_from_json(input: GrammarWithLexer) -> Result<(LexerSpec, Grammar)> {
                     resolve_rx(&rx_nodes, rx)?,
                     contextual.unwrap_or(input.contextual.unwrap_or(DEFAULT_CONTEXTUAL)),
                 )?;
-                grm.make_terminal(lhs, idx)?;
+                grm.make_terminal(lhs, idx, &lexer_spec)?;
             }
             Node::String { literal, .. } => {
                 if literal.is_empty() {
@@ -167,7 +167,7 @@ fn grammar_from_json(input: GrammarWithLexer) -> Result<(LexerSpec, Grammar)> {
                         &literal,
                         input.contextual.unwrap_or(DEFAULT_CONTEXTUAL),
                     )?;
-                    grm.make_terminal(lhs, idx)?;
+                    grm.make_terminal(lhs, idx, &lexer_spec)?;
                 }
             }
             Node::GenGrammar { data, props } => {
