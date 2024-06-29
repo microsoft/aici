@@ -1086,7 +1086,7 @@ impl Parser {
     // lexeme only used for captures (in definitive mode)
     #[inline(always)]
     fn push_row(&mut self, curr_idx: usize, mut agenda_ptr: usize, lexeme: &Lexeme) -> bool {
-        let mut allowed_lexemes = SimpleVob::alloc(self.grammar.num_terminals());
+        let mut allowed_lexemes = self.lexer_spec().alloc_lexeme_set();
         let mut max_tokens = vec![];
 
         while agenda_ptr < self.scratch.row_end {

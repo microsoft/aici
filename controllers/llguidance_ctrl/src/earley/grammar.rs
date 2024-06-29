@@ -644,10 +644,6 @@ impl CGrammar {
         &self.lexer_spec
     }
 
-    pub fn num_terminals(&self) -> usize {
-        self.lexer_spec.lexemes.len()
-    }
-
     pub fn sym_idx_lhs(&self, rule: RuleIdx) -> CSymIdx {
         self.rule_idx_to_sym_idx[rule.as_index() >> RULE_SHIFT]
     }
@@ -695,34 +691,40 @@ impl CGrammar {
         &self.sym_data(sym).rules
     }
 
+    fn add_symbol(&mut self, mut sym: CSymbol) -> CSymIdx {
+        let idx = CSymIdx::new_checked(self.symbols.len());
+        sym.idx = idx;
+        self.symbols.push(sym);
+        idx
+    }
+
     fn from_grammar(grammar: &Grammar, lexer_spec: LexerSpec) -> Self {
         let mut outp = CGrammar {
             start_symbol: CSymIdx::NULL, // replaced
             lexer_spec,
-            symbols: vec![CSymbol {
-                idx: CSymIdx::NULL,
-                name: "NULL".to_string(),
-                is_terminal: true,
-                is_nullable: false,
-                rules: vec![],
-                props: SymbolProps::default(),
-                sym_flags: SymFlags(0),
-                gen_grammar: None,
-                lexeme: None,
-            }],
+            symbols: vec![],
             rules: vec![CSymIdx::NULL], // make sure RuleIdx::NULL is invalid
             rule_idx_to_sym_idx: vec![],
             rule_idx_to_sym_flags: vec![],
         };
+        outp.add_symbol(CSymbol {
+            idx: CSymIdx::NULL,
+            name: "NULL".to_string(),
+            is_terminal: true,
+            is_nullable: false,
+            rules: vec![],
+            props: SymbolProps::default(),
+            sym_flags: SymFlags(0),
+            gen_grammar: None,
+            lexeme: None,
+        });
 
         let mut sym_map = FxHashMap::default();
 
-        let mut term_sym = vec![None; outp.lexer_spec.lexemes.len()];
         assert!(grammar.symbols.len() < u16::MAX as usize - 10);
 
-        let skip_idx = LexemeIdx::SKIP.as_usize();
-        let csym = CSymbol {
-            idx: CSymIdx::new_checked(skip_idx + 1),
+        outp.add_symbol(CSymbol {
+            idx: CSymIdx::NULL,
             name: "<SKIP>".to_string(),
             is_terminal: true,
             is_nullable: false,
@@ -731,15 +733,13 @@ impl CGrammar {
             sym_flags: SymFlags(0),
             gen_grammar: None,
             lexeme: Some(LexemeIdx::SKIP),
-        };
-        term_sym[skip_idx] = Some(csym);
+        });
 
+        // lexemes go first
         for sym in grammar.symbols.iter() {
             if let Some(lx) = sym.lexeme {
-                let lx = lx.as_usize();
-                assert!(term_sym[lx].is_none());
-                let csym = CSymbol {
-                    idx: CSymIdx::new_checked(lx + 1),
+                let new_idx = outp.add_symbol(CSymbol {
+                    idx: CSymIdx::NULL,
                     name: sym.name.clone(),
                     is_terminal: true,
                     is_nullable: false,
@@ -747,23 +747,18 @@ impl CGrammar {
                     props: sym.props.clone(),
                     sym_flags: SymFlags(0),
                     gen_grammar: None,
-                    lexeme: sym.lexeme,
-                };
-                sym_map.insert(sym.idx, csym.idx);
-                term_sym[lx] = Some(csym);
+                    lexeme: Some(lx),
+                });
+                sym_map.insert(sym.idx, new_idx);
             }
         }
 
-        outp.symbols.extend(term_sym.into_iter().flatten());
-        assert!(outp.symbols.len() == outp.num_terminals() + 1);
-
         for sym in &grammar.symbols {
-            if sym.is_lexeme_terminal() {
+            if sym.lexeme.is_some() {
                 continue;
             }
-            let cidx = CSymIdx::new_checked(outp.symbols.len());
-            outp.symbols.push(CSymbol {
-                idx: cidx,
+            let cidx = outp.add_symbol(CSymbol {
+                idx: CSymIdx::NULL,
                 name: sym.name.clone(),
                 is_terminal: false,
                 is_nullable: sym.rules.iter().any(|r| r.rhs.is_empty()),
@@ -775,6 +770,7 @@ impl CGrammar {
             });
             sym_map.insert(sym.idx, cidx);
         }
+
         outp.start_symbol = sym_map[&grammar.start()];
         for sym in &grammar.symbols {
             if sym.is_terminal() {
