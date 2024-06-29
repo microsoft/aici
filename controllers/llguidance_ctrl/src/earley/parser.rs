@@ -207,6 +207,7 @@ pub struct Parser {
     byte_idx: usize,
     options: GenGrammarOptions,
     trie_gen_grammar: Option<CSymIdx>,
+    trie_gen_grammar_accepting: bool,
 }
 
 impl Scratch {
@@ -345,6 +346,7 @@ impl Parser {
             byte_idx: 0,
             options,
             trie_gen_grammar: None,
+            trie_gen_grammar_accepting: false,
             lexer_stack: vec![LexerState {
                 row_idx: 0,
                 lexer_state,
@@ -372,11 +374,15 @@ impl Parser {
         Ok(r)
     }
 
-    pub fn compute_bias_after_gen_grammar(&mut self, trie: &TokTrie, symidx: CSymIdx) -> SimpleVob {
+    pub fn compute_bias_after_gen_grammar(
+        &mut self,
+        trie: &TokTrie,
+        symidx: CSymIdx,
+    ) -> (bool, SimpleVob) {
         self.trie_gen_grammar = Some(symidx);
         let r = self.compute_bias(trie, &[]);
         assert!(self.trie_gen_grammar.is_none());
-        r
+        (self.trie_gen_grammar_accepting, r)
     }
 
     pub fn compute_bias(&mut self, trie: &TokTrie, start: &[u8]) -> SimpleVob {
@@ -931,7 +937,8 @@ impl Parser {
 
     fn flush_gen_grammar(&mut self) {
         if let Some(idx) = self.trie_gen_grammar.take() {
-            self.scan_gen_grammar_inner(idx, vec![]);
+            let r = self.scan_gen_grammar_inner(idx, vec![]);
+            self.trie_gen_grammar_accepting = r && self.row_is_accepting();
         }
     }
 

@@ -211,6 +211,8 @@ impl TokenParser {
             None
         };
 
+        infoln!(self, "\n");
+
         let r = self.mid_process_inner(arg);
 
         if self.test_trace {
@@ -244,7 +246,6 @@ impl TokenParser {
 
         self.mid_process_was_accepting = false;
 
-        infoln!(self, "\n");
         let trie = self.token_env.tok_trie();
 
         infoln!(
@@ -439,7 +440,7 @@ impl TokenParser {
         {
             if self.parser_stack.is_empty() {
                 self.mid_process_was_accepting = inner_accepting;
-                infoln!(self, "only eos token allowed, stopping");
+                infoln!(self, "only eos token allowed, stopping; accepting: {}", inner_accepting);
                 return MidProcessResult::stop();
             } else {
                 infoln!(self, "pop_parser; tokens left {}", self.max_tokens_parser);
@@ -460,11 +461,12 @@ impl TokenParser {
                 for pentry in self.parser_stack.iter_mut() {
                     if pentry.mask.is_none() {
                         assert!(token_prefix.is_empty());
-                        let mask = pentry
+                        let (is_accepting, mask) = pentry
                             .parser
                             .compute_bias_after_gen_grammar(trie, pentry.symidx);
                         infoln!(self, "bias for upper parser: {}", trie.token_set_dbg(&mask));
                         pentry.mask = Some(mask);
+                        pentry.is_accepting = is_accepting;
                     }
                     let m = pentry.mask.as_ref().unwrap();
                     pop_tokens.or_minus(m, &set);
@@ -482,8 +484,9 @@ impl TokenParser {
 
         infoln!(
             self,
-            "bias: (pref: {:?}) {:?} {}",
+            "bias: (pref: {:?}; accpt: {}) {:?} {}",
             String::from_utf8_lossy(&token_prefix),
+            self.mid_process_was_accepting,
             start_time.elapsed(),
             self.token_env.tok_trie().token_set_dbg(&set)
         );
@@ -504,9 +507,8 @@ impl TokenParser {
             let grm = Arc::clone(&self.compiled_grammars[gen_grammar.grammar.0]);
             let max_tokens = self.parser.grammar().sym_data(symidx).props.max_tokens;
             let parser = Parser::new(grm, gen_grammar)?;
-            let mut old_parser = std::mem::replace(&mut self.parser, parser);
+            let old_parser = std::mem::replace(&mut self.parser, parser);
             self.parser.stats = old_parser.stats.clone();
-            let is_accepting = old_parser.is_accepting();
             let mut entry = ParserStackEntry {
                 parser: old_parser,
                 parser_llm_tokens_offset: self.parser_llm_tokens_offset,
@@ -514,7 +516,7 @@ impl TokenParser {
                 symidx,
                 max_tokens_offset: self.max_tokens_total.saturating_sub(self.max_tokens_parser),
                 mask: None,
-                is_accepting,
+                is_accepting: false, // computed with mask
             };
             self.max_tokens_parser = std::cmp::min(self.max_tokens_parser, max_tokens);
             self.parser_llm_tokens_offset = self.llm_tokens.len();
