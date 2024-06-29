@@ -165,7 +165,6 @@ pub struct Grammar {
     symbols: Vec<Symbol>,
     symbol_by_name: FxHashMap<String, SymIdx>,
     model_variables: FxHashMap<String, SymIdx>,
-    symbol_by_rx: FxHashMap<LexemeIdx, SymIdx>,
 }
 
 impl Grammar {
@@ -174,7 +173,6 @@ impl Grammar {
             symbols: vec![],
             symbol_by_name: FxHashMap::default(),
             model_variables: FxHashMap::default(),
-            symbol_by_rx: FxHashMap::default(),
         }
     }
 
@@ -216,10 +214,6 @@ impl Grammar {
         lexer_spec: &LexerSpec,
     ) -> Result<()> {
         self.check_empty_symbol(lhs)?;
-        if let Some(sym) = self.symbol_by_rx.get(&lex) {
-            self.add_rule(lhs, vec![*sym])?;
-            return Ok(());
-        }
         if lexer_spec.is_nullable(lex) {
             let wrap = self.fresh_symbol_ext(
                 format!("rx_null_{}", self.sym_name(lhs)).as_str(),
@@ -231,7 +225,6 @@ impl Grammar {
         } else {
             self.sym_data_mut(lhs).lexeme = Some(lex);
         }
-        self.symbol_by_rx.insert(lex, lhs);
         Ok(())
     }
 
