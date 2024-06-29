@@ -21,9 +21,15 @@ if [ "X$1" != "X" ] ; then
     fi
 fi
 
-set -e
+function runtest() {
+    pytest "$@"
+    if [ $? -ne 0 -a $? -ne 5 ] ; then
+        exit 1
+    fi
+}
+
 # quick tests first
-pytest tests/unit/test_ll.py
-pytest tests/unit
-pytest --selected_model azure_guidance --durations=10 $FILES "$@"
-pytest tests/model_integration
+runtest tests/unit/test_ll.py "$@"
+runtest tests/unit "$@"
+runtest --selected_model azure_guidance --durations=10 $FILES "$@"
+runtest tests/model_integration "$@"
