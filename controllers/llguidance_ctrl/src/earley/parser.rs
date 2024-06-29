@@ -403,13 +403,12 @@ impl Parser {
     }
 
     fn after_dots_symdata(&self) -> impl Iterator<Item = &CSymbol> + '_ {
-        self.after_dots().map(|pos| self.grammar.sym_data_at(pos))
+        self.after_dots().map(|pos| self.grammar.sym_data_dot(pos))
     }
 
     fn can_advance_inner(&self) -> bool {
-        let skip = self.grammar.lexeme_to_sym_idx(LexemeIdx::SKIP);
         for data in self.after_dots_symdata() {
-            if data.idx == skip || data.idx == CSymIdx::NULL {
+            if data.lexeme == Some(LexemeIdx::SKIP) || data.idx == CSymIdx::NULL {
                 continue;
             }
             if data.is_terminal || data.gen_grammar.is_some() {
@@ -429,9 +428,9 @@ impl Parser {
 
     fn row_is_accepting(&self) -> bool {
         for pos in self.after_dots() {
-            let after_dot = self.grammar.sym_idx_at(pos);
+            let after_dot = self.grammar.sym_idx_dot(pos);
             if after_dot == CSymIdx::NULL {
-                let lhs = self.grammar.sym_idx_of(pos);
+                let lhs = self.grammar.sym_idx_lhs(pos);
                 if lhs == self.grammar.start() {
                     return true;
                 }
@@ -535,7 +534,7 @@ impl Parser {
     }
 
     fn item_lhs(&self, item: &Item) -> CSymIdx {
-        self.grammar.sym_idx_of(item.rule_idx())
+        self.grammar.sym_idx_lhs(item.rule_idx())
     }
 
     fn item_sym_data(&self, item: &Item) -> &CSymbol {
@@ -897,8 +896,8 @@ impl Parser {
         let mut res_idx = None;
         let mut gen_grm = vec![];
         for pos in self.after_dots() {
-            let idx = self.grammar.sym_idx_at(pos);
-            let sym_data = self.grammar.sym_data_at(pos);
+            let idx = self.grammar.sym_idx_dot(pos);
+            let sym_data = self.grammar.sym_data_dot(pos);
             if let Some(ref gg) = sym_data.gen_grammar {
                 // break ties by preferring the one with the lowest grammar number
                 if res.is_none() || res.as_ref().unwrap().grammar.0 > gg.grammar.0 {
@@ -948,7 +947,7 @@ impl Parser {
 
         for idx in self.curr_row().item_indices() {
             let item = self.scratch.items[idx];
-            let sidx = self.grammar.sym_idx_at(item.rule_idx());
+            let sidx = self.grammar.sym_idx_dot(item.rule_idx());
             if sidx == symidx {
                 self.scratch
                     .add_unique(item.advance_dot(), idx, "gen_grammar");
@@ -1000,7 +999,7 @@ impl Parser {
 
         for idx in self.curr_row().item_indices() {
             let item = self.scratch.items[idx];
-            let sym_data = self.grammar.sym_data_at(item.rule_idx());
+            let sym_data = self.grammar.sym_data_dot(item.rule_idx());
             if let Some(ref mv2) = sym_data.props.model_variable {
                 if mv == *mv2 {
                     self.scratch
@@ -1060,8 +1059,6 @@ impl Parser {
         self.scratch.ensure_items(last + n + 100);
         self.scratch.new_row(last);
 
-        let trg = self.grammar.lexeme_to_sym_idx(lexeme.idx);
-
         if self.scratch.definitive {
             debug!(
                 "  scan: {} at {} (spec: {:?})",
@@ -1073,8 +1070,8 @@ impl Parser {
 
         while i < last {
             let item = self.scratch.items[i];
-            let idx = self.grammar.sym_idx_at(item.rule_idx());
-            if idx == trg {
+            let sym = self.grammar.sym_data_dot(item.rule_idx());
+            if sym.lexeme == Some(lexeme.idx) {
                 self.scratch.just_add(item.advance_dot(), i, "scan");
             }
             i += 1;
@@ -1101,11 +1098,11 @@ impl Parser {
             }
 
             let rule = item.rule_idx();
-            let after_dot = self.grammar.sym_idx_at(rule);
+            let after_dot = self.grammar.sym_idx_dot(rule);
 
             if after_dot == CSymIdx::NULL {
-                let flags = self.grammar.sym_flags_of(rule);
-                let lhs = self.grammar.sym_idx_of(rule);
+                let flags = self.grammar.sym_flags_lhs(rule);
+                let lhs = self.grammar.sym_idx_lhs(rule);
 
                 if self.scratch.definitive && flags.stop_capture() {
                     let var_name = self
@@ -1149,14 +1146,14 @@ impl Parser {
                     // if item.start_pos() == curr_idx, then we handled it below in the nullable check
                     for i in self.rows[item.start_pos()].item_indices() {
                         let item = self.scratch.items[i];
-                        if self.grammar.sym_idx_at(item.rule_idx()) == lhs {
+                        if self.grammar.sym_idx_dot(item.rule_idx()) == lhs {
                             self.scratch.add_unique(item.advance_dot(), i, "complete");
                         }
                     }
                 }
             } else {
                 let sym_data = self.grammar.sym_data(after_dot);
-                if let Some(lx) = self.grammar.lexeme_idx_of(after_dot) {
+                if let Some(lx) = sym_data.lexeme {
                     allowed_lexemes.set(lx.as_usize(), true);
                     if self.scratch.definitive {
                         max_tokens.push((lx, sym_data.props.max_tokens));

@@ -204,6 +204,10 @@ def main():
     grm = "6 * 7 = " + gen("name", max_tokens=2)
 
     grm = "Name: " + gen('name', max_tokens=2) + " Height: " + gen('height', max_tokens=3)
+    grm = "Name: " + gen('name', max_tokens=2) + "Emily Carter is great; Height: " + gen('height', max_tokens=3)
+
+    grm = "123" + gen(name="numbers", regex=r"\d*233", max_tokens=5)
+
 
     # grm = "Name: " + gen('name', max_tokens=2) + " Height: " + gen('height', max_tokens=3)
 
@@ -221,7 +225,7 @@ def main():
     #     body = lexeme("[0-9]+")
     # )
 
-    max_tokens = 50
+    max_tokens = 30
 
     serialized = grm.ll_serialize()
 

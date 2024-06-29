@@ -558,6 +558,7 @@ pub struct CSymbol {
     pub gen_grammar: Option<GenGrammarOptions>,
     pub rules: Vec<RuleIdx>,
     pub sym_flags: SymFlags,
+    pub lexeme: Option<LexemeIdx>,
 }
 
 #[derive(Clone, Copy)]
@@ -569,6 +570,7 @@ impl SymFlags {
     const CAPTURE: u8 = 1 << 3;
     const GEN_GRAMMAR: u8 = 1 << 4;
     const STOP_CAPTURE: u8 = 1 << 5;
+    const HAS_LEXEME: u8 = 1 << 6;
 
     fn from_csymbol(sym: &CSymbol) -> Self {
         let mut flags = 0;
@@ -586,6 +588,9 @@ impl SymFlags {
         }
         if sym.props.stop_capture_name.is_some() {
             flags |= Self::STOP_CAPTURE;
+        }
+        if sym.lexeme.is_some() {
+            flags |= Self::HAS_LEXEME;
         }
         SymFlags(flags)
     }
@@ -615,6 +620,11 @@ impl SymFlags {
     pub fn gen_grammar(&self) -> bool {
         self.0 & Self::GEN_GRAMMAR != 0
     }
+
+    #[inline(always)]
+    pub fn has_lexeme(&self) -> bool {
+        self.0 & Self::HAS_LEXEME != 0
+    }
 }
 
 #[derive(Clone)]
@@ -638,24 +648,11 @@ impl CGrammar {
         self.lexer_spec.lexemes.len()
     }
 
-    pub fn lexeme_idx_of(&self, sym: CSymIdx) -> Option<LexemeIdx> {
-        let idx = sym.as_index().wrapping_sub(1);
-        if idx < self.num_terminals() {
-            Some(LexemeIdx::new(idx))
-        } else {
-            None
-        }
-    }
-
-    pub fn lexeme_to_sym_idx(&self, lex: LexemeIdx) -> CSymIdx {
-        CSymIdx(lex.as_u16() + 1)
-    }
-
-    pub fn sym_idx_of(&self, rule: RuleIdx) -> CSymIdx {
+    pub fn sym_idx_lhs(&self, rule: RuleIdx) -> CSymIdx {
         self.rule_idx_to_sym_idx[rule.as_index() >> RULE_SHIFT]
     }
 
-    pub fn sym_flags_of(&self, rule: RuleIdx) -> SymFlags {
+    pub fn sym_flags_lhs(&self, rule: RuleIdx) -> SymFlags {
         self.rule_idx_to_sym_flags[rule.as_index() >> RULE_SHIFT]
     }
 
@@ -681,13 +678,13 @@ impl CGrammar {
         &mut self.symbols[sym.0 as usize]
     }
 
-    pub fn sym_idx_at(&self, idx: RuleIdx) -> CSymIdx {
+    pub fn sym_idx_dot(&self, idx: RuleIdx) -> CSymIdx {
         self.rules[idx.0 as usize]
     }
 
     #[inline(always)]
-    pub fn sym_data_at(&self, idx: RuleIdx) -> &CSymbol {
-        self.sym_data(self.sym_idx_at(idx))
+    pub fn sym_data_dot(&self, idx: RuleIdx) -> &CSymbol {
+        self.sym_data(self.sym_idx_dot(idx))
     }
 
     pub fn start(&self) -> CSymIdx {
@@ -711,6 +708,7 @@ impl CGrammar {
                 props: SymbolProps::default(),
                 sym_flags: SymFlags(0),
                 gen_grammar: None,
+                lexeme: None,
             }],
             rules: vec![CSymIdx::NULL], // make sure RuleIdx::NULL is invalid
             rule_idx_to_sym_idx: vec![],
@@ -732,6 +730,7 @@ impl CGrammar {
             props: SymbolProps::default(),
             sym_flags: SymFlags(0),
             gen_grammar: None,
+            lexeme: Some(LexemeIdx::SKIP),
         };
         term_sym[skip_idx] = Some(csym);
 
@@ -748,6 +747,7 @@ impl CGrammar {
                     props: sym.props.clone(),
                     sym_flags: SymFlags(0),
                     gen_grammar: None,
+                    lexeme: sym.lexeme,
                 };
                 sym_map.insert(sym.idx, csym.idx);
                 term_sym[lx] = Some(csym);
@@ -771,6 +771,7 @@ impl CGrammar {
                 props: sym.props.clone(),
                 sym_flags: SymFlags(0),
                 gen_grammar: sym.gen_grammar.clone(),
+                lexeme: None,
             });
             sym_map.insert(sym.idx, cidx);
         }
@@ -846,12 +847,12 @@ impl CGrammar {
     }
 
     pub fn rule_to_string(&self, rule: RuleIdx) -> String {
-        let sym = self.sym_idx_of(rule);
+        let sym = self.sym_idx_lhs(rule);
         let symdata = self.sym_data(sym);
         let lhs = self.sym_name(sym);
         let (rhs, dot) = self.rule_rhs(rule);
         let dot_prop = if rhs.len() > 0 {
-            Some(&self.sym_data_at(rule).props)
+            Some(&self.sym_data_dot(rule).props)
         } else {
             None
         };
