@@ -8,9 +8,18 @@ import websockets
 
 async def invoke_websocket():
     uri = "ws://localhost:4242/v1/session"
-    prefix = ' how are you my friend ? ' * 1000
-    async with websockets.connect(uri) as websocket:
+    
+    async with websockets.connect(uri, ping_timeout=600000, close_timeout=6000000) as websocket:
+        prefix = ' how are you my friend ? '
         data = {'type': 'create_prefix', 'name': 's', 'prefix': prefix, 'following': '',
+                'sampling_params': {}},
+        await websocket.send(json.dumps(data))
+        response = await websocket.recv()
+        print(response)
+
+
+        prefix = ' I am good thank you. '
+        data = {'type': 'create_prefix', 'name': 't', 'prefix': prefix, 'following': 's',
                 'sampling_params': {}},
         await websocket.send(json.dumps(data))
         response = await websocket.recv()
