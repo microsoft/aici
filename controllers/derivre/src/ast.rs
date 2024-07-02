@@ -282,6 +282,14 @@ impl ExprSet {
         &self.pp
     }
 
+    pub fn cost(&self) -> usize {
+        self.cost
+    }
+
+    pub fn disable_optimizations(&mut self) {
+        self.optimize = false;
+    }
+
     pub fn expr_to_string(&self, id: ExprRef) -> String {
         self.pp.expr_to_string(&self, id)
     }

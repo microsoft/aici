@@ -1,9 +1,11 @@
 use aici_abi::svob::SimpleVob;
 use anyhow::Result;
-use derivre::{NextByte, RegexVec, StateDesc};
 use std::fmt::Debug;
 
-use super::lexerspec::{LexemeIdx, LexerSpec};
+use super::{
+    lexerspec::{LexemeIdx, LexerSpec},
+    regexvec::{RegexVec, StateDesc, NextByte},
+};
 
 const DEBUG: bool = true;
 

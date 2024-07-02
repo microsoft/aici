@@ -1,7 +1,9 @@
 use aici_abi::{bytes::limit_str, svob::SimpleVob};
 use anyhow::Result;
-use derivre::{ExprRef, RegexAst, RegexBuilder, RegexVec};
+use derivre::{ExprRef, RegexAst, RegexBuilder};
 use std::{fmt::Debug, hash::Hash};
+
+use super::regexvec::RegexVec;
 
 #[derive(Clone)]
 pub struct LexerSpec {
@@ -105,8 +107,11 @@ impl LexerSpec {
         // Replace the regex R for the lexeme with (R & ~(K1|K2|...)) where K1...
         // are the conflicting keywords.
         let rx_list: Vec<_> = self.lexemes.iter().map(|lex| lex.compiled_rx).collect();
-        self.regex_builder
-            .to_regex_vec(&rx_list, Some(self.lazy_lexemes()))
+        RegexVec::new_with_exprset(
+            self.regex_builder.exprset(),
+            &rx_list,
+            Some(self.lazy_lexemes()),
+        )
     }
 
     fn add_lexeme_spec(&mut self, mut spec: LexemeSpec) -> Result<LexemeIdx> {

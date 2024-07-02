@@ -1,16 +1,7 @@
-use std::{collections::HashSet, fmt::Debug};
+use derivre::raw::{DerivCache, ExprSet, NextByteCache, VecHashCons};
+use std::fmt::Debug;
 
-use anyhow::Result;
-
-use crate::{
-    ast::{ExprRef, ExprSet, NextByte},
-    bytecompress::ByteCompressor,
-    deriv::DerivCache,
-    hashcons::VecHashCons,
-    nextbyte::NextByteCache,
-    pp::PrettyPrinter,
-    SimpleVob,
-};
+pub use derivre::{AlphabetInfo, ExprRef, NextByte, SimpleVob, StateID};
 
 const DEBUG: bool = false;
 
@@ -20,56 +11,6 @@ macro_rules! debug {
             eprintln!($($arg)*);
         }
     };
-}
-
-#[derive(Clone, Copy, PartialEq, Eq, Hash)]
-pub struct StateID(u32);
-
-impl StateID {
-    // DEAD state corresponds to empty vector
-    pub const DEAD: StateID = StateID(0);
-    // MISSING state corresponds to yet not computed entries in the state table
-    pub const MISSING: StateID = StateID(1);
-
-    pub fn as_usize(&self) -> usize {
-        self.0 as usize
-    }
-
-    pub fn as_u32(&self) -> u32 {
-        self.0
-    }
-
-    pub fn is_valid(&self) -> bool {
-        *self != Self::MISSING
-    }
-
-    #[inline(always)]
-    pub fn is_dead(&self) -> bool {
-        *self == Self::DEAD
-    }
-
-    pub fn new(id: u32) -> Self {
-        Self(id)
-    }
-}
-
-impl Debug for StateID {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        if *self == StateID::DEAD {
-            write!(f, "StateID(DEAD)")
-        } else if *self == StateID::MISSING {
-            write!(f, "StateID(MISSING)")
-        } else {
-            write!(f, "StateID({})", self.0)
-        }
-    }
-}
-
-#[derive(Clone)]
-pub struct AlphabetInfo {
-    mapping: [u8; 256],
-    inv_mapping: [Option<u8>; 256],
-    size: usize,
 }
 
 #[derive(Clone)]
@@ -114,25 +55,6 @@ impl StateDesc {
 
 // public implementation
 impl RegexVec {
-    pub fn new_single(rx: &str) -> Result<Self> {
-        Self::new_vec(&[rx])
-    }
-
-    pub fn new_vec(rx_list: &[&str]) -> Result<Self> {
-        let parser = regex_syntax::ParserBuilder::new().build();
-        Self::new_with_parser(parser, rx_list)
-    }
-
-    pub fn new_with_parser(parser: regex_syntax::Parser, rx_list: &[&str]) -> Result<Self> {
-        let mut exprset = ExprSet::new(256);
-        let mut acc = Vec::new();
-        for rx in rx_list {
-            let ast = exprset.parse_expr(parser.clone(), rx)?;
-            acc.push(ast);
-        }
-        Ok(Self::new_with_exprset(&exprset, &acc, None))
-    }
-
     pub fn alpha(&self) -> &AlphabetInfo {
         &self.alpha
     }
@@ -305,7 +227,7 @@ impl RegexVec {
     }
 
     pub fn total_fuel_spent(&self) -> usize {
-        self.exprs.cost
+        self.exprs.cost()
     }
 
     pub fn set_max_states(&mut self, max_states: usize) {
@@ -362,36 +284,6 @@ impl RegexVec {
         )
     }
 
-    pub fn dfa(&mut self) -> Vec<u8> {
-        let mut used = HashSet::new();
-        let mut designated_bytes = vec![];
-        for b in 0..=255 {
-            let m = self.alpha.map(b);
-            if !used.contains(&m) {
-                used.insert(m);
-                designated_bytes.push(b);
-            }
-        }
-
-        let mut stack = vec![self.initial_state_all()];
-        let mut visited = HashSet::new();
-        while let Some(state) = stack.pop() {
-            for b in &designated_bytes {
-                let new_state = self.transition(state, *b);
-                if !visited.contains(&new_state) {
-                    stack.push(new_state);
-                    visited.insert(new_state);
-                    assert!(visited.len() < 250);
-                }
-            }
-        }
-
-        assert!(!self.state_table.contains(&StateID::MISSING));
-        let mut res = self.alpha.mapping.to_vec();
-        res.extend(self.state_table.iter().map(|s| s.as_u32() as u8));
-        res
-    }
-
     pub fn print_state_table(&self) {
         let mut state = 0;
         for row in self.state_table.chunks(self.alpha.len()) {
@@ -401,82 +293,6 @@ impl RegexVec {
             }
             state += 1;
         }
-    }
-}
-
-impl AlphabetInfo {
-    pub fn from_exprset(exprset: &ExprSet, rx_list: &[ExprRef]) -> (Self, ExprSet, Vec<ExprRef>) {
-        assert!(exprset.alphabet_size() == 256);
-        let compress = true;
-
-        debug!("rx0: {}", exprset.expr_to_string_with_info(rx_list[0]));
-
-        let ((exprset, rx_list), mapping, alphabet_size) = if compress {
-            let mut compressor = ByteCompressor::new();
-            let cost0 = exprset.cost;
-            let (mut exprset, rx_list) = compressor.compress(&exprset, rx_list);
-            exprset.cost += cost0;
-            exprset.set_pp(PrettyPrinter::new(
-                compressor.mapping.clone(),
-                compressor.alphabet_size,
-            ));
-            (
-                (exprset, rx_list),
-                compressor.mapping,
-                compressor.alphabet_size,
-            )
-        } else {
-            let alphabet_size = exprset.alphabet_size();
-            (
-                (exprset.clone(), rx_list.to_vec()),
-                (0..=255).collect(),
-                alphabet_size,
-            )
-        };
-
-        let mut inv_alphabet_mapping = [None; 256];
-        let mut num_mappings = [0; 256];
-        for (i, &b) in mapping.iter().enumerate() {
-            inv_alphabet_mapping[b as usize] = Some(i as u8);
-            num_mappings[b as usize] += 1;
-        }
-        for i in 0..alphabet_size {
-            if num_mappings[i] != 1 {
-                inv_alphabet_mapping[i] = None;
-            }
-        }
-
-        debug!(
-            "compressed: {}",
-            exprset.expr_to_string_with_info(rx_list[0])
-        );
-
-        let alpha = AlphabetInfo {
-            mapping: mapping.try_into().unwrap(),
-            inv_mapping: inv_alphabet_mapping,
-            size: alphabet_size,
-        };
-        (alpha, exprset, rx_list.to_vec())
-    }
-
-    pub fn map(&self, b: u8) -> usize {
-        self.mapping[b as usize] as usize
-    }
-
-    pub fn inv_map(&self, v: usize) -> Option<u8> {
-        self.inv_mapping[v]
-    }
-
-    pub fn len(&self) -> usize {
-        self.size
-    }
-
-    pub fn has_error(&self) -> bool {
-        self.size == 0
-    }
-
-    pub fn enter_error_state(&mut self) {
-        self.size = 0;
     }
 }
 
@@ -513,7 +329,7 @@ impl RegexVec {
         };
 
         // disable expensive optimizations after initial construction
-        r.exprs.optimize = false;
+        r.exprs.disable_optimizations();
 
         r.insert_state(vec![]);
         // also append state for the "MISSING"
@@ -539,7 +355,7 @@ impl RegexVec {
         //     return StateID::DEAD;
         // }
         assert!(lst.len() % 2 == 0);
-        let id = StateID(self.rx_sets.insert(&lst));
+        let id = StateID::new(self.rx_sets.insert(&lst));
         if id.as_usize() >= self.state_descs.len() {
             self.append_state(self.compute_state_desc(id));
         }
@@ -588,7 +404,7 @@ impl RegexVec {
         let mut vec_desc = vec![];
 
         let d0 = self.deriv.num_deriv;
-        let c0 = self.exprs.cost;
+        let c0 = self.exprs.cost();
         let t0 = std::time::Instant::now();
 
         for (idx, e) in iter_state(&self.rx_sets, state) {
@@ -599,7 +415,7 @@ impl RegexVec {
         }
 
         let num_deriv = self.deriv.num_deriv - d0;
-        let cost = self.exprs.cost - c0;
+        let cost = self.exprs.cost() - c0;
         self.fuel = self.fuel.saturating_sub(cost);
         if self.fuel == 0 {
             self.alpha.enter_error_state();

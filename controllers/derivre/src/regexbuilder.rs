@@ -160,6 +160,10 @@ impl RegexBuilder {
         }
     }
 
+    pub fn exprset(&self) -> &ExprSet {
+        &self.exprset
+    }
+
     pub fn mk_regex(&mut self, s: &str) -> Result<ExprRef> {
         let parser = self.parser_builder.build();
         self.exprset.parse_expr(parser, s)

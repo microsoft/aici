@@ -197,7 +197,7 @@ fn utf8_dfa() {
     println!("UTF8 {:?}", rx);
     let compiled = rx.dfa();
     println!("UTF8 {:?}", rx);
-    println!("mapping ({}) {:?}", rx.alphabet_size(), &compiled[0..256]);
+    println!("mapping ({}) {:?}", rx.alpha().len(), &compiled[0..256]);
     println!("states {:?}", &compiled[256..]);
     println!("initial {:?}", rx.initial_state_all());
 }
