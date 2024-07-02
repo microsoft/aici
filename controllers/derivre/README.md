@@ -20,7 +20,7 @@ The library only checks if the regex matches the string from the beginning
 (it doesn't search for it, or in other words there's an implied `\A` at the beginning).
 
 ```rust
-let mut rx = RegexVec::new_single("[ab]c").unwrap();
+let mut rx = Regex::new("[ab]c").unwrap();
 assert!(rx.is_match("ac"));
 assert!(rx.is_match("bc"));
 assert!(!rx.is_match("xxac"));
@@ -33,7 +33,7 @@ You can get the length of the string matching `B` upon successful match.
 
 ```rust
 // the syntax in other libraries would be: r"\A[abx]*(?=[xq]*y)"
-let mut rx = RegexVec::new_single("[abx]*(?P<stop>[xq]*y)").unwrap();
+let mut rx = Regex::new("[abx]*(?P<stop>[xq]*y)").unwrap();
 assert!(rx.lookahead_len("axxxxxy") == Some(1));
 assert!(rx.lookahead_len("axxxxxqqqy") == Some(4));
 assert!(rx.lookahead_len("axxxxxqqq") == None);

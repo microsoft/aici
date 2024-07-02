@@ -1,5 +1,5 @@
 use anyhow::Result;
-use derivre::{RegexVec, StateID};
+use derivre::{Regex, StateID};
 
 mod common;
 use common::RegexTests;
@@ -40,7 +40,7 @@ fn test_fowler() {
             // .utf8(false)
             .build();
 
-        let parsed = RegexVec::new_with_parser(parser, &t.regex);
+        let parsed = Regex::new_with_parser(parser, &t.regex);
         if parsed.is_err() {
             panic!(
                 "invalid syntax {} {:?}; {}",

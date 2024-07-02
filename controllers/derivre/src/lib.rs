@@ -7,12 +7,12 @@ mod bytecompress;
 mod mapper;
 mod pp;
 mod regexbuilder;
-mod regexvec;
+mod regex;
 mod simplify;
 mod syntax;
 
 pub use ast::{ExprRef, NextByte};
-pub use regexvec::{AlphabetInfo, RegexVec, StateID};
+pub use regex::{AlphabetInfo, Regex, StateID};
 
 use aici_abi::svob;
 pub use svob::{SimpleVob, SimpleVobIter, TokenId};

@@ -81,7 +81,7 @@ pub struct AlphabetInfo {
 }
 
 #[derive(Clone)]
-pub struct RegexVec {
+pub struct Regex {
     exprs: ExprSet,
     deriv: DerivCache,
     next_byte: NextByteCache,
@@ -102,8 +102,8 @@ struct StateDesc {
 }
 
 // public implementation
-impl RegexVec {
-    pub fn new_single(rx: &str) -> Result<Self> {
+impl Regex {
+    pub fn new(rx: &str) -> Result<Self> {
         let parser = regex_syntax::ParserBuilder::new().build();
         Self::new_with_parser(parser, rx)
     }
@@ -360,7 +360,7 @@ impl AlphabetInfo {
 }
 
 // private implementation
-impl RegexVec {
+impl Regex {
     pub(crate) fn new_with_exprset(exprset: &ExprSet, top_rx: ExprRef) -> Self {
         let (alpha, exprset, rx_list) = AlphabetInfo::from_exprset(exprset, &[top_rx]);
         let top_rx = rx_list[0];
@@ -368,7 +368,7 @@ impl RegexVec {
 
         let rx_sets = StateID::new_hash_cons();
 
-        let mut r = RegexVec {
+        let mut r = Regex {
             deriv: DerivCache::new(),
             next_byte: NextByteCache::new(),
             exprs: exprset,
@@ -430,8 +430,8 @@ impl RegexVec {
     }
 }
 
-impl Debug for RegexVec {
+impl Debug for Regex {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "RegexVec({})", self.stats())
+        write!(f, "Regex({})", self.stats())
     }
 }
