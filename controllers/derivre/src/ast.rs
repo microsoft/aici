@@ -286,7 +286,7 @@ impl ExprSet {
         self.cost
     }
 
-    pub fn disable_optimizations(&mut self) {
+    pub(crate) fn disable_optimizations(&mut self) {
         self.optimize = false;
     }
 

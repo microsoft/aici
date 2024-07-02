@@ -3,16 +3,6 @@ use std::fmt::Debug;
 
 pub use derivre::{AlphabetInfo, ExprRef, NextByte, SimpleVob, StateID};
 
-const DEBUG: bool = false;
-
-macro_rules! debug {
-    ($($arg:tt)*) => {
-        if DEBUG {
-            eprintln!($($arg)*);
-        }
-    };
-}
-
 #[derive(Clone)]
 pub struct RegexVec {
     exprs: ExprSet,
@@ -61,10 +51,6 @@ impl RegexVec {
 
     pub fn lazy_regexes(&self) -> &SimpleVob {
         &self.lazy
-    }
-
-    pub fn initial_state_all(&mut self) -> StateID {
-        self.initial_state(&SimpleVob::all_true(self.rx_list.len()))
     }
 
     pub fn initial_state(&mut self, selected: &SimpleVob) -> StateID {
@@ -126,32 +112,6 @@ impl RegexVec {
             self.state_table[idx] = new_state;
             new_state
         }
-    }
-
-    pub fn transition_bytes(&mut self, state: StateID, bytes: &[u8]) -> StateID {
-        let mut state = state;
-        for &b in bytes {
-            state = self.transition(state, b);
-        }
-        state
-    }
-
-    pub fn is_match(&mut self, text: &str) -> bool {
-        self.lookahead_len(text).is_some()
-    }
-
-    pub fn lookahead_len(&mut self, text: &str) -> Option<usize> {
-        let selected = SimpleVob::alloc(self.rx_list.len());
-        let mut state = self.initial_state(&selected.negated());
-        for b in text.bytes() {
-            let new_state = self.transition(state, b);
-            debug!("b: {:?} --{:?}--> {:?}", state, b as char, new_state);
-            state = new_state;
-            if state == StateID::DEAD {
-                return None;
-            }
-        }
-        self.lookahead_len_for_state(state)
     }
 
     /// Estimate the size of the regex tables in bytes.
@@ -306,11 +266,7 @@ impl RegexVec {
         let (alpha, exprset, rx_list) = AlphabetInfo::from_exprset(exprset, rx_list);
         let num_ast_nodes = exprset.len();
 
-        let mut rx_sets = VecHashCons::new();
-        let id = rx_sets.insert(&[]);
-        assert!(id == StateID::DEAD.as_u32());
-        let id = rx_sets.insert(&[0]);
-        assert!(id == StateID::MISSING.as_u32());
+        let rx_sets = StateID::new_hash_cons();
 
         let mut r = RegexVec {
             deriv: DerivCache::new(),
@@ -327,9 +283,6 @@ impl RegexVec {
             fuel: usize::MAX,
             max_states: usize::MAX,
         };
-
-        // disable expensive optimizations after initial construction
-        r.exprs.disable_optimizations();
 
         r.insert_state(vec![]);
         // also append state for the "MISSING"
@@ -362,10 +315,6 @@ impl RegexVec {
         id
     }
 
-    fn exprs(&self) -> &ExprSet {
-        &self.exprs
-    }
-
     fn compute_state_desc(&self, state: StateID) -> StateDesc {
         let mut res = StateDesc {
             state,
@@ -379,7 +328,7 @@ impl RegexVec {
         };
         for (idx, e) in iter_state(&self.rx_sets, state) {
             res.possible.set(idx, true);
-            if self.exprs().is_nullable(e) {
+            if self.exprs.is_nullable(e) {
                 res.accepting.set(idx, true);
                 if res.lowest_accepting.is_none() {
                     res.lowest_accepting = Some(idx);
@@ -448,7 +397,6 @@ fn iter_state<'a>(
         .map(move |idx| (lst[idx] as usize, ExprRef::new(lst[idx + 1])))
 }
 
-
 // #[test]
 // fn test_fuel() {
 //     let mut rx = RegexVec::new_single("a(bc+|b[eh])g|.h").unwrap();
@@ -462,4 +410,3 @@ fn iter_state<'a>(
 //     no_match(&mut rx, "abcg");
 //     assert!(rx.has_error());
 // }
-
