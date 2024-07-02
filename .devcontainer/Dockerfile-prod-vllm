@@ -13,6 +13,10 @@ COPY py/pyaici py/pyaici
 COPY py/llguidance py/llguidance
 COPY Cargo.toml Cargo.lock /workspace/
 
+# make sure we rebuild these
+RUN rm -r controllers/jsctrl/samples/dist controllers/jsctrl/ts/dist
+RUN touch controllers/jsctrl/build.rs
+
 RUN grep -v rllm Cargo.toml > Cargo.toml.tmp && mv Cargo.toml.tmp Cargo.toml
 
 RUN --mount=type=cache,target=/usr/local/cargo/git \
