@@ -558,15 +558,6 @@ impl TokTrie {
                 }
             }
         }
-        // all prefixes of 'start' are also allowed
-        if start.len() > 0 {
-            for len in 1..=start.len() {
-                let bytes = &start[0..len];
-                if let Some(tok) = self.token_id(bytes) {
-                    logits.allow_token(tok);
-                }
-            }
-        }
         self.add_bias(r, logits, start);
         self.apply_duplicates(logits);
     }
@@ -682,6 +673,16 @@ impl TokTrie {
 
     #[inline(never)]
     pub fn add_bias(&self, r: &mut impl Recognizer, toks: &mut SimpleVob, start: &[u8]) {
+        // all prefixes of 'start' are also allowed
+        if start.len() > 0 {
+            for len in 1..=start.len() {
+                let bytes = &start[0..len];
+                if let Some(tok) = self.token_id(bytes) {
+                    toks.allow_token(tok);
+                }
+            }
+        }
+
         r.trie_started();
         let n = self.child_at_bytes(self.root(), start).unwrap();
         let defl_tok = self.vocab_size() as u32;

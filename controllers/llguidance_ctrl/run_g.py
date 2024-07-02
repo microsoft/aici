@@ -185,9 +185,7 @@ def main():
         )
     )
 
-    grm = "6 * 7 = " + greedy_grammar(
-        body = lexeme("[0-9]{1,3}")
-    ) + "\n"
+    grm = "6 * 7 = " + greedy_grammar(body=lexeme("[0-9]{1,3}")) + "\n"
     # assert grm.match("6 * 7 = 42\n")
 
     grm = (
@@ -203,22 +201,32 @@ def main():
 
     grm = "6 * 7 = " + gen("name", max_tokens=2)
 
-    grm = "Name: " + gen('name', max_tokens=2) + " Height: " + gen('height', max_tokens=3)
-    grm = "Name: " + gen('name', max_tokens=2) + "Emily Carter is great; Height: " + gen('height', max_tokens=3)
+    grm = (
+        "Name: " + gen("name", max_tokens=2) + " Height: " + gen("height", max_tokens=3)
+    )
+    grm = (
+        "Name: "
+        + gen("name", max_tokens=2)
+        + "Emily Carter is great; Height: "
+        + gen("height", max_tokens=3)
+    )
 
     grm = "123" + gen(name="numbers", regex=r"\d*233", max_tokens=5)
 
-    grm = greedy_grammar(body=lexeme("[0-9]+"),skip_regex=r"\s*") + "x"
+    grm = (
+        "Here: 2 + 2 = "
+        + greedy_grammar(body=lexeme("[0-9]+"), skip_regex=r"\s*")
+        + "x"
+    )
+    grm = "Here: 2 + 2 = " + greedy_grammar(name="num", body=lexeme("[0-9]+"))
 
-    grm = "Here: 2 + 2 = " + guidance.json(name="num", schema={"type": "integer"})
+    # grm = "Here: 2 + 2 = " + guidance.json(name="num", schema={"type": "integer"})
     # grm = guidance.json(name="num", schema={"type": "integer"})
     # m = grm.match("123<s>")
     # print(m)
     # assert m["num"] == "123"
 
     # grm = "Name: " + gen('name', max_tokens=2) + " Height: " + gen('height', max_tokens=3)
-
-
 
     # g = zero_or_more("a") + "b"
     # assert g.match("b")

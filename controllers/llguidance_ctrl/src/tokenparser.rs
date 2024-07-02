@@ -407,7 +407,7 @@ impl TokenParser {
         }
 
         if token_prefix.is_empty() {
-            if let Err(e) = self.maybe_gen_grammar() {
+            if let Err(e) = self.maybe_push_parser() {
                 warn!(self, "Error creating nested parser: {}", e);
                 return MidProcessResult::stop();
             }
@@ -434,22 +434,27 @@ impl TokenParser {
         // self.parser.print_row(self.parser.num_rows() - 1);
         let mut set = self.parser.compute_bias(trie, &token_prefix);
 
-        if inner_done
-            || self.max_tokens_parser == 0
-            || (set.num_set() == 1 && set.is_allowed(trie.eos_token()))
-        {
+        if inner_done || self.max_tokens_parser == 0 {
             if self.parser_stack.is_empty() {
                 self.mid_process_was_accepting = inner_accepting;
-                infoln!(self, "only eos token allowed, stopping; accepting: {}", inner_accepting);
+                infoln!(
+                    self,
+                    "only eos token allowed, stopping; accepting: {}",
+                    inner_accepting
+                );
                 return MidProcessResult::stop();
             } else {
                 infoln!(self, "pop_parser; tokens left {}", self.max_tokens_parser);
                 self.pop_parser();
                 // re-start the whole process with a nice tail-recursion
-                return self.mid_process_inner(MidProcessArg {
-                    backtrack: 0,
-                    tokens: Vec::new(),
-                    fork_group: Vec::new(),
+                return self.mid_process_inner(if has_eos {
+                    arg
+                } else {
+                    MidProcessArg {
+                        backtrack: 0,
+                        tokens: Vec::new(),
+                        fork_group: Vec::new(),
+                    }
                 });
             }
         }
@@ -480,6 +485,9 @@ impl TokenParser {
                 self.pop_tokens = Some(pop_tokens);
             }
             self.mid_process_was_accepting = all_accepting;
+            if all_accepting {
+                set.allow_token(trie.eos_token());
+            }
         }
 
         infoln!(
@@ -499,7 +507,7 @@ impl TokenParser {
         return MidProcessResult::sample_with_temp(set, Some(self.parser.temperature()));
     }
 
-    fn maybe_gen_grammar(&mut self) -> Result<()> {
+    fn maybe_push_parser(&mut self) -> Result<()> {
         if let Some((msg, symidx, gen_grammar)) = self.parser.maybe_gen_grammar() {
             if msg.len() > 0 {
                 warn!(self, "{}", msg);

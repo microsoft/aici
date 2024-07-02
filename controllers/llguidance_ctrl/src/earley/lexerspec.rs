@@ -18,6 +18,7 @@ pub struct LexemeSpec {
     name: String,
     pub(crate) rx: RegexAst,
     compiled_rx: ExprRef,
+    ends_at_eos: bool,
     lazy: bool,
     contextual: bool,
 }
@@ -94,6 +95,16 @@ impl LexerSpec {
         v
     }
 
+    pub fn eos_ending_lexemes(&self) -> SimpleVob {
+        let mut v = self.alloc_lexeme_set();
+        for (idx, lex) in self.lexemes.iter().enumerate() {
+            if lex.ends_at_eos {
+                v.set(idx, true);
+            }
+        }
+        v
+    }
+
     pub fn is_nullable(&self, idx: LexemeIdx) -> bool {
         self.regex_builder
             .is_nullable(self.lexemes[idx.0].compiled_rx)
@@ -138,6 +149,7 @@ impl LexerSpec {
             compiled_rx: ExprRef::INVALID,
             lazy: false,
             contextual: false,
+            ends_at_eos: false,
         }
     }
 
@@ -157,6 +169,7 @@ impl LexerSpec {
             name,
             rx,
             lazy,
+            ends_at_eos: !lazy,
             ..self.empty_spec()
         })
     }

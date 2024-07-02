@@ -4,7 +4,7 @@ use std::fmt::Debug;
 
 use super::{
     lexerspec::{LexemeIdx, LexerSpec},
-    regexvec::{RegexVec, StateDesc, NextByte},
+    regexvec::{NextByte, RegexVec, StateDesc},
 };
 
 const DEBUG: bool = true;
@@ -73,7 +73,9 @@ impl Lexer {
     }
 
     pub fn allows_eos(&mut self, state: StateID) -> bool {
-        self.state_info(state).is_accepting()
+        let mut l = self.spec.eos_ending_lexemes();
+        l.and(&self.state_info(state).accepting);
+        !l.is_zero()
     }
 
     pub fn limit_state_to(&mut self, state: StateID, allowed_lexemes: &SimpleVob) -> StateID {

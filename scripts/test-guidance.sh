@@ -24,6 +24,7 @@ fi
 function runtest() {
     pytest "$@"
     if [ $? -ne 0 -a $? -ne 5 ] ; then
+        :
         exit 1
     fi
 }

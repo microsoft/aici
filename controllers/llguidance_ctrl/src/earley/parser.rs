@@ -388,11 +388,17 @@ impl Parser {
     pub fn compute_bias(&mut self, trie: &TokTrie, start: &[u8]) -> SimpleVob {
         let mut set = trie.alloc_token_set();
 
-        trie.compute_bias_ext(self, &mut set, start);
+        trie.add_bias(self, &mut set, start);
+        trie.apply_duplicates(&mut set);
 
-        if set.num_set() == 1 && set.is_allowed(trie.eos_token()) {
+        if set.is_zero() {
+            // nothing allowed
             // we're going to be stopped outside - we better flush the lexer
-            self.flush_lexer();
+            let _ = self.flush_lexer();
+        }
+
+        if start.is_empty() && self.lexer_allows_eos() {
+            set.allow_token(trie.eos_token());
         }
 
         set
@@ -846,6 +852,7 @@ impl Parser {
     }
 
     pub fn model_variables(&mut self) -> Vec<ModelVariable> {
+        // this can be used in future to allow "end-of-turn" special token and the like
         self.run_speculative(|s| {
             let mut vars = vec![];
             if s.flush_lexer() {
@@ -887,6 +894,9 @@ impl Parser {
         })
     }
 
+    /// Advance the parser as if the current lexeme (if any)
+    /// finished right here.
+    /// Returns true if the parser was able to advance (or there were no pending bytes for a lexeme).
     fn flush_lexer(&mut self) -> bool {
         if !self.has_pending_lexeme_bytes() {
             return true;
@@ -1493,26 +1503,20 @@ impl Recognizer for Parser {
         self.last_collapse = self.num_rows();
     }
 
-    fn special_allowed(&mut self, tok: SpecialToken) -> bool {
-        if false {
-            self.print_row(self.num_rows() - 1);
-            println!(
-                "model vars: accpt={} {:?}",
-                self.is_accepting(),
-                self.model_variables()
-            );
-        }
+    fn special_allowed(&mut self, _tok: SpecialToken) -> bool {
+        // handle EOS logic outside
+        unreachable!("special_allowed")
 
-        if self
-            .model_variables()
-            .contains(&ModelVariable::SpecialToken(tok))
-        {
-            true
-        } else if tok == SpecialToken::EndOfSentence {
-            self.is_accepting() || self.lexer_allows_eos()
-        } else {
-            false
-        }
+        // if self
+        //     .model_variables()
+        //     .contains(&ModelVariable::SpecialToken(tok))
+        // {
+        //     true
+        // } else if tok == SpecialToken::EndOfSentence {
+        //     self.is_accepting() || self.lexer_allows_eos()
+        // } else {
+        //     false
+        // }
     }
 
     fn trie_started(&mut self) {
