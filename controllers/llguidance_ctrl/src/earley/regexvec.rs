@@ -447,3 +447,19 @@ fn iter_state<'a>(
         .step_by(2)
         .map(move |idx| (lst[idx] as usize, ExprRef::new(lst[idx + 1])))
 }
+
+
+// #[test]
+// fn test_fuel() {
+//     let mut rx = RegexVec::new_single("a(bc+|b[eh])g|.h").unwrap();
+//     println!("{:?}", rx);
+//     rx.set_fuel(200);
+//     match_(&mut rx, "abcg");
+//     assert!(!rx.has_error());
+//     let mut rx = RegexVec::new_single("a(bc+|b[eh])g|.h").unwrap();
+//     println!("{:?}", rx);
+//     rx.set_fuel(20);
+//     no_match(&mut rx, "abcg");
+//     assert!(rx.has_error());
+// }
+

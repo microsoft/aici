@@ -9,7 +9,6 @@ use crate::{
     hashcons::VecHashCons,
     nextbyte::NextByteCache,
     pp::PrettyPrinter,
-    SimpleVob,
 };
 
 const DEBUG: bool = false;
@@ -51,6 +50,15 @@ impl StateID {
     pub fn new(id: u32) -> Self {
         Self(id)
     }
+
+    pub fn new_hash_cons() -> VecHashCons {
+        let mut rx_sets = VecHashCons::new();
+        let id = rx_sets.insert(&[]);
+        assert!(id == StateID::DEAD.as_u32());
+        let id = rx_sets.insert(&[ExprRef::INVALID.as_u32()]);
+        assert!(id == StateID::MISSING.as_u32());
+        rx_sets
+    }
 }
 
 impl Debug for StateID {
@@ -78,114 +86,62 @@ pub struct RegexVec {
     deriv: DerivCache,
     next_byte: NextByteCache,
     alpha: AlphabetInfo,
-    lazy: SimpleVob,
-    rx_list: Vec<ExprRef>,
+    initial: StateID,
     rx_sets: VecHashCons,
     state_table: Vec<StateID>,
     state_descs: Vec<StateDesc>,
     num_transitions: usize,
     num_ast_nodes: usize,
     max_states: usize,
-    fuel: usize,
 }
 
-#[derive(Clone, Debug)]
-pub struct StateDesc {
-    pub state: StateID,
-    pub lowest_accepting: Option<usize>,
-    pub accepting: SimpleVob,
-    pub possible: SimpleVob,
-
-    possible_lookahead_len: Option<usize>,
+#[derive(Clone, Debug, Default)]
+struct StateDesc {
     lookahead_len: Option<Option<usize>>,
     next_byte: Option<NextByte>,
-    lowest_match: Option<Option<(usize, usize)>>,
-}
-
-impl StateDesc {
-    pub fn is_accepting(&self) -> bool {
-        self.lowest_accepting.is_some()
-    }
-
-    pub fn is_dead(&self) -> bool {
-        self.possible.is_zero()
-    }
 }
 
 // public implementation
 impl RegexVec {
     pub fn new_single(rx: &str) -> Result<Self> {
-        Self::new_vec(&[rx])
-    }
-
-    pub fn new_vec(rx_list: &[&str]) -> Result<Self> {
         let parser = regex_syntax::ParserBuilder::new().build();
-        Self::new_with_parser(parser, rx_list)
+        Self::new_with_parser(parser, rx)
     }
 
-    pub fn new_with_parser(parser: regex_syntax::Parser, rx_list: &[&str]) -> Result<Self> {
+    pub fn new_with_parser(parser: regex_syntax::Parser, rx: &str) -> Result<Self> {
         let mut exprset = ExprSet::new(256);
-        let mut acc = Vec::new();
-        for rx in rx_list {
-            let ast = exprset.parse_expr(parser.clone(), rx)?;
-            acc.push(ast);
-        }
-        Ok(Self::new_with_exprset(&exprset, &acc, None))
+        let rx = exprset.parse_expr(parser.clone(), rx)?;
+        Ok(Self::new_with_exprset(&exprset, rx))
     }
 
     pub fn alpha(&self) -> &AlphabetInfo {
         &self.alpha
     }
 
-    pub fn lazy_regexes(&self) -> &SimpleVob {
-        &self.lazy
+    pub fn initial_state(&mut self) -> StateID {
+        self.initial
     }
 
-    pub fn initial_state_all(&mut self) -> StateID {
-        self.initial_state(&SimpleVob::all_true(self.rx_list.len()))
+    pub fn is_accepting(&mut self, state: StateID) -> bool {
+        self.lookahead_len_for_state(state).is_some()
     }
 
-    pub fn initial_state(&mut self, selected: &SimpleVob) -> StateID {
-        let mut vec_desc = vec![];
-        for idx in selected.iter() {
-            Self::push_rx(&mut vec_desc, idx as usize, self.rx_list[idx as usize]);
-        }
-        self.insert_state(vec_desc)
-    }
-
-    pub fn state_desc(&self, state: StateID) -> &StateDesc {
-        &self.state_descs[state.as_usize()]
-    }
-
-    pub fn possible_lookahead_len(&mut self, state: StateID) -> usize {
-        let desc = &mut self.state_descs[state.as_usize()];
-        if let Some(len) = desc.possible_lookahead_len {
-            return len;
-        }
-        let mut max_len = 0;
-        for (_, e) in iter_state(&self.rx_sets, state) {
-            max_len = max_len.max(self.exprs.possible_lookahead_len(e));
-        }
-        desc.possible_lookahead_len = Some(max_len);
-        max_len
+    fn resolve(rx_sets: &VecHashCons, state: StateID) -> ExprRef {
+        ExprRef::new(rx_sets.get(state.as_u32())[0])
     }
 
     pub fn lookahead_len_for_state(&mut self, state: StateID) -> Option<usize> {
-        let desc = &mut self.state_descs[state.as_usize()];
-        if desc.lowest_accepting.is_none() {
+        if state == StateID::DEAD || state == StateID::MISSING {
             return None;
         }
-        let idx = desc.lowest_accepting.unwrap();
+        let desc = &mut self.state_descs[state.as_usize()];
         if let Some(len) = desc.lookahead_len {
             return len;
         }
+        let expr = Self::resolve(&self.rx_sets, state);
         let mut res = None;
-        let exprs = &self.exprs;
-        for (idx2, e) in iter_state(&self.rx_sets, state) {
-            if res.is_none() && exprs.is_nullable(e) {
-                assert!(idx == idx2);
-                res = Some(exprs.lookahead_len(e).unwrap_or(0));
-            }
+        if self.exprs.is_nullable(expr) {
+            res = Some(self.exprs.lookahead_len(expr).unwrap_or(0));
         }
         desc.lookahead_len = Some(res);
         res
@@ -219,8 +175,7 @@ impl RegexVec {
     }
 
     pub fn lookahead_len(&mut self, text: &str) -> Option<usize> {
-        let selected = SimpleVob::alloc(self.rx_list.len());
-        let mut state = self.initial_state(&selected.negated());
+        let mut state = self.initial_state();
         for b in text.bytes() {
             let new_state = self.transition(state, b);
             debug!("b: {:?} --{:?}--> {:?}", state, b as char, new_state);
@@ -242,44 +197,20 @@ impl RegexVec {
             + self.rx_sets.num_bytes()
     }
 
-    /// Return index of lowest matching regex if any.
-    /// Lazy regexes match as soon as they accept, while greedy only
-    /// if they accept and force EOI.
-    pub fn lowest_match(&mut self, state: StateID) -> Option<(usize, usize)> {
-        let desc = &mut self.state_descs[state.as_usize()];
-        if let Some(lowest_match) = desc.lowest_match {
-            return lowest_match;
-        }
-        let mut res = None;
-        for (idx, e) in iter_state(&self.rx_sets, state) {
-            if !self.exprs.is_nullable(e) {
-                continue;
-            }
-            if self.lazy[idx] || self.next_byte.next_byte(&self.exprs, e) == NextByte::ForcedEOI {
-                let len = self.exprs.possible_lookahead_len(e);
-                res = Some((idx, len));
-                break;
-            }
-        }
-        desc.lowest_match = Some(res);
-        res
-    }
-
     /// Check if the there is only one transition out of state.
     /// This is an approximation - see docs for NextByte.
     pub fn next_byte(&mut self, state: StateID) -> NextByte {
+        if state == StateID::DEAD || state == StateID::MISSING {
+            return NextByte::Dead;
+        }
+
         let desc = &mut self.state_descs[state.as_usize()];
         if let Some(next_byte) = desc.next_byte {
             return next_byte;
         }
 
-        let mut next_byte = NextByte::Dead;
-        for (_, e) in iter_state(&self.rx_sets, state) {
-            next_byte = next_byte | self.next_byte.next_byte(&self.exprs, e);
-            if next_byte == NextByte::SomeBytes {
-                break;
-            }
-        }
+        let e = Self::resolve(&self.rx_sets, state);
+        let next_byte = self.next_byte.next_byte(&self.exprs, e);
         let next_byte = match next_byte {
             NextByte::ForcedByte(b) => {
                 if let Some(b) = self.alpha.inv_map(b as usize) {
@@ -294,71 +225,16 @@ impl RegexVec {
         next_byte
     }
 
-    pub fn limit_state_to(&mut self, state: StateID, allowed_lexemes: &SimpleVob) -> StateID {
-        let mut vec_desc = vec![];
-        for (idx, e) in iter_state(&self.rx_sets, state) {
-            if allowed_lexemes.get(idx) {
-                Self::push_rx(&mut vec_desc, idx, e);
-            }
-        }
-        self.insert_state(vec_desc)
-    }
-
-    pub fn total_fuel_spent(&self) -> usize {
-        self.exprs.cost
-    }
-
-    pub fn set_max_states(&mut self, max_states: usize) {
-        if !self.has_error() {
-            self.max_states = max_states;
-        }
-    }
-
-    // Each fuel point is on the order 100ns (though it varies).
-    // So, for ~10ms limit, do a .set_fuel(100_000).
-    pub fn set_fuel(&mut self, fuel: usize) {
-        if !self.has_error() {
-            self.fuel = fuel;
-        }
-    }
-
-    pub fn has_error(&self) -> bool {
-        self.alpha.has_error()
-    }
-
-    pub fn get_error(&self) -> Option<String> {
-        if self.has_error() {
-            if self.fuel == 0 {
-                Some("too many expressions constructed".to_string())
-            } else if self.state_descs.len() >= self.max_states {
-                Some(format!(
-                    "too many states: {} >= {}",
-                    self.state_descs.len(),
-                    self.max_states
-                ))
-            } else {
-                Some("unknown error".to_string())
-            }
-        } else {
-            None
-        }
-    }
-
     pub fn stats(&self) -> String {
         format!(
-            "regexps: {} with {} nodes (+ {} derived via {} derivatives with total fuel {}), states: {}; transitions: {}; bytes: {}; alphabet size: {} {}",
-            self.rx_list.len(),
+            "regexp: {} nodes (+ {} derived via {} derivatives), states: {}; transitions: {}; bytes: {}; alphabet size: {}",
             self.num_ast_nodes,
             self.exprs.len() - self.num_ast_nodes,
             self.deriv.num_deriv,
-            self.total_fuel_spent(),
             self.state_descs.len(),
             self.num_transitions,
             self.num_bytes(),
             self.alpha.len(),
-            if self.has_error() {
-                "ERROR"
-            } else { "" }
         )
     }
 
@@ -373,7 +249,7 @@ impl RegexVec {
             }
         }
 
-        let mut stack = vec![self.initial_state_all()];
+        let mut stack = vec![self.initial_state()];
         let mut visited = HashSet::new();
         while let Some(state) = stack.pop() {
             for b in &designated_bytes {
@@ -411,7 +287,7 @@ impl AlphabetInfo {
 
         debug!("rx0: {}", exprset.expr_to_string_with_info(rx_list[0]));
 
-        let ((exprset, rx_list), mapping, alphabet_size) = if compress {
+        let ((mut exprset, rx_list), mapping, alphabet_size) = if compress {
             let mut compressor = ByteCompressor::new();
             let cost0 = exprset.cost;
             let (mut exprset, rx_list) = compressor.compress(&exprset, rx_list);
@@ -433,6 +309,9 @@ impl AlphabetInfo {
                 alphabet_size,
             )
         };
+
+        // disable expensive optimizations after initial construction
+        exprset.disable_optimizations();
 
         let mut inv_alphabet_mapping = [None; 256];
         let mut num_mappings = [0; 256];
@@ -482,44 +361,41 @@ impl AlphabetInfo {
 
 // private implementation
 impl RegexVec {
-    pub(crate) fn new_with_exprset(
-        exprset: &ExprSet,
-        rx_list: &[ExprRef],
-        lazy: Option<SimpleVob>,
-    ) -> Self {
-        let (alpha, exprset, rx_list) = AlphabetInfo::from_exprset(exprset, rx_list);
+    pub(crate) fn new_with_exprset(exprset: &ExprSet, top_rx: ExprRef) -> Self {
+        let (alpha, exprset, rx_list) = AlphabetInfo::from_exprset(exprset, &[top_rx]);
+        let top_rx = rx_list[0];
         let num_ast_nodes = exprset.len();
 
-        let mut rx_sets = VecHashCons::new();
-        let id = rx_sets.insert(&[]);
-        assert!(id == StateID::DEAD.as_u32());
-        let id = rx_sets.insert(&[0]);
-        assert!(id == StateID::MISSING.as_u32());
+        let rx_sets = StateID::new_hash_cons();
 
         let mut r = RegexVec {
             deriv: DerivCache::new(),
             next_byte: NextByteCache::new(),
-            lazy: lazy.unwrap_or_else(|| SimpleVob::alloc(rx_list.len())),
             exprs: exprset,
             alpha,
-            rx_list,
             rx_sets,
             state_table: vec![],
             state_descs: vec![],
             num_transitions: 0,
             num_ast_nodes,
-            fuel: usize::MAX,
+            initial: StateID::MISSING,
             max_states: usize::MAX,
         };
 
-        // disable expensive optimizations after initial construction
-        r.exprs.optimize = false;
+        let desc = StateDesc {
+            lookahead_len: Some(None),
+            next_byte: Some(NextByte::Dead),
+        };
 
-        r.insert_state(vec![]);
+        // DEAD
+        r.append_state(desc.clone());
         // also append state for the "MISSING"
-        r.append_state(r.state_descs[0].clone());
+        r.append_state(desc);
         // in fact, transition from MISSING and DEAD should both lead to DEAD
         r.state_table.fill(StateID::DEAD);
+
+        r.initial = r.insert_state(top_rx);
+
         assert!(r.alpha.len() > 0);
         r
     }
@@ -533,86 +409,24 @@ impl RegexVec {
         }
     }
 
-    fn insert_state(&mut self, lst: Vec<u32>) -> StateID {
-        // does this help?
-        // if lst.len() == 0 {
-        //     return StateID::DEAD;
-        // }
-        assert!(lst.len() % 2 == 0);
-        let id = StateID(self.rx_sets.insert(&lst));
+    fn insert_state(&mut self, d: ExprRef) -> StateID {
+        let id = StateID(self.rx_sets.insert(&[d.as_u32()]));
         if id.as_usize() >= self.state_descs.len() {
-            self.append_state(self.compute_state_desc(id));
+            self.append_state(StateDesc::default());
         }
         id
-    }
-
-    fn exprs(&self) -> &ExprSet {
-        &self.exprs
-    }
-
-    fn compute_state_desc(&self, state: StateID) -> StateDesc {
-        let mut res = StateDesc {
-            state,
-            lowest_accepting: None,
-            accepting: SimpleVob::alloc(self.rx_list.len()),
-            possible: SimpleVob::alloc(self.rx_list.len()),
-            possible_lookahead_len: None,
-            lookahead_len: None,
-            next_byte: None,
-            lowest_match: None,
-        };
-        for (idx, e) in iter_state(&self.rx_sets, state) {
-            res.possible.set(idx, true);
-            if self.exprs().is_nullable(e) {
-                res.accepting.set(idx, true);
-                if res.lowest_accepting.is_none() {
-                    res.lowest_accepting = Some(idx);
-                }
-            }
-        }
-        if res.possible.is_zero() {
-            assert!(state == StateID::DEAD);
-        }
-        // debug!("state {:?} desc: {:?}", state, res);
-        res
-    }
-
-    fn push_rx(vec_desc: &mut Vec<u32>, idx: usize, e: ExprRef) {
-        vec_desc.push(idx as u32);
-        vec_desc.push(e.as_u32());
     }
 
     fn transition_inner(&mut self, state: StateID, b: u8) -> StateID {
         assert!(state.is_valid());
 
-        let mut vec_desc = vec![];
-
-        let d0 = self.deriv.num_deriv;
-        let c0 = self.exprs.cost;
-        let t0 = std::time::Instant::now();
-
-        for (idx, e) in iter_state(&self.rx_sets, state) {
-            let d = self.deriv.derivative(&mut self.exprs, e, b);
-            if d != ExprRef::NO_MATCH {
-                Self::push_rx(&mut vec_desc, idx, d);
-            }
+        let e = Self::resolve(&self.rx_sets, state);
+        let d = self.deriv.derivative(&mut self.exprs, e, b);
+        if d == ExprRef::NO_MATCH {
+            StateID::DEAD
+        } else {
+            self.insert_state(d)
         }
-
-        let num_deriv = self.deriv.num_deriv - d0;
-        let cost = self.exprs.cost - c0;
-        self.fuel = self.fuel.saturating_sub(cost);
-        if self.fuel == 0 {
-            self.alpha.enter_error_state();
-        }
-        if false && cost > 40 {
-            println!(
-                "cost: {:?} {} {}",
-                t0.elapsed() / (cost as u32),
-                num_deriv,
-                cost
-            );
-        }
-        self.insert_state(vec_desc)
     }
 }
 
@@ -620,14 +434,4 @@ impl Debug for RegexVec {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "RegexVec({})", self.stats())
     }
-}
-
-fn iter_state<'a>(
-    rx_sets: &'a VecHashCons,
-    state: StateID,
-) -> impl Iterator<Item = (usize, ExprRef)> + 'a {
-    let lst = rx_sets.get(state.as_u32());
-    (0..lst.len())
-        .step_by(2)
-        .map(move |idx| (lst[idx] as usize, ExprRef::new(lst[idx + 1])))
 }

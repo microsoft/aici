@@ -77,12 +77,8 @@ fn main() {
         // .unicode(false)
         // .utf8(false)
         .build();
-    let mut rx = RegexVec::new_with_parser(parser, &["a(bc+|b[eh])g|.h"]).unwrap();
+    let mut rx = RegexVec::new_with_parser(parser, "a(bc+|b[eh])g|.h").unwrap();
     println!("{:?}", rx);
     no_match(&mut rx, "abh");
-    println!("{:?}", rx);
-    rx.set_fuel(5);
-    no_match(&mut rx, "abcg");
-    assert!(rx.has_error());
     println!("{:?}", rx);
 }

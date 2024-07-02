@@ -157,21 +157,6 @@ fn test_lookaround() {
 }
 
 #[test]
-fn test_fuel() {
-    let mut rx = RegexVec::new_single("a(bc+|b[eh])g|.h").unwrap();
-    println!("{:?}", rx);
-    rx.set_fuel(200);
-    match_(&mut rx, "abcg");
-    assert!(!rx.has_error());
-
-    let mut rx = RegexVec::new_single("a(bc+|b[eh])g|.h").unwrap();
-    println!("{:?}", rx);
-    rx.set_fuel(20);
-    no_match(&mut rx, "abcg");
-    assert!(rx.has_error());
-}
-
-#[test]
 fn utf8_dfa() {
     let parser = regex_syntax::ParserBuilder::new()
         .unicode(false)
@@ -191,7 +176,7 @@ fn utf8_dfa() {
    )*
    "#;
 
-    let mut rx = RegexVec::new_with_parser(parser, &[utf8_rx]).unwrap();
+    let mut rx = RegexVec::new_with_parser(parser, utf8_rx).unwrap();
     println!("UTF8 {:?}", rx);
     //match_many(&mut rx, &["a", "ą", "ę", "ó", "≈ø¬", "\u{1f600}"]);
     println!("UTF8 {:?}", rx);
@@ -199,7 +184,7 @@ fn utf8_dfa() {
     println!("UTF8 {:?}", rx);
     println!("mapping ({}) {:?}", rx.alpha().len(), &compiled[0..256]);
     println!("states {:?}", &compiled[256..]);
-    println!("initial {:?}", rx.initial_state_all());
+    println!("initial {:?}", rx.initial_state());
 }
 
 #[test]
@@ -207,7 +192,7 @@ fn utf8_restrictions() {
     let mut rx = RegexVec::new_single("(.|\n)*").unwrap();
     println!("{:?}", rx);
     match_many(&mut rx, &["", "a", "\n", "\n\n", "\x00", "\x7f"]);
-    let s0 = rx.initial_state_all();
+    let s0 = rx.initial_state();
     assert!(rx.transition(s0, 0x80).is_dead());
     assert!(rx.transition(s0, 0xC0).is_dead());
     assert!(rx.transition(s0, 0xC1).is_dead());
@@ -258,14 +243,14 @@ fn unicode_case() {
 }
 
 fn validate_next_byte(rx: &mut RegexVec, data: Vec<(NextByte, u8)>) {
-    let mut s = rx.initial_state_all();
+    let mut s = rx.initial_state();
     for (exp, b) in data {
         let nb = rx.next_byte(s);
         if nb != exp {
             panic!("expected {:?}, got {:?}", exp, nb);
         }
         if nb == NextByte::ForcedEOI {
-            assert!(rx.state_desc(s).is_accepting());
+            assert!(rx.is_accepting(s));
         } else if nb == NextByte::Dead {
             assert!(s.is_dead());
         }
@@ -291,7 +276,7 @@ fn next_byte() {
         ],
     );
 
-    rx = RegexVec::new_vec(&["abdx", "aBDy"]).unwrap();
+    rx = RegexVec::new_single("abdx|aBDy").unwrap();
     validate_next_byte(
         &mut rx,
         vec![
@@ -301,28 +286,7 @@ fn next_byte() {
         ],
     );
 
-    rx = RegexVec::new_vec(&["abdx|aBDy"]).unwrap();
-    validate_next_byte(
-        &mut rx,
-        vec![
-            (NextByte::ForcedByte(b'a'), b'a'),
-            (NextByte::SomeBytes, b'B'),
-            (NextByte::ForcedByte(b'D'), b'D'),
-        ],
-    );
-
-    rx = RegexVec::new_vec(&["foo", "bar"]).unwrap();
-    validate_next_byte(
-        &mut rx,
-        vec![
-            (NextByte::SomeBytes, b'f'),
-            (NextByte::ForcedByte(b'o'), b'o'),
-            (NextByte::ForcedByte(b'o'), b'o'),
-            (NextByte::ForcedEOI, b'X'),
-        ],
-    );
-
-    rx = RegexVec::new_vec(&["foo|bar"]).unwrap();
+    rx = RegexVec::new_single("foo|bar").unwrap();
     validate_next_byte(
         &mut rx,
         vec![

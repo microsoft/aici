@@ -1,6 +1,5 @@
 use std::fmt::Debug;
 
-use aici_abi::svob::SimpleVob;
 use anyhow::{ensure, Result};
 use regex_syntax::ParserBuilder;
 
@@ -8,7 +7,7 @@ use crate::{
     ast::ExprSet,
     mapper::map_ast,
     pp::{byte_to_string, byteset_to_string},
-    ExprRef, RegexVec,
+    ExprRef,
 };
 
 #[derive(Clone)]
@@ -204,10 +203,6 @@ impl RegexBuilder {
                 Ok(r)
             },
         )
-    }
-
-    pub fn to_regex_vec(&self, rx_list: &[ExprRef], lazy: Option<SimpleVob>) -> RegexVec {
-        RegexVec::new_with_exprset(&self.exprset, rx_list, lazy)
     }
 
     pub fn is_nullable(&self, r: ExprRef) -> bool {

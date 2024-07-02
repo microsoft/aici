@@ -40,7 +40,7 @@ fn test_fowler() {
             // .utf8(false)
             .build();
 
-        let parsed = RegexVec::new_with_parser(parser, &[&t.regex]);
+        let parsed = RegexVec::new_with_parser(parser, &t.regex);
         if parsed.is_err() {
             panic!(
                 "invalid syntax {} {:?}; {}",
@@ -55,8 +55,8 @@ fn test_fowler() {
 
         // find all leftmost-longest matches
         for start_idx in 0..t.haystack.len() {
-            let mut state = rx.initial_state_all();
-            let mut last_match = if rx.state_desc(state).is_accepting() {
+            let mut state = rx.initial_state();
+            let mut last_match = if rx.is_accepting(state) {
                 start_idx as isize
             } else {
                 -1
@@ -64,7 +64,7 @@ fn test_fowler() {
             for idx in start_idx..t.haystack.len() {
                 let c = t.haystack[idx];
                 let new_state = rx.transition(state, c);
-                if rx.state_desc(new_state).is_accepting() {
+                if rx.is_accepting(new_state) {
                     last_match = (idx + 1) as isize;
                 }
                 if new_state == StateID::DEAD {
