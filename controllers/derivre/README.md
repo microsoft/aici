@@ -40,8 +40,6 @@ assert!(rx.lookahead_len("axxxxxqqq") == None);
 assert!(rx.lookahead_len("ccqy") == None);
 ```
 
-You can also run several regexes at once, [see sample](./tests/sample_multi.rs).
-
 ## Code map
 
 In recommended reading order:
@@ -50,7 +48,7 @@ In recommended reading order:
 - [deriv.rs](./src/deriv.rs) - derivative computation
 - [bytecompress.rs](./src/bytecompress.rs) - alphabet compression
 - [syntax.rs](./src/syntax.rs) - uses `regex-syntax` crate for parsing
-- [regexvec.rs](./src/regexvec.rs) - top-level memoization of state transition and user interface
+- [regexc.rs](./src/regex.rs) - top-level memoization of state transition and user interface
 
 The rest:
 
