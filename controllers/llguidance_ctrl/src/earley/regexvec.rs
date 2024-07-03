@@ -1,7 +1,8 @@
+use aici_abi::svob::SimpleVob;
 use derivre::raw::{DerivCache, ExprSet, NextByteCache, VecHashCons};
 use std::fmt::Debug;
 
-pub use derivre::{AlphabetInfo, ExprRef, NextByte, SimpleVob, StateID};
+pub use derivre::{AlphabetInfo, ExprRef, NextByte, StateID};
 
 #[derive(Clone)]
 pub struct RegexVec {

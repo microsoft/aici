@@ -1178,7 +1178,6 @@ name = "derivre"
 version = "0.1.0"
 dependencies = [
  "ahash",
- "aici_abi",
  "anyhow",
  "bstr 1.9.1",
  "bytemuck",

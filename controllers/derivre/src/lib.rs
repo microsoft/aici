@@ -14,9 +14,6 @@ mod syntax;
 pub use ast::{ExprRef, NextByte};
 pub use regex::{AlphabetInfo, Regex, StateID};
 
-use aici_abi::svob;
-pub use svob::{SimpleVob, SimpleVobIter, TokenId};
-
 pub use regexbuilder::{RegexAst, RegexBuilder};
 
 pub use mapper::map_ast; // utility function

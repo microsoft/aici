@@ -2,7 +2,7 @@ use std::{collections::HashMap, hash::Hash};
 
 use crate::{
     ast::{byteset_contains, byteset_set, Expr, ExprSet},
-    ExprRef, SimpleVob,
+    ExprRef,
 };
 
 pub struct ByteCompressor {
@@ -82,12 +82,12 @@ impl ByteCompressor {
         self.mapping = vec![INVALID_MAPPING; exprset.alphabet_size()];
 
         let mut todo = rx_list.to_vec();
-        let mut visited = SimpleVob::alloc(exprset.len());
+        let mut visited = vec![false; exprset.len()];
         while let Some(e) = todo.pop() {
-            if visited.get(e.as_usize()) {
+            if visited[e.as_usize()] {
                 continue;
             }
-            visited.set(e.as_usize(), true);
+            visited[e.as_usize()] = true;
             todo.extend_from_slice(exprset.get_args(e));
             match exprset.get(e) {
                 Expr::Byte(b) => {
@@ -109,7 +109,10 @@ impl ByteCompressor {
         if num <= 64 {
             self.compress_bytesets(|_| 0u64, |v, idx| *v |= 1 << idx);
         } else {
-            self.compress_bytesets(|size| SimpleVob::alloc(size), |v, idx| v.set(idx, true));
+            self.compress_bytesets(
+                |size| vec![0u32; (size + 31) / 32],
+                |v, idx| v[idx / 32] |= 1 << (idx % 32),
+            );
         }
 
         let mut trg = ExprSet::new(self.alphabet_size);
