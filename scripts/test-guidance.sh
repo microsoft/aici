@@ -19,6 +19,12 @@ if [ "X$1" != "X" ] ; then
         pytest --selected_model azure_guidance --durations=10 $FILES "$@"
         exit $?
     fi
+
+    if [ "X$1" = "X--ll" ] ; then
+        shift
+        pytest tests/unit/test_ll.py "$@"
+        exit $?
+    fi
 fi
 
 function runtest() {
