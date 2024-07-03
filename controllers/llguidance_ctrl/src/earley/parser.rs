@@ -452,8 +452,12 @@ impl Parser {
     }
 
     pub fn lexer_allows_eos(&mut self) -> bool {
-        let curr = self.lexer_state();
-        self.lexer.allows_eos(curr.lexer_state)
+        if self.has_pending_lexeme_bytes() {
+            self.lexer.allows_eos(self.lexer_state().lexer_state)
+        } else {
+            // empty lexemes are not allowed
+            false
+        }
     }
 
     fn item_to_string(&self, idx: usize) -> String {
