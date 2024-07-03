@@ -1,7 +1,7 @@
 from .prompt import PromptNode, TextNode
 
 from typing import List
-from pyaici import ast
+from pyaici import ast_ as ast
 
 class GenNode(PromptNode):
 
