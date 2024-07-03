@@ -220,6 +220,15 @@ def main():
     )
     grm = "Here: 2 + 2 = " + greedy_grammar(name="num", body=lexeme("[0-9]+"))
 
+    grm = "Here: 1 / 10 = " + greedy_grammar(
+        body=select(
+            [
+                lexeme(r"-?(?:0|[1-9][0-9]*)", contextual=True),
+                lexeme(r"-?(?:0|[1-9][0-9]*)(?:\.[0-9]+)", contextual=True),
+            ]
+        )
+    )
+
     # grm = "Here: 2 + 2 = " + guidance.json(name="num", schema={"type": "integer"})
     # grm = guidance.json(name="num", schema={"type": "integer"})
     # m = grm.match("123<s>")

@@ -124,26 +124,47 @@ impl RegexVec {
             + self.rx_sets.num_bytes()
     }
 
+    fn lowest_match_inner(&mut self, state: StateID) -> Option<(usize, usize)> {
+        let mut all_eoi = true;
+        let mut eoi_candidate = None;
+        // fine the first lazy matching regex
+        // failing that, if all regexes are matching and force EOI, pick the first one
+        for (idx, e) in iter_state(&self.rx_sets, state) {
+            if !self.exprs.is_nullable(e) {
+                all_eoi = false;
+                continue;
+            }
+            if self.lazy[idx] {
+                let len = self.exprs.possible_lookahead_len(e);
+                return Some((idx, len));
+            }
+            if all_eoi {
+                if self.next_byte.next_byte(&self.exprs, e) == NextByte::ForcedEOI {
+                    if eoi_candidate.is_none() {
+                        eoi_candidate = Some((idx, self.exprs.possible_lookahead_len(e)));
+                    }
+                } else {
+                    all_eoi = false;
+                }
+            }
+        }
+
+        if all_eoi {
+            eoi_candidate
+        } else {
+            None
+        }
+    }
+
     /// Return index of lowest matching regex if any.
     /// Lazy regexes match as soon as they accept, while greedy only
     /// if they accept and force EOI.
     pub fn lowest_match(&mut self, state: StateID) -> Option<(usize, usize)> {
-        let desc = &mut self.state_descs[state.as_usize()];
-        if let Some(lowest_match) = desc.lowest_match {
+        if let Some(lowest_match) = self.state_descs[state.as_usize()].lowest_match {
             return lowest_match;
         }
-        let mut res = None;
-        for (idx, e) in iter_state(&self.rx_sets, state) {
-            if !self.exprs.is_nullable(e) {
-                continue;
-            }
-            if self.lazy[idx] || self.next_byte.next_byte(&self.exprs, e) == NextByte::ForcedEOI {
-                let len = self.exprs.possible_lookahead_len(e);
-                res = Some((idx, len));
-                break;
-            }
-        }
-        desc.lowest_match = Some(res);
+        let res = self.lowest_match_inner(state);
+        self.state_descs[state.as_usize()].lowest_match = Some(res);
         res
     }
 
