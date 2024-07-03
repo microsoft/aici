@@ -38,6 +38,9 @@ if test -z "$SKIP_LLAMA_CPP" ; then
     FOLDERS="$FOLDERS rllm/rllm-llamacpp"
 fi
 
+# fix docker build issues
+test -f controllers/jsctrl/ts/dist/aici.js || touch controllers/jsctrl/build.rs
+
 for f in $FOLDERS ; do
     echo "Build $f..."
     (cd $f && cargo build --release)
