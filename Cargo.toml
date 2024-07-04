@@ -2,6 +2,7 @@
 exclude = ["tch-rs"]
 members = [
     "aicirt",
+    "controllers/toktrie",
     "controllers/aici_abi",
     "controllers/aici_native",
     "controllers/declctrl",

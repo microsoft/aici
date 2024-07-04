@@ -1,5 +1,6 @@
 use crate::{
-    host::host_trie, toktree::{Recognizer, SpecialToken, TokTrie}, AiciCtrl, MidProcessArg, MidProcessResult
+    toktree::{Recognizer, SpecialToken, TokTrie},
+    AiciCtrl, MidProcessArg, MidProcessResult,
 };
 use std::fmt::Debug;
 
