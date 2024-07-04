@@ -1,9 +1,4 @@
-use crate::{
-    bytes::{vec_from_bytes, TokenId},
-    svob::SimpleVob,
-    toktree::TokTrie,
-    SeqId,
-};
+use crate::{bytes::vec_from_bytes, svob::SimpleVob, toktree::TokTrie, SeqId, TokenId};
 use serde::{Deserialize, Serialize};
 
 #[repr(transparent)]

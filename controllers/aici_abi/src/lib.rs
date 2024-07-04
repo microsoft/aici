@@ -1,12 +1,10 @@
+pub use toktrie::{bytes, recognizer, rng, svob, toktree};
+
 use serde::{Deserialize, Serialize};
 use svob::SimpleVob;
 
-pub mod bytes;
+
 mod host;
-pub mod recognizer;
-pub mod rng;
-pub mod svob;
-pub mod toktree;
 
 #[cfg(feature = "cfg")]
 pub mod cfg;
@@ -20,7 +18,7 @@ pub mod dlex;
 
 pub mod substring;
 
-pub type TokenId = bytes::TokenId;
+pub type TokenId = toktrie::TokenId;
 
 pub use host::{
     aici_stop, arg_bytes, arg_string, get_config, host_trie, self_seq_id, tokenize, tokenize_bytes,

@@ -1,34 +1,5 @@
-use crate::{
-    toktree::{Recognizer, SpecialToken, TokTrie},
-    AiciCtrl, MidProcessArg, MidProcessResult,
-};
+use crate::toktree::{Recognizer, SpecialToken};
 use std::fmt::Debug;
-
-pub struct AiciRecognizer<R: Recognizer> {
-    pub trie: TokTrie,
-    pub rec: R,
-}
-
-impl<R: Recognizer> AiciRecognizer<R> {
-    pub fn from_recognizer(rec: R) -> Self {
-        AiciRecognizer {
-            trie: host_trie(),
-            rec,
-        }
-    }
-}
-
-impl<R: Recognizer + Clone> AiciCtrl for AiciRecognizer<R> {
-    fn mid_process(&mut self, arg: MidProcessArg) -> MidProcessResult {
-        if arg.has_eos() {
-            return MidProcessResult::stop();
-        }
-        self.trie.append_tokens(&mut self.rec, &arg.tokens).unwrap();
-        let mut set = self.trie.alloc_token_set();
-        self.trie.compute_bias(&mut self.rec, &mut set);
-        MidProcessResult::sample(set)
-    }
-}
 
 pub trait FunctionalRecognizer<S: Copy> {
     /// Initial state
@@ -37,6 +8,10 @@ pub trait FunctionalRecognizer<S: Copy> {
     fn try_append(&self, state: S, byte: u8) -> Option<S>;
     /// Check if given special token is allowed in given state.
     fn special_allowed(&self, state: S, tok: SpecialToken) -> bool;
+    /// Get error message if recognizer is in error state.
+    fn get_error(&self, _state: S) -> Option<String> {
+        None
+    }
 }
 
 #[derive(Clone)]
@@ -96,6 +71,10 @@ impl<S: Copy + Debug, R: FunctionalRecognizer<S>> Recognizer for StackRecognizer
 
     fn special_allowed(&mut self, tok: SpecialToken) -> bool {
         self.rec.special_allowed(self.stack[self.stack_ptr], tok)
+    }
+
+    fn get_error(&mut self) -> Option<String> {
+        self.rec.get_error(self.stack[self.stack_ptr])
     }
 
     #[inline(always)]

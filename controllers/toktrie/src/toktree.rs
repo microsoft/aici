@@ -44,7 +44,7 @@ pub trait Recognizer {
     /// This combines `push_byte` and `byte_allowed` into one function for performance.
     fn try_push_byte(&mut self, byte: u8) -> bool;
     /// Check if there are any errors to be reported to the user.
-    fn get_error(&self) -> Option<String> {
+    fn get_error(&mut self) -> Option<String> {
         None
     }
 }
