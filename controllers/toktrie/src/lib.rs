@@ -1,5 +1,4 @@
 use serde::{Deserialize, Serialize};
-use svob::SimpleVob;
 
 pub mod bytes;
 pub mod recognizer;
@@ -10,7 +9,7 @@ pub mod toktree;
 pub type TokenId = bytes::TokenId;
 
 #[derive(Serialize, Deserialize, Debug)]
-pub struct MidProcessArg {
+pub struct StepArg {
     /// Sampling result for the previous iteration.
     /// For simple sampled token 't', backtrack==0 and tokens==[t].
     /// For first request, backtrack==0 and tokens==[] (prompt is passed separately, before).
@@ -19,7 +18,7 @@ pub struct MidProcessArg {
     pub tokens: Vec<TokenId>,
 }
 
-impl MidProcessArg {
+impl StepArg {
     pub fn save_tokens(&self, acc_tokens: &mut Vec<TokenId>) {
         let bt = self.backtrack as usize;
         assert!(
@@ -99,6 +98,18 @@ impl<S> Branch<S> {
         }
     }
 
+    pub fn stop() -> Self {
+        Branch {
+            sample_mask: None,
+            temperature: None,
+            splices: vec![],
+        }
+    }
+
+    pub fn is_stop(&self) -> bool {
+        self.sample_mask.is_none() && self.splices.is_empty()
+    }
+
     pub fn splice(backtrack: u32, ff_tokens: Vec<TokenId>) -> Self {
         Branch {
             sample_mask: None,
@@ -114,47 +125,12 @@ impl<S> Branch<S> {
     pub fn noop() -> Self {
         Self::splice(0, vec![])
     }
-}
 
-#[derive(Debug)]
-pub struct MidProcessResult {
-    /// Fork the request into multiple branches.
-    /// Typically, exactly one branch is returned.
-    /// If multiple branches are returned, they are executed in parallel.
-    /// If no branches are returned, the request is terminated.
-    pub branches: Vec<Branch<SimpleVob>>,
-}
-
-impl MidProcessResult {
-    pub fn stop() -> Self {
-        MidProcessResult { branches: vec![] }
-    }
-
-    pub fn sample(set: SimpleVob) -> Self {
-        Self::sample_with_temp(set, None)
-    }
-
-    pub fn sample_with_temp(set: SimpleVob, temperature: Option<f32>) -> Self {
-        MidProcessResult {
-            branches: vec![Branch {
-                sample_mask: Some(set),
-                temperature: temperature,
-                splices: vec![],
-            }],
+    pub fn sample(set: S, temperature: Option<f32>) -> Self {
+        Branch {
+            sample_mask: Some(set),
+            temperature,
+            splices: vec![],
         }
-    }
-
-    pub fn splice(backtrack: u32, ff_tokens: Vec<TokenId>) -> Self {
-        MidProcessResult {
-            branches: vec![Branch::splice(backtrack, ff_tokens)],
-        }
-    }
-
-    pub fn noop() -> Self {
-        Self::splice(0, vec![])
-    }
-
-    pub fn is_stop(&self) -> bool {
-        self.branches.is_empty()
     }
 }

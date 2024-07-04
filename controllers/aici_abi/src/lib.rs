@@ -3,7 +3,6 @@ pub use toktrie::{bytes, recognizer, rng, svob, toktree};
 use serde::{Deserialize, Serialize};
 use svob::SimpleVob;
 
-
 mod host;
 
 #[cfg(feature = "cfg")]
@@ -77,90 +76,7 @@ impl MidProcessArg {
     }
 }
 
-/*
-For example, if we're generating JSON, according to the following schema:
-{
-  "type": "object",
-  "properties": {
-    "name": {"type": "string"},
-    "age": {"type": "integer"}
-  }
-}
-
-Let's say we have generated: {"name": "something
-We would use a single splice:
-    when_sampled: ['"', '",', '", '],
-    backtrack: 1,
-    ff_tokens: tokenize('", "age": ')
-Which means: when any token starting with '"' is sampled, we remove it (backtrack: 1)
-and then append the next full fragment of JSON '", "age": '
-
-If the tokenizers has tokens like 'a"', 'b"' etc, then we would need many splices
-(there may be limits how many we want to pass over the IPC boundary).
-*/
-
-/// Describes what to do after sampling.
-#[derive(Serialize, Deserialize, Clone, Debug)]
-pub struct Splice {
-    /// If one of the tokens in when_sampled is sampled, this sequence is appended.
-    /// When empty, this sequence is appended unconditionally, regardless of sampling.
-    pub when_sampled: Vec<TokenId>,
-    /// Backtrack this much before appending this sequence (this includes sampled token if any).
-    pub backtrack: u32,
-    /// Append these tokens after backtracking.
-    pub ff_tokens: Vec<TokenId>,
-}
-
-#[derive(Serialize, Deserialize, Debug)]
-pub struct Branch<S> {
-    /// If None, no sampling is performed.
-    /// If Some(set), only tokens from the set are allowed.
-    pub sample_mask: Option<S>,
-    /// Override temperature for sampling. It may or may not be sticky.
-    pub temperature: Option<f32>,
-    /// Describes what to do after sampling.
-    /// If no sampling, there should be exactly one splice, with empty `when_sampled`.
-    pub splices: Vec<Splice>,
-}
-
-impl<S: Clone> Clone for Branch<S> {
-    fn clone(&self) -> Self {
-        Branch {
-            sample_mask: self.sample_mask.clone(),
-            temperature: self.temperature,
-            splices: self.splices.clone(),
-        }
-    }
-}
-
-impl<S> Branch<S> {
-    pub fn map_mask<F, T>(&self, f: F) -> Branch<T>
-    where
-        F: FnOnce(&S) -> T,
-    {
-        Branch {
-            sample_mask: self.sample_mask.as_ref().map(f),
-            temperature: self.temperature,
-            splices: self.splices.clone(),
-        }
-    }
-
-    pub fn splice(backtrack: u32, ff_tokens: Vec<TokenId>) -> Self {
-        Branch {
-            sample_mask: None,
-            temperature: None,
-            splices: vec![Splice {
-                when_sampled: vec![],
-                backtrack,
-                ff_tokens,
-            }],
-        }
-    }
-
-    pub fn noop() -> Self {
-        Self::splice(0, vec![])
-    }
-}
+pub use toktrie::{Branch, Splice};
 
 #[derive(Debug)]
 pub struct MidProcessResult {
@@ -172,6 +88,16 @@ pub struct MidProcessResult {
 }
 
 impl MidProcessResult {
+    pub fn from_branch(branch: Branch<SimpleVob>) -> Self {
+        if branch.is_stop() {
+            Self::stop()
+        } else {
+            MidProcessResult {
+                branches: vec![branch],
+            }
+        }
+    }
+
     pub fn stop() -> Self {
         MidProcessResult { branches: vec![] }
     }
@@ -181,19 +107,11 @@ impl MidProcessResult {
     }
 
     pub fn sample_with_temp(set: SimpleVob, temperature: Option<f32>) -> Self {
-        MidProcessResult {
-            branches: vec![Branch {
-                sample_mask: Some(set),
-                temperature: temperature,
-                splices: vec![],
-            }],
-        }
+        Self::from_branch(Branch::sample(set, temperature))
     }
 
     pub fn splice(backtrack: u32, ff_tokens: Vec<TokenId>) -> Self {
-        MidProcessResult {
-            branches: vec![Branch::splice(backtrack, ff_tokens)],
-        }
+        Self::from_branch(Branch::splice(backtrack, ff_tokens))
     }
 
     pub fn noop() -> Self {
