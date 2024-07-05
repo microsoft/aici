@@ -299,6 +299,7 @@ dependencies = [
  "serde",
  "serde_json",
  "tokenizers",
+ "toktrie_hf_tokenizers",
 ]
 
 [[package]]
@@ -4029,6 +4030,19 @@ dependencies = [
  "rustc-hash 2.0.0",
  "serde",
  "serde_json",
+]
+
+[[package]]
+name = "toktrie_hf_tokenizers"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "log",
+ "rustc-hash 2.0.0",
+ "serde",
+ "serde_json",
+ "tokenizers",
+ "toktrie",
 ]
 
 [[package]]
