@@ -4,7 +4,7 @@ use crate::{
     api::{GenGrammarOptions, TopLevelGrammar},
     earley::{grammars_from_json, CGrammar, CSymIdx, ModelVariable, Parser, ParserStats},
 };
-use aici_abi::{svob::SimpleVob, MidProcessArg, MidProcessResult, TokenId, TokenizerEnv};
+use aici_abi::{MidProcessArg, MidProcessResult, SimpleVob, TokenId, TokenizerEnv};
 use anyhow::Result;
 use serde_json::json;
 

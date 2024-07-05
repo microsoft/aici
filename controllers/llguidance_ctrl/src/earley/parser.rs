@@ -8,9 +8,8 @@ use std::{
 };
 
 use aici_abi::{
-    svob::SimpleVob,
     toktrie::{Recognizer, SpecialToken, TokTrie},
-    TokenId,
+    SimpleVob, TokenId,
 };
 use anyhow::{bail, ensure, Result};
 use serde::{Deserialize, Serialize};

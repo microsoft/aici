@@ -1,5 +1,8 @@
 use aici_abi::{
-    aici_stop, host_trie, svob::SimpleVob, toktrie::{Recognizer, SpecialToken, TokTrie}, AiciCtrl, Branch, InitPromptArg, InitPromptResult, MidProcessArg, MidProcessResult, Splice, TokenId, VariableStorage
+    aici_stop, host_trie,
+    toktrie::{Recognizer, SpecialToken, TokTrie},
+    AiciCtrl, Branch, InitPromptArg, InitPromptResult, MidProcessArg, MidProcessResult, SimpleVob,
+    Splice, TokenId, VariableStorage,
 };
 use anyhow::Result;
 use lazy_static::lazy_static;
@@ -49,9 +52,8 @@ mod _aici {
         recognizer::{AnythingGoes, StackRecognizer},
         rx::RecRx,
         substring::SubStrMatcher,
-        svob::SimpleVob,
         toktrie::SpecialToken,
-        TokenId,
+        SimpleVob, TokenId,
     };
     use once_cell::sync::Lazy;
     use rustpython_derive::pyclass;

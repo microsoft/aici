@@ -1,4 +1,4 @@
-use aici_abi::svob::SimpleVob;
+use aici_abi::SimpleVob;
 use anyhow::Result;
 use std::fmt::Debug;
 

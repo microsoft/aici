@@ -1,9 +1,8 @@
-pub use toktrie::{bytes, recognizer, rng, svob};
-
 pub use toktrie;
+pub use toktrie::SimpleVob;
+pub use toktrie::{bytes, recognizer, rng};
 
 use serde::{Deserialize, Serialize};
-use svob::SimpleVob;
 
 mod host;
 

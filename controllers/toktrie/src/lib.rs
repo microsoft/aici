@@ -3,7 +3,7 @@ use serde::{Deserialize, Serialize};
 pub mod bytes;
 pub mod recognizer;
 pub mod rng;
-pub mod svob;
+mod svob;
 mod toktree;
 
 pub use svob::{SimpleVob, SimpleVobIter};

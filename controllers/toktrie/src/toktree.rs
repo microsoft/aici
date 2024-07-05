@@ -7,7 +7,7 @@ use rustc_hash::FxHashMap;
 
 use crate::{
     bytes::{to_hex_string, vec_from_bytes},
-    svob::SimpleVob,
+    SimpleVob,
 };
 
 pub type TokenId = u32;

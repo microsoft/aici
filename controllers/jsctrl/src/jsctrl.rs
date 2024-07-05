@@ -3,7 +3,7 @@ use std::sync::Mutex;
 use aici_abi::{
     aici_stop, host_trie,
     recognizer::{AnythingGoes, StackRecognizer},
-    svob::SimpleVob,
+    SimpleVob,
     toktrie::{Recognizer, SpecialToken, TokTrie},
     AiciCtrl, InitPromptArg, InitPromptResult, MidProcessArg, MidProcessResult, TokenId,
     VariableStorage,
