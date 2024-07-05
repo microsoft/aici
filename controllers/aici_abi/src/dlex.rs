@@ -1,7 +1,7 @@
 use crate::{
     recognizer::{FunctionalRecognizer, StackRecognizer},
     svob::SimpleVob,
-    toktree::SpecialToken,
+    toktrie::SpecialToken,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]

@@ -9,7 +9,7 @@ use std::{
 
 use aici_abi::{
     svob::SimpleVob,
-    toktree::{Recognizer, SpecialToken, TokTrie},
+    toktrie::{Recognizer, SpecialToken, TokTrie},
     TokenId,
 };
 use anyhow::{bail, ensure, Result};

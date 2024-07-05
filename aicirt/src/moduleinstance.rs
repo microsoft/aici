@@ -4,7 +4,7 @@ use crate::{
     worker::{GroupHandle, RtMidProcessArg},
     TimerSet, UserError,
 };
-use aici_abi::{toktree::TokTrie, InitPromptArg, InitPromptResult, ProcessResultOffset, TokenId};
+use aici_abi::{toktrie::TokTrie, InitPromptArg, InitPromptResult, ProcessResultOffset, TokenId};
 use aicirt::{
     api::{InferenceCapabilities, SequenceResult},
     bail_user,

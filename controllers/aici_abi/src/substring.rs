@@ -3,7 +3,7 @@ use std::fmt::Display;
 use crate::{
     bytes::limit_bytes,
     recognizer::{FunctionalRecognizer, StackRecognizer},
-    toktree::SpecialToken,
+    toktrie::SpecialToken,
 };
 use serde_json::json;
 

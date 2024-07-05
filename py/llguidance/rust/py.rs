@@ -1,8 +1,7 @@
 use std::{borrow::Cow, sync::Arc};
 
 use aici_abi::{
-    bytes::TokRxInfo,
-    toktree::{self, TokTrie},
+    toktrie::{self, TokRxInfo, TokTrie},
     MidProcessArg, TokenId, TokenizerEnv,
 };
 use aici_llguidance_ctrl::{
@@ -26,7 +25,7 @@ struct LLInterpreter {
 #[derive(Clone)]
 #[pyclass]
 struct LLTokenizer {
-    tok_trie: Arc<toktree::TokTrie>,
+    tok_trie: Arc<toktrie::TokTrie>,
     tokenizer_fun: Py<PyAny>,
     #[allow(dead_code)]
     tok_bos: Option<u32>,
@@ -216,7 +215,7 @@ impl TokenizerEnv for LLTokenizer {
         panic!("STOP"); // TODO?
     }
 
-    fn tok_trie(&self) -> &toktree::TokTrie {
+    fn tok_trie(&self) -> &toktrie::TokTrie {
         &self.tok_trie
     }
 

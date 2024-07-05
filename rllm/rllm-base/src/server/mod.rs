@@ -6,7 +6,7 @@ use crate::{
     AddRequest, HashMap, LoaderArgs, ModelExec, RllmEngine,
 };
 use actix_web::{middleware::Logger, web, App, HttpServer};
-use aici_abi::toktree::TokTrie;
+use aici_abi::toktrie::TokTrie;
 use aicirt::{
     api::{AuthInfo, GetTagsResp, MkModuleReq, MkModuleResp, SetTagsReq},
     bintokens::{guess_tokenizer, list_tokenizers},

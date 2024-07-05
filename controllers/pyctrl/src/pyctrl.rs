@@ -1,5 +1,5 @@
 use aici_abi::{
-    aici_stop, host_trie, svob::SimpleVob, toktree::{Recognizer, SpecialToken, TokTrie}, AiciCtrl, Branch, InitPromptArg, InitPromptResult, MidProcessArg, MidProcessResult, Splice, TokenId, VariableStorage
+    aici_stop, host_trie, svob::SimpleVob, toktrie::{Recognizer, SpecialToken, TokTrie}, AiciCtrl, Branch, InitPromptArg, InitPromptResult, MidProcessArg, MidProcessResult, Splice, TokenId, VariableStorage
 };
 use anyhow::Result;
 use lazy_static::lazy_static;
@@ -50,7 +50,7 @@ mod _aici {
         rx::RecRx,
         substring::SubStrMatcher,
         svob::SimpleVob,
-        toktree::SpecialToken,
+        toktrie::SpecialToken,
         TokenId,
     };
     use once_cell::sync::Lazy;

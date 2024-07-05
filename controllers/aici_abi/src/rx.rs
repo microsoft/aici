@@ -2,7 +2,7 @@ use std::error::Error;
 
 use crate::{
     recognizer::{FunctionalRecognizer, StackRecognizer},
-    toktree::SpecialToken,
+    toktrie::SpecialToken,
 };
 use anyhow::{bail, Result};
 use regex_automata::{

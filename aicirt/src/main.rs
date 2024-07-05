@@ -12,7 +12,7 @@ use crate::{
     TimerSet,
 };
 use aici_abi::{
-    bytes::limit_str, toktree::TokTrie, Branch, MidProcessArg, ProcessResultOffset, SeqId,
+    bytes::limit_str, toktrie::TokTrie, Branch, MidProcessArg, ProcessResultOffset, SeqId,
     TokenizerEnv,
 };
 use aicirt::{bintokens::find_tokenizer, futexshm::ServerChannel, shm::ShmAllocator, *};

@@ -2,7 +2,7 @@ use aici_abi::{
     host_trie,
     recognizer::{FunctionalRecognizer, StackRecognizer},
     tokenize,
-    toktree::{SpecialToken, TokTrie},
+    toktrie::{SpecialToken, TokTrie},
     AiciCtrl, InitPromptArg, InitPromptResult, MidProcessArg, MidProcessResult,
 };
 

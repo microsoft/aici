@@ -1,4 +1,6 @@
-pub use toktrie::{bytes, recognizer, rng, svob, toktree};
+pub use toktrie::{bytes, recognizer, rng, svob};
+
+pub use toktrie;
 
 use serde::{Deserialize, Serialize};
 use svob::SimpleVob;

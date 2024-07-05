@@ -4,7 +4,7 @@ use aici_abi::{
     aici_stop, host_trie,
     recognizer::{AnythingGoes, StackRecognizer},
     svob::SimpleVob,
-    toktree::{Recognizer, SpecialToken, TokTrie},
+    toktrie::{Recognizer, SpecialToken, TokTrie},
     AiciCtrl, InitPromptArg, InitPromptResult, MidProcessArg, MidProcessResult, TokenId,
     VariableStorage,
 };
@@ -254,7 +254,7 @@ mod aici_mod {
     use super::GLOBAL_STATE;
     use aici_abi::{
         aici_stop, cfg::CfgParser, get_config, rx::RecRx, substring::SubStrMatcher,
-        toktree::SpecialToken, Branch, MidProcessResult, Splice, TokenId,
+        toktrie::SpecialToken, Branch, MidProcessResult, Splice, TokenId,
     };
     use rquickjs::{Ctx, Exception, Object, Result, Value};
 

@@ -1,4 +1,4 @@
-use aici_abi::toktree::{self, Recognizer};
+use aici_abi::toktrie::{self, Recognizer};
 use serde::{Deserialize, Serialize};
 
 use super::Parser;
@@ -12,7 +12,7 @@ struct RunnerArg {
     grammar: TopLevelGrammar,
 }
 
-pub fn earley_test(trie: toktree::TokTrie) {
+pub fn earley_test(trie: toktrie::TokTrie) {
     let g_bytes = include_bytes!("../../grammars/json.json");
     let data: RunnerArg = serde_json::from_slice(g_bytes).unwrap();
     let cfg = grammars_from_json(data.grammar, true).unwrap();

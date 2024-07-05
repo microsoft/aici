@@ -1,7 +1,7 @@
 use crate::{
     config::SamplingParams, engine::ExpectedGeneration, LogitsProcessor, SeqId, SequenceManager,
 };
-use aici_abi::{toktree::TokTrie, Branch, TokenId};
+use aici_abi::{toktrie::TokTrie, Branch, TokenId};
 use aicirt::api::{AiciMidOp, SequenceResult};
 use serde::{Deserialize, Serialize};
 use std::fmt::Debug;

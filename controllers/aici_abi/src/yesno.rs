@@ -1,4 +1,4 @@
-use aici_abi::{host_trie, tokenize, toktree::TokTrie, AiciCtrl, MidProcessArg, MidProcessResult, TokenId};
+use aici_abi::{host_trie, tokenize, toktrie::TokTrie, AiciCtrl, MidProcessArg, MidProcessResult, TokenId};
 
 pub struct Runner {
     toktrie: TokTrie,

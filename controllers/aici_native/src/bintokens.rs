@@ -1,4 +1,4 @@
-use aici_abi::{bytes::TokRxInfo, toktree::TokTrie, TokenId, TokenizerEnv};
+use aici_abi::{toktrie::TokRxInfo, toktrie::TokTrie, TokenId, TokenizerEnv};
 use anyhow::{anyhow, bail, Result};
 use rustc_hash::FxHashMap;
 use serde::{Deserialize, Serialize};

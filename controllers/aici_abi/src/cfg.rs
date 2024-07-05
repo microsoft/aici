@@ -2,7 +2,7 @@ use crate::host::host_trie;
 use crate::lex::{Lexer, LexerState, StateID, VobIdx, VobSet};
 use crate::{
     svob::SimpleVob,
-    toktree::{Recognizer, SpecialToken},
+    toktrie::{Recognizer, SpecialToken},
 };
 use anyhow::Result;
 use cfgrammar::{

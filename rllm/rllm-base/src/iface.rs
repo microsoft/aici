@@ -1,7 +1,7 @@
 use crate::HashMap;
 use aici_abi::{
     bytes::{limit_bytes, limit_str},
-    toktree::TokTrie, InitPromptResult,
+    toktrie::TokTrie, InitPromptResult,
 };
 use aicirt::{
     api::{
