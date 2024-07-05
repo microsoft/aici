@@ -1,9 +1,5 @@
 use std::{borrow::Cow, sync::Arc};
 
-use aici_abi::{
-    toktrie::{self, TokRxInfo, TokTrie},
-    MidProcessArg, TokenId, TokenizerEnv,
-};
 use llguidance_parser::{
     api::TopLevelGrammar,
     output::{ParserOutput, Reporter},
@@ -11,6 +7,7 @@ use llguidance_parser::{
 };
 use pyo3::{exceptions::PyValueError, prelude::*};
 use serde::{Deserialize, Serialize};
+use toktrie::{self, StepArg, TokRxInfo, TokTrie, TokenId, TokenizerEnv};
 
 #[derive(Clone)]
 #[pyclass]
@@ -67,11 +64,7 @@ impl LLInterpreter {
     }
 
     fn mid_process(&mut self, backtrack: u32, tokens: Vec<TokenId>) -> (Option<Cow<[u8]>>, String) {
-        let r = self.inner.mid_process(MidProcessArg {
-            backtrack,
-            tokens,
-            fork_group: vec![],
-        });
+        let r = self.inner.mid_process(StepArg { backtrack, tokens });
         let is_final = r.is_stop();
         let mut res = PyMidProcessResult {
             progress: self.reporter.get_progress(&mut self.inner, &r),
@@ -83,19 +76,17 @@ impl LLInterpreter {
         if is_final {
             (None, serde_json::to_string(&res).unwrap())
         } else {
-            assert!(r.branches.len() == 1);
-            let b = &r.branches[0];
-            if b.temperature.is_some() {
-                self.temperature = b.temperature.unwrap();
+            if r.temperature.is_some() {
+                self.temperature = r.temperature.unwrap();
                 res.temperature = self.temperature;
             }
-            if b.splices.len() > 0 {
-                assert!(b.splices.len() == 1);
-                assert!(b.splices[0].when_sampled.is_empty());
-                res.backtrack = b.splices[0].backtrack;
-                res.ff_tokens = b.splices[0].ff_tokens.clone();
+            if r.splices.len() > 0 {
+                assert!(r.splices.len() == 1);
+                assert!(r.splices[0].when_sampled.is_empty());
+                res.backtrack = r.splices[0].backtrack;
+                res.ff_tokens = r.splices[0].ff_tokens.clone();
             }
-            let mask = b.sample_mask.as_ref().map(|m| {
+            let mask = r.sample_mask.as_ref().map(|m| {
                 let mut res = vec![0u8; m.len()];
                 m.iter_set_entries(|i| res[i] = 200);
                 res.pop();

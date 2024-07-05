@@ -7,7 +7,7 @@ mod svob;
 mod toktree;
 
 pub use svob::{SimpleVob, SimpleVobIter};
-pub use toktree::{Recognizer, SpecialToken, TokRxInfo, TokTrie, TokenId};
+pub use toktree::{Recognizer, SpecialToken, TokRxInfo, TokTrie, TokenId, TokenizerEnv};
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct StepArg {
@@ -135,3 +135,5 @@ impl<S> Branch<S> {
         }
     }
 }
+
+pub type StepResult = Branch<SimpleVob>;

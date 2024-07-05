@@ -1,5 +1,5 @@
-use aici_abi::{bytes::to_hex_string, MidProcessResult};
 use serde::{Deserialize, Serialize};
+use toktrie::{bytes::to_hex_string, StepResult};
 
 use crate::{earley, TokenParser};
 
@@ -77,7 +77,7 @@ impl Reporter {
     pub fn get_progress(
         &mut self,
         tok_parser: &mut TokenParser,
-        mid_res: &MidProcessResult,
+        mid_res: &StepResult,
     ) -> Vec<ParserOutput> {
         let mut res = vec![];
 
@@ -122,7 +122,7 @@ impl Reporter {
         self.text_ptr += new_text.len();
         self.token_ptr = num_tokens;
 
-        self.is_generated = mid_res.branches.len() >= 1 && mid_res.branches[0].splices.len() == 0;
+        self.is_generated = !mid_res.is_stop() && mid_res.splices.len() == 0;
 
         if mid_res.is_stop() {
             res.push(ParserOutput::FinalText {

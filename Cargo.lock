@@ -1990,24 +1990,24 @@ dependencies = [
 name = "llguidance"
 version = "0.1.0"
 dependencies = [
- "aici_abi",
  "bytemuck",
  "llguidance_parser",
  "pyo3",
  "serde",
  "serde_json",
+ "toktrie",
 ]
 
 [[package]]
 name = "llguidance_parser"
 version = "0.1.0"
 dependencies = [
- "aici_abi",
  "anyhow",
  "derivre",
  "rustc-hash 1.1.0",
  "serde",
  "serde_json",
+ "toktrie",
 ]
 
 [[package]]

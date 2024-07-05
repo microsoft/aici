@@ -1,5 +1,6 @@
 use crate::{bytes::vec_from_bytes, toktrie::TokTrie, SeqId, SimpleVob, TokenId};
 use serde::{Deserialize, Serialize};
+use toktrie::TokenizerEnv;
 
 #[repr(transparent)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -70,19 +71,6 @@ fn init_panic() {
 pub extern "C" fn aici_init() {
     init_panic();
     set_host(Box::new(WasmHost {}));
-}
-
-pub trait TokenizerEnv: Send {
-    fn stop(&self) -> !;
-    fn tok_trie(&self) -> &TokTrie;
-    fn tokenize_bytes(&self, s: &[u8]) -> Vec<TokenId>;
-
-    fn tokenize(&self, s: &str) -> Vec<TokenId> {
-        self.tokenize_bytes(s.as_bytes())
-    }
-    fn eos_token(&self) -> TokenId {
-        self.tok_trie().eos_token()
-    }
 }
 
 pub struct WasmTokenizerEnv {

@@ -1,6 +1,6 @@
 use std::fmt::Debug;
 
-use aici_abi::toktrie::SpecialToken;
+use toktrie::SpecialToken;
 use anyhow::{bail, ensure, Result};
 
 use crate::api::GenGrammarOptions;

@@ -1,4 +1,4 @@
-use aici_abi::SimpleVob;
+use toktrie::SimpleVob;
 use derivre::raw::{DerivCache, ExprSet, NextByteCache, VecHashCons};
 use std::fmt::Debug;
 

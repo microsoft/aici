@@ -1,4 +1,4 @@
-use aici_abi::{bytes::limit_str, SimpleVob};
+use toktrie::{bytes::limit_str, SimpleVob};
 use anyhow::Result;
 use derivre::{ExprRef, RegexAst, RegexBuilder};
 use std::{fmt::Debug, hash::Hash};

@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use aici_abi::{
-    arg_bytes, AiciCtrl, InitPromptArg, InitPromptResult, MidProcessArg, MidProcessResult,
+    arg_bytes, toktrie::StepArg, AiciCtrl, InitPromptArg, InitPromptResult, MidProcessArg, MidProcessResult
 };
 use serde::{Deserialize, Serialize};
 
@@ -57,11 +57,14 @@ impl AiciCtrl for Runner {
         }
     }
     fn mid_process(&mut self, arg: MidProcessArg) -> MidProcessResult {
-        let r = self.tok_parser.mid_process(arg);
+        let r = self.tok_parser.mid_process(StepArg {
+            backtrack: arg.backtrack,
+            tokens: arg.tokens,
+        });
         for v in self.reporter.get_progress(&mut self.tok_parser, &r) {
             json_out(&v);
         }
-        r
+        MidProcessResult::from_branch(r)
     }
 }
 

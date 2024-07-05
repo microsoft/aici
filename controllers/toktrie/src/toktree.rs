@@ -58,6 +58,19 @@ pub trait Recognizer {
     }
 }
 
+pub trait TokenizerEnv: Send {
+    fn stop(&self) -> !;
+    fn tok_trie(&self) -> &TokTrie;
+    fn tokenize_bytes(&self, s: &[u8]) -> Vec<TokenId>;
+
+    fn tokenize(&self, s: &str) -> Vec<TokenId> {
+        self.tokenize_bytes(s.as_bytes())
+    }
+    fn eos_token(&self) -> TokenId {
+        self.tok_trie().eos_token()
+    }
+}
+
 #[derive(Clone)]
 pub struct TokTrie {
     info: TokRxInfo,

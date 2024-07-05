@@ -4,9 +4,9 @@ use crate::{
     api::{GenGrammarOptions, TopLevelGrammar},
     earley::{grammars_from_json, CGrammar, CSymIdx, ModelVariable, Parser, ParserStats},
 };
-use aici_abi::{MidProcessArg, MidProcessResult, SimpleVob, TokenId, TokenizerEnv};
 use anyhow::Result;
 use serde_json::json;
+use toktrie::{StepResult, SimpleVob, StepArg, TokenId, TokenizerEnv};
 
 macro_rules! infoln {
     ($s:expr, $($arg:tt)*) => {
@@ -191,11 +191,11 @@ impl TokenParser {
         }
     }
 
-    pub fn mid_process(&mut self, arg: MidProcessArg) -> MidProcessResult {
+    pub fn mid_process(&mut self, arg: StepArg) -> StepResult {
         self.mid_process_start_time = std::time::Instant::now();
         if self.max_tokens_total == 0 {
             warn!(self, "max_tokens_total reached, stopping");
-            return MidProcessResult::stop();
+            return StepResult::stop();
         }
         self.max_tokens_total -= 1;
         self.max_tokens_parser = self.max_tokens_parser.saturating_sub(1);
@@ -218,7 +218,7 @@ impl TokenParser {
             let res = if r.is_stop() {
                 json!("stop")
             } else {
-                let b = &r.branches[0];
+                let b = &r;
                 json!({
                     "sample_mask": b.sample_mask.is_some(),
                     "temperature": b.temperature,
@@ -240,7 +240,7 @@ impl TokenParser {
         r
     }
 
-    fn mid_process_inner(&mut self, mut arg: MidProcessArg) -> MidProcessResult {
+    fn mid_process_inner(&mut self, mut arg: StepArg) -> StepResult {
         let start_time = std::time::Instant::now();
 
         self.mid_process_was_accepting = false;
@@ -371,7 +371,7 @@ impl TokenParser {
         }
 
         // if arg.tokens.contains(&trie.eos_token()) {
-        //     return MidProcessResult::stop();
+        //     return StepResult::stop();
         // }
 
         let new_forced = grm_bytes[self.llm_bytes.len()..].to_vec();
@@ -399,7 +399,7 @@ impl TokenParser {
                     trie.tokens_dbg(&grm_tokens),
                     backtrack
                 );
-                return MidProcessResult::splice(backtrack as u32, grm_tokens);
+                return StepResult::splice(backtrack as u32, grm_tokens);
             } else {
                 infoln!(self, "no fixed tokens");
             }
@@ -408,7 +408,7 @@ impl TokenParser {
         if token_prefix.is_empty() {
             if let Err(e) = self.maybe_push_parser() {
                 warn!(self, "Error creating nested parser: {}", e);
-                return MidProcessResult::stop();
+                return StepResult::stop();
             }
         }
 
@@ -441,7 +441,7 @@ impl TokenParser {
                     "only eos token allowed, stopping; accepting: {}",
                     inner_accepting
                 );
-                return MidProcessResult::stop();
+                return StepResult::stop();
             } else {
                 infoln!(self, "pop_parser; tokens left {}", self.max_tokens_parser);
                 self.pop_parser();
@@ -449,10 +449,9 @@ impl TokenParser {
                 return self.mid_process_inner(if has_eos {
                     arg
                 } else {
-                    MidProcessArg {
+                    StepArg {
                         backtrack: 0,
                         tokens: Vec::new(),
-                        fork_group: Vec::new(),
                     }
                 });
             }
@@ -500,10 +499,10 @@ impl TokenParser {
 
         if set.num_set() == 0 {
             infoln!(self, "no tokens allowed, stopping");
-            return MidProcessResult::stop();
+            return StepResult::stop();
         }
 
-        return MidProcessResult::sample_with_temp(set, Some(self.parser.temperature()));
+        return StepResult::sample(set, Some(self.parser.temperature()));
     }
 
     fn maybe_push_parser(&mut self) -> Result<()> {

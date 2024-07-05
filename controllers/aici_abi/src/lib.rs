@@ -1,6 +1,6 @@
 pub use toktrie;
-pub use toktrie::SimpleVob;
 pub use toktrie::{bytes, recognizer, rng};
+pub use toktrie::{SimpleVob, TokenizerEnv};
 
 use serde::{Deserialize, Serialize};
 
@@ -22,7 +22,7 @@ pub type TokenId = toktrie::TokenId;
 
 pub use host::{
     aici_stop, arg_bytes, arg_string, get_config, host_trie, self_seq_id, tokenize, tokenize_bytes,
-    StorageCmd, StorageOp, StorageResp, TokenizerEnv, VariableStorage, WasmTokenizerEnv,
+    StorageCmd, StorageOp, StorageResp, VariableStorage, WasmTokenizerEnv,
 };
 
 #[cfg(not(target_arch = "wasm32"))]

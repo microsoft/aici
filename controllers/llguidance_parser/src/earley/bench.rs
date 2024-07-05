@@ -1,4 +1,4 @@
-use aici_abi::toktrie::{self, Recognizer};
+use toktrie::{self, Recognizer};
 use serde::{Deserialize, Serialize};
 
 use super::Parser;

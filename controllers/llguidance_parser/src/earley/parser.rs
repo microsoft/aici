@@ -7,12 +7,9 @@ use std::{
     vec,
 };
 
-use aici_abi::{
-    toktrie::{Recognizer, SpecialToken, TokTrie},
-    SimpleVob, TokenId,
-};
 use anyhow::{bail, ensure, Result};
 use serde::{Deserialize, Serialize};
+use toktrie::{Recognizer, SimpleVob, SpecialToken, TokTrie, TokenId};
 
 use crate::{api::GenGrammarOptions, earley::lexer::Lexer};
 
