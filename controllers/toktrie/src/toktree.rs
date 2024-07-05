@@ -6,9 +6,18 @@ use bytemuck_derive::{Pod, Zeroable};
 use rustc_hash::FxHashMap;
 
 use crate::{
-    bytes::{to_hex_string, vec_from_bytes, TokRxInfo, TokenId},
+    bytes::{to_hex_string, vec_from_bytes},
     svob::SimpleVob,
 };
+
+pub type TokenId = u32;
+
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Zeroable, Pod)]
+#[repr(C)]
+pub struct TokRxInfo {
+    pub vocab_size: u32,
+    pub tok_eos: TokenId,
+}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum SpecialToken {
@@ -735,13 +744,6 @@ impl<'a> Iterator for NodeChildren<'a> {
             None
         }
     }
-}
-
-#[repr(C)]
-pub struct TokenizerBin {
-    magic: u32,
-    tokens_bytes: u32,
-    tree_bytes: u32,
 }
 
 struct TrieHash {

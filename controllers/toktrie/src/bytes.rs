@@ -4,15 +4,6 @@ use anyhow::{anyhow, Result};
 use bytemuck::{NoUninit, Pod};
 use bytemuck_derive::{Pod, Zeroable};
 
-pub(crate) type TokenId = u32;
-
-#[derive(Clone, Copy, PartialEq, Eq, Debug, Zeroable, Pod)]
-#[repr(C)]
-pub struct TokRxInfo {
-    pub vocab_size: u32,
-    pub tok_eos: TokenId,
-}
-
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Zeroable, Pod)]
 #[repr(C)]
 pub struct U32Pair(pub u32, pub u32);

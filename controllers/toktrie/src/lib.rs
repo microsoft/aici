@@ -4,9 +4,10 @@ pub mod bytes;
 pub mod recognizer;
 pub mod rng;
 pub mod svob;
-pub mod toktree;
+mod toktree;
 
-pub type TokenId = bytes::TokenId;
+pub use svob::{SimpleVob, SimpleVobIter};
+pub use toktree::{Recognizer, SpecialToken, TokRxInfo, TokTrie, TokenId};
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct StepArg {
