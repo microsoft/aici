@@ -264,19 +264,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "aici_guidance_ctrl"
-version = "0.1.0"
-dependencies = [
- "aici_abi",
- "anyhow",
- "base64 0.22.0",
- "quick-protobuf",
- "rustc-hash 1.1.0",
- "serde",
- "serde_json",
-]
-
-[[package]]
 name = "aici_jsctrl"
 version = "0.1.0"
 dependencies = [
@@ -516,12 +503,6 @@ name = "base64"
 version = "0.21.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "35636a1494ede3b646cc98f74f8e62c773a38a659ebc777a2cf26b9b74171df9"
-
-[[package]]
-name = "base64"
-version = "0.22.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9475866fec1451be56a3c2400fd081ff546538961565ccb5b7142cbd22bc7a51"
 
 [[package]]
 name = "base64ct"
@@ -2019,19 +2000,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "llguidance_tester"
-version = "0.1.0"
-dependencies = [
- "aici_abi",
- "aici_llguidance_ctrl",
- "aici_native",
- "anyhow",
- "rustc-hash 1.1.0",
- "serde",
- "serde_json",
-]
-
-[[package]]
 name = "local-channel"
 version = "0.1.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2804,15 +2772,6 @@ dependencies = [
  "pyo3-build-config",
  "quote",
  "syn 2.0.46",
-]
-
-[[package]]
-name = "quick-protobuf"
-version = "0.8.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9d6da84cc204722a989e01ba2f6e1e276e190f22263d0cb6ce8526fcdb0d2e1f"
-dependencies = [
- "byteorder",
 ]
 
 [[package]]
