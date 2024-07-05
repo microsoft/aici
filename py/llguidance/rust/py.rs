@@ -4,7 +4,7 @@ use aici_abi::{
     toktrie::{self, TokRxInfo, TokTrie},
     MidProcessArg, TokenId, TokenizerEnv,
 };
-use aici_llguidance_ctrl::{
+use llguidance_parser::{
     api::TopLevelGrammar,
     output::{ParserOutput, Reporter},
     TokenParser,

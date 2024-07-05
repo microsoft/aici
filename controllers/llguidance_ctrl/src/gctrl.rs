@@ -5,7 +5,7 @@ use aici_abi::{
 };
 use serde::{Deserialize, Serialize};
 
-use aici_llguidance_ctrl::{api::TopLevelGrammar, output::Reporter, TokenParser};
+use llguidance_parser::{api::TopLevelGrammar, output::Reporter, TokenParser};
 
 const INFO: bool = true;
 

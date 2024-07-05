@@ -5,7 +5,7 @@ edition = "2021"
 
 [dependencies]
 aici_abi = { path = "../../controllers/aici_abi" }
-aici_llguidance_ctrl = { path = "../../controllers/llguidance_ctrl" }
+llguidance_parser = { path = "../../controllers/llguidance_parser" }
 bytemuck = "1.16.0"
 pyo3 = "0.21.2"
 serde = { version = "1.0.192", features = ["derive"] }

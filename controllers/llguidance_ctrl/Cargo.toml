@@ -5,11 +5,10 @@ edition = "2021"
 
 [dependencies]
 aici_abi = { path = "../aici_abi" }
-derivre = { path = "../derivre" }
+llguidance_parser = { path = "../llguidance_parser" }
 serde = { version = "1.0.192", features = ["derive"] }
 serde_json = "1.0.108"
 anyhow = "1.0.75"
-rustc-hash = "1.1.0"
 
 [[bin]]
 name = "aici_llguidance_ctrl"
