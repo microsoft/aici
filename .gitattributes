@@ -1,4 +1,3 @@
 rllm/tch-cuda/kernels/vllm/** linguist-vendored
 rllm/tch-cuda/kernels/flash_attn/** linguist-vendored
 controllers/pyctrl/Lib/** linguist-vendored
-controllers/guidance_ctrl/Lib/** linguist-vendored
