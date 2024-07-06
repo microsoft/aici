@@ -8,7 +8,7 @@ name = "aici_native"
 
 [dependencies]
 aici_abi = { path = "../aici_abi" }
-toktrie_hf_tokenizers = { path = "../toktrie_hf_tokenizers" }
+toktrie_hf_tokenizers = { path = "../toktrie/hf_tokenizers" }
 serde = { version = "1.0.192", features = ["derive"] }
 serde_json = "1.0.108"
 anyhow = "1.0.75"
