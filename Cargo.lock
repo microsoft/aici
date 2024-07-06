@@ -248,7 +248,7 @@ dependencies = [
  "rustc-hash 2.0.0",
  "serde",
  "serde_json",
- "toktrie",
+ "toktrie 0.1.0",
  "vob",
 ]
 
@@ -1171,6 +1171,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "derivre"
+version = "0.1.0"
+source = "git+https://github.com/microsoft/derivre?rev=8cb3b0b1#8cb3b0b1e858101ee0389a896ef322326604004d"
+dependencies = [
+ "ahash",
+ "anyhow",
+ "bytemuck",
+ "bytemuck_derive",
+ "hashbrown 0.14.5",
+ "regex-syntax 0.8.3",
+]
+
+[[package]]
 name = "digest"
 version = "0.10.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1996,7 +2009,6 @@ dependencies = [
  "pyo3",
  "serde",
  "serde_json",
- "toktrie",
 ]
 
 [[package]]
@@ -2004,11 +2016,11 @@ name = "llguidance_parser"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "derivre",
+ "derivre 0.1.0 (git+https://github.com/microsoft/derivre?rev=8cb3b0b1)",
  "rustc-hash 2.0.0",
  "serde",
  "serde_json",
- "toktrie",
+ "toktrie 0.1.0 (git+https://github.com/microsoft/toktrie?rev=d2cfea79)",
 ]
 
 [[package]]
@@ -4033,6 +4045,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "toktrie"
+version = "0.1.0"
+source = "git+https://github.com/microsoft/toktrie?rev=d2cfea79#d2cfea79efb474e13b8c11a87a0c96b70bd2ec60"
+dependencies = [
+ "anyhow",
+ "bytemuck",
+ "bytemuck_derive",
+ "rustc-hash 2.0.0",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "toktrie_hf_tokenizers"
 version = "0.1.0"
 dependencies = [
@@ -4042,7 +4067,7 @@ dependencies = [
  "serde",
  "serde_json",
  "tokenizers",
- "toktrie",
+ "toktrie 0.1.0",
 ]
 
 [[package]]

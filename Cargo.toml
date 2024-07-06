@@ -9,7 +9,8 @@ members = [
     "controllers/declctrl",
     "controllers/pyctrl",
     "controllers/jsctrl",
-    "controllers/llguidance_parser",
+    "controllers/llguidance/python",
+    "controllers/llguidance/parser",
     "controllers/llguidance_ctrl",
     "controllers/uppercase",
     "controllers/derivre",
@@ -18,7 +19,6 @@ members = [
     "rllm/rllm-llamacpp",
     "rllm/tch-cuda",
     "rllm/llama-cpp-low",
-    "py/llguidance",
 ]
 resolver = "2"
 
