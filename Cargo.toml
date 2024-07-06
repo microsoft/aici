@@ -24,3 +24,9 @@ resolver = "2"
 
 [profile.release]
 debug = 1
+
+[patch.'https://github.com/microsoft/toktrie']
+toktrie = { path = "controllers/toktrie/core" }
+
+[patch.'https://github.com/microsoft/derivre']
+derivre = { path = "controllers/derivre" }
