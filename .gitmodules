@@ -12,3 +12,9 @@
 	path = py/guidance
 	url = https://github.com/hudson-ai/guidance
 	branch = lazy_grammars
+[submodule "controllers/toktrie"]
+	path = controllers/toktrie
+	url = https://github.com/microsoft/toktrie
+[submodule "controllers/derivre"]
+	path = controllers/derivre
+	url = https://github.com/microsoft/derivre
