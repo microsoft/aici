@@ -2,6 +2,8 @@ from pydantic import BaseModel
 from typing import List, Optional, Union
 from vllm.sampling_params import SamplingParams
 
+EPSILON_TEMP = 1.5e-5
+
 class RunRequest(BaseModel):
     model: Optional[str] = None
     prompt: str
@@ -14,7 +16,7 @@ class RunRequest(BaseModel):
 
     def to_sampling_params(self):
         r = SamplingParams(
-            temperature=max(self.temperature, 1.5e-5),
+            temperature=max(self.temperature, EPSILON_TEMP),
             top_p=self.top_p,
             top_k=self.top_k,
             max_tokens=self.max_tokens,

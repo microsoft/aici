@@ -21,6 +21,7 @@ from guidance import (
     greedy_grammar,
     lazy_grammar,
     commit_point,
+    with_temperature,
 )
 
 
@@ -48,18 +49,12 @@ def main():
     grm = "Count to 10: 1, 2, 3, 4, 5, 6, 7, " + gen("text", stop=",")
 
     grm = "this is a test" + gen("test", max_tokens=1)
-    grm = (
-        "How much is 2 + 2? "
-        + gen(name="test", max_tokens=4)
-        + gen(name="test2", max_tokens=4)
-        + "\n"
-    )
-    grm = (
-        "one, two, three, " + gen(name="a", max_tokens=2) + gen(name="b", max_tokens=2)
-    )
-    grm = (
-        "one, two, three, " + gen(name="a", max_tokens=1) + gen(name="b", max_tokens=1)
-    )
+    grm = ("How much is 2 + 2? " + gen(name="test", max_tokens=4) +
+           gen(name="test2", max_tokens=4) + "\n")
+    grm = ("one, two, three, " + gen(name="a", max_tokens=2) +
+           gen(name="b", max_tokens=2))
+    grm = ("one, two, three, " + gen(name="a", max_tokens=1) +
+           gen(name="b", max_tokens=1))
     grm = "one, two, three, " + gen(name="a", max_tokens=100)
 
     prompt = "1. Here is a sentence "
@@ -78,30 +73,24 @@ def main():
     grm = gen(name="test", max_tokens=30, regex=r"[0-9]+", stop=".")
 
     prompt = ""
-    grm = (
-        "Name: "
-        + gen(
-            "name",
-            regex="E[a-z]+",
-            stop_regex=["[a-b]", "[x-z]"],
-            save_stop_text="saved_name_stop",
-        )
-        + "\nName: "
-        + gen(
-            "name2",
-            regex="E[a-z]+",
-            stop_regex=["[a-b]", "[x-z]"],
-            save_stop_text="saved_name_stop2",
-        )
-    )
+    grm = ("Name: " + gen(
+        "name",
+        regex="E[a-z]+",
+        stop_regex=["[a-b]", "[x-z]"],
+        save_stop_text="saved_name_stop",
+    ) + "\nName: " + gen(
+        "name2",
+        regex="E[a-z]+",
+        stop_regex=["[a-b]", "[x-z]"],
+        save_stop_text="saved_name_stop2",
+    ))
 
     grm = character_maker2(1, "A nimble fighter", ["axe", "sword", "bow"])
     prompt = ""
 
     prompt = "Three things about J. Random Hacker:\n"
-    grm = commit_point(
-        '"' + byte_range(b"A", b"Z") + one_or_more(byte_range(b"a", b"z")) + '"'
-    )
+    grm = commit_point('"' + byte_range(b"A", b"Z") +
+                       one_or_more(byte_range(b"a", b"z")) + '"')
 
     prompt = ""
     grm = "This is a" + select(name="text", options=["", "nope"])
@@ -124,7 +113,11 @@ def main():
         schema={
             "type": "object",
             "additionalProperties": False,
-            "properties": {"age": {"type": "integer"}},
+            "properties": {
+                "age": {
+                    "type": "integer"
+                }
+            },
         },
     )
     # assert grm.match('{"a": 1}')
@@ -136,98 +129,69 @@ def main():
 
     grm = one_or_more(gen(regex="[a-z]"))
     grm = "A odd number is " + gen(
-        "number", regex="[0-9]+", max_tokens=5, temperature=0
-    )
+        "number", regex="[0-9]+", max_tokens=5, temperature=0)
 
-    grm = (
-        "Q: Are dolphins fish?\nA: "
-        + gen("dolphins", regex="Yes|No", max_tokens=10)
-        + "\nQ: Are sharks fish?\nA: "
-        + gen("sharks", regex="Yes|No", max_tokens=10)
-    )
+    grm = ("Q: Are dolphins fish?\nA: " +
+           gen("dolphins", regex="Yes|No", max_tokens=10) +
+           "\nQ: Are sharks fish?\nA: " +
+           gen("sharks", regex="Yes|No", max_tokens=10))
 
-    grm = (
-        "Power frequency is "
-        + gen("number", regex="[0-9]+", max_tokens=5, temperature=0)
-        + "Hz; voltage is "
-        + gen("number", regex="[0-9]+", max_tokens=5, temperature=0)
-        + "V"
-    )
+    grm = ("Power frequency is " +
+           gen("number", regex="[0-9]+", max_tokens=5, temperature=0) +
+           "Hz; voltage is " +
+           gen("number", regex="[0-9]+", max_tokens=5, temperature=0) + "V")
 
     grm = "Q: 7 * 8\nA: " + gen("text", regex="[0-9]+", max_tokens=5)
 
     grm = character_maker2(1, "A nimble fighter", ["axe", "sword", "bow"])
 
-    grm = (
-        "Dolphin name: "
-        + commit_point(
-            '"' + byte_range(b"A", b"Z") + one_or_more(byte_range(b"a", b"z")) + '"'
-        )
-        + ","
-    )
+    grm = ("Dolphin name: " +
+           commit_point('"' + byte_range(b"A", b"Z") +
+                        one_or_more(byte_range(b"a", b"z")) + '"') + ",")
 
-    grm = "Count to 10: 1, 2, 3, 4, 5, 6, 7, " + gen("text", stop=",") + "\nNot quite."
+    grm = "Count to 10: 1, 2, 3, 4, 5, 6, 7, " + gen("text",
+                                                     stop=",") + "\nNot quite."
 
-    grm = (
-        "Name: "
-        + gen(
-            "name",
-            regex="E[a-z]+",
-            stop_regex=["[a-b]", "[x-z]"],
-            save_stop_text="saved_name_stop",
-        )
-        + "\nName: "
-        + gen(
-            "name2",
-            regex="E[a-z]+",
-            stop_regex=["[a-b]", "[x-z]"],
-            save_stop_text="saved_name_stop2",
-        )
-    )
+    grm = ("Name: " + gen(
+        "name",
+        regex="E[a-z]+",
+        stop_regex=["[a-b]", "[x-z]"],
+        save_stop_text="saved_name_stop",
+    ) + "\nName: " + gen(
+        "name2",
+        regex="E[a-z]+",
+        stop_regex=["[a-b]", "[x-z]"],
+        save_stop_text="saved_name_stop2",
+    ))
 
     grm = "6 * 7 = " + greedy_grammar(body=lexeme("[0-9]{1,3}")) + "\n"
     # assert grm.match("6 * 7 = 42\n")
 
-    grm = (
-        "Dolphin name: "
-        + commit_point(
-            '"' + byte_range(b"A", b"Z") + one_or_more(byte_range(b"a", b"z")) + '"'
-        )
-        + ","
-    )
+    grm = ("Dolphin name: " +
+           commit_point('"' + byte_range(b"A", b"Z") +
+                        one_or_more(byte_range(b"a", b"z")) + '"') + ",")
 
     grm = gen(regex="a*")
     grm = "6 * 7 = " + gen(regex="5*") + gen(regex="[1-4][0-9]") + "\n"
 
     grm = "6 * 7 = " + gen("name", max_tokens=2)
 
-    grm = (
-        "Name: " + gen("name", max_tokens=2) + " Height: " + gen("height", max_tokens=3)
-    )
-    grm = (
-        "Name: "
-        + gen("name", max_tokens=2)
-        + "Emily Carter is great; Height: "
-        + gen("height", max_tokens=3)
-    )
+    grm = ("Name: " + gen("name", max_tokens=2) + " Height: " +
+           gen("height", max_tokens=3))
+    grm = ("Name: " + gen("name", max_tokens=2) +
+           "Emily Carter is great; Height: " + gen("height", max_tokens=3))
 
     grm = "123" + gen(name="numbers", regex=r"\d*233", max_tokens=5)
 
-    grm = (
-        "Here: 2 + 2 = "
-        + greedy_grammar(body=lexeme("[0-9]+"), skip_regex=r"\s*")
-        + "x"
-    )
+    grm = ("Here: 2 + 2 = " +
+           greedy_grammar(body=lexeme("[0-9]+"), skip_regex=r"\s*") + "x")
     grm = "Here: 2 + 2 = " + greedy_grammar(name="num", body=lexeme("[0-9]+"))
 
-    grm = "Here: 1 / 10 = " + greedy_grammar(
-        body=select(
-            [
-                lexeme(r"-?(?:0|[1-9][0-9]*)", contextual=True),
-                lexeme(r"-?(?:0|[1-9][0-9]*)(?:\.[0-9]+)", contextual=True),
-            ]
-        )
-    )
+    grm = with_temperature(
+        "Here: 1 / 10 = " + greedy_grammar(body=select([
+            lexeme(r"-?(?:0|[1-9][0-9]*)", contextual=True),
+            lexeme(r"-?(?:0|[1-9][0-9]*)(?:\.[0-9]+)", contextual=True),
+        ])), 0.8)
 
     # grm = "Here: 2 + 2 = " + guidance.json(name="num", schema={"type": "integer"})
     # grm = guidance.json(name="num", schema={"type": "integer"})
@@ -259,20 +223,47 @@ def main():
     #     serialized = json.load(f)
 
     x_serialized = {
-        "grammars": [
-            {
-                "greedy_lexer": False,
-                "nodes": [
-                    {"Join": {"sequence": [1]}},
-                    {"Join": {"sequence": [2, 3]}},
-                    {"Gen": {"body_rx": 0, "stop_rx": "", "temperature": None}},
-                    {"Select": {"among": [4, 5]}},
-                    {"Join": {"sequence": [3, 2]}},
-                    {"String": {"literal": ""}},
-                ],
-                "rx_nodes": [{"ByteSet": [0, 0, 0, 134217726, 0, 0, 0, 0]}],
-            }
-        ]
+        "grammars": [{
+            "greedy_lexer":
+            False,
+            "nodes": [
+                {
+                    "Join": {
+                        "sequence": [1]
+                    }
+                },
+                {
+                    "Join": {
+                        "sequence": [2, 3]
+                    }
+                },
+                {
+                    "Gen": {
+                        "body_rx": 0,
+                        "stop_rx": "",
+                        "temperature": None
+                    }
+                },
+                {
+                    "Select": {
+                        "among": [4, 5]
+                    }
+                },
+                {
+                    "Join": {
+                        "sequence": [3, 2]
+                    }
+                },
+                {
+                    "String": {
+                        "literal": ""
+                    }
+                },
+            ],
+            "rx_nodes": [{
+                "ByteSet": [0, 0, 0, 134217726, 0, 0, 0, 0]
+            }],
+        }]
     }
 
     serialized["max_tokens"] = max_tokens
@@ -283,7 +274,8 @@ def main():
     # save llguidance_arg to file
     with open("tmp/llguidance_arg.json", "w") as f:
         f.write(llguidance_arg)
-    print("JSON size:", len(llguidance_arg), "saved to tmp/llguidance_arg.json")
+    print("JSON size:", len(llguidance_arg),
+          "saved to tmp/llguidance_arg.json")
     # print(json.dumps(llguidance_json, indent=2))
 
     # with open("tmp/long_json_grammar_req.json", "r") as f:
@@ -299,7 +291,8 @@ def main():
         features = []
     mod_id = pyaici.cli.build_rust(".", features=features)
     if "127.0.0.1" in pyaici.rest.base_url:
-        pyaici.rest.tag_module(mod_id, ["llguidance_ctrl-latest", "llguidance"])
+        pyaici.rest.tag_module(mod_id,
+                               ["llguidance_ctrl-latest", "llguidance"])
     pyaici.rest.log_level = 2
     res = pyaici.rest.run_controller(
         prompt=prompt,
@@ -323,8 +316,7 @@ def main():
             text += binascii.unhexlify(j["hex"])
         elif j["object"] == "capture":
             captures[j["name"]] = binascii.unhexlify(j["hex"]).decode(
-                "utf-8", errors="replace"
-            )
+                "utf-8", errors="replace")
     print("Captures:", json.dumps(captures, indent=2))
     print("Final text:\n", text.decode("utf-8", errors="replace"))
     print()

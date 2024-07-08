@@ -822,10 +822,7 @@ impl Stepper {
 
                     if !self.globals.inference_caps.backtrack {
                         if let Some(r) = &data.result {
-                            if r.branches
-                                .iter()
-                                .any(|b| b.splices.iter().any(|s| s.backtrack != 0))
-                            {
+                            if r.branches.iter().any(|b| b.has_backtrack()) {
                                 self.worker_error(
                                     id,
                                     &mut outputs,
@@ -838,7 +835,7 @@ impl Stepper {
 
                     if !self.globals.inference_caps.ff_tokens {
                         if let Some(r) = &data.result {
-                            if r.branches.iter().any(|b| b.splices.len() > 0) {
+                            if r.branches.iter().any(|b| b.has_ff_tokens()) {
                                 self.worker_error(
                                     id,
                                     &mut outputs,
