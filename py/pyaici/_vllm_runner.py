@@ -1,4 +1,4 @@
-from typing import (List, Optional, Union)
+from typing import (List, Optional)
 from dataclasses import dataclass
 from fastapi import Request
 
@@ -20,7 +20,6 @@ from .comms import AiciRunner
 @dataclass
 class ReqInfo:
     request_id: str
-    aici_id: int
     prompt: List[int]
     sampling_params: SamplingParams
     error: Optional[dict] = None
@@ -36,10 +35,8 @@ class AiciRunnerCompletion(OpenAIServing):
                          model_config=model_config,
                          served_model_names=served_model_names,
                          lora_modules=lora_modules)
-        self.next_seq_id = 1
         self.aici_runner = aici_runner
-        self.sampling_controller = AiciSamplingController(
-            aici_runner, model_config.get_vocab_size())
+        self.sampling_controller = AiciSamplingController(aici_runner)
         self.empty_prompt: List[int] = self.tokenizer("").input_ids
         if not self.empty_prompt:
             # if there's no start symbol, add a space, otherwise Engine
@@ -56,14 +53,11 @@ class AiciRunnerCompletion(OpenAIServing):
                 return error_check_ret
         else:
             request.model = self.served_model_names[0]
-        aici_id = self.next_seq_id
-        self.next_seq_id += 1
         prompt = self.tokenizer(request.prompt).input_ids
         req_info = ReqInfo(
             request_id=f"run-{random_uuid()}",
-            aici_id=aici_id,
             prompt=[],
-            sampling_params=request.to_sampling_params(aici_id),
+            sampling_params=request.to_sampling_params(),
         )
         req_info.sampling_params.stop_token_ids = []
         inst_res = await self.aici_runner.instantiate_async(
@@ -71,7 +65,6 @@ class AiciRunnerCompletion(OpenAIServing):
             prompt,
             request.controller,
             request.controller_arg,
-            aici_id=aici_id,
         )
 
         if isinstance(inst_res, dict):
@@ -112,12 +105,18 @@ class AiciRunnerCompletion(OpenAIServing):
         previous_texts: List[str] = []
         ff_tokens = len(req_info.prompt)
         sampled_tokens = 0
+        seq_id: Optional[int] = None
 
         async for res in generator:
+            if seq_id is None:
+                seq_id = self.sampling_controller.resolve_req_id(
+                    req_info.request_id)
+                assert seq_id is not None
+
             # Abort the request if the client disconnects.
             if await raw_request.is_disconnected():
                 await self.engine.abort(req_info.request_id)
-                self.sampling_controller.free_seq(req_info.aici_id)
+                runner.seq_freed(seq_id)
                 raise StopAsyncIteration()
 
             # TODO simplify this - there is only one fork
@@ -134,7 +133,7 @@ class AiciRunnerCompletion(OpenAIServing):
                 previous_texts[i] = output.text
 
                 fork_res = runner.seq_logs(
-                    req_info.aici_id,
+                    seq_id,
                     index=i,
                     text=delta_text,
                     finish_reason=output.finish_reason,
@@ -145,3 +144,5 @@ class AiciRunnerCompletion(OpenAIServing):
                                 runner.usage_json(ff_tokens, sampled_tokens)))
 
         yield runner.final_data()
+        if seq_id is not None:
+            runner.seq_freed(seq_id)

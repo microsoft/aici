@@ -527,7 +527,6 @@ class AiciRunner:
         prompt: Union[str, list],
         module_id: str,
         module_arg: Union[str, dict, None],
-        aici_id: Optional[int] = None,
     ):
         """
         Create a new instance of a given module.
@@ -544,7 +543,6 @@ class AiciRunner:
                 "instantiate",
                 {
                     "req_id": req_id,
-                    "id": aici_id,
                     "prompt": prompt,
                     "module_id": module_id,
                     "module_arg": module_arg,
@@ -581,7 +579,7 @@ class AiciRunner:
             ),
         )
 
-    def assign_seq_id(self, req_id: str, seq_id: int):
+    def assign_seq_id(self, req_id: str, seq_id: int, optional=False):
         """
         Assign a sequence ID (number) to a given request ID (passed to .instantiate() before).
         """
@@ -589,7 +587,9 @@ class AiciRunner:
             res = self.pending_instantiate_results[req_id]
             del self.pending_instantiate_results[req_id]
             self.logs_by_seqid[str(seq_id)] = [res]
-        self.pending_req_ids[seq_id] = req_id
+            self.pending_req_ids[seq_id] = req_id
+        elif not optional:
+            self.pending_req_ids[seq_id] = req_id
 
     def tokens_generated(self,
                          seq_id: int,

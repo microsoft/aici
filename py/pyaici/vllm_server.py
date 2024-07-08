@@ -4,16 +4,12 @@ from vllm import LLMEngine
 from vllm.entrypoints.openai import api_server
 from vllm.entrypoints.openai.protocol import ErrorResponse
 
-from vllm.sampling_params import SamplingParams
-from vllm.sequence import SequenceGroupMetadata, SequenceGroup, SequenceStatus, Sequence
-
-from fastapi.responses import JSONResponse, Response, StreamingResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 from fastapi import Request
 
 from . import add_cli_args, runner_from_cli
 from ._vllm_protocol import RunRequest, SetTagsRequest
 from ._vllm_runner import AiciRunnerCompletion
-from .comms import AiciRunner
 
 app = api_server.app
 pyaici_runner_completion: AiciRunnerCompletion
@@ -88,3 +84,7 @@ def vllm_server_main():
     engine.engine.sampling_controller = \
         pyaici_runner_completion.sampling_controller
     api_server.start_engine(args, engine)
+
+
+if __name__ == "__main__":
+    vllm_server_main()

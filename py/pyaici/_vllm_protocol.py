@@ -12,7 +12,7 @@ class RunRequest(BaseModel):
     top_k: int = -1
     max_tokens: Optional[int] = None
 
-    def to_sampling_params(self, id):
+    def to_sampling_params(self):
         r = SamplingParams(
             temperature=max(self.temperature, 1.5e-5),
             top_p=self.top_p,
@@ -20,7 +20,7 @@ class RunRequest(BaseModel):
             max_tokens=self.max_tokens,
             ignore_eos=True,
         )
-        r.aici_id = id
+        r.has_aici = True
         return r
 
 

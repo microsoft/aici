@@ -1,6 +1,6 @@
 import torch
 
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Optional
 
 from vllm.sequence import SamplingController, SamplerOutput
 from vllm.model_executor.sampling_metadata import SamplingMetadata
@@ -10,57 +10,46 @@ from .comms import AiciRunner
 
 class AiciSamplingController(SamplingController):
 
-    def __init__(self, aici_runner: AiciRunner, vocab_size: int):
+    def __init__(self, aici_runner: AiciRunner):
         super().__init__()
         self.runner = aici_runner
-        self.pending_args: Dict[int, Dict] = {}
-        self.freed_ids: List[int] = []
         self.logit_pending = False
-        self.vocab_size = vocab_size
-        self.aici_id_to_sampling_idx: Dict[int, int] = {}
-        self.seq_id_to_aici_id: Dict[int, int] = {}
+        self.seq_id_to_sampling_idx: Dict[int, int] = {}
+        self.req_id_to_seq_id: Dict[str, int] = {}
 
-    def free_seq(self, aici_id: int):
-        self.freed_ids.append(aici_id)
-        del self.pending_args[aici_id]
+    def resolve_req_id(self, req_id: str) -> Optional[int]:
+        return self.req_id_to_seq_id.get(req_id)
 
     def prepare(self, sampling_metadata: "SamplingMetadata"):
         runner = self.runner
-        req: List[Dict] = []
-        aici_id_to_sampling_idx: Dict[int, int] = {}
-        seq_id_to_aici_id: Dict[int, int] = {}
-        pending_args = self.pending_args
+        seq_id_to_sampling_idx: Dict[int, int] = {}
+        req_id_to_seq_id: Dict[str, int] = {}
         for group in sampling_metadata.seq_groups:
-            aici_id = getattr(group.sampling_params, "aici_id", None)
-            if not aici_id:
+            if not getattr(group.sampling_params, "has_aici", False):
                 continue
             assert len(group.seq_ids) == 1
+            seq_id = group.seq_ids[0]
+            req_id_to_seq_id[group.request_id] = seq_id
             sample_indices = group.sample_indices
             if sample_indices:
                 assert len(sample_indices) == 1
-                if aici_id in pending_args:
-                    arg = pending_args.pop(aici_id)
-                else:
-                    arg = {"id": aici_id, "backtrack": 0, "tokens": []}
-                seq_id_to_aici_id[group.seq_ids[0]] = aici_id
-                aici_id_to_sampling_idx[aici_id] = sample_indices[0]
-                req.append(arg)
+                runner.assign_seq_id(group.request_id, seq_id, optional=True)
+                runner.add_mid(seq_id)
+                seq_id_to_sampling_idx[seq_id] = sample_indices[0]
             else:
                 pass
-        if req:
-            runner.exec_mid_combined(self.vocab_size, req, self.freed_ids)
-            self.aici_id_to_sampling_idx = aici_id_to_sampling_idx
-            self.seq_id_to_aici_id = seq_id_to_aici_id
-            self.freed_ids = []
+        if runner.needs_exec_mid():
+            runner.exec_mid()
+            self.seq_id_to_sampling_idx = seq_id_to_sampling_idx
+            self.req_id_to_seq_id = req_id_to_seq_id
             self.logit_pending = True
 
     def transform_logits(self, logits: torch.Tensor) -> torch.Tensor:
         num_tokens, vocab_size = logits.shape
-        assert vocab_size == self.vocab_size
         if not self.logit_pending:
             return logits
         resp, bias = self.runner.recv_logit_bias_torch()
-        sampling_map = self.aici_id_to_sampling_idx
+        sampling_map = self.seq_id_to_sampling_idx
         num_masks, vocab_size2 = bias.shape
         assert num_masks <= num_tokens  # ?
         assert vocab_size2 == vocab_size
@@ -73,15 +62,13 @@ class AiciSamplingController(SamplingController):
         return logits
 
     def transform_sampler_output(self, output: SamplerOutput) -> SamplerOutput:
-        mapping = self.seq_id_to_aici_id
         runner = self.runner
         for out in output.outputs:
             for sample in out.samples:
                 seq_id = sample.parent_seq_id
-                if seq_id not in mapping:
+                mid_res = runner.mid_status(seq_id)
+                if not mid_res:
                     continue
-                aici_id = mapping[seq_id]
-                mid_res = runner.mid_status(aici_id)
                 if mid_res.error or not mid_res.branches:
                     sample.output_token = runner.eos_token_id
                 else:
@@ -96,9 +83,5 @@ class AiciSamplingController(SamplingController):
                             sample.fast_forward_tokens = tokens[:]
                     else:
                         tokens = [sample.output_token]
-                    self.pending_args[aici_id] = {
-                        "id": aici_id,
-                        "backtrack": 0,
-                        "tokens": tokens
-                    }
+                    runner.tokens_generated(seq_id, tokens, 0)
         return output

@@ -16,7 +16,7 @@ fi
 RUST_LOG=info,tokenizers=error,aicirt=info \
 RUST_BACKTRACE=1 \
 PYTHONPATH=py:py/vllm \
-python3 -m vllm.entrypoints.openai.api_server \
+python3 -m pyaici.vllm_server \
     --enforce-eager \
     --use-v2-block-manager \
     --enable-chunked-prefill \
