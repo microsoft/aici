@@ -69,6 +69,7 @@ def vllm_server_main():
 
     model_config, served_model_names = api_server.get_model_config(
         args, engine)
+    print("MODEL", served_model_names)
     dtype = str(model_config.dtype).replace("torch.", "").replace("float", "f")
     pyaici_runner = runner_from_cli(args, dtype=dtype)
     pyaici_runner.fast_api()

@@ -20,6 +20,7 @@ python3 -m pyaici.vllm_server \
     --enforce-eager \
     --use-v2-block-manager \
     --enable-chunked-prefill \
+    --served-model-name=model \
     --aici-rt ./target/release/aicirt \
     -A--wasm-timer-resolution-us=10 \
     $MODEL_ARGS \

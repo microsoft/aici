@@ -54,6 +54,7 @@ class AiciSamplingController(SamplingController):
         num_tokens, vocab_size = logits.shape
         if not self.logit_pending:
             return logits
+        self.logit_pending = False
         resp, bias = self.runner.recv_logit_bias_torch()
         bias = bias.to(logits.device)  # TODO use non_blocking?
         sampling_map = self.seq_id_to_sampling_idx
@@ -76,6 +77,8 @@ class AiciSamplingController(SamplingController):
         for out in output.outputs:
             for sample in out.samples:
                 seq_id = sample.parent_seq_id
+                if seq_id not in self.seq_id_to_sampling_idx:
+                    continue
                 mid_res = runner.mid_status(seq_id)
                 if not mid_res:
                     continue

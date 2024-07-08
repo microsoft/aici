@@ -300,6 +300,11 @@ def fork_supported():
     """
     return get_config("fork") != 0
 
+def backtrack_supported():
+    """
+    Check if the current host supports backtracking.
+    """
+    return get_config("backtrack") != 0
 
 async def fork(forks: Union[int, List[Branch]]):
     """

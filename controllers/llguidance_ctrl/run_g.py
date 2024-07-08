@@ -193,6 +193,30 @@ def main():
             lexeme(r"-?(?:0|[1-9][0-9]*)(?:\.[0-9]+)", contextual=True),
         ])), 0.8)
 
+    grm = character_maker2(1, "A nimble fighter", ["axe", "sword", "bow"])
+    prompt = ""
+
+    @guidance(stateless=True, dedent=False)
+    def character_maker(lm, id, description, valid_weapons):
+        lm += f"""\
+        The following is a character profile for an RPG game in JSON format.
+        ```json
+        {{
+            "id": "{id}",
+            "description": "{description}",
+            "name": "{gen('name', stop='"')}",
+            "age": {gen('age', regex='[0-9]+', stop=',')},
+            "armor": "{select(options=['leather', 'chainmail', 'plate'], name='armor')}",
+            "weapon": "{select(options=valid_weapons, name='weapon')}",
+            "class": "{gen('class', stop='"')}",
+            "mantra": "{gen('mantra', stop='"')}",
+            "strength": {gen('strength', regex='[0-9]+', stop=',')},
+            "items": ["{gen('item', list_append=True, stop='"')}", "{gen('item', list_append=True, stop='"')}", "{gen('item', list_append=True, stop='"')}"]
+        }}```"""
+        return lm
+    grm = character_maker(1, 'A nimble fighter', ['axe', 'sword', 'bow'])
+
+
     # grm = "Here: 2 + 2 = " + guidance.json(name="num", schema={"type": "integer"})
     # grm = guidance.json(name="num", schema={"type": "integer"})
     # m = grm.match("123<s>")
@@ -213,7 +237,7 @@ def main():
     #     body = lexeme("[0-9]+")
     # )
 
-    max_tokens = 7
+    max_tokens = 100
 
     serialized = grm.ll_serialize()
 
