@@ -1,7 +1,8 @@
 use crate::HashMap;
 use aici_abi::{
     bytes::{limit_bytes, limit_str},
-    toktrie::TokTrie, InitPromptResult,
+    toktrie::TokTrie,
+    InitPromptResult,
 };
 use aicirt::{
     api::{
@@ -155,7 +156,9 @@ impl AiciRtIface {
             .arg("--name")
             .arg(&args.shm_prefix)
             .arg("--futex")
-            .arg("--cap-fork");
+            .arg("--cap-fork")
+            .arg("--cap-ff-tokens")
+            .arg("--cap-backtrack");
         for a in &args.add_args {
             cmd_bld.arg(a);
         }

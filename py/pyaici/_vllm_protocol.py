@@ -3,7 +3,7 @@ from typing import List, Optional, Union
 from vllm.sampling_params import SamplingParams
 
 class RunRequest(BaseModel):
-    model: Optional[str]
+    model: Optional[str] = None
     prompt: str
     controller: str
     controller_arg: Union[str, dict]
@@ -18,7 +18,7 @@ class RunRequest(BaseModel):
             top_p=self.top_p,
             top_k=self.top_k,
             max_tokens=self.max_tokens,
-            ignore_eos=True,
+            ignore_eos=False,
         )
         r.has_aici = True
         return r

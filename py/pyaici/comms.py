@@ -331,6 +331,8 @@ class AiciRunner:
         self,
         rtpath,
         fork_supported=False,
+        backtrack_supported=False,
+        ff_tokens_supported=True,
         tokenizer="llama",
         json_size=128,
         bin_size=128,
@@ -401,6 +403,10 @@ class AiciRunner:
         ]
         if fork_supported:
             args.append("--cap-fork")
+        if backtrack_supported:
+            args.append("--cap-backtrack")
+        if ff_tokens_supported:
+            args.append("--cap-ff-tokens")
         args += rtargs
 
         print("running: ", args)
@@ -421,6 +427,7 @@ class AiciRunner:
         resp = self.cmd.exec("tokens")
         self.vocab_size = resp["data"]["vocab_size"]
         self.eos_token_id = resp["data"]["eos_token_id"]
+        print(f"vocab_size: {self.vocab_size}, eos_token_id: {self.eos_token_id}")
 
         AiciRunner.instance = self
 

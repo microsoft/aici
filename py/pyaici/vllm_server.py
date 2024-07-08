@@ -37,9 +37,7 @@ async def aici_run(request: RunRequest, raw_request: Request):
     r = await pyaici_runner_completion.prep_completion(request)
     if isinstance(r, ErrorResponse):
         return JSONResponse(r.model_dump(), status_code=r.code)
-    request_id, inst_res = r
-    generator = pyaici_runner_completion.create_completion(
-        request_id, inst_res, request, raw_request)
+    generator = pyaici_runner_completion.create_completion(r, raw_request)
     return StreamingResponse(content=generator, media_type="text/event-stream")
 
 
@@ -81,6 +79,7 @@ def vllm_server_main():
                                                     served_model_names,
                                                     args.lora_modules)
     assert isinstance(engine.engine, LLMEngine)
+    # print("eos_token_id (vllm):", engine.engine._get_eos_token_id(None))
     engine.engine.sampling_controller = \
         pyaici_runner_completion.sampling_controller
     api_server.start_engine(args, engine)

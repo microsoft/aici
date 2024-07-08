@@ -99,6 +99,14 @@ struct Cli {
     #[arg(long)]
     cap_fork: bool,
 
+    /// Allow backtracking in controllers.
+    #[arg(long)]
+    cap_backtrack: bool,
+
+    /// Allow fast-forward tokens in controllers.
+    #[arg(long)]
+    cap_ff_tokens: bool,
+
     /// Specify the type of bias to pass using shared memory (f32, f16, bf16, bool)
     #[arg(long, default_value = "f32")]
     bias_dtype: String,
@@ -811,6 +819,36 @@ impl Stepper {
                             }
                         }
                     }
+
+                    if !self.globals.inference_caps.backtrack {
+                        if let Some(r) = &data.result {
+                            if r.branches
+                                .iter()
+                                .any(|b| b.splices.iter().any(|s| s.backtrack != 0))
+                            {
+                                self.worker_error(
+                                    id,
+                                    &mut outputs,
+                                    user_error!("backtracking not enabled in this host"),
+                                );
+                                continue;
+                            }
+                        }
+                    }
+
+                    if !self.globals.inference_caps.ff_tokens {
+                        if let Some(r) = &data.result {
+                            if r.branches.iter().any(|b| b.splices.len() > 0) {
+                                self.worker_error(
+                                    id,
+                                    &mut outputs,
+                                    user_error!("ff_tokens not enabled in this host"),
+                                );
+                                continue;
+                            }
+                        }
+                    }
+
                     if let Some(r) = &mut data.result {
                         r.branches = r
                             .branches
@@ -1237,8 +1275,8 @@ fn main() -> () {
 
     let inference_caps = InferenceCapabilities {
         fork: cli.cap_fork,
-        backtrack: true,
-        ff_tokens: true,
+        backtrack: cli.cap_backtrack,
+        ff_tokens: cli.cap_ff_tokens,
     };
 
     let mut tokenizer = find_tokenizer(&cli.tokenizer).unwrap();

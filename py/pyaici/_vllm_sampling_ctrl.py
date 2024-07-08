@@ -49,16 +49,16 @@ class AiciSamplingController(SamplingController):
         if not self.logit_pending:
             return logits
         resp, bias = self.runner.recv_logit_bias_torch()
+        bias = bias.to(logits.device) # TODO use non_blocking?
         sampling_map = self.seq_id_to_sampling_idx
-        num_masks, vocab_size2 = bias.shape
-        assert num_masks <= num_tokens  # ?
-        assert vocab_size2 == vocab_size
+        _num_masks, vocab_size2 = bias.shape
+        assert vocab_size2 >= vocab_size, f"{vocab_size2} != {vocab_size}"
         for idx, mid_res in resp.items():
             if mid_res.branches:
                 assert len(mid_res.branches) == 1
                 mask = mid_res.branches[0].mask
                 if mask is not None:
-                    logits[sampling_map[idx], :] += bias[mask, :]
+                    logits[sampling_map[idx], :] += bias[mask, 0:vocab_size].to(logits.device)
         return logits
 
     def transform_sampler_output(self, output: SamplerOutput) -> SamplerOutput:
@@ -70,17 +70,14 @@ class AiciSamplingController(SamplingController):
                 if not mid_res:
                     continue
                 if mid_res.error or not mid_res.branches:
-                    sample.output_token = runner.eos_token_id
+                    sample.fast_forward_tokens = [runner.eos_token_id]
                 else:
                     splice = mid_res.branches[0].find_splice(
                         sample.output_token)
                     if splice is not None:
                         assert splice.backtrack == 0, "Backtrack not supported"
                         tokens = splice.ff_tokens[:]
-                        if len(tokens) == 1:
-                            sample.output_token = tokens[0]
-                        else:
-                            sample.fast_forward_tokens = tokens[:]
+                        sample.fast_forward_tokens = tokens[:]
                     else:
                         tokens = [sample.output_token]
                     runner.tokens_generated(seq_id, tokens, 0)
