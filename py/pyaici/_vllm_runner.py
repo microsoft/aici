@@ -1,0 +1,147 @@
+from typing import (List, Optional, Union)
+from dataclasses import dataclass
+from fastapi import Request
+
+from vllm.utils import random_uuid
+from vllm.config import ModelConfig
+from vllm.sampling_params import SamplingParams
+from vllm.engine.async_llm_engine import AsyncLLMEngine
+from vllm.entrypoints.openai.serving_engine import (LoRAModulePath,
+                                                    OpenAIServing)
+from vllm.lora.request import LoRARequest
+
+from ._vllm_protocol import RunRequest
+from ._vllm_sampling_ctrl import AiciSamplingController
+from .comms import AiciRunner
+
+# TODO catch ValueError and use self.create_streaming_error_response(str(e))
+
+
+@dataclass
+class ReqInfo:
+    request_id: str
+    aici_id: int
+    prompt: List[int]
+    sampling_params: SamplingParams
+    error: Optional[dict] = None
+    lora_request: Optional[LoRARequest] = None
+
+
+class AiciRunnerCompletion(OpenAIServing):
+
+    def __init__(self, aici_runner: AiciRunner, engine: AsyncLLMEngine,
+                 model_config: ModelConfig, served_model_names: List[str],
+                 lora_modules: Optional[List[LoRAModulePath]]):
+        super().__init__(engine=engine,
+                         model_config=model_config,
+                         served_model_names=served_model_names,
+                         lora_modules=lora_modules)
+        self.next_seq_id = 1
+        self.aici_runner = aici_runner
+        self.sampling_controller = AiciSamplingController(
+            aici_runner, model_config.get_vocab_size())
+        self.empty_prompt: List[int] = self.tokenizer("").input_ids
+        if not self.empty_prompt:
+            # if there's no start symbol, add a space, otherwise Engine
+            # gets stuck on empty prompt
+            self.empty_prompt = self.tokenizer(" ").input_ids
+            assert self.empty_prompt
+
+    # this is separate from create_completion() so fastapi exceptions
+    # from .instantiate_async() are properly sent to the user
+    async def prep_completion(self, request: RunRequest):
+        if request.model:
+            error_check_ret = await self._check_model(request)
+            if error_check_ret is not None:
+                return error_check_ret
+        else:
+            request.model = self.served_model_names[0]
+        aici_id = self.next_seq_id
+        self.next_seq_id += 1
+        prompt = self.tokenizer(request.prompt).input_ids
+        req_info = ReqInfo(
+            request_id=f"run-{random_uuid()}",
+            aici_id=aici_id,
+            prompt=[],
+            sampling_params=request.to_sampling_params(aici_id),
+        )
+        req_info.sampling_params.stop_token_ids = []
+        inst_res = await self.aici_runner.instantiate_async(
+            req_info.request_id,
+            prompt,
+            request.controller,
+            request.controller_arg,
+            aici_id=aici_id,
+        )
+
+        if isinstance(inst_res, dict):
+            req_info.error = inst_res
+        else:
+            assert isinstance(inst_res, list)
+            # Engine doesn't like prompts with no tokens
+            # self.empty_prompt is either start symbol or a single space
+            if len(inst_res) == 0:
+                inst_res = self.empty_prompt
+            req_info.prompt = inst_res
+            req_info.lora_request = self._maybe_get_lora(request)
+
+        return req_info
+
+    async def create_completion(self, req_info: ReqInfo, raw_request: Request):
+        """Completion API for AICI controllers.
+
+        See https://github.com/microsoft/aici/blob/main/docs/REST.md
+        """
+        runner = self.aici_runner
+        yield runner.data_line(
+            runner.initial_json(req_info.request_id,
+                                self.served_model_names[0]))
+
+        if req_info.error:
+            # error case
+            yield runner.data_line(req_info.error)
+            yield runner.final_data()
+            return
+
+        generator = self.engine.generate(
+            {"prompt_token_ids": req_info.prompt},
+            request_id=req_info.request_id,
+            sampling_params=req_info.sampling_params,
+            lora_request=req_info.lora_request)
+
+        previous_texts: List[str] = []
+        ff_tokens = len(req_info.prompt)
+        sampled_tokens = 0
+
+        async for res in generator:
+            # Abort the request if the client disconnects.
+            if await raw_request.is_disconnected():
+                await self.engine.abort(req_info.request_id)
+                self.sampling_controller.free_seq(req_info.aici_id)
+                raise StopAsyncIteration()
+
+            # TODO simplify this - there is only one fork
+            forks = []
+            for output in res.outputs:
+                # TODO:
+                ff_tokens += 1
+                sampled_tokens += 1
+
+                i = output.index
+                while len(previous_texts) <= i:
+                    previous_texts.append("")
+                delta_text = output.text[len(previous_texts[i]):]
+                previous_texts[i] = output.text
+
+                fork_res = runner.seq_logs(
+                    req_info.aici_id,
+                    index=i,
+                    text=delta_text,
+                    finish_reason=output.finish_reason,
+                )
+                forks.append(fork_res)
+            yield runner.data_line(
+                runner.run_json(forks,
+                                runner.usage_json(ff_tokens, sampled_tokens)))
+
+        yield runner.final_data()

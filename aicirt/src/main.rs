@@ -168,7 +168,7 @@ struct ModuleRegistry {
     // maps module_id (sha256 string) to module status
     modules: Arc<Mutex<HashMap<String, ModuleStatus>>>,
     req_instances: Arc<Mutex<HashMap<String, SeqWorkerHandle>>>,
-    // note sure Mutex is needed
+    // not sure Mutex is needed
     forker: Arc<Mutex<WorkerForker>>,
 }
 
@@ -894,7 +894,10 @@ impl Exec for Stepper {
     #[inline(never)]
     fn exec(&mut self, json: Value, _auth: AuthInfo) -> Result<Value> {
         match json["op"].as_str() {
-            Some("tokens") => Ok(json!({ "vocab_size": self.globals.tokrx_info.vocab_size })),
+            Some("tokens") => Ok(json!({
+                "vocab_size": self.globals.tokrx_info.vocab_size,
+                "eos_token_id": self.globals.tokrx_info.tok_eos,
+            })),
             Some("mid_process") => Ok(serde_json::to_value(
                 &self.aici_mid_process(serde_json::from_value(json)?)?,
             )?),

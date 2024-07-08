@@ -354,6 +354,7 @@ class AiciRunner:
 
         self.vocab_size = -1
         self.batch_size = -1
+        self.eos_token_id = -1
         self.logs_by_seqid: Dict[str, list[dict]] = {}
         self.seqs_to_stop: set[int] = set()
         self.space_token = -1
@@ -419,6 +420,7 @@ class AiciRunner:
         self.cmd.exec("ping")
         resp = self.cmd.exec("tokens")
         self.vocab_size = resp["data"]["vocab_size"]
+        self.eos_token_id = resp["data"]["eos_token_id"]
 
         AiciRunner.instance = self
 
@@ -525,6 +527,7 @@ class AiciRunner:
         prompt: Union[str, list],
         module_id: str,
         module_arg: Union[str, dict, None],
+        aici_id: Optional[int] = None,
     ):
         """
         Create a new instance of a given module.
@@ -541,6 +544,7 @@ class AiciRunner:
                 "instantiate",
                 {
                     "req_id": req_id,
+                    "id": aici_id,
                     "prompt": prompt,
                     "module_id": module_id,
                     "module_arg": module_arg,
@@ -714,6 +718,17 @@ class AiciRunner:
         }
         self.cmd.send(cmd)
         self.freed_seq_ids = []
+        self.logit_pending = True
+
+    def exec_mid_combined(self, vocab_size: int, ops, freed):
+        assert not self.logit_pending
+        cmd = {
+            "op": "mid_process",
+            "vocab_size": vocab_size,
+            "ops": ops,
+            "freed": freed,
+        }
+        self.cmd.send(cmd)
         self.logit_pending = True
 
     def flush_logit_bias(self):
