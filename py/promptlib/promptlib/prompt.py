@@ -2,7 +2,7 @@ import re
 from typing import List
 from .aici import AICI
 
-from pyaici import ast
+from pyaici import ast_ as ast
 
 class PromptNode:
     """
