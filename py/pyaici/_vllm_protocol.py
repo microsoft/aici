@@ -21,6 +21,7 @@ class RunRequest(BaseModel):
             top_k=self.top_k,
             max_tokens=self.max_tokens,
             ignore_eos=False,
+            logprobs=10,
         )
         r.has_aici = True
         return r

@@ -25,8 +25,8 @@ class AiciSamplingController(SamplingController):
 
 
     def log(self, msg: str):
-        pass
-        # print(f"AICI: Ctrl {msg}")
+        """Log message to stdout."""
+        print(f"AICI: {msg}")
 
     def empty_step(self):
         self.log("empty_step")
@@ -68,7 +68,7 @@ class AiciSamplingController(SamplingController):
             self.logit_pending = True
 
     def transform_logits(self, logits: torch.Tensor) -> torch.Tensor:
-        num_tokens, vocab_size = logits.shape
+        _num_tokens, vocab_size = logits.shape
         if not self.logit_pending:
             return logits
         self.logit_pending = False
@@ -77,15 +77,15 @@ class AiciSamplingController(SamplingController):
         sampling_map = self.seq_id_to_sampling_idx
         _num_masks, vocab_size2 = bias.shape
         assert vocab_size2 >= vocab_size, f"{vocab_size2} != {vocab_size}"
-        for idx, mid_res in resp.items():
+        for seq_id, mid_res in resp.items():
             if mid_res.branches:
                 assert len(mid_res.branches) == 1
                 branch = mid_res.branches[0]
                 mask = branch.mask
                 if mask is not None:
-                    logits[sampling_map[idx], :] += bias[mask, 0:vocab_size]
+                    logits[sampling_map[seq_id], :] += bias[mask, 0:vocab_size]
                 if branch.temperature is not None:
-                    self.seq_id_to_sampling_params[idx].temperature = max(
+                    self.seq_id_to_sampling_params[seq_id].temperature = max(
                         branch.temperature, EPSILON_TEMP)
         return logits
 
@@ -115,6 +115,22 @@ class AiciSamplingController(SamplingController):
                         assert bt == 0, "Backtrack not supported"
                         sample.fast_forward_tokens = tokens[:]
                     else:
+                        prob = sample.logprobs[sample.output_token]
+                        fixed = False
+                        if prob.rank > 1:
+                            params = self.seq_id_to_sampling_params[seq_id]
+                            # if we didn't sample top-1, and we're supposed to
+                            # be greedy (temperature approx 0.0), then fix it
+                            if params.temperature <= EPSILON_TEMP:
+                                old_tok = sample.output_token
+                                for token, logprob in sample.logprobs.items():
+                                    if logprob.rank == 1:
+                                        sample.output_token = token
+                                        fixed = True
+                                        break
+                                self.log(f"FIXED {old_tok} -> {sample.output_token}")
                         tokens = [sample.output_token]
+                        if fixed:
+                            sample.fast_forward_tokens = tokens[:]
                     runner.tokens_generated(seq_id, tokens, 0)
         return output
