@@ -1,6 +1,8 @@
 import requests
+import os
 
-url = 'http://localhost:4242/v1/completions'
+base = os.getenv("AICI_API_BASE", "http://localhost:4242/v1")
+url = base + '/completions'
 
 headers = {
     'Content-Type': 'application/json',
@@ -9,7 +11,7 @@ headers = {
 data = {
     'model': 'model',
     'prompt': 'Once upon a time,',
-    'max_tokens': 50,
+    'max_tokens': 5,
     'temperature': 0,
     'stream': True  
 }
