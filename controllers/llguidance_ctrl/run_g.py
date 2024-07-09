@@ -216,6 +216,7 @@ def main():
         return lm
     grm = character_maker(1, 'A nimble fighter', ['axe', 'sword', 'bow'])
 
+    grm = "Q: 7 * 8\nA: " + gen("text", regex="[0-9]+", max_tokens=20)
 
     # grm = "Here: 2 + 2 = " + guidance.json(name="num", schema={"type": "integer"})
     # grm = guidance.json(name="num", schema={"type": "integer"})

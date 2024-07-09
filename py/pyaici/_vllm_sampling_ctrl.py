@@ -23,6 +23,13 @@ class AiciSamplingController(SamplingController):
     def resolve_req_id(self, req_id: str) -> Optional[int]:
         return self.req_id_to_seq_id.get(req_id)
 
+    def empty_step(self):
+        runner = self.runner
+        runner.add_mid_for_finished()
+        if runner.needs_exec_mid():
+            runner.exec_mid()
+            _ = self.runner.recv_logit_bias_torch()
+
     def prepare(self, sampling_metadata: "SamplingMetadata"):
         runner = self.runner
         seq_id_to_sampling_idx: Dict[int, int] = {}
@@ -43,6 +50,7 @@ class AiciSamplingController(SamplingController):
                 seq_id_to_sampling_idx[seq_id] = sample_indices[0]
             else:
                 pass
+        runner.add_mid_for_finished()
         if runner.needs_exec_mid():
             runner.exec_mid()
             self.seq_id_to_sampling_idx = seq_id_to_sampling_idx

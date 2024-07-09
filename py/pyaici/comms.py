@@ -377,6 +377,8 @@ class AiciRunner:
         self.pending_req_ids: Dict[int, str] = {}
         self.mid_ops = []
         self.freed_seq_ids = []
+        self.step_finished_event = asyncio.Event()
+        self.pending_step_finished_event = asyncio.Event()
         self.pending_instantiate_results = {}
         self.pending_generated_tokens: Dict[int, Tuple[List[int], int]] = {}
 
@@ -616,6 +618,14 @@ class AiciRunner:
         else:
             self.freed_seq_ids.append(id)
 
+    async def wait_for_step_finish(self):
+        await self.step_finished_event.wait()
+
+    def add_mid_for_finished(self):
+        for id in self.freed_seq_ids:
+            if id in self.pending_generated_tokens:
+                self.add_mid(id)
+
     def _add_logs(self, by_seqid: Dict[str, dict]):
         d = self.logs_by_seqid
         for k, v in by_seqid.items():
@@ -717,6 +727,8 @@ class AiciRunner:
         return len(self.mid_ops) > 0
 
     def exec_mid(self):
+        self.pending_step_finished_event = self.step_finished_event
+        self.step_finished_event = asyncio.Event()
         assert not self.logit_pending
         cmd = {
             "op": "mid_process",
@@ -727,17 +739,6 @@ class AiciRunner:
         self.freed_seq_ids = []
         self.logit_pending = True
 
-    def exec_mid_combined(self, vocab_size: int, ops, freed):
-        assert not self.logit_pending
-        cmd = {
-            "op": "mid_process",
-            "vocab_size": vocab_size,
-            "ops": ops,
-            "freed": freed,
-        }
-        self.cmd.send(cmd)
-        self.logit_pending = True
-
     def flush_logit_bias(self):
         """
         Drop any pending logit/mask computation.
@@ -746,6 +747,7 @@ class AiciRunner:
             print("Warning: unflushed AICI logit bias")
             self.logit_pending = False
             self.cmd.expect("flush")
+            self.pending_step_finished_event.set()
 
     def recv_logit_bias_numpy(self):
         import numpy
@@ -797,6 +799,7 @@ class AiciRunner:
             last_resp[int(id)] = r
         self.last_resp = last_resp
         self.mid_ops = []
+        self.pending_step_finished_event.set()
         return data
 
     def stop(self):

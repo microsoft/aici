@@ -106,6 +106,7 @@ class AiciRunnerCompletion(OpenAIServing):
         ff_tokens = len(req_info.prompt)
         sampled_tokens = 0
         seq_id: Optional[int] = None
+        last_finish_reason = ""
 
         async for res in generator:
             if seq_id is None:
@@ -132,17 +133,29 @@ class AiciRunnerCompletion(OpenAIServing):
                 delta_text = output.text[len(previous_texts[i]):]
                 previous_texts[i] = output.text
 
+                last_finish_reason = output.finish_reason
                 fork_res = runner.seq_logs(
                     seq_id,
                     index=i,
                     text=delta_text,
-                    finish_reason=output.finish_reason,
+                    finish_reason=last_finish_reason,
                 )
                 forks.append(fork_res)
             yield runner.data_line(
                 runner.run_json(forks,
                                 runner.usage_json(ff_tokens, sampled_tokens)))
 
-        yield runner.final_data()
         if seq_id is not None:
             runner.seq_freed(seq_id)
+            await runner.wait_for_step_finish()
+            fork_res = runner.seq_logs(
+                seq_id,
+                index=0,
+                text="",
+                finish_reason=last_finish_reason,
+            )
+            yield runner.data_line(
+                runner.run_json([fork_res],
+                                runner.usage_json(ff_tokens, sampled_tokens)))
+
+        yield runner.final_data()

@@ -4,8 +4,8 @@ set -e
 set -x
 
 if [ -z "$FOLDER" ]; then
-    MODEL_ARGS="--model microsoft/Orca-2-13b --revision refs/pr/22 --aici-tokenizer orca"
-    #MODEL_ARGS="--model microsoft/Phi-3-mini-128k-instruct --trust-remote-code"
+    #MODEL_ARGS="--model microsoft/Orca-2-13b --revision refs/pr/22 --aici-tokenizer orca"
+    MODEL_ARGS="--model microsoft/Phi-3-mini-128k-instruct --trust-remote-code"
     #MODEL_ARGS="--model microsoft/Phi-3-mini-4k-instruct --trust-remote-code"
 else
     MODEL_ARGS="--model ./$FOLDER --aici-tokenizer ./$FOLDER/tokenizer.json --tokenizer ./$FOLDER"
