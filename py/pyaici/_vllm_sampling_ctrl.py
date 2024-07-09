@@ -23,14 +23,23 @@ class AiciSamplingController(SamplingController):
     def resolve_req_id(self, req_id: str) -> Optional[int]:
         return self.req_id_to_seq_id.get(req_id)
 
+
+    def log(self, msg: str):
+        pass
+        # print(f"AICI: Ctrl {msg}")
+
     def empty_step(self):
+        self.log("empty_step")
         runner = self.runner
         runner.add_mid_for_finished()
         if runner.needs_exec_mid():
+            self.log("empty_step EXEC")
             runner.exec_mid()
             _ = self.runner.recv_logit_bias_torch()
+            self.log("empty_step STOP")
 
     def prepare(self, sampling_metadata: "SamplingMetadata"):
+        self.log("prepare")
         runner = self.runner
         seq_id_to_sampling_idx: Dict[int, int] = {}
         seq_id_to_sampling_params: Dict[int, SamplingParams] = {}

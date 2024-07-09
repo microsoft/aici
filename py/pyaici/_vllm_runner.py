@@ -147,15 +147,18 @@ class AiciRunnerCompletion(OpenAIServing):
 
         if seq_id is not None:
             runner.seq_freed(seq_id)
-            await runner.wait_for_step_finish()
-            fork_res = runner.seq_logs(
-                seq_id,
-                index=0,
-                text="",
-                finish_reason=last_finish_reason,
-            )
-            yield runner.data_line(
-                runner.run_json([fork_res],
-                                runner.usage_json(ff_tokens, sampled_tokens)))
+            if seq_id in runner.pending_generated_tokens:
+                self.sampling_controller.log("waiting for step finish")
+                await runner.wait_for_step_finish()
+                fork_res = runner.seq_logs(
+                    seq_id,
+                    index=0,
+                    text="",
+                    finish_reason=last_finish_reason,
+                )
+                yield runner.data_line(
+                    runner.run_json([fork_res],
+                                    runner.usage_json(ff_tokens,
+                                                      sampled_tokens)))
 
         yield runner.final_data()

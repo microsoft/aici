@@ -5,6 +5,34 @@
     "version": "0.2.0",
     "configurations": [
         {
+            "name": "vLLM server",
+            "type": "debugpy",
+            "request": "launch",
+            "module": "pyaici.vllm_server",
+            "env": {
+                "RUST_LOG": "info,tokenizers=error,aicirt=info",
+                "RUST_BACKTRACE": "1",
+                "PYTHONPATH": "${workspaceFolder}/py:${workspaceFolder}/py/vllm"
+            },
+            "args": [
+                "--enforce-eager",
+                "--use-v2-block-manager",
+                "--enable-chunked-prefill",
+                "--served-model-name=model",
+                "--aici-rt",
+                "./target/release/aicirt",
+                "-A--wasm-timer-resolution-us=10",
+                "--model",
+                "microsoft/Phi-3-mini-128k-instruct",
+                "--trust-remote-code",
+                "--port",
+                "4242",
+                "--host",
+                "127.0.0.1",
+                "--trust-remote-code"
+            ]
+        },
+        {
             "type": "lldb",
             "request": "launch",
             "name": "rllm-llamacpp phi",
