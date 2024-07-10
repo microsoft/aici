@@ -107,6 +107,8 @@ class AiciRunnerCompletion(OpenAIServing):
         sampled_tokens = 0
         seq_id: Optional[int] = None
         last_finish_reason = ""
+        prev_token_ids = 0
+        ff_tokens -= 1
 
         async for res in generator:
             if seq_id is None:
@@ -123,8 +125,9 @@ class AiciRunnerCompletion(OpenAIServing):
             # TODO simplify this - there is only one fork
             forks = []
             for output in res.outputs:
-                # TODO:
-                ff_tokens += 1
+                curr_len = len(output.token_ids)
+                ff_tokens += max(1, curr_len - prev_token_ids)
+                prev_token_ids = curr_len
                 sampled_tokens += 1
 
                 i = output.index

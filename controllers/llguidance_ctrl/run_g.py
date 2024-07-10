@@ -216,6 +216,8 @@ def main():
         return lm
     grm = character_maker(1, 'A nimble fighter', ['axe', 'sword', 'bow'])
 
+    grm = '{ "items": ["' + gen("i1", regex=r'a+',  stop='"') + '",\n   "' + gen("i2", regex=r'b+', stop='"') + '"] }'
+
     # grm = "Q: 7 * 8\nA: " + gen("text", regex="[0-9]+", max_tokens=20)
 
     # grm = "Here: 2 + 2 = " + guidance.json(name="num", schema={"type": "integer"})
@@ -238,7 +240,7 @@ def main():
     #     body = lexeme("[0-9]+")
     # )
 
-    max_tokens = 25
+    max_tokens = 90
 
     serialized = grm.ll_serialize()
 
@@ -246,50 +248,6 @@ def main():
     #     # with open("tmp/email_regex_grammar.json", "r") as f:
     #     max_tokens = 1000
     #     serialized = json.load(f)
-
-    x_serialized = {
-        "grammars": [{
-            "greedy_lexer":
-            False,
-            "nodes": [
-                {
-                    "Join": {
-                        "sequence": [1]
-                    }
-                },
-                {
-                    "Join": {
-                        "sequence": [2, 3]
-                    }
-                },
-                {
-                    "Gen": {
-                        "body_rx": 0,
-                        "stop_rx": "",
-                        "temperature": None
-                    }
-                },
-                {
-                    "Select": {
-                        "among": [4, 5]
-                    }
-                },
-                {
-                    "Join": {
-                        "sequence": [3, 2]
-                    }
-                },
-                {
-                    "String": {
-                        "literal": ""
-                    }
-                },
-            ],
-            "rx_nodes": [{
-                "ByteSet": [0, 0, 0, 134217726, 0, 0, 0, 0]
-            }],
-        }]
-    }
 
     serialized["max_tokens"] = max_tokens
     serialized["test_trace"] = True
