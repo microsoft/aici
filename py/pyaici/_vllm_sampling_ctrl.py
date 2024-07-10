@@ -23,7 +23,6 @@ class AiciSamplingController(SamplingController):
     def resolve_req_id(self, req_id: str) -> Optional[int]:
         return self.req_id_to_seq_id.get(req_id)
 
-
     def log(self, msg: str):
         """Log message to stdout."""
         # print(f"AICI: {msg}")
@@ -102,12 +101,12 @@ class AiciSamplingController(SamplingController):
                 if mid_res.error or not mid_res.branches:
                     sample.fast_forward_tokens = [runner.eos_token_id]
                 else:
-                    splice = mid_res.branches[0].find_splice(
-                        sample.output_token)
+                    br = mid_res.branches[0]
+                    splice = br.find_splice(sample.output_token)
                     if splice is not None:
                         bt = splice.backtrack
                         tokens = splice.ff_tokens[:]
-                        if mid_res.branches[0].mask is not None:
+                        if br.mask is not None:
                             if bt == 0:
                                 tokens.insert(0, sample.output_token)
                             elif bt == 1:
@@ -128,9 +127,15 @@ class AiciSamplingController(SamplingController):
                                         sample.output_token = token
                                         fixed = True
                                         break
-                                self.log(f"FIXED {old_tok} -> {sample.output_token}")
+                                self.log(
+                                    f"FIXED {old_tok} -> {sample.output_token}"
+                                )
                         tokens = [sample.output_token]
                         if fixed:
                             sample.fast_forward_tokens = tokens[:]
-                    runner.tokens_generated(seq_id, tokens, 0)
+                    sampled = sample.output_token if br.mask is not None else None
+                    runner.tokens_generated(seq_id,
+                                            tokens,
+                                            backtrack=0,
+                                            sampled=sampled)
         return output

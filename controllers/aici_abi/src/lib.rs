@@ -56,6 +56,8 @@ pub struct MidProcessArg {
     /// Can be more complex when splices are used.
     pub backtrack: u32,
     pub tokens: Vec<TokenId>,
+    /// The token that was sampled, before splicing, if any.
+    pub sampled: Option<TokenId>,
     ///
     pub fork_group: Vec<SeqId>,
 }

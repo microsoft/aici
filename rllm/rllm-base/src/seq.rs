@@ -134,6 +134,7 @@ impl Sequence {
             clone_id: None,
             clone_idx: None,
             req_id: None,
+            sampled: None,
             backtrack: 0,
             tokens: vec![],
         }

@@ -37,6 +37,8 @@ pub struct AiciMidProcessResp {
 /// If either of them is set, then id should be fresh.
 pub struct AiciMidOp {
     pub id: ModuleInstId,
+    /// The token that was sampled (after applying the mask), before any splicing.
+    pub sampled: Option<TokenId>,
     /// Set to None, except upon first call for a branch after forking.
     pub clone_id: Option<ModuleInstId>,
     /// This is index of branch, set iff clone_id is set.

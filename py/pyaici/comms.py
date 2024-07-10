@@ -380,7 +380,7 @@ class AiciRunner:
         self.step_finished_event = asyncio.Event()
         self.pending_step_finished_event = asyncio.Event()
         self.pending_instantiate_results = {}
-        self.pending_generated_tokens: Dict[int, Tuple[List[int], int]] = {}
+        self.pending_generated_tokens: Dict[int, Tuple[Optional[int], List[int], int]] = {}
 
         self.cmd = CmdChannel(pref=pref,
                               suff="",
@@ -603,11 +603,12 @@ class AiciRunner:
     def tokens_generated(self,
                          seq_id: int,
                          tokens: List[int],
-                         backtrack: int = 0):
+                         backtrack: int = 0,
+                         sampled: Optional[int] = None):
         """
         Informs aicirt tokens have been generated.
         """
-        self.pending_generated_tokens[seq_id] = (tokens, backtrack)
+        self.pending_generated_tokens[seq_id] = (sampled, tokens, backtrack)
 
     def seq_freed(self, id: Union[int, list[int]]):
         """
@@ -706,13 +707,14 @@ class AiciRunner:
                 clone_id: Optional[int] = None,
                 clone_idx: Optional[int] = None):
         assert not self.logit_pending
-        tokens, backtrack = self.pending_generated_tokens.get(id, ([], 0))
+        sampled, tokens, backtrack = self.pending_generated_tokens.get(id, (None, [], 0))
         if id in self.pending_generated_tokens:
             del self.pending_generated_tokens[id]
         obj: Dict[str, Any] = {
             "id": id,
             "backtrack": backtrack,
             "tokens": tokens,
+            "sampled": sampled,
         }
         if id in self.pending_req_ids:
             obj["req_id"] = self.pending_req_ids[id]

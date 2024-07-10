@@ -775,6 +775,7 @@ impl Stepper {
                     op: MidProcessArg {
                         backtrack: op.backtrack,
                         tokens: op.tokens.clone(),
+                        sampled: op.sampled,
                         fork_group,
                     },
                 };

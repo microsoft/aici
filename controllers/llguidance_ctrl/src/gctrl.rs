@@ -60,6 +60,7 @@ impl AiciCtrl for Runner {
         let r = self.tok_parser.mid_process(StepArg {
             backtrack: arg.backtrack,
             tokens: arg.tokens,
+            sampled: arg.sampled,
         });
         for v in self.reporter.get_progress(&mut self.tok_parser, &r) {
             json_out(&v);

@@ -500,6 +500,7 @@ impl<ME: ModelExec> RllmEngine<ME> {
                 let mut logits = self.tmodel.get_logits(*sidx);
 
                 let mut info = "";
+                let mut sampled = None;
 
                 let splice = match &seq.aici_sampling {
                     Some(b) if b.sample_mask.is_none() => {
@@ -530,6 +531,8 @@ impl<ME: ModelExec> RllmEngine<ME> {
                                 self.tmodel.sample(&mut sg.logits_processor, &logits)?
                             )
                         };
+
+                        sampled = Some(next_token);
 
                         let splices = seq
                             .aici_sampling
@@ -591,6 +594,7 @@ impl<ME: ModelExec> RllmEngine<ME> {
                 if seq.has_aici {
                     seq.mid_op.as_mut().unwrap().tokens = splice.ff_tokens;
                     seq.mid_op.as_mut().unwrap().backtrack = splice.backtrack;
+                    seq.mid_op.as_mut().unwrap().sampled = sampled;
                 }
 
                 if !sg.sampling_params.ignore_eos && has_eos {
