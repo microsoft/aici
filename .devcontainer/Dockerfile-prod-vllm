@@ -59,7 +59,7 @@ RUN ls -l wasm/
 
 ENV RUST_LOG info,tokenizers=error
 
-ENTRYPOINT ["python3", "-m", "vllm.entrypoints.openai.api_server", "--enforce-eager", "--use-v2-block-manager", "--enable-chunked-prefill", "--aici-rt=/usr/bin/aicirt", "-A--restricted", "-A--wasm-timer-resolution-us=10"]
+ENTRYPOINT ["python3", "-m", "pyaici.vllm_server", "--enforce-eager", "--use-v2-block-manager", "--enable-chunked-prefill", "--aici-rt=/usr/bin/aicirt", "-A--restricted", "-A--wasm-timer-resolution-us=10"]
 
 FROM vllm-base AS vllm-guidance
 
