@@ -26,7 +26,7 @@ class AiciSamplingController(SamplingController):
 
     def log(self, msg: str):
         """Log message to stdout."""
-        print(f"AICI: {msg}")
+        # print(f"AICI: {msg}")
 
     def empty_step(self):
         self.log("empty_step")
