@@ -16,4 +16,4 @@ path = "src/gctrl.rs"
 
 [features]
 default = []
-logging = []
+logging = ["llguidance_parser/logging"]
