@@ -136,7 +136,7 @@ struct Cli {
     wasm_max_memory: usize,
 
     /// Maximum time WASM module can execute step in milliseconds
-    #[arg(long, default_value = "50")]
+    #[arg(long, default_value = "25")]
     wasm_max_step_time: u64,
 
     /// How many steps have to timeout before the sequenace is terminated

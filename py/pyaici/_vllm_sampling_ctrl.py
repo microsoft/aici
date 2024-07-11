@@ -72,7 +72,7 @@ class AiciSamplingController(SamplingController):
             return logits
         self.logit_pending = False
         resp, bias = self.runner.recv_logit_bias_torch()
-        bias = bias.to(logits.device)  # TODO use non_blocking?
+        bias = bias.to(logits.device, non_blocking=True)  # TODO use non_blocking?
         sampling_map = self.seq_id_to_sampling_idx
         _num_masks, vocab_size2 = bias.shape
         assert vocab_size2 >= vocab_size, f"{vocab_size2} != {vocab_size}"
