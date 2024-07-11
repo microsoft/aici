@@ -218,6 +218,8 @@ def main():
 
     grm = '{ "items": ["' + gen("i1", regex=r'a+',  stop='"') + '",\n   "' + gen("i2", regex=r'b+', stop='"') + '"] }'
 
+    grm = "Count to 10: 1, 2, 3, 4, 5, 6, 7, " + gen("text", stop=",")
+
     # grm = "Q: 7 * 8\nA: " + gen("text", regex="[0-9]+", max_tokens=20)
 
     # grm = "Here: 2 + 2 = " + guidance.json(name="num", schema={"type": "integer"})
