@@ -9,7 +9,7 @@ members = [
     "controllers/declctrl",
     "controllers/pyctrl",
     "controllers/jsctrl",
-    "controllers/llguidance/python",
+    "controllers/llguidance/rust",
     "controllers/llguidance/parser",
     "controllers/llguidance_ctrl",
     "controllers/uppercase",

@@ -1989,7 +1989,7 @@ dependencies = [
 
 [[package]]
 name = "llguidance"
-version = "0.1.0"
+version = "0.1.4"
 dependencies = [
  "bytemuck",
  "llguidance_parser",
@@ -2000,7 +2000,7 @@ dependencies = [
 
 [[package]]
 name = "llguidance_parser"
-version = "0.1.0"
+version = "0.1.4"
 dependencies = [
  "anyhow",
  "derivre",
