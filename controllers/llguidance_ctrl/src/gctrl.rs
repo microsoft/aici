@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use aici_abi::{
-    arg_bytes, get_config, toktrie::StepArg, AiciCtrl, InitPromptArg, InitPromptResult,
+    arg_bytes, get_config, toktrie::{InferenceCapabilities, StepArg}, AiciCtrl, InitPromptArg, InitPromptResult,
     MidProcessArg, MidProcessResult,
 };
 use serde::{Deserialize, Serialize};
@@ -33,12 +33,17 @@ impl Runner {
         infoln!("building runner...");
         let arg: RunnerArg = serde_json::from_slice(&arg_bytes()).expect("invalid JSON arg");
         let log_level = 2;
-        let backtrack_supported = get_config("backtrack") != 0;
+        let inf = InferenceCapabilities {
+            backtrack: get_config("backtrack") != 0,
+            ff_tokens: get_config("ff_tokens") != 0,
+            conditional_ff_tokens: get_config("ff_tokens") != 0,
+            fork: false,
+        };
         let tok_parser = TokenParser::from_llguidance_json(
             Arc::new(aici_abi::WasmTokenizerEnv::default()),
             arg.grammar,
             log_level,
-            backtrack_supported,
+            inf,
         )
         .expect("invalid guidance protobuf");
 
