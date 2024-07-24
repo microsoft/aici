@@ -311,7 +311,6 @@ declare module "_aici" {
   function substrConstraint(template: string, stop_at: string): Constraint;
 }
 declare module 'aici' {
-/// 
 import { TokenSet, tokenize, detokenize, regexConstraint, cfgConstraint, substrConstraint, Constraint, getVar, setVar, appendVar, eosToken, panic, tokenRepr, tokensRepr, getConfig } from "_aici";
 export { TokenSet, tokenize, detokenize, getVar, setVar, appendVar, getConfig, eosToken, tokenRepr, tokensRepr, };
 export type SeqId = number;
