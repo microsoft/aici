@@ -110,58 +110,59 @@ class AiciRunnerCompletion(OpenAIServing):
         prev_token_ids = 0
         ff_tokens -= 1
 
-        async for res in generator:
-            if seq_id is None:
-                seq_id = self.sampling_controller.resolve_req_id(
-                    req_info.request_id)
-                assert seq_id is not None
+        try:
+            async for res in generator:
+                if seq_id is None:
+                    seq_id = self.sampling_controller.resolve_req_id(
+                        req_info.request_id)
+                    assert seq_id is not None
 
-            # Abort the request if the client disconnects.
-            if await raw_request.is_disconnected():
-                await self.engine.abort(req_info.request_id)
-                runner.seq_freed(seq_id)
-                raise StopAsyncIteration()
+                # Abort the request if the client disconnects.
+                if await raw_request.is_disconnected():
+                    await self.engine.abort(req_info.request_id)
+                    runner.seq_freed(seq_id)
+                    return
 
-            # TODO simplify this - there is only one fork
-            forks = []
-            for output in res.outputs:
-                curr_len = len(output.token_ids)
-                ff_tokens += max(1, curr_len - prev_token_ids)
-                prev_token_ids = curr_len
-                sampled_tokens += 1
+                # TODO simplify this - there is only one fork
+                forks = []
+                for output in res.outputs:
+                    curr_len = len(output.token_ids)
+                    ff_tokens += max(1, curr_len - prev_token_ids)
+                    prev_token_ids = curr_len
+                    sampled_tokens += 1
 
-                i = output.index
-                while len(previous_texts) <= i:
-                    previous_texts.append("")
-                delta_text = output.text[len(previous_texts[i]):]
-                previous_texts[i] = output.text
+                    i = output.index
+                    while len(previous_texts) <= i:
+                        previous_texts.append("")
+                    delta_text = output.text[len(previous_texts[i]):]
+                    previous_texts[i] = output.text
 
-                last_finish_reason = output.finish_reason
-                fork_res = runner.seq_logs(
-                    seq_id,
-                    index=i,
-                    text=delta_text,
-                    finish_reason=last_finish_reason,
-                )
-                forks.append(fork_res)
-            yield runner.data_line(
-                runner.run_json(forks,
-                                runner.usage_json(ff_tokens, sampled_tokens)))
-
-        if seq_id is not None:
-            runner.seq_freed(seq_id)
-            if seq_id in runner.pending_generated_tokens:
-                self.sampling_controller.log("waiting for step finish")
-                await runner.wait_for_step_finish()
-                fork_res = runner.seq_logs(
-                    seq_id,
-                    index=0,
-                    text="",
-                    finish_reason=last_finish_reason,
-                )
+                    last_finish_reason = output.finish_reason
+                    fork_res = runner.seq_logs(
+                        seq_id,
+                        index=i,
+                        text=delta_text,
+                        finish_reason=last_finish_reason,
+                    )
+                    forks.append(fork_res)
                 yield runner.data_line(
-                    runner.run_json([fork_res],
-                                    runner.usage_json(ff_tokens,
-                                                      sampled_tokens)))
+                    runner.run_json(
+                        forks, runner.usage_json(ff_tokens, sampled_tokens)))
+        finally:
+            if seq_id is not None:
+                runner.seq_freed(seq_id)
+                if seq_id in runner.pending_generated_tokens:
+                    self.sampling_controller.log("waiting for step finish")
+                    await runner.wait_for_step_finish()
+                    fork_res = runner.seq_logs(
+                        seq_id,
+                        index=0,
+                        text="",
+                        finish_reason=last_finish_reason,
+                    )
+                    yield runner.data_line(
+                        runner.run_json([fork_res],
+                                        runner.usage_json(
+                                            ff_tokens, sampled_tokens)))
 
         yield runner.final_data()
