@@ -74,6 +74,7 @@ class AiciSamplingController(SamplingController):
         resp, bias = self.runner.recv_logit_bias_torch()
         bias = bias.to(logits.device, non_blocking=True)  # TODO use non_blocking?
         sampling_map = self.seq_id_to_sampling_idx
+        params_map = self.seq_id_to_sampling_params
         _num_masks, vocab_size2 = bias.shape
         assert vocab_size2 >= vocab_size, f"{vocab_size2} != {vocab_size}"
         for seq_id, mid_res in resp.items():
@@ -81,10 +82,10 @@ class AiciSamplingController(SamplingController):
                 assert len(mid_res.branches) == 1
                 branch = mid_res.branches[0]
                 mask = branch.mask
-                if mask is not None:
+                if mask is not None and seq_id in sampling_map:
                     logits[sampling_map[seq_id], :] += bias[mask, 0:vocab_size]
-                if branch.temperature is not None:
-                    self.seq_id_to_sampling_params[seq_id].temperature = max(
+                if branch.temperature is not None and seq_id in params_map:
+                    params_map[seq_id].temperature = max(
                         branch.temperature, EPSILON_TEMP)
         return logits
 
