@@ -20,4 +20,4 @@
 	url = https://github.com/microsoft/derivre
 [submodule "controllers/llguidance"]
 	path = controllers/llguidance
-	url = https://github.com/mmoskal/llguidance
+	url = https://github.com/microsoft/llguidance

@@ -17,10 +17,6 @@ from guidance import (
     substring,
     optional,
     string,
-    lexeme,
-    greedy_grammar,
-    lazy_grammar,
-    commit_point,
     with_temperature,
 )
 
@@ -88,10 +84,6 @@ def main():
     grm = character_maker2(1, "A nimble fighter", ["axe", "sword", "bow"])
     prompt = ""
 
-    prompt = "Three things about J. Random Hacker:\n"
-    grm = commit_point('"' + byte_range(b"A", b"Z") +
-                       one_or_more(byte_range(b"a", b"z")) + '"')
-
     prompt = ""
     grm = "This is a" + select(name="text", options=["", "nope"])
 
@@ -145,10 +137,6 @@ def main():
 
     grm = character_maker2(1, "A nimble fighter", ["axe", "sword", "bow"])
 
-    grm = ("Dolphin name: " +
-           commit_point('"' + byte_range(b"A", b"Z") +
-                        one_or_more(byte_range(b"a", b"z")) + '"') + ",")
-
     grm = "Count to 10: 1, 2, 3, 4, 5, 6, 7, " + gen("text",
                                                      stop=",") + "\nNot quite."
 
@@ -164,12 +152,6 @@ def main():
         save_stop_text="saved_name_stop2",
     ))
 
-    grm = "6 * 7 = " + greedy_grammar(body=lexeme("[0-9]{1,3}")) + "\n"
-    # assert grm.match("6 * 7 = 42\n")
-
-    grm = ("Dolphin name: " +
-           commit_point('"' + byte_range(b"A", b"Z") +
-                        one_or_more(byte_range(b"a", b"z")) + '"') + ",")
 
     grm = gen(regex="a*")
     grm = "6 * 7 = " + gen(regex="5*") + gen(regex="[1-4][0-9]") + "\n"
@@ -182,16 +164,6 @@ def main():
            "Emily Carter is great; Height: " + gen("height", max_tokens=3))
 
     grm = "123" + gen(name="numbers", regex=r"\d*233", max_tokens=5)
-
-    grm = ("Here: 2 + 2 = " +
-           greedy_grammar(body=lexeme("[0-9]+"), skip_regex=r"\s*") + "x")
-    grm = "Here: 2 + 2 = " + greedy_grammar(name="num", body=lexeme("[0-9]+"))
-
-    grm = with_temperature(
-        "Here: 1 / 10 = " + greedy_grammar(body=select([
-            lexeme(r"-?(?:0|[1-9][0-9]*)", contextual=True),
-            lexeme(r"-?(?:0|[1-9][0-9]*)(?:\.[0-9]+)", contextual=True),
-        ])), 0.8)
 
     grm = character_maker2(1, "A nimble fighter", ["axe", "sword", "bow"])
     prompt = ""

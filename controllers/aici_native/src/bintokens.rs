@@ -114,7 +114,7 @@ fn strip_suffix(sep: &str, s: &mut String) -> Option<String> {
 pub fn test_tokenizers() {
     for t in tokenizers() {
         let t = find_tokenizer(t.name).unwrap();
-        println!("tokenizer: {} {}", t.hf_model, t.vocab_size);
+        println!("tokenizer: {} {}", t.hf_model, t.tokrx_info().vocab_size);
     }
 }
 

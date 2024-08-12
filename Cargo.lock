@@ -1786,9 +1786,9 @@ dependencies = [
 
 [[package]]
 name = "instant"
-version = "0.1.12"
+version = "0.1.13"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7a5bbe824c507c5da5956355e86a746d82e0e1464f65d862cc5e71da70e94b2c"
+checksum = "e0242819d153cba4b4b05a5a8f2a7e9bbf97b6055b2a002b395c96b5ff3c0222"
 dependencies = [
  "cfg-if",
 ]
@@ -1989,7 +1989,7 @@ dependencies = [
 
 [[package]]
 name = "llguidance"
-version = "0.1.4"
+version = "0.1.6"
 dependencies = [
  "bytemuck",
  "llguidance_parser",
@@ -2000,10 +2000,11 @@ dependencies = [
 
 [[package]]
 name = "llguidance_parser"
-version = "0.1.4"
+version = "0.1.6"
 dependencies = [
  "anyhow",
  "derivre",
+ "instant",
  "rustc-hash 2.0.0",
  "serde",
  "serde_json",

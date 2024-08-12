@@ -1,12 +1,13 @@
 use std::sync::Arc;
 
 use aici_abi::{
-    arg_bytes, get_config, toktrie::{InferenceCapabilities, StepArg}, AiciCtrl, InitPromptArg, InitPromptResult,
-    MidProcessArg, MidProcessResult,
+    arg_bytes, get_config,
+    toktrie::{InferenceCapabilities, StepArg},
+    AiciCtrl, InitPromptArg, InitPromptResult, MidProcessArg, MidProcessResult,
 };
 use serde::{Deserialize, Serialize};
 
-use llguidance_parser::{api::TopLevelGrammar, output::Reporter, TokenParser};
+use llguidance_parser::{api::TopLevelGrammar, output::Reporter, Logger, TokenParser};
 
 const INFO: bool = true;
 
@@ -42,7 +43,7 @@ impl Runner {
         let tok_parser = TokenParser::from_llguidance_json(
             Arc::new(aici_abi::WasmTokenizerEnv::default()),
             arg.grammar,
-            log_level,
+            Logger::new(0, log_level),
             inf,
         )
         .expect("invalid guidance protobuf");

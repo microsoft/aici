@@ -1142,7 +1142,7 @@ fn save_tokenizer(cli: &Cli) {
     let filename = cli.save_tokenizer.as_deref().unwrap();
 
     let tokenizer = find_tokenizer(&cli.tokenizer).unwrap();
-    let env = ByteTokenizerEnv::new(tokenizer);
+    let env = ByteTokenizerEnv::new(tokenizer, None).unwrap();
 
     let tokens = env.tokenizer.token_bytes();
     log::info!(

@@ -73,7 +73,7 @@ impl WasmContext {
         let bytes = trie.serialize();
         // validate
         let trie2 = TokTrie::from_bytes(&bytes);
-        assert!(trie.info() == trie2.info());
+        assert!(trie.info().to_bin() == trie2.info().to_bin());
         trie2.check_against(&tokens);
 
         // let tok = tokenizers::Tokenizer::from_bytes(tokenizer.hf_bytes).unwrap();
