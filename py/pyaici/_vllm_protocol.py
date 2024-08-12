@@ -1,12 +1,14 @@
 from pydantic import BaseModel
 from typing import List, Optional, Union
 from vllm.sampling_params import SamplingParams
+from vllm.entrypoints.chat_utils import ChatCompletionMessageParam
 
 EPSILON_TEMP = 1.5e-5
 
 class RunRequest(BaseModel):
     model: Optional[str] = None
-    prompt: str
+    prompt: Optional[str] = None
+    messages: Optional[List[ChatCompletionMessageParam]] = None
     controller: str
     controller_arg: Union[str, dict]
     temperature: float = 0.0
@@ -23,7 +25,7 @@ class RunRequest(BaseModel):
             ignore_eos=False,
             logprobs=10,
         )
-        r.has_aici = True
+        r.has_aici = True # type: ignore
         return r
 
 
