@@ -83,11 +83,11 @@ impl Default for ModelParams {
 }
 
 pub enum SplitMode {
-    None = llama_split_mode_LLAMA_SPLIT_NONE as isize,
+    None = llama_split_mode_LLAMA_SPLIT_MODE_NONE as isize,
     /// split layers and KV across GPUs
-    Layer = llama_split_mode_LLAMA_SPLIT_LAYER as isize,
+    Layer = llama_split_mode_LLAMA_SPLIT_MODE_LAYER as isize,
     /// split rows across GPUs
-    Row = llama_split_mode_LLAMA_SPLIT_ROW as isize,
+    Row = llama_split_mode_LLAMA_SPLIT_MODE_ROW as isize,
 }
 
 impl ModelParams {
@@ -170,8 +170,7 @@ impl Model {
     pub fn from_file(file: &str, mparams: ModelParams) -> Result<Self> {
         unsafe {
             llama_log_set(Some(llama_log), std::ptr::null_mut());
-            let numa = false;
-            llama_backend_init(numa); // TODO: only call this once?
+            llama_backend_init();
             let c = CString::new(file).unwrap();
             let model = llama_load_model_from_file(c.as_ptr(), mparams);
             if model == std::ptr::null_mut() {
@@ -242,6 +241,7 @@ impl Model {
                     token as i32,
                     res.as_mut_ptr() as *mut c_char,
                     res.len() as i32,
+                    false,
                 )
             });
             if ntok < 0 {
