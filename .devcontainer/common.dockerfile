@@ -31,7 +31,7 @@ ENV RUSTUP_HOME=/usr/local/rustup \
 
 RUN curl https://sh.rustup.rs -sSf | sh -s -- \
      -y --no-modify-path --profile minimal --default-toolchain $RUST_VERSION
-RUN rustup target add wasm32-wasip2
+RUN rustup target add wasm32-wasip1
 RUN rustup component add rustfmt
 
 # run as root please; note that settings in devcontainer.json are also needed...

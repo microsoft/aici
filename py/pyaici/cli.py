@@ -55,7 +55,7 @@ def build_rust(folder: str, features: List[str] = []):
         bin_file = bins[0]["name"]
     print(f'will build {bin_file} from {pkg["manifest_path"]}')
 
-    triple = "wasm32-wasip2"
+    triple = "wasm32-wasip1"
     trg_path = (info["target_directory"] + "/" + triple + "/release/" +
                 bin_file + ".wasm")
     # remove file first, so we're sure it's rebuilt

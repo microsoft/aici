@@ -80,9 +80,9 @@ Then install **Rust, Rustup and Cargo**, following the instructions provided [he
 
 After installation, verify that the `rustup --version` command is accessible by running it from the terminal. If the command isn't recognized, try opening a new terminal session.
 
-Next install wasm32-wasip2 Rust component:
+Next install wasm32-wasip1 Rust component:
 
-    rustup target add wasm32-wasip2
+    rustup target add wasm32-wasip1
 
 If you already had Rust installed, or are getting complaints from Cargo about outdated versions, run:
 

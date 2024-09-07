@@ -15,7 +15,7 @@ will build aici_uppercase from /workspaces/aici/uppercase/Cargo.toml
    Compiling aici_abi v0.1.0 (/workspaces/aici/aici_abi)
    Compiling aici_uppercase v0.1.0 (/workspaces/aici/uppercase)
     Finished release [optimized + debuginfo] target(s) in 1.81s
-built: /workspaces/aici/target/wasm32-wasip2/release/aici_uppercase.wasm, 0.189 MiB
+built: /workspaces/aici/target/wasm32-wasip1/release/aici_uppercase.wasm, 0.189 MiB
 upload module... 193kB -> 675kB id:a4000d9b
 [DONE]
 [Response] Here's a tweet:
