@@ -3,6 +3,7 @@ import json
 import sys
 import os
 import argparse
+import requests
 
 from . import rest, jssrc
 from . import add_cli_args, runner_from_cli
@@ -14,6 +15,20 @@ def cli_error(msg: str):
     print("Error: " + msg)
     sys.exit(1)
 
+
+def acquire_reactor_adaptor():
+    REACTOR_PATH = "controllers/wasi_snapshot_preview1.reactor.wasm"
+
+    if os.path.exists(REACTOR_PATH):
+        return os.path.abspath(REACTOR_PATH)
+
+    print("Downloading reactor adaptor...")
+    url = "https://github.com/bytecodealliance/wasmtime/releases/download/dev/wasi_snapshot_preview1.reactor.wasm"
+    response = requests.get(url)
+    with open(REACTOR_PATH, "wb") as f:
+        f.write(response.content)
+
+    return os.path.abspath(REACTOR_PATH)
 
 def build_rust(folder: str, features: List[str] = []):
     bin_file = ""
@@ -66,7 +81,7 @@ def build_rust(folder: str, features: List[str] = []):
         + ".component.wasm"
     )
 
-    reactor_path = "controllers/wasi_snapshot_preview1.reactor.wasm"
+    reactor_path = acquire_reactor_adaptor()
 
     # remove file first, so we're sure it's rebuilt
     try:
