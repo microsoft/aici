@@ -125,7 +125,9 @@ impl ModuleInstance {
         let runner = aici
             .aici_abi_controller()
             .runner()
-            .call_constructor(&mut store, &module_arg)?;
+            .call_constructor(&mut store, &module_arg);
+        store.data_mut().flush_logs("constructor");
+        let runner = runner?;
 
         Ok(ModuleInstance {
             store,
@@ -184,6 +186,7 @@ impl ModuleInstance {
         let t0 = Instant::now();
         let res = self.do_mid_process(op);
         // log::info!("mid_process: {:?}", t0.elapsed());
+        self.store.data_mut().flush_logs("mid_process");
         self.seq_result("mid", t0, res)
     }
 
@@ -196,8 +199,9 @@ impl ModuleInstance {
             &mut self.store,
             self.runner,
             &InitPromptArg { prompt },
-        )?;
-        Ok(res.into())
+        );
+        self.store.data_mut().flush_logs("init_prompt");
+        Ok(res?.into())
     }
 
     pub fn setup(&mut self, prompt: Vec<TokenId>) -> SequenceResult<InitPromptResult> {

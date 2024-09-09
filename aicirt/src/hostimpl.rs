@@ -3,10 +3,9 @@ use crate::{
     worker::{GroupCmd, GroupHandle, GroupResp},
 };
 use aici_abi::{
-    toktrie::{TokRxInfo, TokTrie},
-    StorageCmd,
+    bytes::limit_str, toktrie::{TokRxInfo, TokTrie}, StorageCmd
 };
-use aicirt::wasi::clock::BoundedResolutionClock;
+use aicirt::wasi::{clock::BoundedResolutionClock, logs::BoundedLogPipe};
 use aicirt::{api::InferenceCapabilities, bindings::SeqId, user_error};
 use anyhow::{anyhow, Result};
 use std::{ops::Deref, sync::Arc, time::Duration};
@@ -35,7 +34,7 @@ type ModuleInstId = crate::api::ModuleInstId;
 // this is available to functions called from wasm
 pub struct ModuleData {
     pub id: ModuleInstId,
-    log: wasmtime_wasi::pipe::MemoryOutputPipe,
+    log: BoundedLogPipe,
     printed_log: usize,
     pub globals: GlobalInfo,
     pub group_channel: GroupHandle,
@@ -67,12 +66,12 @@ impl ModuleData {
             BoundedResolutionClock::new(Duration::from_nanos(limits.timer_resolution_ns));
         let monotonic_clock = wall_clock.clone();
 
-        let log = wasmtime_wasi::pipe::MemoryOutputPipe::new(MAX_LOG);
+        let log = BoundedLogPipe::new(MAX_LOG);
         let stdout = log.clone();
         let stderr = log.clone();
         ModuleData {
             id,
-            log: log,
+            log,
             printed_log: 0,
             globals,
             group_channel,
@@ -90,8 +89,27 @@ impl ModuleData {
 
     pub fn string_log(&mut self) -> String {
         self.printed_log = 0;
-        let logs = String::from_utf8_lossy(&self.log.contents()).to_string();
+        let logs = String::from_utf8_lossy(&self.log.drain_contents()).to_string();
         logs
+    }
+
+    pub fn flush_logs(&mut self, name: &str) {
+        if !log::log_enabled!(log::Level::Debug) {
+            return;
+        }
+
+        let contents = self.log.contents();
+        let data = &contents[self.printed_log..];
+        if data.len() == 0 {
+            return;
+        }
+
+        let logs = String::from_utf8_lossy(data).to_string();
+        self.printed_log = contents.len();
+
+        for line in logs.lines() {
+            log::debug!("{}:{}> {}", self.id, name, limit_str(line, 512));
+        }
     }
 }
 

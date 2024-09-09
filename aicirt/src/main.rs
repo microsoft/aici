@@ -856,9 +856,8 @@ impl Stepper {
                         }
                     }
 
-                    if let Some(r) = &mut data.result {
-                        let branches = r
-                            .branches
+                    let result: Vec<toktrie::Branch<usize>> = if let Some(r) = &mut data.result {
+                        r.branches
                             .iter()
                             .map(|b| {
                                 b.map_mask(|vob| {
@@ -867,7 +866,11 @@ impl Stepper {
                                     let bias_type =
                                         BiasType::from_u32(shm.elt_type() & 0xf).unwrap();
 
-                                    bias_type.apply_to_shm_allocator(bytemuck::cast_slice(&vob.data), &shm, off);
+                                    bias_type.apply_to_shm_allocator(
+                                        bytemuck::cast_slice(&vob.data),
+                                        &shm,
+                                        off,
+                                    );
 
                                     let idx = (off - first_mask_byte_offset) / mask_num_bytes;
                                     assert!(idx * mask_num_bytes + first_mask_byte_offset == off);
@@ -876,32 +879,21 @@ impl Stepper {
                                     idx
                                 })
                             })
-                            .collect();
-
-                        outputs.insert(
-                            id,
-                            SequenceResult {
-                                result: Some(RtMidProcessResult { branches }),
-                                error: String::new(),
-                                storage: vec![],
-                                logs: String::new(),
-                                micros: start_time.elapsed().as_micros() as u64,
-                            },
-                        );
+                            .collect()
                     } else {
-                        outputs.insert(
-                            id,
-                            SequenceResult {
-                                result: Some(RtMidProcessResult {
-                                    branches: vec![toktrie::Branch::noop()],
-                                }),
-                                error: String::new(),
-                                storage: vec![],
-                                logs: String::new(),
-                                micros: start_time.elapsed().as_micros() as u64,
-                            },
-                        );
-                    }
+                        vec![toktrie::Branch::noop()]
+                    };
+
+                    outputs.insert(
+                        id,
+                        SequenceResult {
+                            result: Some(RtMidProcessResult { branches: result }),
+                            error: data.error,
+                            storage: data.storage,
+                            logs: data.logs,
+                            micros: data.micros,
+                        },
+                    );
                 }
                 Err(e) => {
                     if e.to_string() == "timeout" && prev_timeout < self.limits.max_timeout_steps {

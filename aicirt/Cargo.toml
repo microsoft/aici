@@ -29,6 +29,7 @@ ureq = "2.9.5"
 wasmtime-wasi = "24.0.0"
 bytemuck = "1.16.0"
 aici_wasm_host = { version = "0.1.0", path = "../controllers/aici_wasm_host" }
+bytes = "1.7.1"
 
 [target.'cfg(target_os = "linux")'.dependencies]
 linux-futex = "0.2.0"
