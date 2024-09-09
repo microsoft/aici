@@ -1296,7 +1296,7 @@ fn main() -> () {
         max_init_ms: cli.wasm_max_init_time,
         max_step_ms: cli.wasm_max_step_time,
         max_timeout_steps: cli.wasm_max_timeout_steps,
-        max_compile_ms: 10_000,
+        max_compile_ms: 30_000,
         logit_memory_bytes: cli.bin_size * MEGABYTE,
         busy_wait_duration: Duration::from_millis(cli.busy_wait_time),
         max_forks: cli.wasm_max_forks,

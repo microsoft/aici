@@ -104,6 +104,13 @@ mod _aici {
     }
 
     #[pyfunction]
+    fn tokens_repr(tokens: PyObjectRef, vm: &VirtualMachine) -> String {
+        let tokens = vm.to_u32_list(tokens);
+        let trie = &mut GLOBAL_STATE.lock().unwrap().trie;
+        trie.tokens_dbg(&tokens)
+    }
+
+    #[pyfunction]
     fn token_repr(token: u32) -> String {
         let trie = &mut GLOBAL_STATE.lock().unwrap().trie;
         trie.token_dbg(token)

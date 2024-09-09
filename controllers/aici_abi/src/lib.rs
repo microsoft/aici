@@ -4,7 +4,7 @@ pub use toktrie::{SimpleVob, TokenizerEnv};
 
 use std::sync::{Arc, Mutex};
 
-mod bindings;
+pub mod bindings;
 
 pub use bindings::{controller::*, runtime, runtime_storage, tokenizer};
 
