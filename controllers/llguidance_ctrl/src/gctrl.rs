@@ -1,9 +1,10 @@
 use std::sync::Arc;
 
 use aici_abi::{
-    arg_bytes, get_config,
+    export, tokenizer,
     toktrie::{InferenceCapabilities, StepArg},
-    AiciCtrl, InitPromptArg, InitPromptResult, MidProcessArg, MidProcessResult,
+    AiciCtrl, ExportedProgram, Guest, InitPromptArg, InitPromptResult, MidProcessArg,
+    MidProcessResult, Program, TokenizerEnv,
 };
 use serde::{Deserialize, Serialize};
 
@@ -29,19 +30,55 @@ struct RunnerArg {
     grammar: TopLevelGrammar,
 }
 
+struct AmbientTokenEnv {
+    toktrie: aici_abi::toktrie::TokTrie,
+}
+
+impl AmbientTokenEnv {
+    fn new() -> Self {
+        AmbientTokenEnv {
+            toktrie: aici_abi::toktrie::TokTrie::from_bytes(
+                &aici_abi::tokenizer::token_trie_bytes(),
+            ),
+        }
+    }
+}
+
+impl TokenizerEnv for AmbientTokenEnv {
+    fn stop(&self) -> ! {
+        aici_abi::aici_stop()
+    }
+
+    fn tok_trie(&self) -> &aici_abi::toktrie::TokTrie {
+        &self.toktrie
+    }
+
+    fn tokenize_bytes(&self, s: &[u8]) -> Vec<aici_abi::toktrie::TokenId> {
+        tokenizer::tokenize_bytes(s)
+    }
+
+    fn tokenize(&self, s: &str) -> Vec<aici_abi::toktrie::TokenId> {
+        tokenizer::tokenize(s)
+    }
+
+    fn eos_token(&self) -> aici_abi::toktrie::TokenId {
+        tokenizer::eos_token()
+    }
+}
+
 impl Runner {
-    pub fn new() -> Self {
+    pub fn new(arg: String) -> Self {
         infoln!("building runner...");
-        let arg: RunnerArg = serde_json::from_slice(&arg_bytes()).expect("invalid JSON arg");
+        let arg: RunnerArg = serde_json::from_str(&arg).expect("invalid JSON arg");
         let log_level = 2;
         let inf = InferenceCapabilities {
-            backtrack: get_config("backtrack") != 0,
-            ff_tokens: get_config("ff_tokens") != 0,
-            conditional_ff_tokens: get_config("ff_tokens") != 0,
+            backtrack: aici_abi::runtime::get_config("backtrack") != 0,
+            ff_tokens: aici_abi::runtime::get_config("ff_tokens") != 0,
+            conditional_ff_tokens: aici_abi::runtime::get_config("ff_tokens") != 0,
             fork: false,
         };
         let tok_parser = TokenParser::from_llguidance_json(
-            Arc::new(aici_abi::WasmTokenizerEnv::default()),
+            Arc::new(AmbientTokenEnv::new()),
             arg.grammar,
             Logger::new(0, log_level),
             inf,
@@ -81,4 +118,14 @@ impl AiciCtrl for Runner {
 
 fn main() {}
 
-aici_abi::aici_expose_all!(Runner, Runner::new());
+impl Program for Runner {
+    fn new(arg: String) -> Self {
+        Runner::new(arg)
+    }
+}
+
+impl Guest for Runner {
+    type Runner = ExportedProgram<Runner>;
+}
+
+export!(Runner);

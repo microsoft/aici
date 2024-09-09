@@ -1,0 +1,53 @@
+
+interface controller {
+    use tokenizer.{token-id};
+    use runtime.{seq-id};
+
+    // A bitmap of allowable token IDs.
+    record vocabulary {
+        data: list<u32>,
+        size: u64,
+    }
+
+    record init-prompt-arg {
+        prompt: list<token-id>,
+    }
+
+    record init-prompt-result {
+        prompt: list<token-id>,
+    }
+
+    record mid-process-arg {
+        backtrack: u32,
+        tokens: list<token-id>,
+        sampled: option<token-id>,
+        fork-group: list<seq-id>,
+    }
+
+    record sample-with-bias {
+        allowed-tokens: vocabulary,
+    }
+
+    record splice {
+        when-sampled: list<token-id>,
+        backtrack: u32,
+        ff-tokens: list<token-id>,
+    }
+
+    // Branch<vocabulary>
+    record branch {
+        sample-mask: option<vocabulary>, // option<T>
+        temperature: option<f32>,
+        splices: list<splice>,
+    }
+
+    record mid-process-result {
+        branches: list<branch>,
+    }
+
+    resource runner {
+        constructor(args: string);
+        init-prompt: func(arg: init-prompt-arg) -> init-prompt-result;
+        mid-process: func(arg: mid-process-arg) -> mid-process-result;
+    }
+}

@@ -1,7 +1,7 @@
 use crate::{
     config::SamplingParams, engine::ExpectedGeneration, LogitsProcessor, SeqId, SequenceManager,
 };
-use aici_abi::{toktrie::TokTrie, Branch, TokenId};
+use aici_abi::{toktrie::TokTrie, TokenId};
 use aicirt::api::{AiciMidOp, SequenceResult};
 use serde::{Deserialize, Serialize};
 use std::fmt::Debug;
@@ -59,7 +59,7 @@ pub struct Sequence {
     pub(crate) output_pending: Vec<u8>,
     pub num_kv_computed: usize,
     pub(crate) has_aici: bool,
-    pub(crate) aici_sampling: Option<Branch<usize>>,
+    pub(crate) aici_sampling: Option<toktrie::Branch<usize>>,
     pub aici_logs: Vec<SequenceResult>,
     pub(crate) expected: Option<ExpectedGeneration>,
 
@@ -72,7 +72,7 @@ pub struct Sequence {
 impl Debug for Sequence {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("Sequence")
-            .field("seq_id", &self.seq_id.to_num())
+            .field("seq_id", &self.seq_id)
             .field("sched_phase", &self.sched_phase)
             .field("kv_computed", &self.num_kv_computed)
             .field("aici_sampling", &self.aici_sampling)
@@ -130,7 +130,7 @@ impl Sequence {
 
     pub(crate) fn defl_mid_op(&self) -> AiciMidOp {
         AiciMidOp {
-            id: self.seq_id.to_num(),
+            id: self.seq_id,
             clone_id: None,
             clone_idx: None,
             req_id: None,
@@ -233,7 +233,7 @@ impl Sequence {
         self.output_ptr = self.tokens.len();
         let new_text = String::from_utf8_lossy(&buf).to_string();
         SeqOutput {
-            seq_id: self.seq_id.to_num(),
+            seq_id: self.seq_id,
             index: self.index,
             new_output_tokens,
             new_text,
@@ -330,7 +330,7 @@ impl SequenceGroup {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SeqOutput {
-    pub seq_id: usize,
+    pub seq_id: SeqId,
     pub index: usize, // within the sequence group
     pub new_output_tokens: Vec<Token>,
     pub new_text: String,
