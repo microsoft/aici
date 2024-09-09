@@ -2,20 +2,17 @@ use crate::{
     api::ModuleInstId,
     hostimpl::{AiciLimits, GlobalInfo, ModuleData},
     setup_component_linker,
-    shm::Shm,
     worker::{GroupHandle, RtMidProcessArg},
     TimerSet, UserError,
 };
 use aici_abi::toktrie::TokTrie;
 use aicirt::{
     api::{InferenceCapabilities, SequenceResult},
-    bindings::{self, aici::abi::tokenizer::Host, exports::aici::abi::controller::*, InitPromptResult},
+    bindings::{self, exports::aici::abi::controller::*, InitPromptResult},
     bintokens::ByteTokenizer,
-    shm::ShmAllocator,
-    user_error,
 };
-use anyhow::{bail, ensure, Result};
-use std::{path::PathBuf, rc::Rc, sync::Arc, time::Instant};
+use anyhow::Result;
+use std::{path::PathBuf, sync::Arc, time::Instant};
 use wasmtime;
 
 #[derive(Clone)]
@@ -28,10 +25,7 @@ pub struct WasmContext {
 }
 
 impl WasmContext {
-    pub fn deserialize_component(
-        &self,
-        path: PathBuf,
-    ) -> Result<wasmtime::component::Component> {
+    pub fn deserialize_component(&self, path: PathBuf) -> Result<wasmtime::component::Component> {
         // TODO: Use type safety to ensure that the input is derived from `Component::serialize` or
         // `Engine::precompile_component`.
         unsafe { wasmtime::component::Component::deserialize_file(&self.engine, path) }
@@ -149,7 +143,6 @@ impl ModuleInstance {
         &self.store.data().group_channel
     }
 
-
     fn do_mid_process(&mut self, arg: RtMidProcessArg) -> Result<MidProcessResult> {
         self.aici.aici_abi_controller().runner().call_mid_process(
             &mut self.store,
@@ -157,7 +150,6 @@ impl ModuleInstance {
             &arg.op,
         )
     }
-
 
     fn seq_result<T>(&mut self, lbl: &str, t0: Instant, res: Result<T>) -> SequenceResult<T> {
         // 10us accuracy for Spectre mitigation
@@ -196,7 +188,7 @@ impl ModuleInstance {
     }
 
     pub fn tokenize(&mut self, s: &str) -> Result<Vec<u32>> {
-        self.store.data_mut().tokenize_str(s)
+        self.store.data_mut().tokenize_bytes_greedy(s)
     }
 
     fn setup_inner(&mut self, prompt: Vec<TokenId>) -> Result<InitPromptResult> {

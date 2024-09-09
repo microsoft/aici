@@ -9,7 +9,7 @@ use crate::{
     AiciBias as _, HashMap, LoaderArgs, LogitsProcessor, ModelExec, Scheduler, SchedulerOutputs,
     SequenceManager, TBlockSpaceManager as _,
 };
-use aici_abi::{toktrie::TokTrie, Splice};
+use aici_abi::toktrie::{TokTrie, Splice};
 use aicirt::{
     api::{AiciMidOp, AiciMidProcessReq, ModuleInstId, SequenceResult}, bindings::SeqId, with_timer, TimerRef, TimerSet
 };

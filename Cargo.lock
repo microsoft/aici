@@ -343,6 +343,7 @@ name = "aici_wasm_guest"
 version = "0.1.0"
 dependencies = [
  "serde",
+ "toktrie",
  "wit-bindgen",
 ]
 
@@ -3298,6 +3299,7 @@ dependencies = [
  "serde_json",
  "tokenizers",
  "tokio",
+ "toktrie",
  "uuid",
 ]
 

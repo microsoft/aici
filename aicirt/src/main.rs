@@ -9,7 +9,6 @@ use crate::{
     msgchannel::MessageChannel,
     shm::Shm,
     worker::{RtMidProcessArg, WorkerForker},
-    TimerSet,
 };
 use aici_abi::{
     bytes::limit_str,
@@ -142,7 +141,7 @@ struct Cli {
     #[arg(long, default_value = "25")]
     wasm_max_step_time: u64,
 
-    /// How many steps have to timeout before the sequenace is terminated
+    /// How many steps have to timeout before the sequence is terminated
     #[arg(long, default_value = "10")]
     wasm_max_timeout_steps: usize,
 
@@ -210,8 +209,8 @@ fn write_json<T: Serialize>(filename: &PathBuf, json: &T) -> Result<()> {
 }
 
 impl ModuleRegistry {
-    pub fn new(wasm_ctx: WasmContext, shm: Rc<ShmAllocator>) -> Result<Self> {
-        let forker = WorkerForker::new(wasm_ctx.clone(), shm);
+    pub fn new(wasm_ctx: WasmContext) -> Result<Self> {
+        let forker = WorkerForker::new(wasm_ctx.clone());
 
         Ok(Self {
             forker: Arc::new(Mutex::new(forker)),
@@ -1225,9 +1224,9 @@ fn save_tokenizer(cli: &Cli) {
     }
 }
 
-fn install_from_cmdline(cli: &Cli, wasm_ctx: WasmContext, shm: Rc<ShmAllocator>) {
+fn install_from_cmdline(cli: &Cli, wasm_ctx: WasmContext) {
     let name = cli.module.as_deref().unwrap();
-    let mut reg = ModuleRegistry::new(wasm_ctx, shm).unwrap();
+    let mut reg = ModuleRegistry::new(wasm_ctx).unwrap();
     let module_id = if name.ends_with(".wasm") {
         let wasm_bytes = fs::read(name).unwrap();
         if let Some(gh) = &cli.gh_module {
@@ -1349,7 +1348,7 @@ fn main() -> () {
     ));
 
     if cli.module.is_some() {
-        install_from_cmdline(&cli, wasm_ctx, shm_alloc.clone());
+        install_from_cmdline(&cli, wasm_ctx);
         return ();
     }
 
@@ -1362,7 +1361,7 @@ fn main() -> () {
 
     set_max_priority();
 
-    let reg = ModuleRegistry::new(wasm_ctx, shm_alloc.clone()).unwrap();
+    let reg = ModuleRegistry::new(wasm_ctx).unwrap();
 
     // needs to be done after WorkerForker is spawned
     setup_bg_worker_pool();

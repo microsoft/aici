@@ -5,6 +5,7 @@ pub mod futexshm;
 pub mod msgchannel;
 pub mod semaphore;
 pub mod shm;
+pub mod wasi;
 
 pub use aici_native::*;
 

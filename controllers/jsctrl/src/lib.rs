@@ -4,7 +4,7 @@ use aici_abi::{
     tokenizer,
     toktrie::{Recognizer, SpecialToken, TokTrie},
     AiciCtrl, ExportedProgram, Guest, InitPromptArg, InitPromptResult, MidProcessArg,
-    MidProcessResult, Program, SeqId, SimpleVob, Splice, TokenId,
+    MidProcessResult, Program, SimpleVob, TokenId,
 };
 use rquickjs::{
     class::Trace, function::IntoArgs, ArrayBuffer, Context, Ctx, FromJs, Function, IntoAtom,

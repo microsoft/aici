@@ -3,17 +3,13 @@ use crate::{
     worker::{GroupCmd, GroupHandle, GroupResp},
 };
 use aici_abi::{
-    bytes::limit_str,
     toktrie::{TokRxInfo, TokTrie},
     StorageCmd,
 };
+use aicirt::wasi::clock::BoundedResolutionClock;
 use aicirt::{api::InferenceCapabilities, bindings::SeqId, user_error};
 use anyhow::{anyhow, Result};
-use std::{
-    ops::Deref,
-    sync::Arc,
-    time::{Duration, Instant},
-};
+use std::{ops::Deref, sync::Arc, time::Duration};
 use tokenizers::Tokenizer;
 
 #[derive(Clone)]
@@ -39,19 +35,17 @@ type ModuleInstId = crate::api::ModuleInstId;
 // this is available to functions called from wasm
 pub struct ModuleData {
     pub id: ModuleInstId,
-    log: Vec<u8>,
+    log: wasmtime_wasi::pipe::MemoryOutputPipe,
     printed_log: usize,
     pub globals: GlobalInfo,
     pub group_channel: GroupHandle,
     pub store_limits: wasmtime::StoreLimits,
-    pub had_error: bool,
     pub storage_log: Vec<StorageCmd>,
-    pub start_time: Instant,
     pub wasi_ctx: wasmtime_wasi::WasiCtx,
     pub resource_table: wasmtime_wasi::ResourceTable,
 }
 
-const MAXLOG: usize = 64 * 1024;
+const MAX_LOG: usize = 64 * 1024;
 
 impl ModuleData {
     pub fn new(
@@ -68,81 +62,36 @@ impl ModuleData {
             .instances(100)
             .trap_on_grow_failure(true)
             .build();
+
+        let wall_clock =
+            BoundedResolutionClock::new(Duration::from_nanos(limits.timer_resolution_ns));
+        let monotonic_clock = wall_clock.clone();
+
+        let log = wasmtime_wasi::pipe::MemoryOutputPipe::new(MAX_LOG);
+        let stdout = log.clone();
+        let stderr = log.clone();
         ModuleData {
             id,
-            log: Vec::new(),
+            log: log,
             printed_log: 0,
             globals,
             group_channel,
             store_limits,
-            had_error: false,
             storage_log: Vec::new(),
-            start_time: Instant::now(),
-            wasi_ctx: wasmtime_wasi::WasiCtxBuilder::new().build(),
+            wasi_ctx: wasmtime_wasi::WasiCtxBuilder::new()
+                .wall_clock(wall_clock)
+                .monotonic_clock(monotonic_clock)
+                .stdout(stdout)
+                .stderr(stderr)
+                .build(),
             resource_table: wasmtime_wasi::ResourceTable::new(),
-        }
-    }
-
-    pub fn tokenize(&mut self, s: &str) -> Result<Vec<u32>> {
-        let tokens = self.globals.hf_tokenizer.encode(s, false);
-        match tokens {
-            Err(e) => Err(anyhow!(e)),
-            Ok(tokens) => Ok(Vec::from(tokens.get_ids())),
-        }
-    }
-
-    pub fn fatal(&mut self, msg: &str) {
-        log::warn!("{}: fatal error {}", self.id, msg);
-        let msg = format!("FATAL ERROR: {}\n", msg);
-        self.write_log(msg.as_bytes());
-        self.had_error = true;
-        // ideally, this should call into the module and cause panic
-    }
-
-    // pub fn warn(&mut self, msg: &str) {
-    //     log::warn!("{}: {}", self.id, msg);
-    //     let msg = format!("warning: {}\n", msg);
-    //     self.write_log(msg.as_bytes());
-    // }
-
-    pub fn write_log(&mut self, bytes: &[u8]) {
-        self.log.extend_from_slice(bytes);
-        if self.log.len() > MAXLOG {
-            let drop = MAXLOG / 4;
-            if self.had_error {
-                // normally, we drop prefix, but if "had_error" is set
-                // we drop the suffix instead to avoid flushing out "FATAL ERROR" message
-                self.log.truncate(self.log.len() - drop);
-            } else {
-                self.printed_log = self.printed_log.saturating_sub(drop);
-                self.log.drain(0..drop);
-            }
         }
     }
 
     pub fn string_log(&mut self) -> String {
         self.printed_log = 0;
-        let logs = String::from_utf8_lossy(&self.log).to_string();
-        self.log.clear();
+        let logs = String::from_utf8_lossy(&self.log.contents()).to_string();
         logs
-    }
-
-    pub fn flush_logs(&mut self, name: &str) {
-        if !log::log_enabled!(log::Level::Debug) {
-            return;
-        }
-
-        let data = &self.log[self.printed_log..];
-        if data.len() == 0 {
-            return;
-        }
-
-        let logs = String::from_utf8_lossy(data).to_string();
-        self.printed_log = self.log.len();
-
-        for line in logs.lines() {
-            log::debug!("{}:{}> {}", self.id, name, limit_str(line, 512));
-        }
     }
 }
 
@@ -163,23 +112,6 @@ pub struct GlobalInfo {
     pub trie_bytes: Arc<Vec<u8>>,
     pub tok_trie: Arc<TokTrie>,
     pub hf_tokenizer: Arc<Tokenizer>,
-}
-
-fn check_fatal(caller: &mut wasmtime::Caller<'_, ModuleData>) {
-    if caller.data().had_error {
-        fatal_error(caller, "see above")
-    }
-}
-
-fn fatal_error(caller: &mut wasmtime::Caller<'_, ModuleData>, msg: &str) {
-    caller.data_mut().fatal(msg);
-    match caller.get_export("aici_panic") {
-        Some(wasmtime::Extern::Func(f)) => {
-            let mut res = Vec::new();
-            let _ = f.call(caller, &[], &mut res);
-        }
-        _ => {}
-    }
 }
 
 impl abi::runtime::Host for ModuleData {
@@ -258,12 +190,15 @@ impl abi::runtime_storage::Host for ModuleData {
 }
 
 impl ModuleData {
-    pub fn tokenize_str(&mut self, s: &str) -> Result<Vec<TokenId>> {
-        let tokens = self.globals.hf_tokenizer.encode(s, false);
-        match tokens {
-            Err(e) => Err(anyhow!(e)),
-            Ok(tokens) => Ok(Vec::from(tokens.get_ids())),
-        }
+    pub fn tokenize_bytes_greedy(&mut self, s: impl AsRef<[u8]>) -> Result<Vec<TokenId>> {
+        Ok(self.globals.tok_trie.tokenize_with_greedy_fallback(s.as_ref(), |s| {
+            self.globals
+                .hf_tokenizer
+                .encode(s, false)
+                .expect("tokenizer error")
+                .get_ids()
+                .to_vec()
+        }))
     }
 }
 
@@ -273,12 +208,11 @@ impl abi::tokenizer::Host for ModuleData {
     }
 
     fn tokenize(&mut self, s: String) -> wasmtime::Result<Vec<abi::tokenizer::TokenId>> {
-        self.tokenize_str(&s)
+        self.tokenize_bytes_greedy(s.as_bytes())
     }
 
     fn tokenize_bytes(&mut self, bytes: Vec<u8>) -> wasmtime::Result<Vec<TokenId>> {
-        let s = String::from_utf8_lossy(&bytes);
-        self.tokenize(&s)
+        self.tokenize_bytes_greedy(&bytes)
     }
 
     fn token_trie_bytes(&mut self) -> wasmtime::Result<Vec<u8>> {

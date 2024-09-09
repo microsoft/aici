@@ -1,7 +1,7 @@
 use crate::{
     config::SamplingParams, engine::ExpectedGeneration, LogitsProcessor, SeqId, SequenceManager,
 };
-use aici_abi::{toktrie::TokTrie, Branch, TokenId};
+use aici_abi::{toktrie::TokTrie, TokenId};
 use aicirt::api::{AiciMidOp, SequenceResult};
 use serde::{Deserialize, Serialize};
 use std::fmt::Debug;
@@ -59,7 +59,7 @@ pub struct Sequence {
     pub(crate) output_pending: Vec<u8>,
     pub num_kv_computed: usize,
     pub(crate) has_aici: bool,
-    pub(crate) aici_sampling: Option<Branch<usize>>,
+    pub(crate) aici_sampling: Option<toktrie::Branch<usize>>,
     pub aici_logs: Vec<SequenceResult>,
     pub(crate) expected: Option<ExpectedGeneration>,
 
@@ -130,7 +130,7 @@ impl Sequence {
 
     pub(crate) fn defl_mid_op(&self) -> AiciMidOp {
         AiciMidOp {
-            id: self.seq_id.to_num(),
+            id: self.seq_id,
             clone_id: None,
             clone_idx: None,
             req_id: None,

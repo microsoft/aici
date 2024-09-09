@@ -7,13 +7,13 @@ use crate::{
     shm::Shm,
     InstantiateReq, UserError,
 };
-use aici_abi::{toktrie, StorageCmd, StorageOp, StorageResp};
+use aici_abi::{StorageCmd, StorageResp};
 use aicirt::{
     api::SequenceResult,
     bindings::*,
     futexshm::{TypedClient, TypedClientHandle, TypedServer},
     set_max_priority,
-    shm::{ShmAllocator, Unlink},
+    shm::Unlink,
     user_error,
     variables::Variables,
 };
@@ -23,7 +23,6 @@ use serde::{Deserialize, Serialize};
 use std::{
     fmt::Debug,
     path::PathBuf,
-    rc::Rc,
     sync::{Arc, Mutex},
     time::{Duration, Instant},
 };
@@ -458,7 +457,6 @@ struct SeqCtx {
     query: Option<GroupHandle>,
     inst_id: ModuleInstId,
     modinst: Option<ModuleInstance>,
-    shm: Rc<ShmAllocator>,
 }
 
 struct CommsPid {
@@ -558,11 +556,7 @@ pub struct WorkerForker {
     fork_worker: ForkerHandle,
 }
 
-fn forker_dispatcher(
-    mut server: TypedServer<ForkerCmd, ForkerResp>,
-    wasm_ctx: WasmContext,
-    shm: Rc<ShmAllocator>,
-) -> ! {
+fn forker_dispatcher(mut server: TypedServer<ForkerCmd, ForkerResp>, wasm_ctx: WasmContext) -> ! {
     set_process_name("aicirt-forker");
     loop {
         // wait for any children that might have exited to prevent zombies
@@ -597,7 +591,6 @@ fn forker_dispatcher(
                     id: cmd_id,
                     server,
                     wasm_ctx,
-                    shm,
                     query: None,
                     inst_id: 424242,
                     modinst: None,
@@ -669,7 +662,7 @@ pub fn stop_process() -> ! {
 // }
 
 impl WorkerForker {
-    pub fn new(wasm_ctx: WasmContext, shm: Rc<ShmAllocator>) -> Self {
+    pub fn new(wasm_ctx: WasmContext) -> Self {
         // create a new process group
         let pid = unsafe { libc::getpid() };
         unsafe {
@@ -687,7 +680,7 @@ impl WorkerForker {
                     limits,
                 }
             }
-            ForkResult::Child { server } => forker_dispatcher(server, wasm_ctx, shm),
+            ForkResult::Child { server } => forker_dispatcher(server, wasm_ctx),
         }
     }
 

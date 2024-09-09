@@ -27,7 +27,7 @@ RUN cd /tmp && \
 ENV RUSTUP_HOME=/usr/local/rustup \
     CARGO_HOME=/usr/local/cargo \
     PATH=/usr/local/cargo/bin:$PATH \
-    RUST_VERSION=1.75.0
+    RUST_VERSION=1.81.0
 
 RUN curl https://sh.rustup.rs -sSf | sh -s -- \
      -y --no-modify-path --profile minimal --default-toolchain $RUST_VERSION

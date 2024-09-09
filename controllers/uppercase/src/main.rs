@@ -33,7 +33,7 @@ pub struct Runner {
 }
 
 impl aici_abi::Program for Runner {
-    fn new(prompt: String) -> Self {
+    fn new(_: String) -> Self {
         Runner {
             toktrie: TokTrie::from_bytes(&tokenizer::token_trie_bytes()),
             tokens: Vec::new(),

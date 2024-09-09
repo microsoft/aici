@@ -4,6 +4,7 @@ use crate::{
     toktrie::{Recognizer, SpecialToken},
     SimpleVob,
 };
+use std::str;
 use anyhow::Result;
 use cfgrammar::{
     yacc::{YaccGrammar, YaccKind},
@@ -511,7 +512,7 @@ pub fn cfg_test() -> Result<()> {
         let trie = TokTrie::from_bytes(&tokenizer::token_trie_bytes());
         let toks = trie.greedy_tokenize(sample);
 
-        #[cfg(not(target_arch = "wasm32"))]
+        #[cfg(not(target_os = "wasi"))]
         let t0 = std::time::Instant::now();
 
         let mut line = 1;
@@ -542,7 +543,7 @@ pub fn cfg_test() -> Result<()> {
             trie.append_token(&mut cfg, tok).unwrap();
         }
 
-        #[cfg(not(target_arch = "wasm32"))]
+        #[cfg(not(target_os = "wasi"))]
         println!("time: {:?} ", t0.elapsed());
 
         println!("stats:  {}", cfg.get_stats());

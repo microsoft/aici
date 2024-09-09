@@ -1,7 +1,7 @@
-use std::{fmt::Display, sync::Arc};
+use std::sync::Arc;
 
-use aicirt::{TimerRef};
 pub use aicirt::bindings::SeqId;
+use aicirt::TimerRef;
 use anyhow::Result;
 
 use crate::{
