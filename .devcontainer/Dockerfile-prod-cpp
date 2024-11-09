@@ -1,4 +1,4 @@
-# doker container with aicirt and CPU-only rllm (llama.cpp)
+# docker container with aicirt and CPU-only rllm (llama.cpp)
 # TAG: aici/rllm-llamacpp
 
 FROM bitnami/minideb:bookworm
