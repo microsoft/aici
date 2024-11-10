@@ -3,7 +3,7 @@
 export AICI="$(cd `dirname $0`; pwd)/aici.sh --all-prefixes"
 
 case "$1" in
-  *aici-controllers-wasm32-wasi-*.tar.?z)
+  *aici-controllers-wasm32-wasip1-*.tar.?z)
     mkdir -p tmp/aici-controllers
     tar --strip-components=1 -xf "$1" -C tmp/aici-controllers
     if test -f tmp/aici-controllers/tag.sh ; then
@@ -16,7 +16,7 @@ case "$1" in
     fi
     ;;
   *)
-    echo "Usage: $0 aici-controllers-wasm32-wasi-....tar.[xz|gz]"
+    echo "Usage: $0 aici-controllers-wasm32-wasip1-....tar.[xz|gz]"
     exit 1
     ;;
 esac

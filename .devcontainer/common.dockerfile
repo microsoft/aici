@@ -27,12 +27,13 @@ RUN cd /tmp && \
 ENV RUSTUP_HOME=/usr/local/rustup \
     CARGO_HOME=/usr/local/cargo \
     PATH=/usr/local/cargo/bin:$PATH \
-    RUST_VERSION=1.75.0
+    RUST_VERSION=1.81.0
 
 RUN curl https://sh.rustup.rs -sSf | sh -s -- \
      -y --no-modify-path --profile minimal --default-toolchain $RUST_VERSION
-RUN rustup target add wasm32-wasi
+RUN rustup target add wasm32-wasip1
 RUN rustup component add rustfmt
+RUN cargo install wasm-tools@1.216.0
 
 # run as root please; note that settings in devcontainer.json are also needed...
 USER root

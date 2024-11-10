@@ -1,4 +1,7 @@
-use aici_abi::{host_trie, tokenize, toktrie::TokTrie, AiciCtrl, MidProcessArg, MidProcessResult, TokenId};
+use aici_abi::{
+    export, tokenizer, toktrie::TokTrie, AiciCtrl, ExportedProgram, Guest, MidProcessArg,
+    MidProcessResult, TokenId,
+};
 
 pub struct Runner {
     toktrie: TokTrie,
@@ -7,13 +10,13 @@ pub struct Runner {
     no: TokenId,
 }
 
-impl Runner {
-    pub fn new() -> Self {
-        let yes = tokenize("Yes")[0];
-        let no = tokenize("No")[0];
+impl aici_abi::Program for Runner {
+    fn new(_arg: String) -> Self {
+        let yes = tokenizer::tokenize("Yes")[0];
+        let no = tokenizer::tokenize("No")[0];
         // ignore user-passed arg
         Runner {
-            toktrie: host_trie(),
+            toktrie: TokTrie::from_bytes(&tokenizer::token_trie_bytes()),
             tokens: Vec::new(),
             yes,
             no,
@@ -36,8 +39,8 @@ impl AiciCtrl for Runner {
     }
 }
 
-fn main() {
-    // test code here?
+impl Guest for Runner {
+    type Runner = ExportedProgram<Runner>;
 }
 
-aici_abi::aici_expose_all!(Runner, Runner::new());
+export!(Runner);

@@ -1,10 +1,10 @@
 use crate::{shm::ShmAllocator, HashMap};
-use aici_abi::{ProcessResultOffset, StorageCmd, TokenId};
+use aici_abi::{toktrie, StorageCmd, TokenId};
 use anyhow::{anyhow, Result};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-pub type ModuleInstId = usize;
+pub type ModuleInstId = u64;
 
 #[derive(Serialize, Deserialize, Clone)]
 pub struct InferenceCapabilities {
@@ -22,9 +22,16 @@ pub struct AiciMidProcessReq {
     pub freed: Vec<ModuleInstId>,
 }
 
+#[derive(Serialize, Deserialize, Debug)]
+pub struct RtMidProcessResult {
+    pub branches: Vec<toktrie::Branch<usize>>,
+}
+
+pub type SeqMap = HashMap<ModuleInstId, SequenceResult<RtMidProcessResult>>;
+
 #[derive(Serialize, Deserialize)]
 pub struct AiciMidProcessResp {
-    pub seqs: HashMap<ModuleInstId, SequenceResult<ProcessResultOffset>>,
+    pub seqs: SeqMap,
     pub dtype: String,
     pub first_mask_byte_offset: usize,
     pub mask_num_bytes: usize,

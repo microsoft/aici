@@ -1,5 +1,4 @@
 use std::fmt::Display;
-
 use crate::{
     bytes::limit_bytes,
     recognizer::{FunctionalRecognizer, StackRecognizer},
