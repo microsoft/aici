@@ -1,5 +1,7 @@
 # Artificial Intelligence Controller Interface (AICI)
 
+**[LLGuidance library](https://github.com/guidance-ai/llguidance) is an actively maintained evolution and specialization of AICI, recommended if all you want is constrained decoding.**
+
 The Artificial Intelligence Controller Interface (AICI) lets you build Controllers that constrain and direct output of a Large Language Model (LLM) in real time.
 Controllers are flexible programs capable of implementing constrained decoding, dynamic editing of prompts and generated text, and coordinating execution across multiple, parallel generations.
 Controllers incorporate custom logic during the token-by-token decoding and maintain state during an LLM request. This allows diverse Controller strategies, from programmatic or query-based decoding to multi-agent conversations to execute efficiently in tight integration with the LLM itself.
