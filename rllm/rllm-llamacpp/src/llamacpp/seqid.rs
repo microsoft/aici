@@ -26,7 +26,7 @@ impl CppSequenceManager {
 impl SequenceManager for CppSequenceManager {
     fn new_sequence(&self) -> SeqId {
         let r = self.model.new_sequence();
-        let id = SeqId(r.id() as usize);
+        let id = r.id() as SeqId;
         self.seqs.lock().unwrap().insert(id, r);
         id
     }

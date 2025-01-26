@@ -1,6 +1,6 @@
 use crate::{
     config::{ParallelConfig, RllmConfig, SamplingParams, SchedulerConfig},
-    iface::AiciRtIface,
+    iface::aicirt::AiciRtIface,
     seq::{
         FinishReason, RequestOutput, SchedulingPhase, SeqOutput, Sequence, SequenceGroup, Token,
         TokenUsage,
@@ -9,10 +9,9 @@ use crate::{
     AiciBias as _, HashMap, LoaderArgs, LogitsProcessor, ModelExec, Scheduler, SchedulerOutputs,
     SequenceManager, TBlockSpaceManager as _,
 };
-use aici_abi::{toktrie::TokTrie, Splice};
+use aici_abi::toktrie::{TokTrie, Splice};
 use aicirt::{
-    api::{AiciMidOp, AiciMidProcessReq, ModuleInstId, SequenceResult},
-    with_timer, TimerRef, TimerSet,
+    api::{AiciMidOp, AiciMidProcessReq, ModuleInstId, SequenceResult}, bindings::SeqId, with_timer, TimerRef, TimerSet
 };
 use anyhow::{bail, Error as E, Result};
 use hf_hub::{
@@ -343,7 +342,7 @@ impl<ME: ModelExec> RllmEngine<ME> {
     fn aici_bias(
         &mut self,
         sched_out: &mut SchedulerOutputs,
-    ) -> Result<(ME::AiciBias, HashMap<usize, usize>)> {
+    ) -> Result<(ME::AiciBias, HashMap<SeqId, SeqId>)> {
         let mut seq_id_mapping = HashMap::default();
         let vocab_size = self.tok_trie.vocab_size();
         if self.aicirt.is_none() {
@@ -377,11 +376,11 @@ impl<ME: ModelExec> RllmEngine<ME> {
                                 let mut copy =
                                     seq.fork_as(self.seq_mgr.deref(), new_id, sg.max_index + 1);
                                 log::debug!("forked: {:?} -> {:?}", seq.seq_id, copy.seq_id);
-                                seq_id_mapping.insert(copy.seq_id.to_num(), seq.seq_id.to_num());
+                                seq_id_mapping.insert(copy.seq_id, seq.seq_id);
                                 sg.max_index += 1;
                                 copy.aici_sampling = Some(b.clone());
                                 copy.mid_op = Some(AiciMidOp {
-                                    clone_id: Some(seq.seq_id.to_num()),
+                                    clone_id: Some(seq.seq_id),
                                     clone_idx: Some(idx),
                                     ..copy.defl_mid_op()
                                 });
@@ -495,7 +494,7 @@ impl<ME: ModelExec> RllmEngine<ME> {
                     continue;
                 }
 
-                let sidx = seq.seq_id.to_num();
+                let sidx = seq.seq_id;
                 let sidx = seq_id_mapping.get(&sidx).unwrap_or(&sidx);
                 let mut logits = self.tmodel.get_logits(*sidx);
 
@@ -663,7 +662,7 @@ impl<ME: ModelExec> RllmEngine<ME> {
         seq: &mut Sequence,
         seqs: &'a HashMap<ModuleInstId, SequenceResult<T>>,
     ) -> Option<&'a T> {
-        if let Some(r) = seqs.get(&seq.seq_id.to_num()) {
+        if let Some(r) = seqs.get(&seq.seq_id) {
             seq.aici_logs.push(r.clone_with(None));
             if r.error.len() > 0 {
                 self.scheduler.finish_seq(seq, FinishReason::Failed);

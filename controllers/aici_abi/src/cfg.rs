@@ -1,9 +1,10 @@
-use crate::host::host_trie;
 use crate::lex::{Lexer, LexerState, StateID, VobIdx, VobSet};
 use crate::{
+    tokenizer,
     toktrie::{Recognizer, SpecialToken},
     SimpleVob,
 };
+use std::str;
 use anyhow::Result;
 use cfgrammar::{
     yacc::{YaccGrammar, YaccKind},
@@ -12,6 +13,7 @@ use cfgrammar::{
 use lrtable::{from_yacc, Action, Minimiser, StIdx, StateTable};
 use rustc_hash::FxHashMap;
 use std::{cell::RefCell, vec};
+use toktrie::TokTrie;
 use vob::{vob, Vob};
 
 type StorageT = u32;
@@ -507,10 +509,10 @@ pub fn cfg_test() -> Result<()> {
     let sample = include_bytes!("../grammars/sample.c");
 
     if true {
-        let trie = host_trie();
+        let trie = TokTrie::from_bytes(&tokenizer::token_trie_bytes());
         let toks = trie.greedy_tokenize(sample);
 
-        #[cfg(not(target_arch = "wasm32"))]
+        #[cfg(not(target_os = "wasi"))]
         let t0 = std::time::Instant::now();
 
         let mut line = 1;
@@ -541,7 +543,7 @@ pub fn cfg_test() -> Result<()> {
             trie.append_token(&mut cfg, tok).unwrap();
         }
 
-        #[cfg(not(target_arch = "wasm32"))]
+        #[cfg(not(target_os = "wasi"))]
         println!("time: {:?} ", t0.elapsed());
 
         println!("stats:  {}", cfg.get_stats());

@@ -1,5 +1,6 @@
-use std::{fmt::Display, sync::Arc};
+use std::sync::Arc;
 
+pub use aicirt::bindings::SeqId;
 use aicirt::TimerRef;
 use anyhow::Result;
 
@@ -18,21 +19,6 @@ pub enum BlockLocation {
 
 pub trait AiciBias<T> {
     fn apply(&self, logits: &mut T, seq_id: usize);
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct SeqId(pub usize);
-
-impl SeqId {
-    pub fn to_num(&self) -> usize {
-        self.0
-    }
-}
-
-impl Display for SeqId {
-    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        write!(f, "{}", self.0)
-    }
 }
 
 pub trait SequenceManager {
@@ -71,7 +57,7 @@ pub trait ModelExec: Sized {
         step_no: usize,
         sched_out: &mut SchedulerOutputs,
     ) -> Result<()>;
-    fn get_logits(&self, seq_id: usize) -> Self::Tensor;
+    fn get_logits(&self, seq_id: SeqId) -> Self::Tensor;
     fn finalize_run(&mut self) -> Result<()>;
 
     fn empty_bias(&self, vocab_size: usize) -> Self::AiciBias;

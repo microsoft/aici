@@ -1,0 +1,9 @@
+interface runtime {
+    type seq-id = u64;
+
+    sequence-id: func() -> seq-id;
+
+    get-config: func(key: string) -> s32;
+
+    stop: func();
+}

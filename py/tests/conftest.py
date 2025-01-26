@@ -19,7 +19,7 @@ def upload_wasm():
     )
     if r.returncode != 0:
         sys.exit(1)
-    file_path = prj_dir + "/target/wasm32-wasi/release/aici_declctrl.wasm"
+    file_path = prj_dir + "/target/wasm32-wasip1/release/aici_declctrl.wasm"
     pyaici.rest.log_level = 0
     ast_module = pyaici.rest.upload_module(file_path)
 

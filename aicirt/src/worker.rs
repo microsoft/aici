@@ -1,19 +1,19 @@
 use crate::{
     api::ModuleInstId,
+    bindings::MidProcessArg,
     hostimpl::AiciLimits,
     moduleinstance::{ModuleInstance, WasmContext},
     setup_bg_worker_pool,
     shm::Shm,
     InstantiateReq, UserError,
 };
-use aici_abi::{
-    InitPromptResult, MidProcessArg, ProcessResultOffset, StorageCmd, StorageResp, TokenId,
-};
+use aici_abi::{StorageCmd, StorageResp};
 use aicirt::{
     api::SequenceResult,
+    bindings::*,
     futexshm::{TypedClient, TypedClientHandle, TypedServer},
     set_max_priority,
-    shm::{ShmAllocator, Unlink},
+    shm::Unlink,
     user_error,
     variables::Variables,
 };
@@ -23,7 +23,6 @@ use serde::{Deserialize, Serialize};
 use std::{
     fmt::Debug,
     path::PathBuf,
-    rc::Rc,
     sync::{Arc, Mutex},
     time::{Duration, Instant},
 };
@@ -329,7 +328,7 @@ impl SeqCtx {
             SeqCmd::Compile { wasm } => {
                 let inp_len = wasm.len();
                 let start_time = Instant::now();
-                let binary = self.wasm_ctx.engine.precompile_module(&wasm)?;
+                let binary = self.wasm_ctx.engine.precompile_component(&wasm)?;
                 log::info!(
                     "WASM compile done; {}k -> {}k; {:?}",
                     inp_len / 1024,
@@ -360,16 +359,15 @@ impl SeqCtx {
                 prompt_str,
                 prompt_toks,
             } => {
-                let module = self.wasm_ctx.deserialize_module(module_path).unwrap();
+                let component = self.wasm_ctx.deserialize_component(module_path)?;
                 let _ = module_id;
                 let ch = std::mem::take(&mut self.query);
                 let mut inst = ModuleInstance::new(
                     424242,
                     self.wasm_ctx.clone(),
-                    module,
+                    component,
                     module_arg,
                     ch.unwrap(),
-                    self.shm.clone(),
                 )?;
                 let prompt_toks = if let Some(t) = prompt_toks {
                     t
@@ -401,7 +399,8 @@ impl SeqCtx {
                 })
             }
             SeqCmd::RunMain {} => {
-                self.mutinst().run_main()?;
+                // TODO
+                // self.mutinst().run_main()?;
                 ok()
             }
         }
@@ -458,7 +457,6 @@ struct SeqCtx {
     query: Option<GroupHandle>,
     inst_id: ModuleInstId,
     modinst: Option<ModuleInstance>,
-    shm: Rc<ShmAllocator>,
 }
 
 struct CommsPid {
@@ -519,7 +517,7 @@ impl SeqWorkerHandle {
         Ok(())
     }
 
-    pub fn check_process(&self, timeout: Duration) -> Result<SequenceResult<ProcessResultOffset>> {
+    pub fn check_process(&self, timeout: Duration) -> Result<SequenceResult<MidProcessResult>> {
         match self
             .handle
             .seq_recv_with_timeout("r-process", Timeout::Speculative(timeout))
@@ -558,11 +556,7 @@ pub struct WorkerForker {
     fork_worker: ForkerHandle,
 }
 
-fn forker_dispatcher(
-    mut server: TypedServer<ForkerCmd, ForkerResp>,
-    wasm_ctx: WasmContext,
-    shm: Rc<ShmAllocator>,
-) -> ! {
+fn forker_dispatcher(mut server: TypedServer<ForkerCmd, ForkerResp>, wasm_ctx: WasmContext) -> ! {
     set_process_name("aicirt-forker");
     loop {
         // wait for any children that might have exited to prevent zombies
@@ -597,7 +591,6 @@ fn forker_dispatcher(
                     id: cmd_id,
                     server,
                     wasm_ctx,
-                    shm,
                     query: None,
                     inst_id: 424242,
                     modinst: None,
@@ -669,7 +662,7 @@ pub fn stop_process() -> ! {
 // }
 
 impl WorkerForker {
-    pub fn new(wasm_ctx: WasmContext, shm: Rc<ShmAllocator>) -> Self {
+    pub fn new(wasm_ctx: WasmContext) -> Self {
         // create a new process group
         let pid = unsafe { libc::getpid() };
         unsafe {
@@ -687,7 +680,7 @@ impl WorkerForker {
                     limits,
                 }
             }
-            ForkResult::Child { server } => forker_dispatcher(server, wasm_ctx, shm),
+            ForkResult::Child { server } => forker_dispatcher(server, wasm_ctx),
         }
     }
 

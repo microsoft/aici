@@ -7,7 +7,7 @@ Controllers are flexible programs capable of implementing constrained decoding, 
 Controllers incorporate custom logic during the token-by-token decoding and maintain state during an LLM request. This allows diverse Controller strategies, from programmatic or query-based decoding to multi-agent conversations to execute efficiently in tight integration with the LLM itself.
 
 **The purpose of AICI is to make it easy to build and experiment with both existing and entirely new Controller strategies for improving LLM generations.**
-By abstracting away implementation details of the underlying LLM inference and serving engine, AICI aims to simplify the development of Controllers, make it easier to 
+By abstracting away implementation details of the underlying LLM inference and serving engine, AICI aims to simplify the development of Controllers, make it easier to
 write fast Controllers, and ease compatibility across LLM inference and serving engines.
 
 AICI is designed for both local and cloud execution, including (eventually) multi-tenant LLM deployments.
@@ -58,14 +58,14 @@ To compile AICI components, you need to set up your development environment for 
 
 > [!NOTE]
 > **Windows users**: please use WSL2 or the included [devcontainer](https://containers.dev). Adding native Windows support [is tracked here](https://github.com/microsoft/aici/issues/42).
-> 
+>
 > **MacOS users**: please make sure you have XCode command line tools installed by running `xcode-select -p` and, if not installed, run `xcode-select --install`.
 >
 > **CUDA**: the CUDA build relies on specific libtorch installation. It's highly recommended you use the included devcontainer.
 
 If you're using devcontainer, you can skip to the [next section](#build-and-start-rllm-server-and-aici-runtime).
 
-Using the system package manager, install the necessary tools for building code in the repository, including `git`, `cmake` and `ccache`. 
+Using the system package manager, install the necessary tools for building code in the repository, including `git`, `cmake` and `ccache`.
 
 For instance in WSL / Ubuntu using `apt`:
 
@@ -81,10 +81,10 @@ Then install **Rust, Rustup and Cargo**, following the instructions provided [he
     curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
 
 After installation, verify that the `rustup --version` command is accessible by running it from the terminal. If the command isn't recognized, try opening a new terminal session.
-  
-Next install wasm32-wasi Rust component:
-    
-    rustup target add wasm32-wasi
+
+Next install wasm32-wasip1 Rust component:
+
+    rustup target add wasm32-wasip1
 
 If you already had Rust installed, or are getting complaints from Cargo about outdated versions, run:
 
@@ -162,7 +162,7 @@ The following illustrates the relationship between the rLLM server, the AICI run
 erDiagram
     Host    ||--|{ CPU : ""
     Host    ||--|{ GPU : ""
-    
+
     CPU     ||--|| "rLLM Server" : execute
     CPU     ||--|{ "AICI Runtime" : execute
 
@@ -206,7 +206,7 @@ import pyaici.server as aici
 #   4. name 4
 #   5. name 5
 async def main():
-    
+
     # This is the prompt we want to run.
     # Note how the prompt doesn't mention a number of vehicles or how to format the result.
     prompt = "What are the most popular types of vehicles?\n"
@@ -434,7 +434,7 @@ All of these can be easily extended.
 
 # Citing this package
 
-If you find the AI Controller Interface and its ideas for defining a new layer in the LLM inference stack useful, please cite the package using the following reference: 
+If you find the AI Controller Interface and its ideas for defining a new layer in the LLM inference stack useful, please cite the package using the following reference:
 
 * Michal Moskal, Madan Musuvathi, Emre Kıcıman. AI Controller Interface, (2024), GitHub repository. https://github.com/microsoft/aici
 

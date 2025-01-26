@@ -11,7 +11,8 @@ RUN pip install torch==2.1.0 nvidia-cuda-runtime
 RUN ln -s /usr/local/lib/python3.10/dist-packages/nvidia/cuda_runtime/lib/libcudart.so{.12,}
 
 # perf tool
-RUN apt-get install -y linux-tools-`uname -r`
+COPY install-perf.sh /tmp/install-perf.sh
+RUN apt-get update && /tmp/install-perf.sh
 
 RUN source /usr/local/nvm/nvm.sh && npm install -g yarn
 

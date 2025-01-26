@@ -9,7 +9,7 @@ pub struct Variables {
 impl Variables {
     pub fn process_cmd(&mut self, cmd: StorageCmd) -> StorageResp {
         match cmd {
-            StorageCmd::ReadVar { name } => match self.variables.get(&name).map(|x| x.clone()) {
+            StorageCmd::ReadVar { name } => match self.variables.get(&name).cloned() {
                 None => StorageResp::VariableMissing {},
                 Some((version, value)) => StorageResp::ReadVar { value, version },
             },
@@ -19,7 +19,7 @@ impl Variables {
                 when_version_is,
                 op,
             } => {
-                let curr = self.variables.get(&name).map(|x| x.clone());
+                let curr = self.variables.get(&name).cloned();
                 match curr {
                     Some((prev_version, prev_val)) => match when_version_is {
                         Some(v) if v != prev_version => StorageResp::ReadVar {
@@ -53,4 +53,3 @@ impl Variables {
         }
     }
 }
-

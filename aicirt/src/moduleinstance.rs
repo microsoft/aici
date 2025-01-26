@@ -1,34 +1,34 @@
 use crate::{
     api::ModuleInstId,
-    hostimpl::{setup_linker, AiciLimits, GlobalInfo, ModuleData},
+    hostimpl::{AiciLimits, GlobalInfo, ModuleData},
+    setup_component_linker,
     worker::{GroupHandle, RtMidProcessArg},
     TimerSet, UserError,
 };
-use aici_abi::{toktrie::TokTrie, InitPromptArg, InitPromptResult, ProcessResultOffset, TokenId};
+use aici_abi::toktrie::TokTrie;
 use aicirt::{
     api::{InferenceCapabilities, SequenceResult},
-    bail_user,
+    bindings::{self, exports::aici::abi::controller::*, InitPromptResult},
     bintokens::ByteTokenizer,
-    shm::ShmAllocator,
-    user_error,
 };
-use anyhow::{anyhow, ensure, Result};
-use serde::Deserialize;
-use std::{path::PathBuf, rc::Rc, sync::Arc, time::Instant};
+use anyhow::Result;
+use std::{path::PathBuf, sync::Arc, time::Instant};
 use wasmtime;
 
 #[derive(Clone)]
 pub struct WasmContext {
     pub engine: wasmtime::Engine,
-    pub linker: Arc<wasmtime::Linker<ModuleData>>,
+    pub component_linker: Arc<wasmtime::component::Linker<ModuleData>>,
     pub globals: GlobalInfo,
     pub limits: AiciLimits,
     pub timers: TimerSet,
 }
 
 impl WasmContext {
-    pub fn deserialize_module(&self, path: PathBuf) -> Result<wasmtime::Module> {
-        unsafe { wasmtime::Module::deserialize_file(&self.engine, path) }
+    pub fn deserialize_component(&self, path: PathBuf) -> Result<wasmtime::component::Component> {
+        // TODO: Use type safety to ensure that the input is derived from `Component::serialize` or
+        // `Engine::precompile_component`.
+        unsafe { wasmtime::component::Component::deserialize_file(&self.engine, path) }
     }
 
     pub fn new(
@@ -47,6 +47,7 @@ impl WasmContext {
             .wasm_threads(false)
             .wasm_simd(true)
             .wasm_relaxed_simd(false)
+            .wasm_component_model(true)
             .wasm_bulk_memory(true)
             .wasm_multi_value(true)
             .wasm_memory64(false)
@@ -58,14 +59,14 @@ impl WasmContext {
         cfg.macos_use_mach_ports(false);
 
         // disable stuff we don't need
-        cfg.wasm_backtrace_details(wasmtime::WasmBacktraceDetails::Disable)
-            .wasm_reference_types(false);
+        cfg.wasm_backtrace_details(wasmtime::WasmBacktraceDetails::Disable);
 
         // compilation in Speed mode seems to be ~10% slower but the generated code is 20-30% faster
         cfg.cranelift_opt_level(wasmtime::OptLevel::Speed);
 
         let engine = wasmtime::Engine::new(&cfg)?;
-        let linker = setup_linker(&engine)?;
+        // let linker = setup_linker(&engine)?;
+        let component_linker = setup_component_linker(&engine)?;
 
         let tokens = tokenizer.token_bytes();
         let trie = TokTrie::from(&tokenizer.tokrx_info(), &tokens);
@@ -90,7 +91,7 @@ impl WasmContext {
 
         Ok(Self {
             engine,
-            linker,
+            component_linker,
             globals,
             limits,
             timers: TimerSet::new(),
@@ -100,124 +101,38 @@ impl WasmContext {
 
 pub struct ModuleInstance {
     store: wasmtime::Store<ModuleData>,
-    memory: wasmtime::Memory,
-    instance: wasmtime::Instance,
-    handle: WasmAici,
+    aici: bindings::Aici,
+    runner: bindings::Runner,
     #[allow(dead_code)]
     limits: AiciLimits,
-}
-type WasmPtr = u32;
-type WasmAici = u32;
-
-impl ModuleInstance {
-    fn call_func<Params, Results>(&mut self, name: &str, params: Params) -> Result<Results>
-    where
-        Params: wasmtime::WasmParams,
-        Results: wasmtime::WasmResults,
-    {
-        if self.store.data().had_error {
-            bail_user!("Previous WASM Error");
-        }
-        let f = self
-            .instance
-            .get_typed_func::<Params, Results>(&mut self.store, name)?;
-        let r = f.call(&mut self.store, params);
-        let ctx = self.store.data_mut();
-        ctx.flush_logs(name);
-        match r {
-            Ok(r) => Ok(r),
-            Err(e) => {
-                ctx.had_error = true;
-                if let Some(e) = e.downcast_ref::<UserError>() {
-                    Err(user_error!("{}\n{}", ctx.string_log(), e))
-                } else if let Some(bt) = e.downcast_ref::<wasmtime::WasmBacktrace>() {
-                    Err(user_error!(
-                        "{}\n{}\n\n{}",
-                        ctx.string_log(),
-                        bt,
-                        e.root_cause()
-                    ))
-                } else {
-                    Err(anyhow!("{:?}\n\n{}", e, ctx.string_log()))
-                }
-            }
-        }
-    }
-
-    #[allow(dead_code)]
-    fn write_mem<T>(&mut self, src: &[T], ptr: WasmPtr) -> Result<()> {
-        let len = src.len();
-        let numbytes = len * std::mem::size_of::<T>();
-
-        let dest_slice = &mut self.memory.data_mut(&mut self.store)[ptr as usize..];
-
-        ensure!(dest_slice.len() >= numbytes);
-
-        unsafe {
-            std::ptr::copy_nonoverlapping(
-                src.as_ptr() as *const u8,
-                dest_slice.as_mut_ptr(),
-                numbytes,
-            );
-        }
-
-        Ok(())
-    }
-
-    #[allow(dead_code)]
-    fn read_mem<T>(&self, ptr: WasmPtr, target: &mut [T]) -> Result<()> {
-        let numbytes = target.len() * std::mem::size_of::<T>();
-        let src_slice = &self.memory.data(&self.store)[ptr as usize..];
-        ensure!(src_slice.len() >= numbytes);
-        unsafe {
-            std::ptr::copy_nonoverlapping(
-                src_slice.as_ptr(),
-                target.as_mut_ptr() as *mut u8,
-                numbytes,
-            )
-        }
-        Ok(())
-    }
 }
 
 impl ModuleInstance {
     pub fn new(
         id: ModuleInstId,
         ctx: WasmContext,
-        module: wasmtime::Module,
+        component: wasmtime::component::Component,
         module_arg: String,
         group_channel: GroupHandle,
-        shm: Rc<ShmAllocator>,
     ) -> Result<Self> {
-        let engine = module.engine();
-
         let mut store = wasmtime::Store::new(
-            engine,
-            ModuleData::new(
-                id,
-                &ctx.limits,
-                &module,
-                module_arg,
-                &ctx.linker,
-                ctx.globals,
-                group_channel,
-                shm,
-            ),
+            &ctx.engine.clone(),
+            ModuleData::new(id, &ctx.limits, ctx.globals, group_channel),
         );
         store.limiter(|state| &mut state.store_limits);
 
-        let instance = ctx.linker.instantiate(&mut store, &module)?;
-        let memory = instance
-            .get_memory(&mut store, "memory")
-            .ok_or_else(|| anyhow!("memory missing"))?;
-        store.data_mut().instance = Some(instance);
-        store.data_mut().memory = Some(memory);
+        let aici = bindings::Aici::instantiate(&mut store, &component, &ctx.component_linker)?;
+        let runner = aici
+            .aici_abi_controller()
+            .runner()
+            .call_constructor(&mut store, &module_arg);
+        store.data_mut().flush_logs("constructor");
+        let runner = runner?;
 
         Ok(ModuleInstance {
-            handle: 0,
             store,
-            memory,
-            instance,
+            aici,
+            runner,
             limits: ctx.limits,
         })
     }
@@ -226,62 +141,16 @@ impl ModuleInstance {
         self.store.data_mut().id = id;
     }
 
-    fn run_init(&mut self) -> Result<()> {
-        self.call_func::<(), ()>("aici_init", ())?;
-        Ok(())
-    }
-
-    pub fn run_main(&mut self) -> Result<()> {
-        self.run_init()?;
-        let t0 = Instant::now();
-        if self
-            .instance
-            .get_export(&mut self.store, "aici_main")
-            .is_some()
-        {
-            self.call_func::<u32, ()>("aici_main", self.handle)?;
-        } else {
-            let _ = self.call_func::<(i32, i32), i32>("main", (0, 0))?;
-        }
-        //println!("{}\n", self.store.data_mut().string_log());
-        println!("time: {:?}", t0.elapsed());
-        Ok(())
-    }
-
     pub fn group_channel(&self) -> &GroupHandle {
         &self.store.data().group_channel
     }
 
-    fn proc_result<T: for<'a> Deserialize<'a>>(&self) -> Result<T> {
-        let bytes = &self.store.data().process_result;
-        if bytes.len() == 0 {
-            Err(anyhow!("aici_host_return_process_result not called"))
-        } else {
-            serde_json::from_slice::<T>(bytes).map_err(|e| e.into())
-        }
-    }
-
-    fn do_mid_process(&mut self, op: RtMidProcessArg) -> Result<ProcessResultOffset> {
-        self.store.data_mut().set_mid_process_data(op);
-        self.call_func::<WasmAici, ()>("aici_mid_process", self.handle)?;
-        let res: ProcessResultOffset = self.proc_result()?;
-        let offs = &self.store.data().logit_offsets;
-        let res = ProcessResultOffset {
-            branches: res
-                .branches
-                .iter()
-                .map(|b| {
-                    b.map_mask(|o| {
-                        let o32 = *o as u32;
-                        if !offs.contains(&o32) {
-                            panic!("logit offset not found: {}", o);
-                        }
-                        *o
-                    })
-                })
-                .collect(),
-        };
-        Ok(res)
+    fn do_mid_process(&mut self, arg: RtMidProcessArg) -> Result<MidProcessResult> {
+        self.aici.aici_abi_controller().runner().call_mid_process(
+            &mut self.store,
+            self.runner,
+            &arg.op,
+        )
     }
 
     fn seq_result<T>(&mut self, lbl: &str, t0: Instant, res: Result<T>) -> SequenceResult<T> {
@@ -313,28 +182,26 @@ impl ModuleInstance {
         }
     }
 
-    pub fn mid_process(&mut self, op: RtMidProcessArg) -> SequenceResult<ProcessResultOffset> {
+    pub fn mid_process(&mut self, op: RtMidProcessArg) -> SequenceResult<MidProcessResult> {
         let t0 = Instant::now();
         let res = self.do_mid_process(op);
         // log::info!("mid_process: {:?}", t0.elapsed());
+        self.store.data_mut().flush_logs("mid_process");
         self.seq_result("mid", t0, res)
     }
 
     pub fn tokenize(&mut self, s: &str) -> Result<Vec<u32>> {
-        self.store.data_mut().tokenize_bytes(s.as_bytes())
+        self.store.data_mut().tokenize_bytes_greedy(s)
     }
 
     fn setup_inner(&mut self, prompt: Vec<TokenId>) -> Result<InitPromptResult> {
-        self.run_init()?;
-
-        self.handle = self.call_func::<(), WasmAici>("aici_create", ())?;
-
-        self.store
-            .data_mut()
-            .set_process_arg(serde_json::to_vec(&InitPromptArg { prompt })?);
-        self.call_func::<WasmAici, ()>("aici_init_prompt", self.handle)?;
-        let res: InitPromptResult = self.proc_result()?;
-        Ok(res)
+        let res = self.aici.aici_abi_controller().runner().call_init_prompt(
+            &mut self.store,
+            self.runner,
+            &InitPromptArg { prompt },
+        );
+        self.store.data_mut().flush_logs("init_prompt");
+        Ok(res?.into())
     }
 
     pub fn setup(&mut self, prompt: Vec<TokenId>) -> SequenceResult<InitPromptResult> {

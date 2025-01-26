@@ -12,9 +12,8 @@ anyhow = "1.0.75"
 lazy_static = "1.4.0"
 rquickjs = { git = "https://github.com/DelSkayn/rquickjs", rev = "343b21b742d3bb052710dc53144b79dc61bb592d", features = ["array-buffer", "macro"] }
 
-[[bin]]
-name = "aici_jsctrl"
-path = "src/jsctrl.rs"
+[lib]
+crate-type = ["cdylib"]
 
 [build-dependencies]
 glob = "0.3.1"

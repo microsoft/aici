@@ -1,6 +1,6 @@
 use crate::{
     config::{ModelMeta, SamplingParams},
-    iface::{kill_self, AiciRtIface, AsyncCmdChannel},
+    iface::aicirt::{kill_self, AiciRtIface, AsyncCmdChannel},
     seq::RequestOutput,
     util::apply_settings,
     AddRequest, HashMap, LoaderArgs, ModelExec, RllmEngine,
@@ -642,7 +642,7 @@ pub async fn server_main<ME: ModelExec>(
         None => format!("/aici-{}-", args.port),
     };
 
-    let rt_args = crate::iface::Args {
+    let rt_args = crate::iface::aicirt::Args {
         aicirt,
         tokenizer: loader_args.tokenizer.clone(),
         json_size: args.json_size,
